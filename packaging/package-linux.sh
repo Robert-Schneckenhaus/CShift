@@ -30,23 +30,51 @@ echo "$version" > "$dist/VERSION"
 # ---- toolchain: clang ----
 cp -L "$llvm/bin/clang" "$dist/toolchain/bin/clang"
 
-# The LLVM libraries clang needs (libLLVM, libclang-cpp), stored under the names the program asks for. Libraries
-# of the system (libc, libz, libedit, ...) are not bundled.
-ldd "$llvm/bin/clang" | awk '/=> \// { print $1, $3 }' | while read -r soname path; do
-    case "$soname" in
-        libLLVM*|libclang-cpp*) cp -L "$path" "$dist/toolchain/lib/$soname" ;;
-    esac
-done
-
 # libclang (loaded by cshiftc to read C headers): one copy, named libclang.so
-libclang="$(ls "$llvm"/lib/libclang.so "$llvm"/lib/libclang.so.* "$llvm"/lib/libclang-[0-9]*.so* 2>/dev/null | head -n 1)"
-[ -n "$libclang" ] || { echo "libclang not found in $llvm/lib (install libclang-<version>-dev)"; exit 1; }
+libclang=""
+for candidate in "$llvm"/lib/libclang.so "$llvm"/lib/libclang.so.* "$llvm"/lib/libclang-[0-9]*.so*; do
+    if [ -e "$candidate" ]; then
+        libclang="$candidate"
+        break
+    fi
+done
+if [ -z "$libclang" ]; then
+    echo "error: libclang not found in $llvm/lib (install libclang-<version>-dev). Files there:" >&2
+    ls "$llvm/lib" >&2 || true
+    exit 1
+fi
+echo "libclang: $libclang"
 cp -L "$libclang" "$dist/toolchain/lib/libclang.so"
 
+# The LLVM libraries that clang and libclang need (libLLVM, libclang-cpp), stored under the names the programs ask
+# for. Libraries of the system (libc, libz, libedit, ...) are not bundled.
+for program in "$llvm/bin/clang" "$libclang"; do
+    echo "dependencies of $(basename "$program"):"
+    ldd "$program" | sed 's/^/    /'
+    while read -r soname path; do
+        case "$soname" in
+            libLLVM*|libclang-cpp*)
+                echo "bundling $soname ($path)"
+                cp -L "$path" "$dist/toolchain/lib/$soname"
+                ;;
+        esac
+    done < <(ldd "$program" | awk '/=> \// { print $1, $3 }')
+done
+compgen -G "$dist/toolchain/lib/libLLVM*" > /dev/null || { echo "error: libLLVM was not found among the dependencies of clang" >&2; exit 1; }
+
 # clang's own headers (stddef.h, ...), found relative to the clang program
-clang_version="$(ls "$llvm/lib/clang" | sort -n | tail -n 1)"
+resource=""
+for candidate in "$llvm"/lib/clang/*; do
+    [ -d "$candidate/include" ] && resource="$candidate"
+done
+if [ -z "$resource" ]; then
+    echo "error: clang resource directory (lib/clang/<version>/include) not found in $llvm" >&2
+    exit 1
+fi
+echo "resource directory: $resource"
+clang_version="$(basename "$resource")"
 mkdir -p "$dist/toolchain/lib/clang/$clang_version"
-cp -rL "$llvm/lib/clang/$clang_version/include" "$dist/toolchain/lib/clang/$clang_version/include"
+cp -rL "$resource/include" "$dist/toolchain/lib/clang/$clang_version/include"
 
 # The programs find the libraries next to them, wherever the folder is extracted.
 patchelf --set-rpath '$ORIGIN/../lib' "$dist/toolchain/bin/clang"
