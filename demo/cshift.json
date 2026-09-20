@@ -1,0 +1,9 @@
+{
+	"name": "demo",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/demo",
+	"optimize": 2,
+	"links": []
+}

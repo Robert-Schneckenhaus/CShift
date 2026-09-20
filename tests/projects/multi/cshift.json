@@ -1,0 +1,7 @@
+{
+	"name": "multi",
+	"version": "1.0.0",
+	"sources": ["src", "extra/util.csh"],
+	"output": "out/multi",
+	"optimize": 1
+}

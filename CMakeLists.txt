@@ -41,6 +41,7 @@ endif()
 add_executable(cshiftc
     ${STDLIB_DATA_CPP}
     compiler/src/main.cpp
+    compiler/src/Project.cpp
     compiler/src/Types.cpp
     compiler/src/Lexer.cpp
     compiler/src/Parser.cpp
@@ -53,8 +54,22 @@ add_executable(cshiftc
 
 target_include_directories(cshiftc PRIVATE compiler/src)
 
+# Standalone executable: LLVM and the C++ runtime are linked statically, so cshiftc.exe runs from any shell
+# without the MSYS2 DLLs in PATH (only 'clang' is still needed at run time for the final link step).
+option(CSHIFT_STATIC "Link LLVM and the C++ runtime statically (standalone cshiftc)" OFF)
+
 # Link the complete LLVM (shared library if LLVM was built that way, otherwise all static components).
-if(LLVM_LINK_LLVM_DYLIB)
+if(CSHIFT_STATIC)
+    execute_process(COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --link-static --libs all
+                    OUTPUT_VARIABLE LLVM_STATIC_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --link-static --system-libs
+                    OUTPUT_VARIABLE LLVM_STATIC_SYSTEM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REPLACE "-lzstd.dll" "-lzstd" LLVM_STATIC_SYSTEM_LIBS "${LLVM_STATIC_SYSTEM_LIBS}") # no DLL dependency
+    separate_arguments(LLVM_STATIC_LIBS NATIVE_COMMAND "${LLVM_STATIC_LIBS}")
+    separate_arguments(LLVM_STATIC_SYSTEM_LIBS NATIVE_COMMAND "${LLVM_STATIC_SYSTEM_LIBS}")
+    target_link_libraries(cshiftc PRIVATE ${LLVM_STATIC_LIBS} ${LLVM_STATIC_SYSTEM_LIBS})
+    target_link_options(cshiftc PRIVATE -static -s)
+elseif(LLVM_LINK_LLVM_DYLIB)
     target_link_libraries(cshiftc PRIVATE LLVM)
 else()
     llvm_map_components_to_libnames(LLVM_LIBS all)

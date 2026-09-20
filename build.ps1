@@ -3,6 +3,11 @@
 #   .\build.ps1                 build into .\build
 #   .\build.ps1 -Test           build and run the test suite
 #   .\build.ps1 -Msys2 D:\msys64
+#   .\build.ps1 -Dynamic        link LLVM as a DLL (smaller exe, but cshiftc.exe then only starts when
+#                               C:\msys64\clang64\bin is in PATH)
+#
+# By default cshiftc.exe is linked statically, so it runs from any shell. Compiling a program still needs
+# 'clang' in PATH for the final link step.
 #
 # One-time setup (see README.md): install MSYS2 and, in an MSYS2 shell, run
 #   pacman -S mingw-w64-clang-x86_64-{clang,llvm,cmake,ninja}
@@ -10,7 +15,8 @@
 param(
     [string]$Msys2 = $(if ($env:MSYS2_ROOT) { $env:MSYS2_ROOT } else { "C:\msys64" }),
     [switch]$Test,
-    [string]$Config = "Release"
+    [string]$Config = "Release",
+    [switch]$Dynamic
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +29,8 @@ $root = $PSScriptRoot.Replace('\', '/')
 $env:MSYSTEM = "CLANG64"
 $env:CHERE_INVOKING = "1"
 
-$script = "cd '$root' && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$Config && cmake --build build"
+$static = if ($Dynamic) { "OFF" } else { "ON" }
+$script = "cd '$root' && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$Config -DCSHIFT_STATIC=$static && cmake --build build"
 if ($Test) { $script += " && bash tests/run_tests.sh" }
 
 & $bash -lc $script

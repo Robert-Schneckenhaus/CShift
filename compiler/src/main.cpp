@@ -9,6 +9,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CodeGen.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
@@ -19,12 +20,23 @@
 #include "CodeGen.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "Project.h"
 #include "StdlibData.h"
 
 namespace
 {
+enum class Command
+{
+    Compile, // cshiftc [options] files...
+    Build,   // cshiftc build [project]
+    Run,     // cshiftc run [project]
+    New      // cshiftc new <path>
+};
+
 struct Options
 {
+    Command command = Command::Compile;
+    bool optGiven = false;
     std::vector<std::string> inputs;
     std::string output;
     std::string target;
@@ -42,7 +54,13 @@ void printUsage()
 {
     std::cerr << "cshiftc - CShift compiler\n"
                  "\n"
-                 "usage: cshiftc [options] file.csh [file2.csh ...]\n"
+                 "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n"
+                 "       cshiftc build [project] [options]              build a project (cshift.json)\n"
+                 "       cshiftc run   [project] [options]              build and run a project\n"
+                 "       cshiftc new   <directory>                      create a new project\n"
+                 "\n"
+                 "'project' is a directory containing cshift.json or the path of a project file;\n"
+                 "without it cshift.json is searched in the current directory and its parents.\n"
                  "\n"
                  "options:\n"
                  "  -o <file>        output file\n"
@@ -60,7 +78,19 @@ void printUsage()
 
 bool parseArgs(int argc, char** argv, Options& o)
 {
-    for (int i = 1; i < argc; i += 1)
+    int first = 1;
+    if (argc > 1)
+    {
+        std::string cmd = argv[1];
+        if (cmd == "build")
+            o.command = Command::Build, first = 2;
+        else if (cmd == "run")
+            o.command = Command::Run, first = 2;
+        else if (cmd == "new")
+            o.command = Command::New, first = 2;
+    }
+
+    for (int i = first; i < argc; i += 1)
     {
         std::string a = argv[i];
         auto next = [&](const char* what) -> std::string {
@@ -91,7 +121,7 @@ bool parseArgs(int argc, char** argv, Options& o)
         else if (a == "--cc")
             o.cc = next("--cc");
         else if (a.size() == 3 && a.compare(0, 2, "-O") == 0 && a[2] >= '0' && a[2] <= '3')
-            o.optLevel = a[2] - '0';
+            o.optLevel = a[2] - '0', o.optGiven = true;
         else if (a.size() > 2 && a.compare(0, 2, "-l") == 0)
             o.libs.push_back(a.substr(2));
         else if (!a.empty() && a[0] == '-')
@@ -102,7 +132,24 @@ bool parseArgs(int argc, char** argv, Options& o)
         else
             o.inputs.push_back(a);
     }
-    return !o.inputs.empty();
+    switch (o.command)
+    {
+    case Command::Compile: return !o.inputs.empty();
+    case Command::New: return o.inputs.size() == 1;
+    default: return o.inputs.size() <= 1;
+    }
+}
+
+void ensureParentDirectory(const std::string& file)
+{
+    llvm::StringRef parent = llvm::sys::path::parent_path(file);
+    if (!parent.empty())
+        llvm::sys::fs::create_directories(parent);
+}
+
+bool endsWith(const std::string& s, const std::string& suffix)
+{
+    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 bool readFile(const std::string& path, std::string& out)
@@ -167,6 +214,45 @@ int main(int argc, char** argv)
         return 2;
     }
 
+    // ---- Project commands ----
+    Project project;
+    bool fromProject = false;
+    if (opt.command == Command::New)
+    {
+        std::string error;
+        if (!createProject(opt.inputs[0], error))
+        {
+            std::cerr << "error: " << error << "\n";
+            return 1;
+        }
+        std::cout << "Created project '" << opt.inputs[0] << "'\n"
+                  << "  cd " << opt.inputs[0] << "\n"
+                  << "  cshiftc run\n";
+        return 0;
+    }
+    if (opt.command == Command::Build || opt.command == Command::Run)
+    {
+        std::string error;
+        if (!loadProject(opt.inputs.empty() ? "" : opt.inputs[0], project, error))
+        {
+            std::cerr << "error: " << error << "\n";
+            return 1;
+        }
+        fromProject = true;
+        opt.inputs = project.sources;
+        if (opt.output.empty())
+            opt.output = project.output;
+        if (!opt.optGiven && project.hasOptimize)
+            opt.optLevel = project.optimize;
+        if (opt.target.empty())
+            opt.target = project.target;
+        opt.libs.insert(opt.libs.begin(), project.links.begin(), project.links.end());
+        if (project.type == "object")
+            opt.objectOnly = true;
+        if (opt.command == Command::Run)
+            opt.run = true;
+    }
+
     // ---- Parse ----
     Diagnostics diag;
     CodeGen* cgPtr = nullptr;
@@ -216,7 +302,7 @@ int main(int argc, char** argv)
     }
 
     // ---- Compile ----
-    CodeGen cg(diag, stem(opt.inputs[0]));
+    CodeGen cg(diag, fromProject ? project.name : stem(opt.inputs[0]));
     cgPtr = &cg;
     cg.setTargetTriple(tripleStr);
     cg.setArcStats(opt.arcStats);
@@ -237,7 +323,8 @@ int main(int argc, char** argv)
 
     if (opt.emitLlvm)
     {
-        std::string path = opt.output.empty() ? baseName + ".ll" : opt.output;
+        std::string path = opt.output.empty() ? baseName + ".ll" : (fromProject ? opt.output + ".ll" : opt.output);
+        ensureParentDirectory(path);
         std::error_code ec;
         llvm::raw_fd_ostream out(path, ec, llvm::sys::fs::OF_Text);
         if (ec)
@@ -253,6 +340,9 @@ int main(int argc, char** argv)
     std::string objPath = opt.objectOnly && !opt.output.empty() ? opt.output : baseName + (isWindows ? ".obj" : ".o");
     if (opt.output.empty() && !opt.objectOnly)
         objPath = baseName + (isWindows ? ".obj" : ".o");
+    if (fromProject && opt.objectOnly)
+        objPath = baseName + (isWindows ? ".obj" : ".o"); // a project's output has no extension yet
+    ensureParentDirectory(objPath);
     {
         std::error_code ec;
         llvm::raw_fd_ostream dest(objPath, ec, llvm::sys::fs::OF_None);
@@ -271,10 +361,17 @@ int main(int argc, char** argv)
         dest.flush();
     }
     if (opt.objectOnly)
+    {
+        if (fromProject)
+            std::cout << "Built " << objPath << "\n";
         return 0;
+    }
 
     // ---- Link ----
     std::string exePath = opt.output.empty() ? baseName + (isWindows ? ".exe" : "") : opt.output;
+    if (fromProject && isWindows && !endsWith(exePath, ".exe"))
+        exePath += ".exe";
+    ensureParentDirectory(exePath);
     auto program = llvm::sys::findProgramByName(opt.cc);
     for (const char* fallback : {"cc", "gcc"})
     {
@@ -282,9 +379,25 @@ int main(int argc, char** argv)
             break;
         program = llvm::sys::findProgramByName(fallback);
     }
+    if (!program && isWindows && opt.cc == "clang")
+    {
+        // Not in PATH: try the usual MSYS2 installation folders (the toolchain this compiler is built with).
+        std::vector<std::string> folders;
+        if (const char* root = std::getenv("MSYS2_ROOT"))
+            folders.push_back(std::string(root) + "\\clang64\\bin");
+        folders.push_back("C:\\msys64\\clang64\\bin");
+        for (const auto& folder : folders)
+        {
+            llvm::StringRef searchPath(folder);
+            program = llvm::sys::findProgramByName("clang", searchPath);
+            if (program)
+                break;
+        }
+    }
     if (!program)
     {
-        std::cerr << "error: cannot find the linker driver '" << opt.cc << "' (use --cc <path>)\n";
+        std::cerr << "error: cannot find the linker driver '" << opt.cc << "'\n"
+                  << "       Put clang in PATH (e.g. C:\\msys64\\clang64\\bin) or pass --cc <path>.\n";
         return 1;
     }
     std::vector<std::string> linkArgs = {opt.cc, objPath, "-o", exePath};
@@ -308,6 +421,9 @@ int main(int argc, char** argv)
         std::cerr << "error: linking failed\n";
         return 1;
     }
+
+    if (fromProject && !opt.run)
+        std::cout << "Built " << exePath << "\n";
 
     if (opt.run)
     {

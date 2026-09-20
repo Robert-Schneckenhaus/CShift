@@ -15,6 +15,8 @@
 #        // expect-stdout: <text>   stdout contains <text>   (may be repeated)
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
 #        // arc-ignore              skip the leak check
+#   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
+#      plus "cshiftc new".
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,6 +38,7 @@ if [ -z "$COMPILER" ] || [ ! -x "$COMPILER" ]; then
     echo "cshiftc not found. Pass its path as first argument or set CSHIFTC."
     exit 2
 fi
+COMPILER="$(cd "$(dirname "$COMPILER")" && pwd)/$(basename "$COMPILER")"
 CC_ARGS=()
 if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
 
@@ -132,6 +135,55 @@ for file in "$DIR"/cases/*.csh; do
         report_ok "$name"
     fi
 done
+
+# --- 3. projects (cshiftc new/build/run with cshift.json) -----------------------
+#   tests/projects/<name>/ is copied to a temp directory first (builds create bin/ or out/).
+#     expected-error.txt   build must fail and print the first line of the file
+#     expected.txt         "cshiftc run" must print exactly this
+#     (neither)            "cshiftc build" must succeed
+echo "== projects/"
+for dir in "$DIR"/projects/*/; do
+    name="project $(basename "$dir")"
+    work="$TMP/proj_$(basename "$dir")"
+    cp -r "$dir" "$work"
+
+    if [ -f "$work/expected-error.txt" ]; then
+        want="$(head -n 1 "$work/expected-error.txt" | tr -d '\r')"
+        if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > /dev/null 2> "$TMP/proj.err"; then
+            report_fail "$name" "the build succeeded but an error was expected"
+        elif ! grep -qF -- "$want" "$TMP/proj.err"; then
+            report_fail "$name" "expected error '$want', got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+        else
+            report_ok "$name"
+        fi
+    elif [ -f "$work/expected.txt" ]; then
+        problem=""
+        "$COMPILER" run "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" || problem="run failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+        tr -d '\r' < "$TMP/proj.out" > "$TMP/proj.out.n"
+        tr -d '\r' < "$work/expected.txt" > "$TMP/proj.expected.n"
+        [ -z "$problem" ] && [ "$(cat "$TMP/proj.out.n")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs: $(cat "$TMP/proj.out.n" | tr '\n' '|')"
+        # The project file is also found from a subdirectory (searched upwards).
+        if [ -z "$problem" ]; then
+            ( cd "$work/src" && "$COMPILER" run $OPT "${CC_ARGS[@]}" > "$TMP/proj.out2" 2> "$TMP/proj.err" ) || problem="run from a subdirectory failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+            [ -z "$problem" ] && [ "$(tr -d '\r' < "$TMP/proj.out2")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs when run from a subdirectory"
+        fi
+        if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
+    else
+        if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" && grep -q "Built" "$TMP/proj.out"; then
+            report_ok "$name"
+        else
+            report_fail "$name" "build failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+        fi
+    fi
+done
+
+# cshiftc new creates a working project
+if "$COMPILER" new "$TMP/fresh" > /dev/null 2> "$TMP/proj.err" &&
+   "$COMPILER" run "$TMP/fresh" $OPT "${CC_ARGS[@]}" 2> "$TMP/proj.err" | tr -d '\r' | grep -qx "Hello, World!"; then
+    report_ok "cshiftc new"
+else
+    report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
+fi
 
 echo
 echo "$PASSED passed, $FAILED failed"

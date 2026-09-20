@@ -49,8 +49,11 @@ pacman -S --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm `
 .\build.ps1 -Test    # baut und führt die Tests aus
 ```
 
-`cshiftc.exe` braucht zur Laufzeit die DLLs und `clang` aus `C:\msys64\clang64\bin`. Am einfachsten
-verwendet man ihn aus der CLANG64-Shell oder nimmt den Ordner in den `PATH` auf.
+`build.ps1` baut `cshiftc.exe` standardmäßig **statisch** (`-DCSHIFT_STATIC=ON`, ca. 120 MB): Die Exe startet aus jeder Shell,
+ohne MSYS2-DLLs im `PATH`. Zum Übersetzen von Programmen braucht sie `clang` als Linker; liegt es nicht im `PATH`, wird
+`C:\msys64\clang64\bin` (oder `%MSYS2_ROOT%\clang64\bin`) automatisch probiert, sonst hilft `--cc <pfad>`.
+Mit `.\build.ps1 -Dynamic` entsteht die kleinere DLL-Variante, die nur mit `C:\msys64\clang64\bin` im `PATH` startet
+(startet sie nicht, bricht Windows lautlos ab).
 
 ### Linux / macOS
 
@@ -81,7 +84,7 @@ cshiftc [Optionen] datei.csh [weitere.csh ...]
   --arc-stats        Debug: Anzahl Heap-Allokationen/-Freigaben beim Programmende ausgeben
 ```
 
-Alle übergebenen Dateien bilden ein Programm; Typen und Funktionen können in beliebiger Reihenfolge und
+Alle übergebenen Dateien (oder die Quellen eines Projekts) bilden ein Programm; Typen und Funktionen können in beliebiger Reihenfolge und
 Datei definiert werden (keine Forward Declarations nötig).
 
 ```
@@ -89,6 +92,29 @@ cshiftc tests/test.csh tests/mathlib.csh -o test.exe --run
 ```
 
 Fehler werden im Format `datei:zeile:spalte: error: text` ausgegeben.
+
+## Projekte
+
+Größere Programme beschreibt man mit einer `cshift.json` (Name, Quellen, Ausgabe, Optimierung, Bibliotheken); Konzept und Ausblick
+(ein Zig-artiges `build.csh`) stehen in [Buildkonzept.md](Buildkonzept.md).
+
+```
+cshiftc new hello       # neues Projekt: hello/cshift.json, hello/src/main.csh
+cshiftc run hello       # bauen und starten (ohne Argument: cshift.json im aktuellen Ordner oder darüber)
+cshiftc build           # nur bauen  ->  bin/<name>[.exe]
+```
+
+```json
+{
+	"name": "demo",
+	"sources": ["src"],
+	"output": "bin/demo",
+	"optimize": 2,
+	"links": []
+}
+```
+
+Ein fertiges Beispiel liegt in [demo/](demo/) (Hello World, mit VS-Code-Tasks).
 
 ## Sprachstand
 
@@ -218,7 +244,8 @@ Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Para
 | `compiler/src/CodeGenStmt.cpp` | Anweisungen, Scopes, Cleanup (ARC, `using`), Funktionskörper |
 | `compiler/src/CodeGenRuntime.cpp` | ARC-Helfer, Strings, Panic – direkt als LLVM-IR erzeugt |
 | `stdlib/*.csh` | Standardbibliothek in CShift; wird von CMake als Byte-Arrays in den Compiler eingebettet (`StdlibData.cpp`) |
-| `compiler/src/main.cpp` | Driver: Optimierung, Objektdatei, Linken |
+| `compiler/src/main.cpp` | Driver: Kommandozeile, Optimierung, Objektdatei, Linken |
+| `compiler/src/Project.*` | Projektdatei `cshift.json` lesen, `cshiftc new` |
 
 Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
 macht die Monomorphisierung einfach (der Körper einer generischen Funktion wird pro Typkombination erneut durchlaufen).

@@ -1,0 +1,5 @@
+{
+	"name": "objonly",
+	"type": "object",
+	"output": "out/objonly"
+}

@@ -1,0 +1,4 @@
+{
+	"name": "nosources",
+	"sources": ["does_not_exist"]
+}

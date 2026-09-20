@@ -2,7 +2,7 @@
 	"name": "cshift",
 	"displayName": "CShift",
 	"description": "Syntax highlighting, snippets and language settings for CShift (.csh), a native C#-like systems language.",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"publisher": "pyrdacor",
 	"license": "UNLICENSED",
 	"repository": {
@@ -46,6 +46,27 @@
 			{
 				"language": "cshift",
 				"path": "./snippets/cshift.json"
+			}
+		],
+		"jsonValidation": [
+			{
+				"fileMatch": "cshift.json",
+				"url": "./schemas/cshift.schema.json"
+			}
+		],
+		"problemMatchers": [
+			{
+				"name": "cshiftc",
+				"owner": "cshift",
+				"fileLocation": ["autoDetect", "${workspaceFolder}"],
+				"pattern": {
+					"regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				}
 			}
 		]
 	}
