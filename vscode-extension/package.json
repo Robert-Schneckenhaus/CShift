@@ -1,0 +1,52 @@
+{
+	"name": "cshift",
+	"displayName": "CShift",
+	"description": "Syntax highlighting, snippets and language settings for CShift (.csh), a native C#-like systems language.",
+	"version": "0.1.0",
+	"publisher": "pyrdacor",
+	"license": "UNLICENSED",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Robert-Schneckenhaus/CShift"
+	},
+	"engines": {
+		"vscode": "^1.60.0"
+	},
+	"categories": [
+		"Programming Languages",
+		"Snippets"
+	],
+	"keywords": [
+		"cshift",
+		"csh",
+		"systems language"
+	],
+	"contributes": {
+		"languages": [
+			{
+				"id": "cshift",
+				"aliases": [
+					"CShift",
+					"cshift"
+				],
+				"extensions": [
+					".csh"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "cshift",
+				"scopeName": "source.cshift",
+				"path": "./syntaxes/cshift.tmLanguage.json"
+			}
+		],
+		"snippets": [
+			{
+				"language": "cshift",
+				"path": "./snippets/cshift.json"
+			}
+		]
+	}
+}

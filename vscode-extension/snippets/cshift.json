@@ -1,0 +1,147 @@
+{
+	"Main function": {
+		"prefix": "main",
+		"body": ["int Main()", "{", "\t$0", "\treturn 0;", "}"],
+		"description": "Program entry point"
+	},
+	"Main returning Error<int>": {
+		"prefix": "mainerr",
+		"body": ["Error<int> Main()", "{", "\t$0", "\treturn 0;", "}"],
+		"description": "Entry point that may fail with an error"
+	},
+	"Struct": {
+		"prefix": "struct",
+		"body": ["struct ${1:Name}", "{", "\t$0", "}"],
+		"description": "Struct declaration"
+	},
+	"Struct with base and interface": {
+		"prefix": "structi",
+		"body": ["struct ${1:Name} : ${2:IDisposable}", "{", "\t$0", "}"],
+		"description": "Struct implementing an interface"
+	},
+	"Generic struct": {
+		"prefix": "structg",
+		"body": ["struct ${1:Name}<${2:T}>", "{", "\t${2:T} ${3:Value};", "\t$0", "}"],
+		"description": "Generic struct"
+	},
+	"Interface": {
+		"prefix": "interface",
+		"body": ["interface ${1:IName}", "{", "\t${2:void} ${3:Method}($4);", "}"],
+		"description": "Interface declaration"
+	},
+	"Enum": {
+		"prefix": "enum",
+		"body": ["enum ${1:Name} : ${2:uint8}", "{", "\t${3:First},", "\t${4:Second}", "}"],
+		"description": "Enum with explicit base type"
+	},
+	"Function": {
+		"prefix": "fn",
+		"body": ["${1:void} ${2:Name}($3)", "{", "\t$0", "}"],
+		"description": "Function"
+	},
+	"Generic function with constraint": {
+		"prefix": "fng",
+		"body": ["${1:T} ${2:Name}<${1:T}>(${1:T} ${3:a}, ${1:T} ${4:b})", "\twhere ${1:T} : ${5:IComparable<${1:T}>}", "{", "\t$0", "}"],
+		"description": "Generic function with a constraint"
+	},
+	"Function returning Error<T>": {
+		"prefix": "fnerr",
+		"body": ["Error<${1:int}> ${2:Name}($3)", "{", "\t$0", "}"],
+		"description": "Function that can fail"
+	},
+	"Function returning Optional<T>": {
+		"prefix": "fnopt",
+		"body": ["Optional<${1:int}> ${2:Name}($3)", "{", "\t$0", "\treturn null;", "}"],
+		"description": "Function that may return no value"
+	},
+	"Extern C function": {
+		"prefix": "extern",
+		"body": "extern \"C\" ${1:int} ${2:name}(${3});",
+		"description": "Import a C function"
+	},
+	"if": {
+		"prefix": "if",
+		"body": ["if (${1:condition})", "{", "\t$0", "}"]
+	},
+	"if / else": {
+		"prefix": "ifelse",
+		"body": ["if (${1:condition})", "{", "\t$2", "}", "else", "{", "\t$0", "}"]
+	},
+	"if is (pattern)": {
+		"prefix": "ifis",
+		"body": ["if (${1:result} is ${2:int} ${3:value})", "{", "\t$0", "}"],
+		"description": "Test an Error<T>/Optional<T> and bind its value"
+	},
+	"for": {
+		"prefix": "for",
+		"body": ["for (var ${1:i} = 0; ${1:i} < ${2:count}; ${1:i} += 1)", "{", "\t$0", "}"],
+		"description": "for loop (there is no ++ operator)"
+	},
+	"foreach": {
+		"prefix": "foreach",
+		"body": ["foreach (var ${1:item} in ${2:items})", "{", "\t$0", "}"]
+	},
+	"while": {
+		"prefix": "while",
+		"body": ["while (${1:condition})", "{", "\t$0", "}"]
+	},
+	"do while": {
+		"prefix": "do",
+		"body": ["do", "{", "\t$0", "}", "while (${1:condition});"]
+	},
+	"switch": {
+		"prefix": "switch",
+		"body": ["switch (${1:value})", "{", "\tcase ${2:0}:", "\t\t$0", "\t\tbreak;", "", "\tdefault:", "\t\tbreak;", "}"]
+	},
+	"try": {
+		"prefix": "try",
+		"body": "var ${1:value} = try ${2:Call}($3);",
+		"description": "Propagate an error to the caller"
+	},
+	"using declaration": {
+		"prefix": "using",
+		"body": "using ${1:resource} = ${2:Open}($3);",
+		"description": "Dispose at the end of the scope"
+	},
+	"using block": {
+		"prefix": "usingb",
+		"body": ["using (var ${1:resource} = ${2:Open}($3))", "{", "\t$0", "}"]
+	},
+	"unsafe block": {
+		"prefix": "unsafe",
+		"body": ["unsafe", "{", "\t$0", "}"]
+	},
+	"unchecked block": {
+		"prefix": "unchecked",
+		"body": ["unchecked", "{", "\t$0", "}"],
+		"description": "Integer arithmetic without overflow checks"
+	},
+	"Struct initializer": {
+		"prefix": "init",
+		"body": ["${1:Type}", "{", "\t${2:Field} = ${3:value}", "}"]
+	},
+	"Console.WriteLine": {
+		"prefix": "cw",
+		"body": "Console.WriteLine($0);"
+	},
+	"List": {
+		"prefix": "list",
+		"body": "var ${1:items} = List<${2:int}>.Create();"
+	},
+	"Dictionary": {
+		"prefix": "dict",
+		"body": "var ${1:map} = Dictionary<${2:string}, ${3:int}>.Create();"
+	},
+	"File read text": {
+		"prefix": "readfile",
+		"body": "var ${1:text} = try File.ReadAllText(${2:path});"
+	},
+	"File write text": {
+		"prefix": "writefile",
+		"body": "try File.WriteAllText(${1:path}, ${2:text});"
+	},
+	"Namespace": {
+		"prefix": "namespace",
+		"body": "namespace ${1:MyApp};"
+	}
+}

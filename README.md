@@ -60,6 +60,11 @@ cmake --build build
 tests/run_tests.sh
 ```
 
+## VS Code
+
+Im Ordner `vscode-extension/` liegt eine Extension für `.csh`-Dateien (Syntax-Highlighting, Snippets, Klammern/Kommentare) – Installation siehe
+[vscode-extension/README.md](vscode-extension/README.md).
+
 ## Benutzung
 
 ```
