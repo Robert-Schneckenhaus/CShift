@@ -51,7 +51,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install MSYS2 CLANG64 toolchain
         uses: msys2/setup-msys2@v2
@@ -105,7 +105,7 @@ jobs:
           7z a -tzip -mx=6 "$name.zip" "$name" | Select-Object -Last 3
           Pop-Location
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-x64
           path: dist/cshift-${{ needs.version.outputs.version }}-windows-x64.zip
@@ -121,7 +121,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       LLVM_PREFIX: /usr/lib/llvm-22 # keep in sync with LLVM_VERSION above
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install LLVM ${{ env.LLVM_VERSION }}, CMake and build dependencies
         run: |
@@ -161,7 +161,7 @@ jobs:
           XZ_OPT="-T0 -6" tar -cJf "cshift-$VERSION-linux-x64.tar.xz" "cshift-$VERSION-linux-x64"
           ls -lh *.tar.xz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: linux-x64
           path: dist/cshift-${{ needs.version.outputs.version }}-linux-x64.tar.xz
@@ -178,7 +178,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: assets
           merge-multiple: true

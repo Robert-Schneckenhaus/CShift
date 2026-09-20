@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(CShift LANGUAGES CXX)
+# C is enabled because LLVM's CMake package runs C-based feature checks (e.g. for libedit) while it is loaded.
+project(CShift LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

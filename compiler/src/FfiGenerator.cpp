@@ -71,10 +71,16 @@ namespace
     X(clang_defaultDiagnosticDisplayOptions) X(clang_disposeDiagnostic) X(clang_getClangVersion)                         \
     X(clang_getIncludedFile) X(clang_getArrayElementType)
 
+// Function pointer types with their own names: a member that is named like a global function must not refer to
+// that function in its own declaration (GCC reports "changes meaning").
+#define DECLARE_TYPE(name) using name##_fn = decltype(&name);
+CLANG_FUNCTIONS(DECLARE_TYPE)
+#undef DECLARE_TYPE
+
 struct ClangApi
 {
     llvm::sys::DynamicLibrary library;
-#define DECLARE(name) decltype(&name) name = nullptr;
+#define DECLARE(name) name##_fn name = nullptr;
     CLANG_FUNCTIONS(DECLARE)
 #undef DECLARE
 
@@ -128,7 +134,7 @@ struct ClangApi
 
         std::string missing;
 #define LOAD(name)                                                                                                     \
-    name = reinterpret_cast<decltype(name)>(library.getAddressOfSymbol(#name));                                        \
+    name = reinterpret_cast<name##_fn>(library.getAddressOfSymbol(#name));                                        \
     if (!name)                                                                                                         \
         missing += std::string(missing.empty() ? "" : ", ") + #name;
         CLANG_FUNCTIONS(LOAD)
