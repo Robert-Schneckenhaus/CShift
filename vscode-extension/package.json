@@ -2,7 +2,7 @@
 	"name": "cshift",
 	"displayName": "CShift",
 	"description": "Syntax highlighting, snippets and language settings for CShift (.csh), a native C#-like systems language.",
-	"version": "0.2.0",
+	"version": "0.3.1",
 	"publisher": "pyrdacor",
 	"license": "UNLICENSED",
 	"repository": {

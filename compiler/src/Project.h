@@ -28,7 +28,11 @@ struct Project
     std::string output;               // output path (without the platform's file extension)
     int optimize = 2;
     bool hasOptimize = false;
-    std::vector<std::string> links; // libraries for the linker
+    std::vector<std::string> links;     // library names for the linker (-l<name>)
+    std::vector<std::string> linkFiles; // library/object files for the linker (from "links" entries that are files)
+    std::vector<std::string> includePaths; // C header search paths (-I), relative to the project file
+    std::vector<std::string> libraryPaths; // linker search paths (-L)
+    std::vector<std::string> defines;      // macros for parsing C headers (-D)
     std::string target;             // target triple, empty = host
 };
 

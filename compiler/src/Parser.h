@@ -8,6 +8,7 @@ class Parser
 public:
     Parser(std::vector<Token> tokens, Diagnostics& diag);
     std::unique_ptr<CompilationUnit> parseUnit(bool isPrelude);
+    TypeRefPtr parseStandaloneType();
 
 private:
     // Token helpers

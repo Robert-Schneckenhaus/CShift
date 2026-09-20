@@ -711,3 +711,28 @@ llvm::Function* CodeGen::copyFn(Type* arrayType)
     b.CreateRetVoid();
     return f;
 }
+
+// string __cs_from_cstr(const char*): copies a NUL-terminated C string into a new string (null stays null).
+llvm::Function* CodeGen::fromCStrFn()
+{
+    auto it = helpers.find("__cs_from_cstr");
+    if (it != helpers.end())
+        return it->second;
+
+    auto* ptrTy = llvm::PointerType::getUnqual(ctx);
+    llvm::Function* f = makeHelper("__cs_from_cstr", ptrTy, {ptrTy});
+    llvm::IRBuilder<> b(llvm::BasicBlock::Create(ctx, "entry", f));
+    auto* copyBB = llvm::BasicBlock::Create(ctx, "copy", f);
+    auto* nullBB = llvm::BasicBlock::Create(ctx, "null", f);
+    b.CreateCondBr(b.CreateIsNull(f->getArg(0)), nullBB, copyBB);
+    b.SetInsertPoint(nullBB);
+    b.CreateRet(llvm::ConstantPointerNull::get(ptrTy));
+
+    b.SetInsertPoint(copyBB);
+    llvm::FunctionCallee strlenFn = cFunction("strlen", sizeTy(), {ptrTy});
+    llvm::Value* len = b.CreateZExtOrTrunc(b.CreateCall(strlenFn, {f->getArg(0)}), b.getInt64Ty());
+    llvm::Value* r = b.CreateCall(allocFn(), {b.CreateAdd(len, b.getInt64(1)), len});
+    b.CreateMemCpy(b.CreateConstGEP1_64(b.getInt8Ty(), r, 16), llvm::MaybeAlign(1), f->getArg(0), llvm::MaybeAlign(1), len);
+    b.CreateRet(r);
+    return f;
+}

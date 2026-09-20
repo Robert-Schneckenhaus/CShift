@@ -401,6 +401,9 @@ struct Param
     TypeRefPtr type;
     std::string name;
     RefKind refKind = RefKind::None;
+    // FFI marshalling (set for imported C functions):
+    bool nullable = false; // a ref/const ref/string parameter that also accepts null (a C pointer that may be NULL)
+    bool cstring = false;  // string parameter that is passed as a NUL-terminated char* (const char*)
 };
 
 struct Constraint
@@ -423,6 +426,10 @@ struct FuncDecl
     bool isExtern = false;
     bool isStatic = false;
     bool isVariadic = false;
+    // FFI (imported C functions):
+    std::string symbol;         // C symbol to call if it differs from the name (e.g. a generated shim)
+    bool retCString = false;    // returns a const char* that is copied into a string
+    bool retOut = false;        // the C symbol returns the value through an extra trailing pointer parameter
     FileContext* file = nullptr;
     StructDecl* owner = nullptr; // set for struct methods
 };
@@ -432,6 +439,7 @@ struct FieldDecl
     SourceLoc loc;
     TypeRefPtr type;
     std::string name;
+    int64_t offset = -1; // byte offset for structs with an explicit (C) layout
 };
 
 struct StructDecl
@@ -443,6 +451,11 @@ struct StructDecl
     std::vector<Constraint> constraints;
     std::vector<FieldDecl> fields;
     std::vector<std::unique_ptr<FuncDecl>> methods;
+    // Structs imported from C headers have an exact layout: fields at fixed offsets, padding in between.
+    bool explicitLayout = false;
+    uint64_t layoutSize = 0;
+    uint64_t layoutAlign = 1;
+    bool opaque = false; // incomplete C type: only usable through pointers
     FileContext* file = nullptr;
 };
 
@@ -481,9 +494,18 @@ struct ConstDecl
     FileContext* file = nullptr;
 };
 
+// using Name from "header.h";   -- imports the declarations of a C header as namespace Name
+struct ImportDecl
+{
+    SourceLoc loc;
+    std::string name;
+    std::string header;
+};
+
 struct CompilationUnit
 {
     FileContext file;
+    std::vector<ImportDecl> imports;
     std::vector<std::unique_ptr<ConstDecl>> consts;
     std::vector<std::unique_ptr<StructDecl>> structs;
     std::vector<std::unique_ptr<InterfaceDecl>> interfaces;

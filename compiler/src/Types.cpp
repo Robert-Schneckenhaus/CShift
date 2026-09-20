@@ -19,6 +19,7 @@ TypeContext::TypeContext()
     stringTy = create(TypeKind::String, "string");
     nullTy = create(TypeKind::Null, "null");
     errorLitTy = create(TypeKind::ErrorLit, "error");
+    methodGroupTy = create(TypeKind::MethodGroup, "function");
 
     auto makeInt = [&](const char* name, int bits, bool isSigned) {
         Type* t = create(TypeKind::Int, name);
@@ -39,6 +40,12 @@ TypeContext::TypeContext()
     f32->bits = 32;
     f64 = create(TypeKind::Float, "float64");
     f64->bits = 64;
+
+    // 64 bits until the target is known; CodeGen::setDataLayout sets the real pointer size.
+    nint = makeInt("nint", 64, true);
+    nint->isNativeInt = true;
+    nuint = makeInt("nuint", 64, false);
+    nuint->isNativeInt = true;
 }
 
 Type* TypeContext::intType(int bits, bool isSigned)
@@ -93,5 +100,27 @@ Type* TypeContext::optionalOf(Type* elem)
     Type* t = create(TypeKind::Optional, "Optional<" + elem->name + ">");
     t->elem = elem;
     optionals[elem] = t;
+    return t;
+}
+
+Type* TypeContext::functionOf(const std::vector<Type*>& params, Type* ret)
+{
+    std::string name = ret->isVoid() ? "Action" : "Func";
+    if (!params.empty() || !ret->isVoid())
+    {
+        name += "<";
+        for (size_t i = 0; i < params.size(); i += 1)
+            name += (i ? ", " : "") + params[i]->name;
+        if (!ret->isVoid())
+            name += (params.empty() ? "" : ", ") + ret->name;
+        name += ">";
+    }
+    auto it = functions.find(name);
+    if (it != functions.end())
+        return it->second;
+    Type* t = create(TypeKind::Function, name);
+    t->elem = ret;
+    t->params = params;
+    functions[name] = t;
     return t;
 }

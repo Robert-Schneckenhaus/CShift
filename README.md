@@ -80,6 +80,10 @@ cshiftc [Optionen] datei.csh [weitere.csh ...]
   --target <triple>  Zielplattform (Standard: Host)
   --cc <programm>    Linker-Treiber (Standard: clang)
   -l<name>           zusätzliche Bibliothek linken
+  -L<dir>            Suchpfad des Linkers
+  -I<dir>            Suchpfad für C-Header (using X from "header.h")
+  -D<name>[=wert]    Makro beim Parsen von C-Headern
+  datei.a, datei.o   Bibliotheken/Objektdateien werden mitgelinkt
   --run              Programm nach dem Bauen ausführen
   --arc-stats        Debug: Anzahl Heap-Allokationen/-Freigaben beim Programmende ausgeben
 ```
@@ -114,7 +118,9 @@ cshiftc build           # nur bauen  ->  bin/<name>[.exe]
 }
 ```
 
-Ein fertiges Beispiel liegt in [demo/](demo/) (Hello World, mit VS-Code-Tasks).
+Ein fertiges Beispiel liegt in [demo/](demo/): ein MiniFB-Fenster mit animiertem Plasma (C-Header-Import und Callbacks, mit VS-Code-Tasks).
+
+C-Bibliotheken bindet man ohne handgeschriebene Deklarationen ein: `using Zlib from "zlib.h";` importiert den Header als Namensraum (siehe [FFI.md](FFI.md)); `includePaths`, `defines`, `libraryPaths` und `links` (auch Dateien wie `libminifb.a`) stehen in der `cshift.json`.
 
 ## Sprachstand
 
@@ -135,12 +141,14 @@ Umgesetzt aus dem Konzept:
 | `Error<T>` / `Optional<T>`, Bool-Semantik, `is T x`, `switch`-Pattern, `try`, Verschachtelungsverbot | ✔ |
 | `IDisposable` + `using` (Deklaration und Block; auch bei `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (Wert, schreibgeschützter Alias, Alias) | ✔ |
-| Primitive Typen mit Aliasen (`int`=`int32`, …), `bool`, `char` (= `uint8`) | ✔ |
+| Primitive Typen mit Aliasen (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (Zeigergröße) | ✔ |
 | Geprüfte Integer-Arithmetik (Überlauf, Division durch 0, Array-/String-Grenzen → Panic), `unchecked` | ✔ |
 | Operatoren und Rangfolge wie C# (ohne `++`/`--`), `?:`, Casts, `sizeof` | ✔ |
 | `if`/`while`/`do`/`for`/`foreach` (Arrays, Strings)/`switch`/`break`/`continue`/`return` | ✔ |
 | Funktionsüberladung | ✔ |
 | C-FFI: `extern "C"`, variadische Funktionen (`printf`), `link "lib"`, Pointer | ✔ |
+| Funktionszeiger `Action<…>`/`Func<…,R>` (Funktionsnamen, ohne Closures), C-kompatibel | ✔ (Erweiterung) |
+| C-Header importieren: `using Name from "header.h";` (libclang, `.ffi`-Cache), `nint`/`nuint`, Structs by value | ✔ (siehe [FFI.md](FFI.md)) |
 | `unsafe`: Pointer, `&`, `*`, Pointer-Arithmetik, `Memory.Allocate/Free` | ✔ |
 | Einstiegspunkt: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
 | `Error<void>` (Ergebnis ohne Wert; `return;` oder Funktionsende = Erfolg) | ✔ (Erweiterung) |
@@ -170,6 +178,15 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
   Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).
 * **`foreach` über Structs:** funktioniert für jeden Struct mit `int Count()` und `T Get(int index)` (z. B. `List<T>`).
 * **Namensauflösung** wie in C#: Namespaces der eigenen Datei und der globale Namespace gehen `using`-Namespaces vor.
+* **Funktionszeiger:** `Action`, `Action<T1, …>` (ohne Ergebnis) und `Func<R>`, `Func<T1, …, R>` (der letzte Typ ist das Ergebnis) sind
+  eingebaute Typen wie in C#, bis zu 8 Parameter. Es sind reine Zeiger auf Funktionen, **ohne Closures/Lambdas**: zuweisen kann man
+  den Namen einer freien Funktion oder einer `static`-Methode (`Func<int, int> f = Square;`, `var g = Add;`, `Handlers.Triple`). Die
+  Signatur muss exakt passen; bei Überladungen und generischen Funktionen (`Identity<int>` oder aus dem Zieltyp abgeleitet) wählt der
+  Zieltyp aus. Aufruf mit `f(x)`, `obj.Callback(x)` (Feld), `table[i](x)` oder `f.Invoke(x)`. `null` ist erlaubt; ein Aufruf von `null`
+  ist ein Panic. Vergleich mit `==`/`!=`. Funktionszeiger sind normale Werte (Felder, Arrays, Parameter, Rückgabewerte, Typargumente).
+  `ref`-Parameter gibt es nicht; Instanzmethoden können nicht zugewiesen werden. Sie sind C-kompatibel: an C übergeben (siehe
+  [FFI.md](FFI.md)) ruft C die CShift-Funktion direkt auf; ein von C gelieferter Funktionszeiger lässt sich direkt aufrufen.
+  `(void*)`-Casts gehen in `unsafe`.
 * Erlaubte Zusatzsyntax: `cond ? a : b`, `new int[3][]` (Jagged Arrays), `new T[] { ... }`, `sizeof(T)`.
 
 ## Standardbibliothek
@@ -246,6 +263,8 @@ Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Para
 | `stdlib/*.csh` | Standardbibliothek in CShift; wird von CMake als Byte-Arrays in den Compiler eingebettet (`StdlibData.cpp`) |
 | `compiler/src/main.cpp` | Driver: Kommandozeile, Optimierung, Objektdatei, Linken |
 | `compiler/src/Project.*` | Projektdatei `cshift.json` lesen, `cshiftc new` |
+| `compiler/src/Ffi.h`, `FfiImport.cpp` | `using X from "…"`: `.ffi`-Cache (Aktualität per Hash), Deklarationen aus der `.ffi`-Datei erzeugen |
+| `compiler/src/FfiGenerator.cpp` | C-Header mit libclang (zur Laufzeit geladen) in eine `.ffi`-Datei und C-Wrapper für Struct-Werte übersetzen |
 
 Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
 macht die Monomorphisierung einfach (der Körper einer generischen Funktion wird pro Typkombination erneut durchlaufen).
@@ -266,13 +285,14 @@ tests/run_tests.sh [pfad/zu/cshiftc] [-O0..-O3]      # bzw. .\build.ps1 -Test
 * `tests/cases/*.csh`: kleine Programme mit Erwartungen in Kommentaren – Compilerfehler (`err_*`), Laufzeit-Panics (`panic_*`),
   Programmverhalten (`main_*`), ARC-Stresstest, Sonderfälle (`misc_features`, `builtins`, `error_void`, `const_default`) und die
   Tests der Standardbibliothek (`stdlib_*`; `stdlib_file` legt Dateien im temporären Verzeichnis an).
+* `tests/projects/ffi`: C-Bibliothek (`native/geo.c`, vom Test-Runner mit clang übersetzt) über `using Geo from "geo.h"`: Zeiger, Strings, Structs by value, opake Handles, Callbacks in beide Richtungen; dazu `native_int`, `function_pointers` (+ `err_function_*`, `panic_null_function`) und Importfehler.
 
 ## Bekannte Einschränkungen / nächste Schritte
 
 * Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `HashSet`/`Stack`/`Queue`, keine weiteren Encodings,
   keine Datums-/Zeitfunktionen, keine Formatierung (`Format`, Interpolation). Indexer (`list[i]`) gibt es nicht, es heißt `Get`/`Set`.
-* Interfaces als Werttyp (dynamischer Aufruf), Funktionszeiger/Callbacks für die FFI, Lambdas, globale *Variablen* (Konstanten gehen),
-  `Main(string[] args)`, Struct-Übergabe *by value* an C-Funktionen (ABI-Coercion) fehlen noch.
+* Interfaces als Werttyp (dynamischer Aufruf), Lambdas/Closures, globale *Variablen* (Konstanten gehen),
+  `Main(string[] args)`, Struct-Übergabe *by value* bei handgeschriebenem `extern "C"` fehlen noch (über `using X from "header.h"` funktioniert es). Grenzen der Header-Importe: [FFI.md](FFI.md).
 * Referenzzähler sind nicht atomar (kein Multithreading).
 * Generische Körper werden erst bei der Instanziierung geprüft (wie C++-Templates); unbenutzte generische Funktionen werden nicht analysiert.
 * Keine Debug-Informationen (DWARF/PDB).

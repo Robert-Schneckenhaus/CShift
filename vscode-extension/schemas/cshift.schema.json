@@ -43,7 +43,22 @@
 		"links": {
 			"type": "array",
 			"items": { "type": "string" },
-			"description": "Libraries passed to the linker (like -l<name>), in addition to 'link \"name\";' directives in the sources."
+			"description": "Libraries passed to the linker, in addition to 'link \"name\";' directives in the sources. A plain name is a library (-l<name>); an entry with a path or a file extension (.a .o .obj .lib .so .dylib .dll) is a file linked directly, relative to this file."
+		},
+		"includePaths": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Search paths for C headers (like -I), relative to this file. Used by 'using Name from \"header.h\";'."
+		},
+		"defines": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Macros defined while parsing C headers (like -D), e.g. \"NAME\" or \"NAME=value\"."
+		},
+		"libraryPaths": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Search paths for the linker (like -L), relative to this file."
 		},
 		"target": {
 			"type": "string",

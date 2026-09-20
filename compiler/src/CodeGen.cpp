@@ -1,5 +1,7 @@
 #include "CodeGen.h"
 
+#include <algorithm>
+
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
@@ -13,6 +15,8 @@ CodeGen::CodeGen(Diagnostics& diag, const std::string& moduleName)
 void CodeGen::setDataLayout(const llvm::DataLayout& dl)
 {
     mod->setDataLayout(dl);
+    // nint/nuint have the size of a pointer on the target.
+    types.nint->bits = types.nuint->bits = (int)dl.getPointerSizeInBits();
 }
 
 void CodeGen::setTargetTriple(const std::string& triple)
@@ -157,7 +161,8 @@ Type* CodeGen::primitiveType(const std::string& name)
     static const std::unordered_map<std::string, int> ids = {
         {"int", 0},    {"int32", 0},  {"uint", 1},   {"uint32", 1}, {"float", 2},  {"float32", 2},
         {"double", 3}, {"float64", 3}, {"int8", 4},  {"int16", 5},  {"int64", 6},  {"uint8", 7},
-        {"uint16", 8}, {"uint64", 9}, {"bool", 10},  {"char", 11},  {"string", 12}, {"void", 13}};
+        {"uint16", 8}, {"uint64", 9}, {"bool", 10},  {"char", 11},  {"string", 12}, {"void", 13},
+        {"nint", 14},  {"nuint", 15}};
     auto it = ids.find(name);
     if (it == ids.end())
         return nullptr;
@@ -177,6 +182,8 @@ Type* CodeGen::primitiveType(const std::string& name)
     case 10: return t.boolTy;
     case 11: return t.charTy;
     case 12: return t.stringTy;
+    case 14: return t.nint;
+    case 15: return t.nuint;
     default: return t.voidTy;
     }
 }
@@ -235,6 +242,8 @@ Type* CodeGen::resolveType(const TypeRef& ref, FileContext* file, const TypeEnv*
             err(ref.loc, dotted + "<void> is not supported");
         return dotted == "Error" ? types.errorOf(inner) : types.optionalOf(inner);
     }
+    if (!entry && ref.path.size() == 1 && (dotted == "Action" || dotted == "Func"))
+        return resolveFunctionType(ref, dotted, file, env);
     if (!entry)
         err(ref.loc, "unknown type '" + ref.toString() + "'");
 
@@ -252,6 +261,36 @@ Type* CodeGen::resolveType(const TypeRef& ref, FileContext* file, const TypeEnv*
         return getEnumType(entry->enumDecl);
     }
     return nullptr;
+}
+
+// Action, Action<T1, ...> (no result) and Func<R>, Func<T1, ..., R> (last argument is the result) are pointers to
+// functions, like delegates in C# but without closures: only named functions can be assigned to them.
+static constexpr size_t kMaxFunctionParams = 8;
+
+Type* CodeGen::resolveFunctionType(const TypeRef& ref, const std::string& dotted, FileContext* file, const TypeEnv* env)
+{
+    bool isAction = dotted == "Action";
+    if (!isAction && ref.args.empty())
+        err(ref.loc, "'Func' needs at least the result type: Func<TResult>, Func<TArg, TResult>, ...");
+    std::vector<Type*> params;
+    Type* ret = types.voidTy;
+    for (size_t i = 0; i < ref.args.size(); i += 1)
+    {
+        Type* t = resolveValueType(*ref.args[i], file, env);
+        if (!isAction && i + 1 == ref.args.size())
+        {
+            if (t->isVoid())
+                err(ref.args[i]->loc, "use 'Action' for functions without a result, not Func<..., void>");
+            ret = t;
+            break;
+        }
+        if (t->isVoid())
+            err(ref.args[i]->loc, "a function parameter cannot have type 'void'");
+        params.push_back(t);
+    }
+    if (params.size() > kMaxFunctionParams)
+        err(ref.loc, "'" + dotted + "' supports at most " + std::to_string(kMaxFunctionParams) + " parameters");
+    return types.functionOf(params, ret);
 }
 
 Type* CodeGen::resolveValueType(const TypeRef& ref, FileContext* file, const TypeEnv* env)
@@ -323,6 +362,78 @@ void CodeGen::layoutStruct(StructInfo& si)
     try
     {
         std::vector<llvm::Type*> elems;
+
+        if (decl->explicitLayout)
+        {
+            // A struct imported from a C header: the layout is exactly the one the C compiler chose. Fields are
+            // placed at their offsets, everything else (arrays, bit fields, union members, padding) is filler.
+            const llvm::DataLayout& dl = mod->getDataLayout();
+            auto* i8 = llvm::Type::getInt8Ty(ctx);
+            si.opaque = decl->opaque;
+
+            std::vector<size_t> order(decl->fields.size());
+            for (size_t i = 0; i < order.size(); i += 1)
+                order[i] = i;
+            std::sort(order.begin(), order.end(),
+                      [&](size_t a, size_t b) { return decl->fields[a].offset < decl->fields[b].offset; });
+
+            struct Placed
+            {
+                size_t field;
+                Type* type;
+                uint64_t size;
+            };
+            std::vector<Placed> placed;
+            uint64_t maxAlign = 1;
+            for (size_t idx : order)
+            {
+                auto& f = decl->fields[idx];
+                Type* ft = resolveValueType(*f.type, decl->file, &si.env);
+                if (ft->isVoid())
+                    err(f.loc, "field '" + f.name + "' cannot have type 'void'");
+                llvm::Type* lt = llvmTypeOf(ft);
+                uint64_t align = dl.getABITypeAlign(lt).value();
+                if ((uint64_t)f.offset % align != 0)
+                    err(decl->loc, "struct '" + decl->name + "': field '" + f.name + "' is not naturally aligned (packed structs are not supported)");
+                maxAlign = std::max(maxAlign, align);
+                placed.push_back({idx, ft, dl.getTypeAllocSize(lt).getFixedValue()});
+            }
+
+            // An alignment that the fields do not imply (alignas, unions) comes from a zero-sized array in front.
+            if (decl->layoutAlign > maxAlign)
+                elems.push_back(llvm::ArrayType::get(llvm::Type::getIntNTy(ctx, (unsigned)(decl->layoutAlign * 8)), 0));
+
+            uint64_t pos = 0;
+            for (const Placed& p : placed)
+            {
+                auto& f = decl->fields[p.field];
+                uint64_t offset = (uint64_t)f.offset;
+                if (offset < pos)
+                    err(decl->loc, "struct '" + decl->name + "': field '" + f.name + "' overlaps the previous field");
+                if (offset > pos)
+                    elems.push_back(llvm::ArrayType::get(i8, offset - pos));
+
+                FieldInfo fi;
+                fi.name = f.name;
+                fi.type = p.type;
+                fi.index = (unsigned)elems.size();
+                elems.push_back(llvmTypeOf(p.type));
+                si.fields.push_back(fi);
+                pos = offset + p.size;
+            }
+            if (pos > decl->layoutSize)
+                err(decl->loc, "struct '" + decl->name + "': the fields are larger than the struct");
+            if (pos < decl->layoutSize)
+                elems.push_back(llvm::ArrayType::get(i8, decl->layoutSize - pos));
+
+            si.llvmType->setBody(elems);
+            if (!decl->opaque && dl.getTypeAllocSize(si.llvmType).getFixedValue() != decl->layoutSize)
+                err(decl->loc, "struct '" + decl->name + "': the layout does not match the C layout (size " +
+                                   std::to_string(dl.getTypeAllocSize(si.llvmType).getFixedValue()) + " instead of " +
+                                   std::to_string(decl->layoutSize) + ")");
+            si.layoutInProgress = false;
+            return;
+        }
 
         for (size_t i = 0; i < decl->bases.size(); i += 1)
         {
@@ -635,6 +746,8 @@ llvm::Type* CodeGen::llvmTypeOf(Type* t)
     case TypeKind::String:
     case TypeKind::Pointer:
     case TypeKind::Array:
+    case TypeKind::Function:
+    case TypeKind::MethodGroup:
     case TypeKind::Null: r = llvm::PointerType::getUnqual(ctx); break;
     case TypeKind::Enum: r = llvm::Type::getIntNTy(ctx, t->bits); break;
     case TypeKind::Struct:
@@ -822,6 +935,10 @@ void CodeGen::ensureSignature(FuncInfo& fi)
             err(p.loc, "invalid 'ref' parameter");
         fi.paramTypes.push_back(t);
         fi.paramRefs.push_back(p.refKind);
+        fi.paramNullable.push_back(p.nullable);
+        fi.paramCString.push_back(p.cstring);
+        if (p.cstring && !t->isString())
+            err(p.loc, "internal error: a C string parameter must be a string");
     }
     fi.ret = resolveValueType(*d->ret, fi.file, &fi.env);
     fi.signatureResolved = true;
@@ -840,12 +957,15 @@ llvm::Function* CodeGen::declareFunction(FuncInfo& fi)
     for (size_t i = 0; i < fi.paramTypes.size(); i += 1)
         params.push_back(fi.paramRefs[i] != RefKind::None ? (llvm::Type*)llvm::PointerType::getUnqual(ctx)
                                                           : llvmTypeOf(fi.paramTypes[i]));
-    auto* fty = llvm::FunctionType::get(llvmTypeOf(fi.ret), params, d->isVariadic);
+    // A shim returns a struct through an extra trailing pointer parameter and itself returns void.
+    if (d->retOut)
+        params.push_back(llvm::PointerType::getUnqual(ctx));
+    auto* fty = llvm::FunctionType::get(d->retOut ? llvm::Type::getVoidTy(ctx) : llvmTypeOf(fi.ret), params, d->isVariadic);
 
     std::string name;
     if (d->isExtern)
     {
-        name = d->name;
+        name = d->symbol.empty() ? d->name : d->symbol;
     }
     else
     {
@@ -859,11 +979,14 @@ llvm::Function* CodeGen::declareFunction(FuncInfo& fi)
     if (d->isExtern)
     {
         // Aggregates are not passed according to the C ABI yet, so only scalars and pointers are allowed.
-        for (Type* t : fi.paramTypes)
-            if (t->isStruct() || t->isResultLike())
+        for (size_t i = 0; i < fi.paramTypes.size(); i += 1)
+        {
+            Type* t = fi.paramTypes[i];
+            if (fi.paramRefs[i] == RefKind::None && (t->isStruct() || t->isResultLike()))
                 err(d->loc, "extern function '" + d->name + "': passing '" + t->name +
                                 "' by value to C is not supported, pass a pointer instead");
-        if (fi.ret->isStruct() || fi.ret->isResultLike())
+        }
+        if (!d->retOut && (fi.ret->isStruct() || fi.ret->isResultLike()))
             err(d->loc, "extern function '" + d->name + "': returning '" + fi.ret->name +
                             "' by value from C is not supported, use a pointer instead");
         if (llvm::Function* existing = mod->getFunction(name))
@@ -881,20 +1004,51 @@ llvm::Function* CodeGen::declareFunction(FuncInfo& fi)
 
     fi.fn = llvm::Function::Create(fty, d->isExtern ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage,
                                    name, mod.get());
-    if (d->isExtern)
+    // Small integers and bool are passed extended (C ABI). This matters for functions that C calls (callbacks) and
+    // for C functions that CShift calls.
+    if (!d->retOut && !fi.hasThis)
     {
-        // C ABI: bool is passed as a zero-extended byte.
-        unsigned argIndex = 0;
-        for (Type* t : fi.paramTypes)
-        {
-            if (t->isBool())
-                fi.fn->addParamAttr(argIndex, llvm::Attribute::ZExt);
-            argIndex += 1;
-        }
-        if (fi.ret->isBool())
-            fi.fn->addRetAttr(llvm::Attribute::ZExt);
+        std::vector<bool> isRef;
+        for (RefKind r : fi.paramRefs)
+            isRef.push_back(r != RefKind::None);
+        addAbiAttributes(fi.fn, nullptr, fi.paramTypes, isRef, fi.ret);
     }
     return fi.fn;
+}
+
+// Attributes that tell LLVM how small integer parameters/results are extended. Either 'fn' (a declaration or
+// definition) or 'call' (an indirect call) is given. Parameter i is LLVM parameter i, so this is only used for
+// functions without 'this' and without a trailing result pointer.
+void CodeGen::addAbiAttributes(llvm::Function* fn, llvm::CallInst* call, const std::vector<Type*>& params,
+                               const std::vector<bool>& isRef, Type* ret)
+{
+    auto extension = [&](Type* t) -> llvm::Attribute::AttrKind {
+        if (t->isBool())
+            return llvm::Attribute::ZExt;
+        if ((t->isIntegral() || t->isEnum()) && t->bits < 32)
+            return (t->isSigned && !t->isChar()) ? llvm::Attribute::SExt : llvm::Attribute::ZExt;
+        return llvm::Attribute::None;
+    };
+    for (size_t i = 0; i < params.size(); i += 1)
+    {
+        if (isRef[i])
+            continue;
+        llvm::Attribute::AttrKind k = extension(params[i]);
+        if (k == llvm::Attribute::None)
+            continue;
+        if (fn)
+            fn->addParamAttr((unsigned)i, k);
+        else
+            call->addParamAttr((unsigned)i, k);
+    }
+    llvm::Attribute::AttrKind k = extension(ret);
+    if (k != llvm::Attribute::None)
+    {
+        if (fn)
+            fn->addRetAttr(k);
+        else
+            call->addRetAttr(k);
+    }
 }
 
 void CodeGen::useFunction(FuncInfo& fi)

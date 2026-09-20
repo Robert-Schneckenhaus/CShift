@@ -42,6 +42,8 @@ add_executable(cshiftc
     ${STDLIB_DATA_CPP}
     compiler/src/main.cpp
     compiler/src/Project.cpp
+    compiler/src/FfiImport.cpp
+    compiler/src/FfiGenerator.cpp
     compiler/src/Types.cpp
     compiler/src/Lexer.cpp
     compiler/src/Parser.cpp
@@ -53,6 +55,16 @@ add_executable(cshiftc
 )
 
 target_include_directories(cshiftc PRIVATE compiler/src)
+
+# C header import (using X from "header.h") needs libclang's C API header; libclang itself is loaded at run time.
+find_path(CLANG_C_INCLUDE_DIR clang-c/Index.h HINTS ${LLVM_INCLUDE_DIRS})
+if(CLANG_C_INCLUDE_DIR)
+    message(STATUS "libclang header found: FFI header import enabled")
+    target_include_directories(cshiftc PRIVATE ${CLANG_C_INCLUDE_DIR})
+    target_compile_definitions(cshiftc PRIVATE CSHIFT_HAVE_LIBCLANG)
+else()
+    message(WARNING "clang-c/Index.h not found: FFI header import will be disabled (.ffi files still work)")
+endif()
 
 # Standalone executable: LLVM and the C++ runtime are linked statically, so cshiftc.exe runs from any shell
 # without the MSYS2 DLLs in PATH (only 'clang' is still needed at run time for the final link step).

@@ -1,0 +1,7 @@
+{
+	"name": "ffi",
+	"sources": ["src"],
+	"output": "bin/ffi",
+	"optimize": 1,
+	"links": ["native/geo.o"]
+}

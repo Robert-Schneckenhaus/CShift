@@ -103,6 +103,11 @@
 		"body": "using ${1:resource} = ${2:Open}($3);",
 		"description": "Dispose at the end of the scope"
 	},
+	"import C header": {
+		"prefix": "usingfrom",
+		"body": "using ${1:Name} from \"${2:header.h}\";",
+		"description": "Import the declarations of a C header as a namespace (FFI)"
+	},
 	"using block": {
 		"prefix": "usingb",
 		"body": ["using (var ${1:resource} = ${2:Open}($3))", "{", "\t$0", "}"]

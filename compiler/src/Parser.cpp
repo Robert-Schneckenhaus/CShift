@@ -6,7 +6,7 @@ bool isPrimitiveTypeName(const std::string& n)
 {
     static const char* names[] = {"int",   "uint",  "float",  "double", "int8",   "int16", "int32",
                                   "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64",
-                                  "bool",  "char",  "string", "void"};
+                                  "bool",  "char",  "string", "void",   "nint",  "nuint"};
     for (const char* p : names)
         if (n == p)
             return true;
@@ -76,6 +76,14 @@ bool Parser::adjacent(const Token& a, const Token& b) const
 // Declarations
 // ---------------------------------------------------------------------------
 
+// Parses a complete token stream as a single type (used for the type strings of .ffi files).
+TypeRefPtr Parser::parseStandaloneType()
+{
+    TypeRefPtr t = parseType();
+    expect(Tok::Eof, "end of type");
+    return t;
+}
+
 std::unique_ptr<CompilationUnit> Parser::parseUnit(bool isPrelude)
 {
     auto u = std::make_unique<CompilationUnit>();
@@ -135,8 +143,22 @@ void Parser::parseTopLevel(CompilationUnit& u)
     }
     else if (check(Tok::KwUsing))
     {
-        advance();
-        u.file.usings.push_back(parseQualifiedName());
+        SourceLoc loc = advance().loc;
+        std::string name = parseQualifiedName();
+        if (checkIdent("from"))
+        {
+            // using Sqlite3 from "sqlite3.h";  -- imports a C header as namespace Sqlite3
+            advance();
+            ImportDecl import;
+            import.loc = loc;
+            import.name = name;
+            import.header = expect(Tok::StringLit, "header path in quotes after 'from'").text;
+            u.imports.push_back(std::move(import));
+        }
+        else
+        {
+            u.file.usings.push_back(name);
+        }
         expect(Tok::Semi, "';' after using");
     }
     else if (checkIdent("link") && peekTok().kind == Tok::StringLit)
@@ -1059,7 +1081,7 @@ ExprPtr Parser::parsePostfix(ExprPtr expr)
             {
                 size_t save = pos;
                 std::vector<TypeRefPtr> args;
-                if (tryParseTypeArgs(args) && (check(Tok::LParen) || check(Tok::Dot) || check(Tok::LBrace)))
+                if (tryParseTypeArgs(args) && (check(Tok::LParen) || check(Tok::Dot) || check(Tok::LBrace) || check(Tok::Semi) || check(Tok::Comma) || check(Tok::RParen)))
                     m->typeArgs = std::move(args);
                 else
                     pos = save;
@@ -1287,7 +1309,7 @@ ExprPtr Parser::parsePrimary()
         {
             size_t save = pos;
             std::vector<TypeRefPtr> args;
-            if (tryParseTypeArgs(args) && (check(Tok::LParen) || check(Tok::Dot) || check(Tok::LBrace)))
+            if (tryParseTypeArgs(args) && (check(Tok::LParen) || check(Tok::Dot) || check(Tok::LBrace) || check(Tok::Semi) || check(Tok::Comma) || check(Tok::RParen)))
                 n->typeArgs = std::move(args);
             else
                 pos = save;

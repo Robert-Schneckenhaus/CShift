@@ -188,6 +188,11 @@ static int implicitIntCost(Type* from, Type* to)
     }
     bool fromSigned = from->isInt() && from->isSigned;
     bool toSigned = to->isInt() && to->isSigned;
+    // Pointer-sized integers (like C#): int32 and smaller convert to nint/nuint, nint/nuint convert to the 64-bit types.
+    if (to->isNativeInt && !from->isNativeInt && from->bits <= 32)
+        return (toSigned ? (fromSigned || from->bits < 32) : (!fromSigned)) ? 2 : -1;
+    if (from->isNativeInt && !to->isNativeInt && to->bits >= 64 && fromSigned == toSigned)
+        return 2;
     if (to->bits > from->bits && (!fromSigned || toSigned))
         return 2 + (to->bits - from->bits) / 16;
     return -1;
@@ -208,7 +213,9 @@ int CodeGen::conversionCost(const Value& v, Type* to)
             return (v.litIsFloat || to->bits == 64) ? 1 : 2;
     }
     if (from->kind == TypeKind::Null)
-        return (to->isPointer() || to->isString() || to->isArray() || to->isOptional()) ? 1 : -1;
+        return (to->isPointer() || to->isString() || to->isArray() || to->isOptional() || to->isFunction()) ? 1 : -1;
+    if (from->kind == TypeKind::MethodGroup)
+        return to->isFunction() && resolveGroup(v, to, nullptr) ? 1 : -1;
     if (from->kind == TypeKind::ErrorLit)
         return to->isError() ? 1 : -1;
 
@@ -248,6 +255,17 @@ Value CodeGen::convertValue(const Value& v, Type* to, SourceLoc loc)
     Type* from = v.type;
     if (from == to)
         return toRValue(v);
+
+    if (from->kind == TypeKind::MethodGroup)
+    {
+        std::string why;
+        FuncInfo* fi = to->isFunction() ? resolveGroup(v, to, &why) : nullptr;
+        if (!fi)
+            err(loc, to->isFunction() ? "cannot convert function '" + v.groupName + "' to '" + to->name + "': " + why
+                                      : "'" + v.groupName + "' is a function; call it with '()' or assign it to an Action/Func");
+        useFunction(*fi);
+        return Value::rvalue(to, fi->fn);
+    }
 
     auto fail = [&]() -> Value {
         std::string hint;
@@ -418,15 +436,19 @@ Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
     if (constDepth > 32)
         err(c->loc, "constant '" + c->name + "' depends on itself");
     Type* t = resolveValueType(*c->type, c->file, nullptr);
-    if (!(t->isNumeric() || t->isBool() || t->isString()))
-        err(c->loc, "constants can only be numbers, bool, char or string");
+    if (!(t->isNumeric() || t->isBool() || t->isString() || t->isEnum()))
+        err(c->loc, "constants can only be numbers, bool, char, string or enum values");
 
     FileContext* savedFile = fs->func->file;
     fs->func->file = c->file;
     constDepth += 1;
     try
     {
-        Value v = convertValue(emitExpr(c->init.get()), t, c->init->loc);
+        Value v;
+        if (t->isEnum())
+            v = constInt(t, constEvalInt(c->init.get(), nullptr, c->loc)); // enumerators of imported C enums
+        else
+            v = convertValue(emitExpr(c->init.get()), t, c->init->loc);
         constDepth -= 1;
         fs->func->file = savedFile;
         return v;
@@ -493,8 +515,15 @@ Value CodeGen::emitName(NameExpr* e)
     StaticTarget st = resolveStaticTarget(e);
     if (st.kind == StaticTarget::TypeName || st.kind == StaticTarget::Builtin)
         err(e->loc, "'" + e->name + "' is a type, not a value");
-    if (!lookupFunctions(fs->func->file, e->name).empty())
-        err(e->loc, "'" + e->name + "' is a function; function values are not supported, call it with '()'");
+    // A function name is a value that converts to a matching Action/Func type.
+    std::vector<Candidate> cands;
+    if (fs->func->owner)
+        cands = methodCandidates(fs->func->owner, e->name);
+    if (cands.empty())
+        for (FuncDecl* d : lookupFunctions(fs->func->file, e->name))
+            cands.push_back(Candidate{d, nullptr, nullptr, d->file});
+    if (!cands.empty())
+        return groupValue(cands, resolveTypeArgs(e->typeArgs), e->name);
     err(e->loc, "undefined name '" + e->name + "'");
 }
 
@@ -623,13 +652,23 @@ Value CodeGen::emitMember(MemberExpr* e)
         if (found)
             return v;
         if (t->isStruct())
-            err(e->loc, "struct '" + t->name + "' has no static member '" + e->name + "' (methods must be called)");
+        {
+            std::vector<Candidate> cands = methodCandidates(t, e->name);
+            if (!cands.empty())
+                return groupValue(cands, resolveTypeArgs(e->typeArgs), t->name + "." + e->name);
+            err(e->loc, "struct '" + t->name + "' has no static member '" + e->name + "'");
+        }
         err(e->loc, "type '" + t->name + "' has no member '" + e->name + "'");
     }
     if (st.kind == StaticTarget::Namespace)
     {
         if (ConstDecl* c = lookupConst(fs->func->file, st.name + "." + e->name))
             return emitConst(c, e->loc);
+        std::vector<Candidate> cands;
+        for (FuncDecl* d : lookupFunctions(fs->func->file, st.name + "." + e->name))
+            cands.push_back(Candidate{d, nullptr, nullptr, d->file});
+        if (!cands.empty())
+            return groupValue(cands, resolveTypeArgs(e->typeArgs), st.name + "." + e->name);
     }
     if (st.kind == StaticTarget::Namespace || st.kind == StaticTarget::Builtin)
         err(e->loc, "'" + st.name + "' has no value member '" + e->name + "'");
@@ -711,6 +750,19 @@ Type* CodeGen::promoteTypes(Type* a, Type* b, SourceLoc loc)
         if ((a->isFloat() && a->bits == 64) || (b->isFloat() && b->bits == 64))
             return types.f64;
         return types.f32;
+    }
+
+    // nint/nuint promote like the fixed-size integer of the same width; the result stays native when the other
+    // operand is native as well or smaller than a pointer.
+    if (a->isNativeInt || b->isNativeInt)
+    {
+        auto plain = [&](Type* t) { return t->isNativeInt ? types.intType(t->bits, t->isSigned) : t; };
+        Type* r = promoteTypes(plain(a), plain(b), loc);
+        Type* native = a->isNativeInt ? a : b;
+        Type* other = native == a ? b : a;
+        if (r == plain(native) && (other->isNativeInt || other->isChar() || other->bits < native->bits))
+            return native;
+        return r;
     }
     auto norm = [&](Type* t) {
         if (t->isChar() || t->bits < 32)
@@ -905,6 +957,12 @@ Value CodeGen::emitCompare(BinOp op, Value l, Value r, SourceLoc loc)
     r = r.isLValue ? toRValue(r) : r;
     bool isEq = op == BinOp::Eq || op == BinOp::Ne;
 
+    // A function name compared with a function value takes the function's type.
+    if (l.type->kind == TypeKind::MethodGroup && r.type->isFunction())
+        l = convertValue(l, r.type, loc);
+    else if (r.type->kind == TypeKind::MethodGroup && l.type->isFunction())
+        r = convertValue(r, l.type, loc);
+
     // Comparisons with null.
     if (l.type->kind == TypeKind::Null || r.type->kind == TypeKind::Null)
     {
@@ -912,7 +970,7 @@ Value CodeGen::emitCompare(BinOp op, Value l, Value r, SourceLoc loc)
             err(loc, "null can only be compared with '==' and '!='");
         Value other = l.type->kind == TypeKind::Null ? r : l;
         llvm::Value* isNull;
-        if (other.type->isPointer() || other.type->isString() || other.type->isArray())
+        if (other.type->isPointer() || other.type->isString() || other.type->isArray() || other.type->isFunction())
             isNull = builder.CreateIsNull(other.v);
         else if (other.type->isOptional())
         {
@@ -943,10 +1001,11 @@ Value CodeGen::emitCompare(BinOp op, Value l, Value r, SourceLoc loc)
         r = adaptLiteral(r, l.type);
 
     // Bool, enum, pointer.
-    if (l.type == r.type && (l.type->isBool() || l.type->isEnum() || l.type->isPointer()))
+    if (l.type == r.type && (l.type->isBool() || l.type->isEnum() || l.type->isPointer() || l.type->isFunction()))
     {
-        if (l.type->isBool() && !isEq)
-            err(loc, "bool values can only be compared with '==' and '!='");
+        if ((l.type->isBool() || l.type->isFunction()) && !isEq)
+            err(loc, l.type->isBool() ? "bool values can only be compared with '==' and '!='"
+                                      : "function values can only be compared with '==' and '!='");
         if (l.type->isPointer() && l.type->elem != r.type->elem)
             err(loc, "pointer types differ");
         bool isSigned = l.type->isEnum() && l.type->isSigned;
@@ -1248,6 +1307,12 @@ Value CodeGen::emitCast(CastExpr* e)
         requireUnsafe(e->loc, "pointer cast");
         return Value::rvalue(to, v.v);
     }
+    // Function pointers and data pointers convert into each other (for C callbacks that are passed as void*).
+    if ((from->isFunction() && to->isPointer()) || (from->isPointer() && to->isFunction()))
+    {
+        requireUnsafe(e->loc, "pointer cast");
+        return Value::rvalue(to, v.v);
+    }
     if (from->isPointer() && to->isInt())
     {
         requireUnsafe(e->loc, "pointer cast");
@@ -1460,6 +1525,8 @@ Value CodeGen::emitExpr(Expr* e)
         Type* t = declTypeOf(*static_cast<NewObjectExpr*>(e)->type);
         if (!t->isStruct())
             err(e->loc, "'new " + t->name + "()' is only valid for structs");
+        if (t->st->opaque)
+            err(e->loc, "'" + t->name + "' is an incomplete C type and can only be used through a pointer");
         return Value::rvalue(t, zeroValue(t), needsArc(t));
     }
     case ExprKind::StructInit: return emitStructInit(static_cast<StructInitExpr*>(e));

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -206,7 +207,8 @@ bool loadProject(const std::string& location, Project& project, std::string& err
     for (const auto& entry : *obj)
     {
         std::string key = llvm::StringRef(entry.first).str();
-        static const char* known[] = {"$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target"};
+        static const char* known[] = {"$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
+                                         "includePaths", "libraryPaths", "defines"};
         if (std::find(std::begin(known), std::end(known), key) == std::end(known))
             std::cerr << file << ": warning: unknown key '" << key << "' is ignored\n";
     }
@@ -239,7 +241,13 @@ bool loadProject(const std::string& location, Project& project, std::string& err
     }
 
     bool linksPresent = false;
-    readStringList("links", project.links, linksPresent, ok);
+    std::vector<std::string> linkEntries;
+    readStringList("links", linkEntries, linksPresent, ok);
+    bool pathsPresent = false;
+    std::vector<std::string> includeEntries, libraryEntries;
+    readStringList("includePaths", includeEntries, pathsPresent, ok);
+    readStringList("libraryPaths", libraryEntries, pathsPresent, ok);
+    readStringList("defines", project.defines, pathsPresent, ok);
     std::vector<std::string> sourceEntries;
     bool sourcesPresent = false;
     readStringList("sources", sourceEntries, sourcesPresent, ok);
@@ -258,6 +266,30 @@ bool loadProject(const std::string& location, Project& project, std::string& err
     project.sources.erase(std::unique(project.sources.begin(), project.sources.end()), project.sources.end());
     if (project.sources.empty())
         return fail("no .csh source files found");
+
+    // Paths are relative to the project file. "links" entries that name a file (or contain a path) are passed to the
+    // linker as files, everything else is a library name (-l<name>).
+    auto inProject = [&](const std::string& p) {
+        return path::is_absolute(p) || project.dir.empty() ? p : join(project.dir, p);
+    };
+    for (const auto& p : includeEntries)
+        project.includePaths.push_back(inProject(p));
+    for (const auto& p : libraryEntries)
+        project.libraryPaths.push_back(inProject(p));
+    for (const auto& l : linkEntries)
+    {
+        bool isFile = l.find('/') != std::string::npos || l.find('\\') != std::string::npos;
+        for (const char* ext : {".a", ".o", ".obj", ".lib", ".so", ".dylib", ".dll"})
+        {
+            size_t n = std::strlen(ext);
+            if (l.size() > n && l.compare(l.size() - n, n, ext) == 0)
+                isFile = true;
+        }
+        if (isFile)
+            project.linkFiles.push_back(inProject(l));
+        else
+            project.links.push_back(l);
+    }
 
     if (project.output.empty())
         project.output = "bin/" + project.name;
@@ -314,6 +346,6 @@ bool createProject(const std::string& projectPath, std::string& error)
                     "    Console.WriteLine(\"Hello, World!\");\n"
                     "    return 0;\n"
                     "}\n") &&
-              write(join(projectPath, ".gitignore"), "bin/\n");
+              write(join(projectPath, ".gitignore"), "bin/\nobj/\n");
     return ok;
 }

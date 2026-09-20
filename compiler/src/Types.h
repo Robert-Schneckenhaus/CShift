@@ -26,7 +26,9 @@ enum class TypeKind
     Error,    // Error<T>
     Optional, // Optional<T>
     Null,     // type of the 'null' literal
-    ErrorLit  // type of error("...") before it is converted to Error<T>
+    ErrorLit, // type of error("...") before it is converted to Error<T>
+    Function, // Action<...> / Func<..., R>: pointer to a function (no closure)
+    MethodGroup // type of a function name used as a value; converts to a matching Function type
 };
 
 struct StructInfo;
@@ -40,7 +42,9 @@ struct Type
     std::string name;
     int bits = 0;           // Int, Char, Float, Enum (bits of the base type)
     bool isSigned = false;  // Int, Enum
-    Type* elem = nullptr;   // Pointer, Array, Error, Optional, Enum (base type)
+    bool isNativeInt = false; // nint/nuint: integer of pointer size (bits is set from the target's data layout)
+    Type* elem = nullptr;   // Pointer, Array, Error, Optional, Enum (base type), Function (return type)
+    std::vector<Type*> params; // Function: parameter types
     StructInfo* st = nullptr;
     EnumInfo* en = nullptr;
     InterfaceInfo* iface = nullptr;
@@ -64,6 +68,7 @@ struct Type
     bool isOptional() const { return kind == TypeKind::Optional; }
     bool isResultLike() const { return isError() || isOptional(); }
     bool isSignedInt() const { return kind == TypeKind::Int && isSigned; }
+    bool isFunction() const { return kind == TypeKind::Function; }
     bool isRefLike() const { return kind == TypeKind::String || kind == TypeKind::Array; }
 };
 
@@ -78,6 +83,7 @@ public:
     Type* stringTy;
     Type* nullTy;
     Type* errorLitTy;
+    Type* methodGroupTy;
     Type* i8;
     Type* i16;
     Type* i32;
@@ -88,12 +94,16 @@ public:
     Type* u64;
     Type* f32;
     Type* f64;
+    Type* nint;  // pointer-sized signed integer (like C# nint, C intptr_t/ptrdiff_t)
+    Type* nuint; // pointer-sized unsigned integer (like C# nuint, C size_t/uintptr_t)
 
     Type* intType(int bits, bool isSigned);
     Type* pointerTo(Type* elem);
     Type* arrayOf(Type* elem);
     Type* errorOf(Type* elem);
     Type* optionalOf(Type* elem);
+    // Action<params> for a void result, Func<params, ret> otherwise.
+    Type* functionOf(const std::vector<Type*>& params, Type* ret);
 
     // Creates a fresh (non-interned) type object; the caller interns by name.
     Type* create(TypeKind kind, const std::string& name);
@@ -104,4 +114,5 @@ private:
     std::map<Type*, Type*> arrays;
     std::map<Type*, Type*> errors;
     std::map<Type*, Type*> optionals;
+    std::map<std::string, Type*> functions;
 };

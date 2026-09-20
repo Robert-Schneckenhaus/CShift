@@ -289,10 +289,20 @@ void CodeGen::emitVarDecl(VarDeclStmt* s)
         if (!s->init)
             err(s->loc, "cannot infer the type of '" + s->name + "': 'var' needs an initializer");
         t = init.type;
+        if (t->kind == TypeKind::MethodGroup)
+        {
+            // 'var f = Square;' has the function type of Square if the name has a single meaning.
+            t = groupFunctionType(init);
+            if (!t)
+                err(s->loc, "cannot infer the type of '" + s->name + "' from the function name '" + init.groupName +
+                                "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
+        }
         if (t->kind == TypeKind::Null || t->kind == TypeKind::ErrorLit || t->isVoid())
             err(s->loc, "cannot infer the type of '" + s->name + "' from '" + t->name + "'");
     }
 
+    if (t->isStruct() && t->st->opaque)
+        err(s->loc, "'" + t->name + "' is an incomplete C type and can only be used through a pointer ('" + t->name + "*')");
     llvm::AllocaInst* slot = entryAlloca(llvmTypeOf(t), s->name);
     if (s->init)
     {

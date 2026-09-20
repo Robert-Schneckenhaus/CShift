@@ -1,6 +1,8 @@
 // cshiftc - the CShift compiler driver.
 
+#include <cstring>
 #include <fstream>
+#include <map>
 #include <iostream>
 #include <sstream>
 
@@ -18,6 +20,7 @@
 #include <llvm/TargetParser/Triple.h>
 
 #include "CodeGen.h"
+#include "Ffi.h"
 #include "Lexer.h"
 #include "Parser.h"
 #include "Project.h"
@@ -41,7 +44,11 @@ struct Options
     std::string output;
     std::string target;
     std::string cc = "clang";
-    std::vector<std::string> libs;
+    std::vector<std::string> libs;         // -l<name>
+    std::vector<std::string> libFiles;     // .a/.o/.lib files passed to the linker
+    std::vector<std::string> libraryPaths; // -L<dir>
+    std::vector<std::string> includePaths; // -I<dir> (for C headers imported with "using X from")
+    std::vector<std::string> defines;      // -D<name>[=value]
     int optLevel = 2;
     bool objectOnly = false;
     bool emitLlvm = false;
@@ -70,10 +77,26 @@ void printUsage()
                  "  --target <triple> target triple (default: host)\n"
                  "  --cc <program>   C compiler used as linker driver (default: clang)\n"
                  "  -l<name>         link an additional library\n"
+                 "  -L<dir>          library search path for the linker\n"
+                 "  -I<dir>          include path for C headers (using X from \"header.h\")\n"
+                 "  -D<name>[=value] define a macro when parsing C headers\n"
+                 "  file.a, file.o   libraries and object files are passed to the linker\n"
                  "  --run            run the program after building\n"
                  "  --arc-stats      debug: print heap allocations/frees when the program exits\n"
                  "  -v               verbose output\n"
                  "  -h, --help       show this help\n";
+}
+
+// Libraries and object files given on the command line go to the linker.
+bool isLinkerInput(const std::string& a)
+{
+    for (const char* ext : {".a", ".o", ".obj", ".lib", ".so", ".dylib"})
+    {
+        size_t n = std::strlen(ext);
+        if (a.size() > n && a.compare(a.size() - n, n, ext) == 0)
+            return true;
+    }
+    return false;
 }
 
 bool parseArgs(int argc, char** argv, Options& o)
@@ -124,11 +147,19 @@ bool parseArgs(int argc, char** argv, Options& o)
             o.optLevel = a[2] - '0', o.optGiven = true;
         else if (a.size() > 2 && a.compare(0, 2, "-l") == 0)
             o.libs.push_back(a.substr(2));
+        else if (a.size() > 2 && a.compare(0, 2, "-L") == 0)
+            o.libraryPaths.push_back(a.substr(2));
+        else if (a.size() > 2 && a.compare(0, 2, "-I") == 0)
+            o.includePaths.push_back(a.substr(2));
+        else if (a.size() > 2 && a.compare(0, 2, "-D") == 0)
+            o.defines.push_back(a.substr(2));
         else if (!a.empty() && a[0] == '-')
         {
             std::cerr << "error: unknown option '" << a << "'\n";
             return false;
         }
+        else if (isLinkerInput(a))
+            o.libFiles.push_back(a);
         else
             o.inputs.push_back(a);
     }
@@ -196,6 +227,41 @@ void optimize(llvm::Module& module, llvm::TargetMachine* tm, int level)
     mpm.run(module, mam);
 }
 
+// Finds the C compiler that is used as linker driver, to compile generated C code and to locate libclang.
+std::string locateClang(const std::string& cc, bool isWindows)
+{
+    auto program = llvm::sys::findProgramByName(cc);
+    for (const char* fallback : {"cc", "gcc"})
+    {
+        if (program || cc != "clang")
+            break;
+        program = llvm::sys::findProgramByName(fallback);
+    }
+    if (!program && isWindows && cc == "clang")
+    {
+        // Not in PATH: try the usual MSYS2 installation folders (the toolchain this compiler is built with).
+        std::vector<std::string> folders;
+        if (const char* root = std::getenv("MSYS2_ROOT"))
+            folders.push_back(std::string(root) + "\\clang64\\bin");
+        folders.push_back("C:\\msys64\\clang64\\bin");
+        for (const auto& folder : folders)
+        {
+            llvm::StringRef searchPath(folder);
+            program = llvm::sys::findProgramByName("clang", searchPath);
+            if (program)
+                break;
+        }
+    }
+    return program ? *program : std::string();
+}
+
+std::string joinPath(const std::string& dir, const std::string& name)
+{
+    llvm::SmallString<256> p(dir.empty() ? "." : dir);
+    llvm::sys::path::append(p, name);
+    return std::string(p.str());
+}
+
 std::string stem(const std::string& path)
 {
     size_t slash = path.find_last_of("/\\");
@@ -247,6 +313,10 @@ int main(int argc, char** argv)
         if (opt.target.empty())
             opt.target = project.target;
         opt.libs.insert(opt.libs.begin(), project.links.begin(), project.links.end());
+        opt.libFiles.insert(opt.libFiles.begin(), project.linkFiles.begin(), project.linkFiles.end());
+        opt.libraryPaths.insert(opt.libraryPaths.begin(), project.libraryPaths.begin(), project.libraryPaths.end());
+        opt.includePaths.insert(opt.includePaths.begin(), project.includePaths.begin(), project.includePaths.end());
+        opt.defines.insert(opt.defines.begin(), project.defines.begin(), project.defines.end());
         if (project.type == "object")
             opt.objectOnly = true;
         if (opt.command == Command::Run)
@@ -301,6 +371,82 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    bool isWindows = triple.isOSWindows();
+    std::string clangPath; // located when it is needed
+    auto clang = [&]() -> const std::string& {
+        if (clangPath.empty())
+            clangPath = locateClang(opt.cc, isWindows);
+        return clangPath;
+    };
+
+    // ---- FFI: C headers imported with "using Name from "header.h";" ----
+    struct ShimJob
+    {
+        std::string source;
+        std::string baseDir;
+    };
+    std::vector<ShimJob> shims;
+    {
+        struct Import
+        {
+            ImportDecl decl;
+        };
+        std::vector<ImportDecl> imports;
+        for (const auto& u : units)
+            for (const auto& i : u->imports)
+                imports.push_back(i);
+
+        FfiOptions ffiOptions;
+        ffiOptions.target = tripleStr;
+        ffiOptions.includePaths = opt.includePaths;
+        ffiOptions.defines = opt.defines;
+        ffiOptions.verbose = opt.verbose;
+
+        std::map<std::string, std::string> importedHeaders; // namespace -> header
+        for (const ImportDecl& imp : imports)
+        {
+            auto seen = importedHeaders.find(imp.name);
+            if (seen != importedHeaders.end())
+            {
+                if (seen->second != imp.header)
+                    diag.error(imp.loc, "namespace '" + imp.name + "' is already imported from \"" + seen->second + "\"");
+                continue;
+            }
+            importedHeaders[imp.name] = imp.header;
+
+            std::string sourcePath = imp.loc.file < (int)diag.files.size() ? diag.files[imp.loc.file] : "";
+            llvm::StringRef parent = llvm::sys::path::parent_path(sourcePath);
+            std::string baseDir = parent.empty() ? "." : std::string(parent);
+
+            FfiImportRequest request;
+            request.name = imp.name;
+            request.header = imp.header;
+            request.baseDir = baseDir;
+            request.cacheDir = joinPath(fromProject && !project.dir.empty() ? project.dir : baseDir, "obj/ffi");
+            request.loc = imp.loc;
+            ffiOptions.clang = imp.header.size() > 4 && imp.header.compare(imp.header.size() - 4, 4, ".ffi") == 0 ? "" : clang();
+
+            FfiResult result;
+            std::string error;
+            if (!prepareFfi(request, ffiOptions, result, error))
+            {
+                diag.error(imp.loc, "cannot import \"" + imp.header + "\": " + error);
+                continue;
+            }
+            auto unit = loadFfiUnit(result.ffiPath, imp.name, diag, error);
+            if (!unit)
+            {
+                diag.error(imp.loc, error);
+                continue;
+            }
+            units.push_back(std::move(unit));
+            for (const auto& s : result.shimSources)
+                shims.push_back({s, baseDir});
+        }
+        if (diag.hasErrors())
+            return 1;
+    }
+
     // ---- Compile ----
     CodeGen cg(diag, fromProject ? project.name : stem(opt.inputs[0]));
     cgPtr = &cg;
@@ -336,7 +482,6 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    bool isWindows = triple.isOSWindows();
     std::string objPath = opt.objectOnly && !opt.output.empty() ? opt.output : baseName + (isWindows ? ".obj" : ".o");
     if (opt.output.empty() && !opt.objectOnly)
         objPath = baseName + (isWindows ? ".obj" : ".o");
@@ -360,10 +505,48 @@ int main(int argc, char** argv)
         pm.run(cg.module());
         dest.flush();
     }
+    // Shims (generated C code for functions that take or return structs by value) are compiled with clang, which
+    // knows the platform ABI.
+    std::vector<std::string> shimObjects;
+    for (const ShimJob& job : shims)
+    {
+        if (clang().empty())
+        {
+            std::cerr << "error: cannot find clang to compile the FFI shim '" << job.source << "'\n"
+                      << "       Put clang in PATH (e.g. C:\\msys64\\clang64\\bin) or pass --cc <path>.\n";
+            return 1;
+        }
+        std::string object = std::string(llvm::sys::path::parent_path(job.source)) + "/" +
+                             std::string(llvm::sys::path::stem(job.source)) + (isWindows ? ".obj" : ".o");
+        std::vector<std::string> args = {opt.cc, "-c", "-target", tripleStr, "-O1", "-I" + job.baseDir};
+        for (const auto& p : opt.includePaths)
+            args.push_back("-I" + p);
+        for (const auto& d : opt.defines)
+            args.push_back("-D" + d);
+        args.push_back(job.source);
+        args.push_back("-o");
+        args.push_back(object);
+        std::vector<llvm::StringRef> argRefs(args.begin(), args.end());
+        if (opt.verbose)
+        {
+            for (const auto& a : args)
+                std::cerr << a << " ";
+            std::cerr << "\n";
+        }
+        if (llvm::sys::ExecuteAndWait(clang(), argRefs) != 0)
+        {
+            std::cerr << "error: compiling the FFI shim '" << job.source << "' failed\n";
+            return 1;
+        }
+        shimObjects.push_back(object);
+    }
+
     if (opt.objectOnly)
     {
         if (fromProject)
             std::cout << "Built " << objPath << "\n";
+        for (const auto& o : shimObjects)
+            std::cout << "Also link " << o << " (FFI wrappers)\n";
         return 0;
     }
 
@@ -372,35 +555,21 @@ int main(int argc, char** argv)
     if (fromProject && isWindows && !endsWith(exePath, ".exe"))
         exePath += ".exe";
     ensureParentDirectory(exePath);
-    auto program = llvm::sys::findProgramByName(opt.cc);
-    for (const char* fallback : {"cc", "gcc"})
-    {
-        if (program || opt.cc != "clang")
-            break;
-        program = llvm::sys::findProgramByName(fallback);
-    }
-    if (!program && isWindows && opt.cc == "clang")
-    {
-        // Not in PATH: try the usual MSYS2 installation folders (the toolchain this compiler is built with).
-        std::vector<std::string> folders;
-        if (const char* root = std::getenv("MSYS2_ROOT"))
-            folders.push_back(std::string(root) + "\\clang64\\bin");
-        folders.push_back("C:\\msys64\\clang64\\bin");
-        for (const auto& folder : folders)
-        {
-            llvm::StringRef searchPath(folder);
-            program = llvm::sys::findProgramByName("clang", searchPath);
-            if (program)
-                break;
-        }
-    }
-    if (!program)
+    if (clang().empty())
     {
         std::cerr << "error: cannot find the linker driver '" << opt.cc << "'\n"
                   << "       Put clang in PATH (e.g. C:\\msys64\\clang64\\bin) or pass --cc <path>.\n";
         return 1;
     }
-    std::vector<std::string> linkArgs = {opt.cc, objPath, "-o", exePath};
+    std::vector<std::string> linkArgs = {opt.cc, objPath};
+    for (const auto& o : shimObjects)
+        linkArgs.push_back(o);
+    linkArgs.push_back("-o");
+    linkArgs.push_back(exePath);
+    for (const auto& f : opt.libFiles)
+        linkArgs.push_back(f);
+    for (const auto& p : opt.libraryPaths)
+        linkArgs.push_back("-L" + p);
     for (const auto& l : cg.linkLibraries())
         linkArgs.push_back("-l" + l);
     if (!isWindows)
@@ -414,8 +583,10 @@ int main(int argc, char** argv)
             std::cerr << a << " ";
         std::cerr << "\n";
     }
-    int rc = llvm::sys::ExecuteAndWait(*program, refs);
+    int rc = llvm::sys::ExecuteAndWait(clang(), refs);
     llvm::sys::fs::remove(objPath);
+    for (const auto& o : shimObjects)
+        llvm::sys::fs::remove(o);
     if (rc != 0)
     {
         std::cerr << "error: linking failed\n";

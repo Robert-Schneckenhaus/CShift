@@ -30,9 +30,17 @@ std::vector<Arg> CodeGen::emitArgs(std::vector<ExprPtr>& args)
     return out;
 }
 
-int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk)
+int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable)
 {
     const Value& v = arg.v;
+    // Parameters that come from C pointers accept null (NULL) and a raw pointer to the same type.
+    if (nullable && rk != RefKind::None && !v.isRefArg)
+    {
+        if (v.type->kind == TypeKind::Null)
+            return 1;
+        if (v.type->isPointer() && v.type->elem == paramType)
+            return 2;
+    }
     switch (rk)
     {
     case RefKind::None:
@@ -83,7 +91,7 @@ bool CodeGen::unify(const TypeRef& pattern, Type* actual, const std::vector<std:
         {
             if (params[i] == pattern.path[0])
             {
-                if (actual->kind == TypeKind::Null || actual->kind == TypeKind::ErrorLit)
+                if (actual->kind == TypeKind::Null || actual->kind == TypeKind::ErrorLit || actual->kind == TypeKind::MethodGroup)
                     return true; // cannot infer from these; another argument may bind it
                 if (!bound[i])
                     bound[i] = actual;
@@ -99,6 +107,23 @@ bool CodeGen::unify(const TypeRef& pattern, Type* actual, const std::vector<std:
         if ((pattern.path[0] == "Error" && actual->isError()) || (pattern.path[0] == "Optional" && actual->isOptional()))
             return unify(*pattern.args[0], actual->elem, params, file, env, bound);
         return actual->kind == TypeKind::Null || actual->kind == TypeKind::ErrorLit;
+    }
+
+    if (pattern.path.size() == 1 && (pattern.path[0] == "Action" || pattern.path[0] == "Func") && !lookupTypeDecl(file, pattern.path[0]))
+    {
+        if (!actual->isFunction())
+            return actual->kind == TypeKind::Null || actual->kind == TypeKind::MethodGroup;
+        bool isFunc = pattern.path[0] == "Func";
+        size_t n = pattern.args.size();
+        if (isFunc && n == 0)
+            return false;
+        size_t paramCount = isFunc ? n - 1 : n;
+        if (paramCount != actual->params.size() || isFunc == actual->elem->isVoid())
+            return false;
+        for (size_t i = 0; i < paramCount; i += 1)
+            if (!unify(*pattern.args[i], actual->params[i], params, file, env, bound))
+                return false;
+        return !isFunc || unify(*pattern.args[n - 1], actual->elem, params, file, env, bound);
     }
 
     if (!pattern.args.empty() && actual->isStruct())
@@ -127,7 +152,11 @@ bool CodeGen::inferTypeArgs(const Candidate& c, std::vector<Arg>& args, std::vec
     std::vector<Type*> bound(d->typeParams.size(), nullptr);
     for (size_t i = 0; i < d->params.size() && i < args.size(); i += 1)
     {
-        if (!unify(*d->params[i].type, args[i].v.type, d->typeParams, c.file, c.ownerEnv, bound))
+        Type* actual = args[i].v.type;
+        if (actual->kind == TypeKind::MethodGroup)
+            if (Type* ft = groupFunctionType(args[i].v))
+                actual = ft; // the natural type of a function name with a single meaning
+        if (!unify(*d->params[i].type, actual, d->typeParams, c.file, c.ownerEnv, bound))
             return false;
     }
     for (Type* t : bound)
@@ -196,7 +225,7 @@ FuncInfo* CodeGen::resolveOverload(const std::vector<Candidate>& candidates, std
         bool ok = true;
         for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
         {
-            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i]);
+            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i], fi->paramNullable[i]);
             if (cost < 0)
             {
                 reason = "argument " + std::to_string(i + 1) + ": cannot convert '" + args[i].v.type->name + "' to '" +
@@ -257,13 +286,33 @@ Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Ar
         {
             Value cv = convertValue(a.v, pt, aloc);
             holdTemp(cv);
-            callArgs.push_back(cv.v);
+            llvm::Value* passed = cv.v;
+            if (fi.paramCString[i])
+            {
+                // const char*: pass the character data of the string (null stays NULL). Strings are NUL-terminated.
+                passed = builder.CreateSelect(builder.CreateIsNull(cv.v), llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(ctx)),
+                                              dataPtr(cv.v));
+            }
+            callArgs.push_back(passed);
             break;
         }
         case RefKind::Ref:
-            callArgs.push_back(a.v.v);
-            break;
         case RefKind::ConstRef:
+            if (fi.paramNullable[i] && !a.v.isRefArg && a.v.type->kind == TypeKind::Null)
+            {
+                callArgs.push_back(llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(ctx)));
+                break;
+            }
+            if (fi.paramNullable[i] && !a.v.isRefArg && a.v.type->isPointer() && a.v.type->elem == pt)
+            {
+                callArgs.push_back(toRValue(a.v).v);
+                break;
+            }
+            if (fi.paramRefs[i] == RefKind::Ref)
+            {
+                callArgs.push_back(a.v.v);
+                break;
+            }
             if (a.v.isLValue && (a.v.type == pt || (a.v.type->isStruct() && pt->isStruct() && structIsAncestor(pt, a.v.type))))
             {
                 callArgs.push_back(a.v.v);
@@ -306,10 +355,178 @@ Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Ar
         callArgs.push_back(v);
     }
 
+    // Shims return structs through a pointer to a temporary.
+    llvm::Value* outSlot = nullptr;
+    if (fi.decl->retOut)
+    {
+        outSlot = entryAlloca(llvmTypeOf(fi.ret), "ret");
+        callArgs.push_back(outSlot);
+    }
+
     llvm::CallInst* call = builder.CreateCall(fi.fn, callArgs);
+    if (fi.decl->retOut)
+        return Value::rvalue(fi.ret, builder.CreateLoad(llvmTypeOf(fi.ret), outSlot), needsArc(fi.ret));
     if (fi.ret->isVoid())
         return Value::rvalue(types.voidTy, nullptr);
+    if (fi.decl->retCString)
+    {
+        // const char* result: copy it into a string that the caller owns.
+        return Value::rvalue(types.stringTy, builder.CreateCall(fromCStrFn(), {call}), true);
+    }
     return Value::rvalue(fi.ret, call, needsArc(fi.ret));
+}
+
+// ---------------------------------------------------------------------------
+// Function pointers: Action<...> / Func<..., R>
+// ---------------------------------------------------------------------------
+
+// A function name used as a value. It becomes a function pointer when it is converted to an Action/Func type.
+Value CodeGen::groupValue(const std::vector<Candidate>& cands, const std::vector<Type*>& typeArgs, const std::string& name)
+{
+    Value v = Value::rvalue(types.methodGroupTy, nullptr);
+    v.group = cands;
+    v.groupTypeArgs = typeArgs;
+    v.groupName = name;
+    return v;
+}
+
+static std::string functionSignature(const FuncInfo& fi, TypeContext& types)
+{
+    std::vector<Type*> params = fi.paramTypes;
+    return types.functionOf(params, fi.ret)->name;
+}
+
+// Finds the function that a function name refers to when it is converted to the function type 'to'. The signature
+// must match exactly.
+FuncInfo* CodeGen::resolveGroup(const Value& g, Type* to, std::string* why)
+{
+    std::string reason = "no function with this name matches";
+    for (const Candidate& c : g.group)
+    {
+        FuncDecl* d = c.decl;
+        std::vector<Type*> targs = g.groupTypeArgs;
+        if (!d->typeParams.empty())
+        {
+            if (targs.empty())
+            {
+                // Infer the type arguments from the target type.
+                std::vector<Type*> bound(d->typeParams.size(), nullptr);
+                bool ok = d->params.size() == to->params.size();
+                for (size_t i = 0; ok && i < d->params.size(); i += 1)
+                    ok = unify(*d->params[i].type, to->params[i], d->typeParams, c.file, c.ownerEnv, bound);
+                if (ok)
+                    ok = unify(*d->ret, to->elem, d->typeParams, c.file, c.ownerEnv, bound);
+                for (Type* b : bound)
+                    ok = ok && b;
+                if (!ok)
+                {
+                    reason = "cannot infer the type arguments of '" + g.groupName + "', specify them explicitly";
+                    continue;
+                }
+                targs = bound;
+            }
+            else if (targs.size() != d->typeParams.size())
+            {
+                reason = "wrong number of type arguments";
+                continue;
+            }
+        }
+        else if (!targs.empty())
+        {
+            reason = "'" + g.groupName + "' is not generic";
+            continue;
+        }
+
+        FuncInfo* fi;
+        try
+        {
+            fi = getFuncInstance(d, c.owner, c.ownerEnv, c.file, targs, d->loc);
+        }
+        catch (const CompileError& e)
+        {
+            reason = e.message;
+            continue;
+        }
+        if (fi->hasThis)
+        {
+            reason = "'" + g.groupName + "' is an instance method; only static methods and free functions can be function values";
+            continue;
+        }
+        bool plain = !d->isVariadic && !d->retOut && !d->retCString;
+        for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
+            plain = plain && fi->paramRefs[i] == RefKind::None && !fi->paramCString[i];
+        if (!plain)
+        {
+            reason = "'" + g.groupName + "' has ref parameters or C conversions (string/struct marshalling) and cannot be used as a function pointer";
+            continue;
+        }
+        if (fi->paramTypes != to->params || fi->ret != to->elem)
+        {
+            reason = "'" + g.groupName + "' has the signature " + functionSignature(*fi, types);
+            continue;
+        }
+        return fi;
+    }
+    if (why)
+        *why = reason;
+    return nullptr;
+}
+
+// The function type of a function name that has exactly one meaning (for 'var' and type inference).
+Type* CodeGen::groupFunctionType(const Value& g)
+{
+    if (g.group.size() != 1)
+        return nullptr;
+    const Candidate& c = g.group[0];
+    if (c.decl->typeParams.size() != g.groupTypeArgs.size())
+        return nullptr;
+    FuncInfo* fi;
+    try
+    {
+        fi = getFuncInstance(c.decl, c.owner, c.ownerEnv, c.file, g.groupTypeArgs, c.decl->loc);
+    }
+    catch (const CompileError&)
+    {
+        return nullptr;
+    }
+    if (fi->hasThis || c.decl->isVariadic || c.decl->retOut || c.decl->retCString)
+        return nullptr;
+    for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
+        if (fi->paramRefs[i] != RefKind::None || fi->paramCString[i])
+            return nullptr;
+    if (fi->paramTypes.size() > 8)
+        return nullptr;
+    return types.functionOf(fi->paramTypes, fi->ret);
+}
+
+Value CodeGen::emitIndirectCall(Value callee, std::vector<Arg>& args, SourceLoc loc)
+{
+    Value f = toRValue(callee);
+    Type* ft = f.type;
+    if (args.size() != ft->params.size())
+        err(loc, "a call of '" + ft->name + "' needs " + std::to_string(ft->params.size()) + " argument(s), got " +
+                     std::to_string(args.size()));
+
+    std::vector<llvm::Value*> callArgs;
+    std::vector<llvm::Type*> paramTypes;
+    for (size_t i = 0; i < args.size(); i += 1)
+    {
+        SourceLoc aloc = args[i].expr ? args[i].expr->loc : loc;
+        if (args[i].v.isRefArg)
+            err(aloc, "function values (Action/Func) have no 'ref' parameters");
+        Value cv = convertValue(args[i].v, ft->params[i], aloc);
+        holdTemp(cv);
+        callArgs.push_back(cv.v);
+        paramTypes.push_back(llvmTypeOf(ft->params[i]));
+    }
+
+    emitPanicIf(builder.CreateIsNull(f.v), "call of a null function");
+    auto* fty = llvm::FunctionType::get(llvmTypeOf(ft->elem), paramTypes, false);
+    llvm::CallInst* call = builder.CreateCall(fty, f.v, callArgs);
+    addAbiAttributes(nullptr, call, ft->params, std::vector<bool>(ft->params.size(), false), ft->elem);
+    if (ft->elem->isVoid())
+        return Value::rvalue(types.voidTy, nullptr);
+    return Value::rvalue(ft->elem, call, needsArc(ft->elem));
 }
 
 void CodeGen::callDispose(const ScopeVar& var)
@@ -337,8 +554,25 @@ Value CodeGen::emitCall(CallExpr* e)
     if (callee->kind == ExprKind::Name)
     {
         auto* n = static_cast<NameExpr*>(callee);
-        if (lookupVariable(n->name).type)
-            err(e->loc, "'" + n->name + "' is a variable, not a function");
+        Value var = lookupVariable(n->name);
+        if (var.type)
+        {
+            if (!var.type->isFunction())
+                err(e->loc, "'" + n->name + "' is a variable, not a function");
+            std::vector<Arg> args = emitArgs(e->args);
+            return emitIndirectCall(var, args, e->loc);
+        }
+        if (fs->func->owner)
+        {
+            // A field with a function type is called like a function.
+            FieldPath p;
+            if (findField(fs->func->owner, n->name, p) && p.type->isFunction())
+            {
+                Value field = emitName(n);
+                std::vector<Arg> args = emitArgs(e->args);
+                return emitIndirectCall(field, args, e->loc);
+            }
+        }
 
         std::vector<Type*> targs = resolveTypeArgs(n->typeArgs);
         std::vector<Candidate> cands;
@@ -440,7 +674,20 @@ Value CodeGen::emitCall(CallExpr* e)
             obj = derefPointer(obj, e->loc);
         else if (obj.type->isPointer())
             err(e->loc, "use '->' to call methods through a pointer");
+        if (obj.type->isStruct() && methodCandidates(obj.type, m->name).empty())
+        {
+            // A field with a function type is called like a method: obj.Callback(x)
+            FieldPath p;
+            if (findField(obj.type, m->name, p) && p.type->isFunction())
+            {
+                Value field = fieldAccess(obj, m->name, e->loc);
+                std::vector<Arg> args = emitArgs(e->args);
+                return emitIndirectCall(field, args, e->loc);
+            }
+        }
         std::vector<Arg> args = emitArgs(e->args);
+        if (obj.type->isFunction() && m->name == "Invoke")
+            return emitIndirectCall(obj, args, e->loc);
 
         if (obj.type->isStruct())
         {
@@ -474,7 +721,12 @@ Value CodeGen::emitCall(CallExpr* e)
         return emitBuiltinMethod(obj, m->name, args, e->loc);
     }
 
-    err(e->loc, "this expression cannot be called");
+    // Any other expression that yields a function: handlers[i](x), MakeCallback()(x)
+    Value fv = emitExpr(callee);
+    if (!fv.type->isFunction())
+        err(e->loc, "this expression cannot be called (type '" + fv.type->name + "')");
+    std::vector<Arg> args = emitArgs(e->args);
+    return emitIndirectCall(fv, args, e->loc);
 }
 
 // ---------------------------------------------------------------------------

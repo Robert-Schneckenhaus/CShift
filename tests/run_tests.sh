@@ -16,7 +16,7 @@
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
 #        // arc-ignore              skip the leak check
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
-#      plus "cshiftc new".
+#      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -146,6 +146,12 @@ for dir in "$DIR"/projects/*/; do
     name="project $(basename "$dir")"
     work="$TMP/proj_$(basename "$dir")"
     cp -r "$dir" "$work"
+
+    # Native sources of a project (native/*.c) are compiled to objects the project links.
+    for c_file in "$work"/native/*.c; do
+        [ -f "$c_file" ] || continue
+        "${CSHIFT_CC:-clang}" -c "$c_file" -o "${c_file%.c}.o" || report_fail "$name" "cannot compile $c_file"
+    done
 
     if [ -f "$work/expected-error.txt" ]; then
         want="$(head -n 1 "$work/expected-error.txt" | tr -d '\r')"

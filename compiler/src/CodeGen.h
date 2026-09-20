@@ -36,6 +36,7 @@ struct StructInfo
     std::vector<FieldInfo> fields; // own fields only
     llvm::StructType* llvmType = nullptr;
     bool layoutInProgress = false;
+    bool opaque = false; // incomplete C type (only usable through pointers)
 };
 
 struct InterfaceInfo
@@ -64,6 +65,8 @@ struct FuncInfo
     std::string name;      // display name
     std::vector<Type*> paramTypes;
     std::vector<RefKind> paramRefs;
+    std::vector<bool> paramNullable; // FFI: ref/string parameter that accepts null
+    std::vector<bool> paramCString;  // FFI: string passed as const char*
     Type* ret = nullptr;
     bool signatureResolved = false;
     bool hasThis = false;
@@ -79,6 +82,14 @@ struct TypeDeclEntry
     EnumDecl* enumDecl = nullptr;
 };
 
+struct Candidate
+{
+    FuncDecl* decl = nullptr;
+    Type* owner = nullptr;
+    const TypeEnv* ownerEnv = nullptr;
+    FileContext* file = nullptr;
+};
+
 // Result of evaluating an expression. May be an lvalue (v is an address) or an rvalue.
 struct Value
 {
@@ -92,6 +103,10 @@ struct Value
     bool litIsFloat = false;
     int64_t litInt = 0;
     double litFloat = 0;
+    // A function name used as a value (type methodGroupTy): the candidates it may refer to.
+    std::vector<Candidate> group;
+    std::vector<Type*> groupTypeArgs;
+    std::string groupName;
 
     static Value rvalue(Type* t, llvm::Value* v, bool owned = false)
     {
@@ -116,14 +131,6 @@ struct Arg
 {
     Value v;
     Expr* expr = nullptr;
-};
-
-struct Candidate
-{
-    FuncDecl* decl = nullptr;
-    Type* owner = nullptr;
-    const TypeEnv* ownerEnv = nullptr;
-    FileContext* file = nullptr;
 };
 
 struct StaticTarget
@@ -205,6 +212,7 @@ private:
     std::vector<FuncDecl*> lookupFunctions(FileContext* f, const std::string& name) const;
     bool isNamespace(FileContext* f, const std::string& name) const;
     Type* primitiveType(const std::string& name);
+    Type* resolveFunctionType(const TypeRef& ref, const std::string& dotted, FileContext* file, const TypeEnv* env);
 
     Type* resolveType(const TypeRef& ref, FileContext* file, const TypeEnv* env);
     Type* resolveValueType(const TypeRef& ref, FileContext* file, const TypeEnv* env);
@@ -237,6 +245,12 @@ private:
                               const std::vector<Type*>& typeArgs, SourceLoc loc);
     void ensureSignature(FuncInfo& fi);
     llvm::Function* declareFunction(FuncInfo& fi);
+    // Function pointers (Action/Func): a function name as a value, and indirect calls.
+    Value groupValue(const std::vector<Candidate>& cands, const std::vector<Type*>& typeArgs, const std::string& name);
+    FuncInfo* resolveGroup(const Value& group, Type* to, std::string* why);
+    Type* groupFunctionType(const Value& group);
+    Value emitIndirectCall(Value callee, std::vector<Arg>& args, SourceLoc loc);
+    void addAbiAttributes(llvm::Function* fn, llvm::CallInst* call, const std::vector<Type*>& params, const std::vector<bool>& isRef, Type* ret);
     void useFunction(FuncInfo& fi);
     std::vector<Candidate> methodCandidates(Type* structType, const std::string& name);
     void emitEntryPoint();
@@ -266,6 +280,7 @@ private:
     llvm::Function* fmtFn(const std::string& key, const char* format, llvm::Type* argType);
     llvm::Function* retainFor(Type* t);
     llvm::Function* releaseFor(Type* t);
+    llvm::Function* fromCStrFn();
     llvm::Function* cloneFn(Type* arrayType);
     llvm::Function* copyFn(Type* arrayType);
     llvm::Constant* stringLiteral(const std::string& value);
@@ -342,7 +357,7 @@ private:
     bool inferTypeArgs(const Candidate& c, std::vector<Arg>& args, std::vector<Type*>& out);
     bool unify(const TypeRef& pattern, Type* actual, const std::vector<std::string>& params, FileContext* file,
                const TypeEnv* env, std::vector<Type*>& bound);
-    int argCost(const Arg& arg, Type* paramType, RefKind rk);
+    int argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable);
     Value emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Arg>& args, SourceLoc loc);
     std::vector<Arg> emitArgs(std::vector<ExprPtr>& args);
     std::vector<Type*> resolveTypeArgs(const std::vector<TypeRefPtr>& refs);

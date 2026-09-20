@@ -16,10 +16,10 @@ Syntax-Highlighting, Snippets und Spracheinstellungen für **CShift** (`.csh`), 
 ```powershell
 cd vscode-extension
 npx @vscode/vsce package --allow-missing-repository --skip-license
-code --install-extension cshift-0.1.0.vsix
+code --install-extension cshift-0.3.0.vsix
 ```
 
-Oder den Ordner nach `%USERPROFILE%\.vscode\extensions\pyrdacor.cshift-0.1.0` kopieren und VS Code neu starten.
+Oder den Ordner nach `%USERPROFILE%\.vscode\extensions\pyrdacor.cshift-0.3.0` kopieren und VS Code neu starten.
 
 ## Grammatik testen
 

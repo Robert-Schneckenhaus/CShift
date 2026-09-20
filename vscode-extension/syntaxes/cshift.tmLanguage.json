@@ -87,6 +87,15 @@
 					}
 				},
 				{
+					"comment": "using Name from \"header.h\";  (import of a C header)",
+					"match": "\\b(using)\\s+([A-Za-z_]\\w*)\\s+(from)\\b",
+					"captures": {
+						"1": { "name": "keyword.other.using.cshift" },
+						"2": { "name": "entity.name.namespace.cshift" },
+						"3": { "name": "keyword.other.from.cshift" }
+					}
+				},
+				{
 					"comment": "using A.B;  (but not the using statement: using x = ...)",
 					"match": "\\b(using)\\s+([A-Za-z_][\\w.]*)\\s*(?=;)",
 					"captures": {
@@ -186,14 +195,14 @@
 
 		"primitive-types": {
 			"name": "storage.type.primitive.cshift",
-			"match": "\\b(int|uint|float|double|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|bool|char|string|void|var)\\b"
+			"match": "\\b(int|uint|float|double|int8|int16|int32|int64|uint8|uint16|uint32|uint64|nint|nuint|float32|float64|bool|char|string|void|var)\\b"
 		},
 
 		"builtin-types": {
 			"patterns": [
 				{
 					"name": "support.type.cshift",
-					"match": "\\b(Error|Optional|IDisposable|IComparable|IEquatable|IHashable|KeyValuePair)\\b"
+					"match": "\\b(Error|Optional|Action|Func|IDisposable|IComparable|IEquatable|IHashable|KeyValuePair)\\b"
 				},
 				{
 					"name": "support.class.cshift",

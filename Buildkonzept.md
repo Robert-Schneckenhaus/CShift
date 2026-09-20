@@ -36,7 +36,10 @@ aber nicht, *wie* man ein Projekt beschreibt. Dieses Dokument füllt die Lücke.
 | `sources` | Liste aus Dateien und Ordnern; Ordner werden rekursiv nach `*.csh` durchsucht, Pfade relativ zur `cshift.json` | `["src"]` |
 | `output` | Ausgabepfad ohne Endung (`.exe`/`.obj`/`.o` je nach Plattform ergänzt) | `"bin/<name>"` |
 | `optimize` | 0–3 (wie `-O0` … `-O3`) | `2` |
-| `links` | Bibliotheken für den Linker (wie `-l<name>`); zusätzlich zu `link "name"` im Quelltext | `[]` |
+| `links` | Bibliotheken für den Linker: Name (`-l<name>`) oder Datei (`libs/libminifb.a`, `x.o`, `x.lib`; Pfad oder Endung); zusätzlich zu `link "name"` im Quelltext | `[]` |
+| `includePaths` | Suchpfade für C-Header (`using X from "h.h"`), relativ zur `cshift.json` | `[]` |
+| `defines` | Makros beim Parsen von C-Headern (`NAME`, `NAME=wert`) | `[]` |
+| `libraryPaths` | Suchpfade des Linkers (`-L`) | `[]` |
 | `target` | Target-Triple | Host |
 
 Unbekannte Schlüssel erzeugen eine Warnung, falsche Werte einen Fehler mit Dateinamen. `$schema` ist erlaubt; die VS-Code-Extension
