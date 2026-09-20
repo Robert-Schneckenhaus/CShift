@@ -81,9 +81,16 @@ if(CSHIFT_STATIC)
                     OUTPUT_VARIABLE LLVM_STATIC_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process(COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --link-static --system-libs
                     OUTPUT_VARIABLE LLVM_STATIC_SYSTEM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --libdir
+                    OUTPUT_VARIABLE LLVM_STATIC_LIB_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
     string(REPLACE "-lzstd.dll" "-lzstd" LLVM_STATIC_SYSTEM_LIBS "${LLVM_STATIC_SYSTEM_LIBS}") # no DLL dependency
     separate_arguments(LLVM_STATIC_LIBS NATIVE_COMMAND "${LLVM_STATIC_LIBS}")
     separate_arguments(LLVM_STATIC_SYSTEM_LIBS NATIVE_COMMAND "${LLVM_STATIC_SYSTEM_LIBS}")
+    # LLVM may have been built with the Z3 solver (Ubuntu's packages are); cshiftc does not use it.
+    list(FILTER LLVM_STATIC_SYSTEM_LIBS EXCLUDE REGEX "z3")
+    # llvm-config prints -lLLVM... without a search path; the libraries are not in the default path on Linux
+    # (/usr/lib/llvm-22/lib).
+    target_link_directories(cshiftc PRIVATE ${LLVM_STATIC_LIB_DIR})
     target_link_libraries(cshiftc PRIVATE ${LLVM_STATIC_LIBS} ${LLVM_STATIC_SYSTEM_LIBS})
     if(WIN32)
         target_link_options(cshiftc PRIVATE -static -s)
