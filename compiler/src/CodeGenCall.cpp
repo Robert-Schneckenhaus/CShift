@@ -391,6 +391,35 @@ Value CodeGen::emitCall(CallExpr* e)
         if (st.kind == StaticTarget::TypeName)
         {
             Type* t = st.type;
+            if (t->isString())
+            {
+                // string.FromBytes(uint8[] bytes [, start, count]) builds a string from raw (UTF-8) bytes.
+                std::vector<Arg> args = emitArgs(e->args);
+                if (m->name == "FromBytes")
+                {
+                    if (args.empty() || args.size() == 2 || args.size() > 3)
+                        err(e->loc, "string.FromBytes takes (bytes) or (bytes, start, count)");
+                    Value bytes = toRValue(args[0].v);
+                    Type* byteArray = types.arrayOf(types.u8);
+                    if (bytes.type != byteArray && bytes.type->kind != TypeKind::Null)
+                        err(e->loc, "string.FromBytes needs a 'uint8[]', not '" + bytes.type->name + "'");
+                    holdTemp(bytes);
+                    llvm::Value* start = builder.getInt32(0);
+                    llvm::Value* count = builder.CreateTrunc(arrayLength(bytes.v), builder.getInt32Ty());
+                    if (args.size() == 3)
+                    {
+                        start = convertValue(args[1].v, types.i32, e->loc).v;
+                        count = convertValue(args[2].v, types.i32, e->loc).v;
+                    }
+                    // Arrays and strings share the block layout, so the substring helper copies the bytes.
+                    return Value::rvalue(types.stringTy, builder.CreateCall(substringFn(), {bytes.v, start, count}), true);
+                }
+                bool found = false;
+                Value r = emitExtensionCall("String", nullptr, m->name, args, e->loc, found);
+                if (found)
+                    return r;
+                err(e->loc, "type 'string' has no static method '" + m->name + "'");
+            }
             if (!t->isStruct())
                 err(e->loc, "type '" + t->name + "' has no static method '" + m->name + "'");
             std::vector<Candidate> cands = methodCandidates(t, m->name);
@@ -520,7 +549,80 @@ Value CodeGen::emitBuiltinStatic(const std::string& type, const std::string& met
         }
         err(loc, "Memory has no function '" + method + "'");
     }
+    if (type == "Environment")
+    {
+        if (method == "Panic")
+        {
+            // Terminates the program like a failed runtime check (exit code 101).
+            if (args.size() != 1)
+                err(loc, "Environment.Panic takes one argument (message)");
+            Value msg = convertValue(args[0].v, types.stringTy, loc);
+            holdTemp(msg);
+            builder.CreateCall(panicFn(), {builder.CreateCall(dataFn(), {msg.v})});
+            builder.CreateUnreachable();
+            return voidValue;
+        }
+        if (method == "Exit")
+        {
+            if (args.size() != 1)
+                err(loc, "Environment.Exit takes one argument (exit code)");
+            Value code = convertValue(args[0].v, types.i32, loc);
+            llvm::FunctionCallee exitFn = cFunction("exit", builder.getVoidTy(), {builder.getInt32Ty()});
+            builder.CreateCall(exitFn, {code.v});
+            builder.CreateUnreachable();
+            return voidValue;
+        }
+        err(loc, "Environment has no function '" + method + "'");
+    }
+
+    if (type == "Array")
+    {
+        // Array.Copy(source, sourceIndex, destination, destinationIndex, count) or Array.Copy(source, destination, count).
+        // Overlapping ranges of the same array are handled; ARC elements are retained/released correctly.
+        if (method != "Copy" || (args.size() != 5 && args.size() != 3))
+            err(loc, "Array.Copy takes (source, sourceIndex, destination, destinationIndex, count) or (source, destination, count)");
+        bool shortForm = args.size() == 3;
+        Value src = toRValue(args[0].v);
+        Value dst = toRValue(args[shortForm ? 1 : 2].v);
+        if (!src.type->isArray() || src.type != dst.type)
+            err(loc, "Array.Copy needs two arrays of the same type, got '" + src.type->name + "' and '" + dst.type->name + "'");
+        holdTemp(src);
+        holdTemp(dst);
+        auto index = [&](size_t i) {
+            Value v = convertValue(args[i].v, types.i32, loc);
+            return builder.CreateSExt(v.v, builder.getInt64Ty());
+        };
+        llvm::Value* si = shortForm ? builder.getInt64(0) : index(1);
+        llvm::Value* di = shortForm ? builder.getInt64(0) : index(3);
+        llvm::Value* count = index(shortForm ? 2 : 4);
+        builder.CreateCall(copyFn(src.type), {src.v, si, dst.v, di, count});
+        return voidValue;
+    }
     err(loc, "unknown built-in '" + type + "'");
+}
+
+// Calls a function of the standard library that extends a built-in type: "String.Method(self, args...)".
+Value CodeGen::emitExtensionCall(const std::string& ns, const Value* self, const std::string& method,
+                                 std::vector<Arg>& args, SourceLoc loc, bool& found)
+{
+    std::vector<Candidate> cands;
+    for (FuncDecl* d : lookupFunctions(fs->func->file, ns + "." + method))
+        cands.push_back(Candidate{d, nullptr, nullptr, d->file});
+    found = !cands.empty();
+    if (!found)
+        return Value{};
+
+    std::vector<Arg> all;
+    if (self)
+    {
+        Arg a;
+        a.v = *self;
+        all.push_back(a);
+    }
+    for (auto& a : args)
+        all.push_back(a);
+    FuncInfo* fi = resolveOverload(cands, all, {}, loc, ns + "." + method);
+    return emitDirectCall(*fi, nullptr, all, loc);
 }
 
 Value CodeGen::emitBuiltinMethod(Value obj, const std::string& method, std::vector<Arg>& args, SourceLoc loc)
@@ -567,6 +669,11 @@ Value CodeGen::emitBuiltinMethod(Value obj, const std::string& method, std::vect
                 count = builder.CreateSub(builder.CreateTrunc(arrayLength(s.v), builder.getInt32Ty()), start);
             return Value::rvalue(types.stringTy, builder.CreateCall(substringFn(), {s.v, start, count}), true);
         }
+        // Everything else (Contains, Trim, Split, ...) is written in CShift: namespace String of the standard library.
+        bool found = false;
+        Value r = emitExtensionCall("String", &s, method, args, loc, found);
+        if (found)
+            return r;
     }
     else if (t->isArray())
     {
@@ -585,6 +692,29 @@ Value CodeGen::emitBuiltinMethod(Value obj, const std::string& method, std::vect
             expectArgs(0);
             llvm::Value* s = emitToString(obj, loc);
             return Value::rvalue(types.stringTy, s, true);
+        }
+        if (method == "Equals")
+        {
+            expectArgs(1);
+            Value a = toRValue(obj);
+            Value b = convertValue(args[0].v, t, loc);
+            return emitCompare(BinOp::Eq, a, b, loc);
+        }
+        if (method == "GetHashCode")
+        {
+            expectArgs(0);
+            Value a = toRValue(obj);
+            llvm::Value* v = a.v;
+            if (t->isFloat())
+                v = builder.CreateBitCast(v, builder.getIntNTy(t->bits));
+            unsigned bits = v->getType()->getIntegerBitWidth();
+            bool isSigned = (t->isInt() || t->isEnum()) && t->isSigned;
+            if (bits < 32)
+                v = isSigned ? builder.CreateSExt(v, builder.getInt32Ty()) : builder.CreateZExt(v, builder.getInt32Ty());
+            else if (bits == 64)
+                v = builder.CreateXor(builder.CreateTrunc(v, builder.getInt32Ty()),
+                                      builder.CreateTrunc(builder.CreateLShr(v, 32), builder.getInt32Ty()));
+            return Value::rvalue(types.i32, v);
         }
         if (method == "CompareTo" && t->isNumeric())
         {

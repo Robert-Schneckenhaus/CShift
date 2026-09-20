@@ -267,6 +267,7 @@ private:
     llvm::Function* retainFor(Type* t);
     llvm::Function* releaseFor(Type* t);
     llvm::Function* cloneFn(Type* arrayType);
+    llvm::Function* copyFn(Type* arrayType);
     llvm::Constant* stringLiteral(const std::string& value);
     llvm::Value* newString(llvm::Value* len);
     llvm::Value* emitToString(const Value& v, SourceLoc loc);
@@ -309,6 +310,9 @@ private:
     Value emitTry(TryExpr* e);
     Value emitErrorLit(ErrorLitExpr* e);
     Value emitLiteral(Expr* e);
+    ConstDecl* lookupConst(FileContext* f, const std::string& name) const;
+    Value emitConst(ConstDecl* c, SourceLoc loc);
+    bool isConstExpr(Expr* e, FileContext* file) const;
 
     Value convertValue(const Value& v, Type* to, SourceLoc loc);
     int conversionCost(const Value& v, Type* to);
@@ -330,6 +334,8 @@ private:
     Value emitCall(CallExpr* e);
     Value emitBuiltinStatic(const std::string& type, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitBuiltinMethod(Value obj, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
+    Value emitExtensionCall(const std::string& ns, const Value* self, const std::string& method,
+                            std::vector<Arg>& args, SourceLoc loc, bool& found);
     Value emitBuiltinStaticMember(Type* type, const std::string& member, SourceLoc loc, bool& found);
     FuncInfo* resolveOverload(const std::vector<Candidate>& candidates, std::vector<Arg>& args,
                               const std::vector<Type*>& explicitTypeArgs, SourceLoc loc, const std::string& name);
@@ -352,6 +358,7 @@ private:
     void emitDoWhile(DoWhileStmt* s);
     void emitFor(ForStmt* s);
     void emitForeach(ForeachStmt* s);
+    void emitForeachStruct(ForeachStmt* s, const Value& it);
     void emitSwitch(SwitchStmt* s);
     void emitReturn(ReturnStmt* s);
     void emitUsingBlock(UsingBlockStmt* s);
@@ -363,6 +370,7 @@ private:
     void emitScopeCleanup(const Scope& scope);
     void emitCleanupsDownTo(size_t depth);
     ScopeVar& declareVar(const std::string& name, Type* type, llvm::Value* slot);
+    bool isVoidResult(Type* t) const;
     bool blockOpen() const;
     bool reachable() const;
     void ensureInsertPoint();
@@ -384,6 +392,7 @@ private:
 
     std::unordered_map<std::string, TypeDeclEntry> typeDecls;
     std::unordered_map<std::string, std::vector<FuncDecl*>> funcDecls;
+    std::unordered_map<std::string, ConstDecl*> constDecls;
     std::unordered_set<std::string> namespaces;
 
     std::unordered_map<std::string, Type*> structTypes;
@@ -402,6 +411,7 @@ private:
     std::unordered_map<std::string, llvm::Constant*> cStrings;
     FuncInfo* mainFunc = nullptr;
     bool arcStats = false;
+    int constDepth = 0;
 
     std::unique_ptr<FnState> fs;
 };

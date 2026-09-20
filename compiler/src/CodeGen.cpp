@@ -87,6 +87,14 @@ void CodeGen::registerUnit(CompilationUnit& u)
     }
     for (auto& f : u.funcs)
         funcDecls[qualified(&u.file, f->name)].push_back(f.get());
+    for (auto& c : u.consts)
+    {
+        std::string q = qualified(&u.file, c->name);
+        if (constDecls.count(q))
+            diag.error(c->loc, "constant '" + q + "' is already defined");
+        else
+            constDecls[q] = c.get();
+    }
 
     for (auto& l : u.links)
         links.push_back(l);
@@ -102,9 +110,10 @@ std::vector<std::string> CodeGen::candidateNames(FileContext* f, const std::stri
         size_t dot = ns.rfind('.');
         ns = dot == std::string::npos ? "" : ns.substr(0, dot);
     }
+    // Like C#: the file's own namespaces and the global namespace win over 'using' directives.
+    out.push_back(name);
     for (const auto& u : f->usings)
         out.push_back(u + "." + name);
-    out.push_back(name);
     return out;
 }
 
@@ -221,7 +230,8 @@ Type* CodeGen::resolveType(const TypeRef& ref, FileContext* file, const TypeEnv*
         Type* inner = resolveValueType(*ref.args[0], file, env);
         if (inner->isResultLike())
             err(ref.loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + inner->name + ">)");
-        if (inner->isVoid())
+        // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
+        if (inner->isVoid() && dotted != "Error")
             err(ref.loc, dotted + "<void> is not supported");
         return dotted == "Error" ? types.errorOf(inner) : types.optionalOf(inner);
     }
@@ -524,11 +534,20 @@ bool CodeGen::structImplements(Type* structType, Type* iface)
 bool CodeGen::satisfiesInterface(Type* t, Type* iface)
 {
     InterfaceInfo* ii = iface->iface;
-    // Built-in numeric types implement IComparable<Self>.
-    if (ii->decl->file->isPrelude && ii->decl->name == "IComparable" && (t->isNumeric()))
+    // Built-in types implement the standard interfaces of the prelude. Their methods are provided by the
+    // compiler (numbers, bool, char, enums) or by the String namespace of the standard library (strings).
+    if (ii->decl->file->isPrelude)
     {
+        const std::string& name = ii->decl->name;
         auto it = ii->env.find("T");
-        return it != ii->env.end() && it->second == t;
+        bool selfArg = it != ii->env.end() && it->second == t;
+        bool primitive = t->isNumeric() || t->isBool() || t->isString() || t->isEnum();
+        if (name == "IComparable" && (t->isNumeric() || t->isString()))
+            return selfArg;
+        if (name == "IEquatable" && primitive)
+            return selfArg;
+        if (name == "IHashable" && primitive)
+            return true;
     }
     if (t->isStruct())
         return structImplements(t, iface);
@@ -624,7 +643,9 @@ llvm::Type* CodeGen::llvmTypeOf(Type* t)
         r = t->st->llvmType;
         break;
     case TypeKind::Error:
-        r = llvm::StructType::get(ctx, {llvm::Type::getInt1Ty(ctx), llvmTypeOf(t->elem),
+        // Error<void> keeps the same layout with an empty payload so that member indices stay the same.
+        r = llvm::StructType::get(ctx, {llvm::Type::getInt1Ty(ctx),
+                                        t->elem->isVoid() ? (llvm::Type*)llvm::StructType::get(ctx, {}) : llvmTypeOf(t->elem),
                                         llvm::PointerType::getUnqual(ctx), llvm::Type::getInt32Ty(ctx)});
         break;
     case TypeKind::Optional: r = llvm::StructType::get(ctx, {llvm::Type::getInt1Ty(ctx), llvmTypeOf(t->elem)}); break;

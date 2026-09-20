@@ -112,6 +112,9 @@ Umgesetzt aus dem Konzept:
 | C-FFI: `extern "C"`, variadische Funktionen (`printf`), `link "lib"`, Pointer | ✔ |
 | `unsafe`: Pointer, `&`, `*`, Pointer-Arithmetik, `Memory.Allocate/Free` | ✔ |
 | Einstiegspunkt: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
+| `Error<void>` (Ergebnis ohne Wert; `return;` oder Funktionsende = Erfolg) | ✔ (Erweiterung) |
+| Top-Level-`const`, `default(T)`, `foreach` über Structs mit `Count()`/`Get(int)` | ✔ (Erweiterung) |
+| Standardbibliothek: `List<T>`, `Dictionary<K,V>`, `File`, `Encoding`, `Math`, String-Helfer | ✔ (siehe unten) |
 
 ### Auslegung und Erweiterungen gegenüber dem Konzept
 
@@ -128,10 +131,74 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
 * **Interfaces** sind vorerst nur als Constraint und in Basislisten nutzbar, nicht als Variablen-/Parametertyp
   (das bräuchte Fat-Pointer für dynamischen Aufruf ohne Boxing).
 * **Methoden auf `const ref`-Objekten** arbeiten auf einer Kopie (wie C# `in`), damit der Schreibschutz gilt.
-* **Standardumfang** (ohne Runtime-Bibliothek, alles wird als IR in das Programm eingebettet):
-  `Console.Write/WriteLine`, `Memory.Allocate/Free`, `ToString()`/`CompareTo()` auf Zahlen, `int.MaxValue/MinValue`,
-  `IDisposable`, `IComparable<T>`, `sqrt`. Weiteres über `extern "C"`.
+* **Eingebaut** (direkt vom Compiler als IR erzeugt, keine Runtime-Bibliothek): `Console.Write/WriteLine`, `Memory.Allocate/Free`,
+  `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` auf Zahlen,
+  `int.MaxValue/MinValue`. Alles Weitere steht in der Standardbibliothek (nächster Abschnitt) oder kommt über `extern "C"`.
+* **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` prüft nur auf Fehler; `Optional<void>` gibt es nicht.
+* **Konstanten:** `const double PI = 3.14;` auf oberster Ebene (Zahl, `bool`, `char`, `string`; Initialisierer aus Literalen,
+  Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).
+* **`foreach` über Structs:** funktioniert für jeden Struct mit `int Count()` und `T Get(int index)` (z. B. `List<T>`).
+* **Namensauflösung** wie in C#: Namespaces der eigenen Datei und der globale Namespace gehen `using`-Namespaces vor.
 * Erlaubte Zusatzsyntax: `cond ? a : b`, `new int[3][]` (Jagged Arrays), `new T[] { ... }`, `sizeof(T)`.
+
+## Standardbibliothek
+
+Die Standardbibliothek ist in CShift selbst geschrieben (`stdlib/*.csh`) und im Compiler eingebettet. Nur was ein Programm
+tatsächlich benutzt, wird übersetzt (Generics werden pro Typ instanziiert). Beispiele stehen in `tests/cases/stdlib_*.csh`.
+
+| Namespace | Datei | Inhalt |
+|---|---|---|
+| global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
+| `System` | `list.csh`, `dictionary.csh`, `file.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `KeyValuePair<K,V>`, `File`, `Encoding` (`using System;`) |
+| `Math` | `math.csh` | mathematische Funktionen und Konstanten (ohne `using`: `Math.Sqrt(2)`) |
+| `String` | `string.csh` | String-Helfer, werden als Methoden auf `string` sichtbar |
+| `System.Native` | `native.csh` | C-Importe (`fopen`, `sin`, …), auch für eigene Programme (`using System.Native;`) |
+
+**`List<T>`** – wachsendes Array. Erzeugen mit `List<int>.Create()` (oder `new List<int>()`).
+`Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)`, `Set(i, v)`, `Count()`, `Capacity()`,
+`IndexOf(v)`, `Contains(v)` (T: `IEquatable<T>`), `Sort()` (T: `IComparable<T>`, stabil), `Reverse()`, `ToArray()`;
+`foreach (var x in list)` funktioniert. Ein ungültiger Index beendet das Programm mit einem Panic.
+
+**`Dictionary<TKey, TValue>`** – Hashtabelle. `Create()`, `Set(k, v)`, `Add(k, v)` (`Error<void>`, Fehler bei doppeltem Schlüssel),
+`TryGet(k)` (`Optional<TValue>`), `GetOrDefault(k, fallback)`, `ContainsKey(k)`, `Remove(k)`, `Clear()`, `Count()`,
+`Keys()`, `Values()`, `Entries()` (`KeyValuePair<K,V>[]`). Schlüssel müssen `IEquatable` und `IHashable` erfüllen: Zahlen, `bool`,
+`char`, Enums und `string` tun das eingebaut, eigene Structs definieren `bool Equals(T other)` und `int GetHashCode()`.
+
+> Da es keine Klassen gibt, sind `List` und `Dictionary` kleine Structs, die auf gemeinsamen Speicher zeigen: Kopien
+> (Zuweisung, Argumente) sehen dieselben Elemente. Der Speicher entsteht in `Create()` bzw. beim ersten `Add`/`Set`; eine leere
+> Liste aus `new List<T>()` ist vor dem ersten Einfügen noch nicht mit ihren Kopien verbunden – mit `Create()` starten, wenn man sie
+> vor dem ersten Element weitergibt.
+
+**`File`** (statisch, Text standardmäßig UTF-8): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`, `WriteAllText(path, text [, encoding])`,
+`WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`. Lesen liefert `Error<string>` bzw. `Error<uint8[]>`, Schreiben und Löschen
+`Error<void>`; ein UTF-8-BOM wird beim Textlesen übersprungen. Pfade gehen unverändert an die C-Bibliothek (unter Windows also
+keine Nicht-ASCII-Zeichen im Pfad).
+
+```csharp
+using System;
+
+Error<string> Load(string path)
+{
+    var text = try File.ReadAllText(path);
+    try File.WriteAllText(path + ".bak", text);
+    return text.Trim();
+}
+```
+
+**`Encoding`** – `Encoding.UTF8()` und `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])` (`Error<string>`:
+ungültiges UTF-8 bzw. Bytes über 127 bei ASCII sind Fehler), `GetByteCount`, `Name()`. Strings sind im Speicher immer UTF-8;
+`GetBytes` mit ASCII ersetzt andere Zeichen durch `?`. Weitere Kodierungen lassen sich als neue `EncodingKind` ergänzen.
+
+**`Math`** – Konstanten `PI`, `E`, `Tau`; `Abs`/`Min`/`Max`/`Clamp` (int, int64, float, double), `Sign`; `Sqrt`, `Cbrt`, `Pow`, `Exp`,
+`Log`, `Log2`, `Log10`, `Hypot`; `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan`, `Atan2`, `Sinh`, `Cosh`, `Tanh`,
+`DegreesToRadians`, `RadiansToDegrees`; `Floor`, `Ceiling`, `Truncate`, `Round` (Halbe zur geraden Zahl wie in C#), `Lerp`, `IsNaN`,
+`IsInfinity`. Ganzzahl-Argumente werden zu `double` (`Math.Sqrt(2)`).
+
+**String-Helfer** (`s.Contains(x)` ≙ `String.Contains(s, x)`, statisch `string.Join(sep, parts)`): `IsNullOrEmpty`, `Contains`,
+`IndexOf`, `LastIndexOf`, `StartsWith`, `EndsWith`, `Trim`, `ToUpper`/`ToLower` (nur ASCII), `Replace`, `Repeat`, `Split` (Zeichen
+oder String), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`Error<…>`), außerdem `Equals`, `GetHashCode` (FNV-1a) und
+`CompareTo` (bytesweise). Positionen sind Byte-Offsets, `string.FromBytes(bytes [, start, count])` baut einen String aus Bytes.
+Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Parameter = der String).
 
 ## Aufbau des Compilers
 
@@ -145,7 +212,7 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
 | `compiler/src/CodeGenCall.cpp` | Überladungsauflösung, Typinferenz, Aufrufe, eingebaute Funktionen |
 | `compiler/src/CodeGenStmt.cpp` | Anweisungen, Scopes, Cleanup (ARC, `using`), Funktionskörper |
 | `compiler/src/CodeGenRuntime.cpp` | ARC-Helfer, Strings, Panic – direkt als LLVM-IR erzeugt |
-| `compiler/src/Prelude.h` | In CShift geschriebene Standarddeklarationen (`IDisposable`, …) |
+| `stdlib/*.csh` | Standardbibliothek in CShift; wird von CMake als Byte-Arrays in den Compiler eingebettet (`StdlibData.cpp`) |
 | `compiler/src/main.cpp` | Driver: Optimierung, Objektdatei, Linken |
 
 Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
@@ -162,16 +229,17 @@ Mit `--arc-stats` lässt sich prüfen, dass jede Allokation wieder freigegeben w
 tests/run_tests.sh [pfad/zu/cshiftc] [-O0..-O3]      # bzw. .\build.ps1 -Test
 ```
 
-* `tests/test.csh` (+ `tests/mathlib.csh`): großes Testprogramm mit ~160 Prüfungen über alle Sprachbereiche. Ausgabe wird gegen
+* `tests/test.csh` (+ `tests/mathlib.csh`): großes Testprogramm mit ~165 Prüfungen über alle Sprachbereiche. Ausgabe wird gegen
   `tests/test.expected` verglichen, zusätzlich muss die ARC-Bilanz aufgehen.
 * `tests/cases/*.csh`: kleine Programme mit Erwartungen in Kommentaren – Compilerfehler (`err_*`), Laufzeit-Panics (`panic_*`),
-  Programmverhalten (`main_*`), ARC-Stresstest, Sonderfälle (`misc_features`).
+  Programmverhalten (`main_*`), ARC-Stresstest, Sonderfälle (`misc_features`, `builtins`, `error_void`, `const_default`) und die
+  Tests der Standardbibliothek (`stdlib_*`; `stdlib_file` legt Dateien im temporären Verzeichnis an).
 
 ## Bekannte Einschränkungen / nächste Schritte
 
-* Keine Standardbibliothek jenseits des Minimums (kein `File`, keine Container – `List<T>` lässt sich aber bereits in CShift
-  schreiben, siehe `tests/cases/misc_features.csh`).
-* Interfaces als Werttyp (dynamischer Aufruf), Funktionszeiger/Callbacks für die FFI, `Error<void>`, Lambdas, globale Variablen/Konstanten,
+* Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `HashSet`/`Stack`/`Queue`, keine weiteren Encodings,
+  keine Datums-/Zeitfunktionen, keine Formatierung (`Format`, Interpolation). Indexer (`list[i]`) gibt es nicht, es heißt `Get`/`Set`.
+* Interfaces als Werttyp (dynamischer Aufruf), Funktionszeiger/Callbacks für die FFI, Lambdas, globale *Variablen* (Konstanten gehen),
   `Main(string[] args)`, Struct-Übergabe *by value* an C-Funktionen (ABI-Coercion) fehlen noch.
 * Referenzzähler sind nicht atomar (kein Multithreading).
 * Generische Körper werden erst bei der Instanziierung geprüft (wie C++-Templates); unbenutzte generische Funktionen werden nicht analysiert.

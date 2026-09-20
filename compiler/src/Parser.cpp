@@ -145,6 +145,19 @@ void Parser::parseTopLevel(CompilationUnit& u)
         u.links.push_back(advance().text);
         match(Tok::Semi);
     }
+    else if (check(Tok::KwConst))
+    {
+        auto c = std::make_unique<ConstDecl>();
+        c->file = &u.file;
+        c->loc = advance().loc;
+        c->type = parseType();
+        c->loc = cur().loc;
+        c->name = expectIdent("constant name");
+        expect(Tok::Assign, "'=' in constant declaration");
+        c->init = parseExpr();
+        expect(Tok::Semi, "';' after constant");
+        u.consts.push_back(std::move(c));
+    }
     else if (check(Tok::KwStruct))
     {
         u.structs.push_back(parseStruct(u));
@@ -1238,6 +1251,15 @@ ExprPtr Parser::parsePrimary()
         advance();
         expect(Tok::LParen, "'(' after 'sizeof'");
         auto e = std::make_unique<SizeOfExpr>(loc);
+        e->type = parseType();
+        expect(Tok::RParen, "')'");
+        return e;
+    }
+    case Tok::KwDefault:
+    {
+        advance();
+        expect(Tok::LParen, "'(' after 'default'");
+        auto e = std::make_unique<DefaultExpr>(loc);
         e->type = parseType();
         expect(Tok::RParen, "')'");
         return e;

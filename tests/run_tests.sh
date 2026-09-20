@@ -108,7 +108,8 @@ for file in "$DIR"/cases/*.csh; do
         report_fail "$name" "compilation failed: $(head -n 3 "$TMP/case.err" | tr '\n' ' ')"
         continue
     fi
-    "$TMP/case.exe" > "$TMP/case.out" 2> "$TMP/case.run.err"
+    # Run in the temp directory: some tests create files.
+    ( cd "$TMP" && "$TMP/case.exe" > "$TMP/case.out" 2> "$TMP/case.run.err" )
     code=$?
     want_exit="$(directives "$file" expect-exit | head -n 1)"
     want_exit="${want_exit:-0}"

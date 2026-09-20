@@ -19,7 +19,7 @@
 #include "CodeGen.h"
 #include "Lexer.h"
 #include "Parser.h"
-#include "Prelude.h"
+#include "StdlibData.h"
 
 namespace
 {
@@ -171,7 +171,12 @@ int main(int argc, char** argv)
     Diagnostics diag;
     CodeGen* cgPtr = nullptr;
     std::vector<std::unique_ptr<CompilationUnit>> units;
-    units.push_back(parseSource("<prelude>", preludeSource(), true, diag));
+    for (unsigned i = 0; i < kStdlibFileCount; i += 1)
+    {
+        const StdlibFile& lib = kStdlibFiles[i];
+        std::string text(reinterpret_cast<const char*>(lib.data), lib.size);
+        units.push_back(parseSource(std::string("<stdlib>/") + lib.name, text, true, diag));
+    }
     for (const auto& path : opt.inputs)
     {
         std::string text;
@@ -285,6 +290,8 @@ int main(int argc, char** argv)
     std::vector<std::string> linkArgs = {opt.cc, objPath, "-o", exePath};
     for (const auto& l : cg.linkLibraries())
         linkArgs.push_back("-l" + l);
+    if (!isWindows)
+        linkArgs.push_back("-lm"); // the math functions of the standard library
     for (const auto& l : opt.libs)
         linkArgs.push_back("-l" + l);
     std::vector<llvm::StringRef> refs(linkArgs.begin(), linkArgs.end());

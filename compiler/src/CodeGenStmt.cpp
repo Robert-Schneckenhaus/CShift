@@ -7,6 +7,12 @@
 // Blocks, scopes and cleanup
 // ---------------------------------------------------------------------------
 
+// Error<void>: a result that carries no value on success.
+bool CodeGen::isVoidResult(Type* t) const
+{
+    return t->isError() && t->elem->isVoid();
+}
+
 bool CodeGen::blockOpen() const
 {
     llvm::BasicBlock* bb = builder.GetInsertBlock();
@@ -161,6 +167,12 @@ void CodeGen::emitFunctionBody(FuncInfo& fi)
             {
                 emitCleanupsDownTo(0);
                 builder.CreateRetVoid();
+            }
+            else if (isVoidResult(fi.ret))
+            {
+                // Falling off the end of an Error<void> function means success.
+                emitCleanupsDownTo(0);
+                builder.CreateRet(makeSome(fi.ret, nullptr));
             }
             else
             {
@@ -428,8 +440,14 @@ void CodeGen::emitForeach(ForeachStmt* s)
 {
     Value it = toRValue(emitExpr(s->iterable.get()));
     Type* collType = it.type;
+    if (collType->isStruct())
+    {
+        emitForeachStruct(s, it);
+        return;
+    }
     if (!collType->isArray() && !collType->isString())
-        err(s->iterable->loc, "'foreach' requires an array or a string, not '" + collType->name + "'");
+        err(s->iterable->loc, "'foreach' requires an array, a string or a struct with Count() and Get(int), not '" +
+                                  collType->name + "'");
     Type* elemType = collType->isArray() ? collType->elem : types.charTy;
 
     pushScope(); // holds the collection so that it stays alive during the loop
@@ -473,6 +491,74 @@ void CodeGen::emitForeach(ForeachStmt* s)
 
     setBlock(incBB);
     builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), idxSlot), builder.getInt64(1)), idxSlot);
+    builder.CreateBr(condBB);
+
+    setBlock(endBB);
+    popScope(true);
+}
+
+// foreach over a struct: it must provide "int Count()" and "T Get(int index)" (e.g. List<T>).
+void CodeGen::emitForeachStruct(ForeachStmt* s, const Value& it)
+{
+    Type* collType = it.type;
+    SourceLoc loc = s->iterable->loc;
+    auto find = [&](const char* name, std::vector<Arg>& probe) {
+        std::vector<Candidate> cands = methodCandidates(collType, name);
+        if (cands.empty())
+            err(loc, "'foreach' over struct '" + collType->name + "' needs the methods 'int Count()' and 'T Get(int index)'");
+        return resolveOverload(cands, probe, {}, loc, name);
+    };
+    std::vector<Arg> noArgs;
+    FuncInfo* countFn = find("Count", noArgs);
+    Arg probeArg;
+    probeArg.v = constInt(types.i32, 0);
+    std::vector<Arg> oneArg{probeArg};
+    FuncInfo* getFn = find("Get", oneArg);
+    if (!countFn->hasThis || !getFn->hasThis || countFn->ret != types.i32 || getFn->ret->isVoid() ||
+        getFn->paramTypes[0] != types.i32 || getFn->paramRefs[0] != RefKind::None)
+        err(loc, "'foreach' over struct '" + collType->name + "' needs the methods 'int Count()' and 'T Get(int index)'");
+    useFunction(*countFn);
+    useFunction(*getFn);
+
+    pushScope(); // holds a copy of the struct for the duration of the loop
+    llvm::AllocaInst* collSlot = entryAlloca(llvmTypeOf(collType), "foreach.coll");
+    builder.CreateStore(consume(it), collSlot);
+    declareVar("$foreach", collType, collSlot);
+    flushTemps(0);
+
+    llvm::AllocaInst* idxSlot = entryAlloca(builder.getInt32Ty(), "foreach.idx");
+    builder.CreateStore(builder.getInt32(0), idxSlot);
+
+    llvm::BasicBlock* condBB = newBlock("foreach.cond");
+    llvm::BasicBlock* bodyBB = newBlock("foreach.body");
+    llvm::BasicBlock* incBB = newBlock("foreach.inc");
+    llvm::BasicBlock* endBB = newBlock("foreach.end");
+    builder.CreateBr(condBB);
+
+    setBlock(condBB);
+    llvm::Value* idx = builder.CreateLoad(builder.getInt32Ty(), idxSlot);
+    llvm::Value* count = builder.CreateCall(countFn->fn, {collSlot});
+    builder.CreateCondBr(builder.CreateICmpSLT(idx, count), bodyBB, endBB);
+
+    setBlock(bodyBB);
+    size_t outerDepth = fs->scopes.size();
+    pushScope();
+    Type* elemType = getFn->ret;
+    Type* varType = s->type ? declTypeOf(*s->type) : elemType;
+    Value elem = Value::rvalue(elemType, builder.CreateCall(getFn->fn, {collSlot, idx}), needsArc(elemType));
+    Value cv = convertValue(elem, varType, loc);
+    llvm::AllocaInst* varSlot = entryAlloca(llvmTypeOf(varType), s->name);
+    builder.CreateStore(consume(cv), varSlot);
+    declareVar(s->name, varType, varSlot);
+
+    fs->loops.push_back({endBB, incBB, outerDepth});
+    emitStmt(s->body.get());
+    fs->loops.pop_back();
+    popScope(true);
+    branchTo(incBB);
+
+    setBlock(incBB);
+    builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt32Ty(), idxSlot), builder.getInt32(1)), idxSlot);
     builder.CreateBr(condBB);
 
     setBlock(endBB);
@@ -594,6 +680,13 @@ void CodeGen::emitReturn(ReturnStmt* s)
         flushTemps(0);
         emitCleanupsDownTo(0);
         builder.CreateRet(rv);
+        return;
+    }
+    if (isVoidResult(rt))
+    {
+        // "return;" in an Error<void> function reports success.
+        emitCleanupsDownTo(0);
+        builder.CreateRet(makeSome(rt, nullptr));
         return;
     }
     if (!rt->isVoid())

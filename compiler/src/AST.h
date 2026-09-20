@@ -40,7 +40,7 @@ enum class ExprKind
 {
     IntLit, FloatLit, CharLit, StringLit, BoolLit, NullLit,
     Name, Member, Call, Index, Unary, Binary, Assign, Conditional, Cast,
-    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, This, Unchecked, RefArg
+    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg
 };
 
 enum class BinOp
@@ -216,6 +216,13 @@ struct ErrorLitExpr : Expr
     ErrorLitExpr(SourceLoc l) : Expr(ExprKind::ErrorLit, l) {}
     ExprPtr message;
     ExprPtr code; // optional
+};
+
+// default(T): the zero value of any type (0, false, null, empty Optional, all fields zero)
+struct DefaultExpr : Expr
+{
+    DefaultExpr(SourceLoc l) : Expr(ExprKind::Default, l) {}
+    TypeRefPtr type;
 };
 
 struct SizeOfExpr : Expr
@@ -464,9 +471,20 @@ struct EnumDecl
     FileContext* file = nullptr;
 };
 
+// const double PI = 3.14159;   (top level, initializer must be a constant expression of literals)
+struct ConstDecl
+{
+    SourceLoc loc;
+    TypeRefPtr type;
+    std::string name;
+    ExprPtr init;
+    FileContext* file = nullptr;
+};
+
 struct CompilationUnit
 {
     FileContext file;
+    std::vector<std::unique_ptr<ConstDecl>> consts;
     std::vector<std::unique_ptr<StructDecl>> structs;
     std::vector<std::unique_ptr<InterfaceDecl>> interfaces;
     std::vector<std::unique_ptr<EnumDecl>> enums;

@@ -630,3 +630,84 @@ llvm::Function* CodeGen::cloneFn(Type* arrayType)
     b.CreateRet(r);
     return f;
 }
+
+// void copy(src, srcIndex, dst, dstIndex, count): bounds-checked copy that also works for overlapping
+// ranges of one array. Arrays with ARC elements copy element by element (retain new, release old).
+llvm::Function* CodeGen::copyFn(Type* arrayType)
+{
+    std::string name = "__copy." + arrayType->name;
+    auto it = helpers.find(name);
+    if (it != helpers.end())
+        return it->second;
+
+    auto* ptrTy = llvm::PointerType::getUnqual(ctx);
+    auto* i64 = llvm::Type::getInt64Ty(ctx);
+    Type* elem = arrayType->elem;
+    llvm::Type* elemTy = llvmTypeOf(elem);
+    llvm::Function* f = makeHelper(name, llvm::Type::getVoidTy(ctx), {ptrTy, i64, ptrTy, i64, i64});
+    llvm::IRBuilder<> b(llvm::BasicBlock::Create(ctx, "entry", f));
+    auto* failBB = llvm::BasicBlock::Create(ctx, "range", f);
+    auto* okBB = llvm::BasicBlock::Create(ctx, "ok", f);
+    llvm::Value* src = f->getArg(0);
+    llvm::Value* si = f->getArg(1);
+    llvm::Value* dst = f->getArg(2);
+    llvm::Value* di = f->getArg(3);
+    llvm::Value* count = f->getArg(4);
+
+    llvm::Value* srcLen = b.CreateCall(lenFn(), {src});
+    llvm::Value* dstLen = b.CreateCall(lenFn(), {dst});
+    llvm::Value* bad = b.CreateOr(b.CreateICmpSLT(si, b.getInt64(0)), b.CreateICmpSLT(di, b.getInt64(0)));
+    bad = b.CreateOr(bad, b.CreateICmpSLT(count, b.getInt64(0)));
+    bad = b.CreateOr(bad, b.CreateICmpSGT(b.CreateAdd(si, count), srcLen));
+    bad = b.CreateOr(bad, b.CreateICmpSGT(b.CreateAdd(di, count), dstLen));
+    b.CreateCondBr(bad, failBB, okBB);
+
+    b.SetInsertPoint(failBB);
+    b.CreateCall(panicFn(), {cString("array copy out of range")});
+    b.CreateUnreachable();
+
+    b.SetInsertPoint(okBB);
+    llvm::Value* srcBase = b.CreateGEP(elemTy, b.CreateConstGEP1_64(b.getInt8Ty(), src, 16), {si});
+    llvm::Value* dstBase = b.CreateGEP(elemTy, b.CreateConstGEP1_64(b.getInt8Ty(), dst, 16), {di});
+
+    if (!needsArc(elem))
+    {
+        b.CreateMemMove(dstBase, llvm::MaybeAlign(1), srcBase, llvm::MaybeAlign(1),
+                        b.CreateMul(count, b.getInt64(sizeOf(elem))));
+        b.CreateRetVoid();
+        return f;
+    }
+
+    auto* fwdHead = llvm::BasicBlock::Create(ctx, "fwd.head", f);
+    auto* fwdBody = llvm::BasicBlock::Create(ctx, "fwd.body", f);
+    auto* bwdHead = llvm::BasicBlock::Create(ctx, "bwd.head", f);
+    auto* bwdBody = llvm::BasicBlock::Create(ctx, "bwd.body", f);
+    auto* doneBB = llvm::BasicBlock::Create(ctx, "done", f);
+    // Copy backwards when the destination lies behind the source inside the same array.
+    llvm::Value* backward = b.CreateAnd(b.CreateICmpEQ(src, dst), b.CreateICmpSGT(di, si));
+    b.CreateCondBr(backward, bwdHead, fwdHead);
+
+    auto makeLoop = [&](bool back, llvm::BasicBlock* head, llvm::BasicBlock* body) {
+        b.SetInsertPoint(head);
+        llvm::PHINode* i = b.CreatePHI(i64, 2);
+        i->addIncoming(b.getInt64(0), okBB);
+        b.CreateCondBr(b.CreateICmpSLT(i, count), body, doneBB);
+        b.SetInsertPoint(body);
+        llvm::Value* idx = back ? b.CreateSub(b.CreateSub(count, b.getInt64(1)), i) : (llvm::Value*)i;
+        llvm::Value* sp = b.CreateGEP(elemTy, srcBase, {idx});
+        llvm::Value* dp = b.CreateGEP(elemTy, dstBase, {idx});
+        llvm::Value* v = b.CreateLoad(elemTy, sp);
+        b.CreateCall(retainFor(elem), {v});
+        llvm::Value* old = b.CreateLoad(elemTy, dp);
+        b.CreateStore(v, dp);
+        b.CreateCall(releaseFor(elem), {old});
+        i->addIncoming(b.CreateAdd(i, b.getInt64(1)), body);
+        b.CreateBr(head);
+    };
+    makeLoop(false, fwdHead, fwdBody);
+    makeLoop(true, bwdHead, bwdBody);
+
+    b.SetInsertPoint(doneBB);
+    b.CreateRetVoid();
+    return f;
+}

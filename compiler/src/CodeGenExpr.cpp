@@ -97,6 +97,8 @@ llvm::Value* CodeGen::makeSome(Type* resultType, llvm::Value* payloadOwned)
 {
     llvm::Value* agg = llvm::Constant::getNullValue(llvmTypeOf(resultType));
     agg = builder.CreateInsertValue(agg, builder.getTrue(), {0});
+    if (!payloadOwned) // Error<void>
+        return agg;
     return builder.CreateInsertValue(agg, payloadOwned, {1});
 }
 
@@ -201,8 +203,9 @@ int CodeGen::conversionCost(const Value& v, Type* to)
     {
         if (!v.litIsFloat && literalFits(v, to))
             return 1;
+        // Integer literals prefer double (exact), float literals prefer float.
         if (to->isFloat())
-            return 1;
+            return (v.litIsFloat || to->bits == 64) ? 1 : 2;
     }
     if (from->kind == TypeKind::Null)
         return (to->isPointer() || to->isString() || to->isArray() || to->isOptional()) ? 1 : -1;
@@ -213,7 +216,7 @@ int CodeGen::conversionCost(const Value& v, Type* to)
     if (c >= 0)
         return c;
     if (from->isIntegral() && to->isFloat())
-        return 4;
+        return to->bits == 64 ? 6 : 7; // worse than any integer widening; double is preferred (exact for int32)
     if (from->isFloat() && to->isFloat() && from->bits < to->bits)
         return 2;
     if (from->isPointer() && to->isPointer() && to->elem->isVoid())
@@ -360,6 +363,82 @@ Value CodeGen::emitLiteral(Expr* e)
     }
 }
 
+ConstDecl* CodeGen::lookupConst(FileContext* f, const std::string& name) const
+{
+    for (const auto& c : candidateNames(f, name))
+    {
+        auto it = constDecls.find(c);
+        if (it != constDecls.end())
+            return it->second;
+    }
+    return nullptr;
+}
+
+// Constant expressions: literals, operators and other constants.
+bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
+{
+    switch (e->kind)
+    {
+    case ExprKind::IntLit:
+    case ExprKind::FloatLit:
+    case ExprKind::CharLit:
+    case ExprKind::StringLit:
+    case ExprKind::BoolLit:
+        return true;
+    case ExprKind::Name:
+        return lookupConst(file, static_cast<NameExpr*>(e)->name) != nullptr;
+    case ExprKind::Member:
+    {
+        auto* m = static_cast<MemberExpr*>(e);
+        return m->object->kind == ExprKind::Name &&
+               lookupConst(file, static_cast<NameExpr*>(m->object.get())->name + "." + m->name) != nullptr;
+    }
+    case ExprKind::Unary:
+    {
+        auto* u = static_cast<UnaryExpr*>(e);
+        return u->op != UnOp::Deref && u->op != UnOp::AddrOf && isConstExpr(u->operand.get(), file);
+    }
+    case ExprKind::Binary:
+    {
+        auto* b = static_cast<BinaryExpr*>(e);
+        return isConstExpr(b->lhs.get(), file) && isConstExpr(b->rhs.get(), file);
+    }
+    default:
+        return false;
+    }
+}
+
+// A constant is inlined at every use. Its initializer only consists of literals and other constants, so
+// evaluating it has no side effects. It is evaluated in the file context of the declaration.
+Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
+{
+    (void)loc;
+    if (!isConstExpr(c->init.get(), c->file))
+        err(c->loc, "the initializer of constant '" + c->name + "' must be a constant expression (literals, operators, other constants)");
+    if (constDepth > 32)
+        err(c->loc, "constant '" + c->name + "' depends on itself");
+    Type* t = resolveValueType(*c->type, c->file, nullptr);
+    if (!(t->isNumeric() || t->isBool() || t->isString()))
+        err(c->loc, "constants can only be numbers, bool, char or string");
+
+    FileContext* savedFile = fs->func->file;
+    fs->func->file = c->file;
+    constDepth += 1;
+    try
+    {
+        Value v = convertValue(emitExpr(c->init.get()), t, c->init->loc);
+        constDepth -= 1;
+        fs->func->file = savedFile;
+        return v;
+    }
+    catch (...)
+    {
+        constDepth -= 1;
+        fs->func->file = savedFile;
+        throw;
+    }
+}
+
 Value CodeGen::lookupVariable(const std::string& name)
 {
     for (size_t s = fs->scopes.size(); s > 0; s -= 1)
@@ -407,6 +486,9 @@ Value CodeGen::emitName(NameExpr* e)
         if (findField(fs->func->owner, e->name, p))
             return fieldAccess(thisValue(e->loc), e->name, e->loc);
     }
+
+    if (ConstDecl* c = lookupConst(fs->func->file, e->name))
+        return emitConst(c, e->loc);
 
     StaticTarget st = resolveStaticTarget(e);
     if (st.kind == StaticTarget::TypeName || st.kind == StaticTarget::Builtin)
@@ -498,7 +580,7 @@ StaticTarget CodeGen::resolveStaticTarget(Expr* e)
             st.type = p;
             return st;
         }
-        if (dotted == "Console" || dotted == "Memory")
+        if (dotted == "Console" || dotted == "Memory" || dotted == "Environment" || dotted == "Array")
         {
             st.kind = StaticTarget::Builtin;
             return st;
@@ -543,6 +625,11 @@ Value CodeGen::emitMember(MemberExpr* e)
         if (t->isStruct())
             err(e->loc, "struct '" + t->name + "' has no static member '" + e->name + "' (methods must be called)");
         err(e->loc, "type '" + t->name + "' has no member '" + e->name + "'");
+    }
+    if (st.kind == StaticTarget::Namespace)
+    {
+        if (ConstDecl* c = lookupConst(fs->func->file, st.name + "." + e->name))
+            return emitConst(c, e->loc);
     }
     if (st.kind == StaticTarget::Namespace || st.kind == StaticTarget::Builtin)
         err(e->loc, "'" + st.name + "' has no value member '" + e->name + "'");
@@ -1338,6 +1425,8 @@ Value CodeGen::emitTry(TryExpr* e)
     }
 
     setBlock(okBB);
+    if (subj.type->elem->isVoid())
+        return Value::rvalue(types.voidTy, nullptr);
     llvm::Value* payload = builder.CreateExtractValue(subj.v, {1});
     return Value::rvalue(subj.type->elem, payload, subj.owned && needsArc(subj.type->elem));
 }
@@ -1377,6 +1466,13 @@ Value CodeGen::emitExpr(Expr* e)
     case ExprKind::Is: return emitIs(static_cast<IsExpr*>(e));
     case ExprKind::Try: return emitTry(static_cast<TryExpr*>(e));
     case ExprKind::ErrorLit: return emitErrorLit(static_cast<ErrorLitExpr*>(e));
+    case ExprKind::Default:
+    {
+        Type* t = declTypeOf(*static_cast<DefaultExpr*>(e)->type);
+        if (t->isVoid())
+            err(e->loc, "default(void) is not defined");
+        return Value::rvalue(t, zeroValue(t));
+    }
     case ExprKind::SizeOf:
     {
         Type* t = declTypeOf(*static_cast<SizeOfExpr*>(e)->type);
