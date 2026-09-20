@@ -88,6 +88,21 @@ if(CSHIFT_STATIC)
     separate_arguments(LLVM_STATIC_SYSTEM_LIBS NATIVE_COMMAND "${LLVM_STATIC_SYSTEM_LIBS}")
     # LLVM may have been built with the Z3 solver (Ubuntu's packages are); cshiftc does not use it.
     list(FILTER LLVM_STATIC_SYSTEM_LIBS EXCLUDE REGEX "z3")
+    # 'all' lists libraries that some distributions ship in separate packages (Polly on Ubuntu). cshiftc does not
+    # need them, so libraries without a file are left out.
+    set(LLVM_STATIC_LIBS_PRESENT "")
+    foreach(lib IN LISTS LLVM_STATIC_LIBS)
+        if(lib MATCHES "^-l(.+)$")
+            if(EXISTS "${LLVM_STATIC_LIB_DIR}/lib${CMAKE_MATCH_1}.a")
+                list(APPEND LLVM_STATIC_LIBS_PRESENT "${lib}")
+            else()
+                message(STATUS "LLVM library ${CMAKE_MATCH_1} not found, leaving it out")
+            endif()
+        else()
+            list(APPEND LLVM_STATIC_LIBS_PRESENT "${lib}")
+        endif()
+    endforeach()
+    set(LLVM_STATIC_LIBS ${LLVM_STATIC_LIBS_PRESENT})
     # llvm-config prints -lLLVM... without a search path; the libraries are not in the default path on Linux
     # (/usr/lib/llvm-22/lib).
     target_link_directories(cshiftc PRIVATE ${LLVM_STATIC_LIB_DIR})
