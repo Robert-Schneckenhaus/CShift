@@ -56,6 +56,10 @@ add_executable(cshiftc
 
 target_include_directories(cshiftc PRIVATE compiler/src)
 
+# Version shown by 'cshiftc --version' (the release workflow passes -DCSHIFT_VERSION=1.00).
+set(CSHIFT_VERSION "dev" CACHE STRING "Version of cshiftc")
+target_compile_definitions(cshiftc PRIVATE CSHIFT_VERSION="${CSHIFT_VERSION}")
+
 # C header import (using X from "header.h") needs libclang's C API header; libclang itself is loaded at run time.
 find_path(CLANG_C_INCLUDE_DIR clang-c/Index.h HINTS ${LLVM_INCLUDE_DIRS})
 if(CLANG_C_INCLUDE_DIR)
@@ -80,7 +84,12 @@ if(CSHIFT_STATIC)
     separate_arguments(LLVM_STATIC_LIBS NATIVE_COMMAND "${LLVM_STATIC_LIBS}")
     separate_arguments(LLVM_STATIC_SYSTEM_LIBS NATIVE_COMMAND "${LLVM_STATIC_SYSTEM_LIBS}")
     target_link_libraries(cshiftc PRIVATE ${LLVM_STATIC_LIBS} ${LLVM_STATIC_SYSTEM_LIBS})
-    target_link_options(cshiftc PRIVATE -static -s)
+    if(WIN32)
+        target_link_options(cshiftc PRIVATE -static -s)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # Not fully static: loading libclang at run time needs the dynamic loader.
+        target_link_options(cshiftc PRIVATE -static-libstdc++ -static-libgcc -s)
+    endif()
 elseif(LLVM_LINK_LLVM_DYLIB)
     target_link_libraries(cshiftc PRIVATE LLVM)
 else()

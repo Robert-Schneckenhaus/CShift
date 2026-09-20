@@ -30,6 +30,32 @@ int Main()
 }
 ```
 
+## Fertige Releases
+
+Zu jedem Release gibt es ein Archiv für **Windows (x64)** und **Linux (Ubuntu, x64)** auf der
+[Releases-Seite](https://github.com/Robert-Schneckenhaus/CShift/releases). Es enthält alles, was man braucht: den Compiler und eine
+passende Toolchain (clang, libclang, unter Windows zusätzlich lld sowie die MinGW-w64-Header und -Bibliotheken).
+
+```
+Windows:  cshift-1.05-windows-x64.zip       entpacken, Ordner zum PATH hinzufügen
+Linux:    cshift-1.05-linux-x64.tar.xz      tar -xf ... -C ~ ; PATH ergänzen; sudo apt install build-essential
+```
+
+```
+cshiftc --version
+cshiftc new hello
+cshiftc run hello
+```
+
+`cshiftc` sucht clang zuerst im Ordner `toolchain` neben sich; eine vorhandene LLVM-/MSYS2-Installation wird dann nicht gebraucht.
+Unter Linux kommen C-Bibliothek und Linker vom System (`build-essential`).
+
+**Release veröffentlichen:** einen Branch `release/vX.XX` pushen (z. B. `release/v1.05` → Version `1.05`, Tag `v1.05`). Der Workflow
+[.github/workflows/release.yml](.github/workflows/release.yml) baut den Compiler für beide Plattformen, führt die Tests aus (auch
+noch einmal gegen das fertig zusammengestellte Archiv), und veröffentlicht das Release. Ein weiterer Push auf denselben Branch
+ersetzt das Release. Der Branch muss die Workflow-Datei enthalten, also von einem Stand ab diesem Commit abzweigen.
+Das Bauen der Archive selbst: [packaging/](packaging/).
+
 ## Bauen
 
 Voraussetzung: C++17-Compiler, CMake ≥ 3.20, **LLVM-Entwicklungspakete** (Header + Bibliotheken; getestet mit
@@ -86,6 +112,7 @@ cshiftc [Optionen] datei.csh [weitere.csh ...]
   datei.a, datei.o   Bibliotheken/Objektdateien werden mitgelinkt
   --run              Programm nach dem Bauen ausführen
   --arc-stats        Debug: Anzahl Heap-Allokationen/-Freigaben beim Programmende ausgeben
+  --version          Version ausgeben
 ```
 
 Alle übergebenen Dateien (oder die Quellen eines Projekts) bilden ein Programm; Typen und Funktionen können in beliebiger Reihenfolge und
@@ -265,6 +292,7 @@ Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Para
 | `compiler/src/Project.*` | Projektdatei `cshift.json` lesen, `cshiftc new` |
 | `compiler/src/Ffi.h`, `FfiImport.cpp` | `using X from "…"`: `.ffi`-Cache (Aktualität per Hash), Deklarationen aus der `.ffi`-Datei erzeugen |
 | `compiler/src/FfiGenerator.cpp` | C-Header mit libclang (zur Laufzeit geladen) in eine `.ffi`-Datei und C-Wrapper für Struct-Werte übersetzen |
+| `.github/workflows/release.yml`, `packaging/` | Release-Workflow (Windows/Linux) und die Skripte, die den Archivordner mit Toolchain zusammenstellen |
 
 Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
 macht die Monomorphisierung einfach (der Körper einer generischen Funktion wird pro Typkombination erneut durchlaufen).

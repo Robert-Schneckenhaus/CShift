@@ -84,6 +84,7 @@ void printUsage()
                  "  --run            run the program after building\n"
                  "  --arc-stats      debug: print heap allocations/frees when the program exits\n"
                  "  -v               verbose output\n"
+                 "  --version        print the version\n"
                  "  -h, --help       show this help\n";
 }
 
@@ -228,8 +229,22 @@ void optimize(llvm::Module& module, llvm::TargetMachine* tm, int level)
 }
 
 // Finds the C compiler that is used as linker driver, to compile generated C code and to locate libclang.
-std::string locateClang(const std::string& cc, bool isWindows)
+// The release archives contain a toolchain (clang, lld, libclang, C libraries) in the folder 'toolchain' next to
+// cshiftc; it is used before anything in PATH so that the versions match.
+std::string bundledClang(const char* argv0, bool isWindows)
 {
+    std::string self = llvm::sys::fs::getMainExecutable(argv0, reinterpret_cast<void*>(&bundledClang));
+    if (self.empty())
+        return "";
+    llvm::SmallString<256> candidate(llvm::sys::path::parent_path(self));
+    llvm::sys::path::append(candidate, "toolchain", "bin", isWindows ? "clang.exe" : "clang");
+    return llvm::sys::fs::can_execute(candidate) ? std::string(candidate.str()) : std::string();
+}
+
+std::string locateClang(const std::string& cc, bool isWindows, const std::string& bundled)
+{
+    if (cc == "clang" && !bundled.empty())
+        return bundled;
     auto program = llvm::sys::findProgramByName(cc);
     for (const char* fallback : {"cc", "gcc"})
     {
@@ -271,8 +286,21 @@ std::string stem(const std::string& path)
 }
 } // namespace
 
+#ifndef CSHIFT_VERSION
+#define CSHIFT_VERSION "dev"
+#endif
+
 int main(int argc, char** argv)
 {
+    for (int i = 1; i < argc; i += 1)
+    {
+        if (std::string(argv[i]) == "--version")
+        {
+            std::cout << "cshiftc " << CSHIFT_VERSION << "\n";
+            return 0;
+        }
+    }
+
     Options opt;
     if (!parseArgs(argc, argv, opt))
     {
@@ -375,7 +403,7 @@ int main(int argc, char** argv)
     std::string clangPath; // located when it is needed
     auto clang = [&]() -> const std::string& {
         if (clangPath.empty())
-            clangPath = locateClang(opt.cc, isWindows);
+            clangPath = locateClang(opt.cc, isWindows, bundledClang(argv[0], isWindows));
         return clangPath;
     };
 

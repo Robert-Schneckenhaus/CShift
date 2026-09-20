@@ -1,0 +1,214 @@
+# Builds cshiftc for Windows (x64) and Linux (Ubuntu, x64) and publishes a GitHub release.
+#
+# Trigger: a push to a branch named release/vX.XX (e.g. release/v1.05 -> version 1.05, tag v1.05).
+# Every push to such a branch rebuilds the release and replaces it (the tag then points to the pushed commit).
+#
+# The archives contain everything needed to work with the compiler: extract, add the folder to PATH, done.
+#   cshift-<version>-windows-x64.zip       cshiftc.exe + toolchain\ (clang, lld, libclang, MinGW-w64 headers/libraries)
+#   cshift-<version>-linux-x64.tar.xz      cshiftc + toolchain/ (clang, libclang); needs build-essential on the system
+
+name: release
+
+on:
+  push:
+    branches:
+      - "release/v*"
+  workflow_dispatch: # re-run for the branch that is selected in the UI
+
+env:
+  LLVM_VERSION: "22" # LLVM/clang used on Linux (apt.llvm.org); Windows uses the current MSYS2 CLANG64 packages
+
+permissions:
+  contents: read
+
+# A newer push to the same release branch replaces a build that is still running.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - id: parse
+        shell: bash
+        run: |
+          branch="${GITHUB_REF_NAME}"
+          if [[ ! "$branch" =~ ^release/v([0-9]+(\.[0-9]+)+)$ ]]; then
+            echo "::error::'$branch' is not a release branch. Expected release/vX.XX, e.g. release/v1.05"
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${BASH_REMATCH[1]}"
+
+  windows:
+    name: Windows x64
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MSYS2 CLANG64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-llvm
+            mingw-w64-clang-x86_64-lld
+            mingw-w64-clang-x86_64-crt
+            mingw-w64-clang-x86_64-headers
+            mingw-w64-clang-x86_64-winpthreads
+            mingw-w64-clang-x86_64-libc++
+            mingw-w64-clang-x86_64-libunwind
+            mingw-w64-clang-x86_64-compiler-rt
+            mingw-w64-clang-x86_64-cmake
+            mingw-w64-clang-x86_64-ninja
+
+      - name: Build cshiftc (static)
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON -DCSHIFT_VERSION="$VERSION"
+          cmake --build build
+          build/cshiftc.exe --version
+
+      - name: Run tests
+        shell: msys2 {0}
+        run: bash tests/run_tests.sh build/cshiftc.exe
+
+      - name: Assemble the release folder
+        shell: msys2 {0}
+        run: bash packaging/package-windows.sh "$VERSION" build dist
+
+      # The tests run again against the assembled folder with a PATH that contains neither MSYS2 nor clang, so a file
+      # that is missing from the toolchain folder fails here and not on the user's machine.
+      - name: Test the assembled folder
+        shell: bash
+        run: |
+          dist="$PWD/dist/cshift-$VERSION-windows-x64"
+          export PATH="/usr/bin:/c/Windows/System32:/c/Windows"
+          export CSHIFT_CC="$dist/toolchain/bin/clang.exe"
+          "$dist/cshiftc.exe" --version
+          bash tests/run_tests.sh "$dist/cshiftc.exe"
+
+      - name: Create the zip archive
+        shell: pwsh
+        run: |
+          $name = "cshift-$env:VERSION-windows-x64"
+          Push-Location dist
+          7z a -tzip -mx=6 "$name.zip" "$name" | Select-Object -Last 3
+          Pop-Location
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/cshift-${{ needs.version.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    name: Linux x64 (Ubuntu)
+    needs: version
+    # The oldest supported runner: the binaries then also run on newer distributions (glibc is backwards compatible).
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      LLVM_PREFIX: /usr/lib/llvm-22 # keep in sync with LLVM_VERSION above
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }}, CMake and build dependencies
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y --no-install-recommends \
+            "llvm-$LLVM_VERSION-dev" "libclang-$LLVM_VERSION-dev" "clang-$LLVM_VERSION" \
+            cmake ninja-build patchelf zlib1g-dev libzstd-dev libxml2-dev libedit-dev libffi-dev xz-utils
+          test -x "$LLVM_PREFIX/bin/clang"
+
+      - name: Build cshiftc
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON \
+            -DCSHIFT_VERSION="$VERSION" -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm"
+          cmake --build build
+          build/cshiftc --version
+
+      - name: Run tests
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/cshiftc
+
+      - name: Assemble the release folder
+        run: bash packaging/package-linux.sh "$VERSION" build dist
+
+      # Again with the assembled folder only (no LLVM in PATH): cshiftc must find its own clang and libclang.
+      - name: Test the assembled folder
+        run: |
+          dist="$PWD/dist/cshift-$VERSION-linux-x64"
+          export PATH="/usr/bin:/bin"
+          export CSHIFT_CC="$dist/toolchain/bin/clang"
+          "$dist/cshiftc" --version
+          bash tests/run_tests.sh "$dist/cshiftc"
+
+      - name: Create the tar.xz archive
+        run: |
+          cd dist
+          XZ_OPT="-T0 -6" tar -cJf "cshift-$VERSION-linux-x64.tar.xz" "cshift-$VERSION-linux-x64"
+          ls -lh *.tar.xz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: dist/cshift-${{ needs.version.outputs.version }}-linux-x64.tar.xz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release
+    needs: [version, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and the release
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Publish
+        shell: bash
+        run: |
+          tag="v$VERSION"
+          ls -lh assets
+          cat > notes.md <<EOF
+          CShift $VERSION
+
+          | Platform | Archive |
+          |---|---|
+          | Windows 10/11, x64 | \`cshift-$VERSION-windows-x64.zip\` |
+          | Linux (Ubuntu 22.04+ and other glibc distributions), x64 | \`cshift-$VERSION-linux-x64.tar.xz\` |
+
+          Extract, add the folder to \`PATH\`, then \`cshiftc --version\` and \`cshiftc new hello\`.
+          The archives contain the compiler and a matching clang/libclang toolchain (see README.txt in the archive).
+          On Linux \`build-essential\` (gcc, libc6-dev, binutils) has to be installed.
+
+          Built from commit ${GITHUB_SHA} on branch \`${GITHUB_REF_NAME}\`.
+          EOF
+
+          # A new push to the release branch replaces the release of the same version (and moves its tag).
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          fi
+          gh release create "$tag" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "CShift $VERSION" \
+            --notes-file notes.md
