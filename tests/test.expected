@@ -1,0 +1,21 @@
+age 3
+body true
+dispose 2
+dispose 1
+body false
+end
+dispose 2
+dispose 1
+loop 0
+dispose 10
+dispose 11
+dispose 12
+in block
+dispose 20
+after block
+using 3
+dispose 3
+using 4
+dispose 4
+printf: 42 text 1.50
+passed: 164, failed: 0
