@@ -38,12 +38,9 @@ Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die
 
 ## 2. Testen, ob der neue Compiler alles bauen kann
 
-- [ ] Noch nicht möglich (der Codegenerator ist erst ein Teil). Vorgehen, sobald er vollständig ist:
-      1. `tests/run_tests.sh` mit `cshc` statt `cshiftc` laufen lassen (`CSHIFTC=selfhost/bin/cshc`); `tests/test.csh`,
-         `tests/cases/`, `tests/projects/` (dafür braucht `cshc` die Optionen des Treibers).
-      2. Bootstrap: `cshiftc` baut `cshc` (Stufe 1), Stufe 1 baut `cshc` (Stufe 2), Stufe 2 noch einmal (Stufe 3);
-         Stufe 2 und 3 müssen gleich sein.
-      3. `demo/` und die FFI-Tests mit `cshc` bauen.
+- [x] `tests/cases/` (80 von 80), `tests/test.csh` (Ausgabe identisch, keine Leaks) und der Bootstrap laufen mit `cshc` (`tests/run_tests.sh`, Abschnitt selfhost;
+      `selfhost/bootstrap.sh`: Stufe 1 = mit `cshiftc` gebaut, Stufe 2 = von `cshc` gebaut, gleiches IR für die Quellen von `cshc`).
+- [ ] Offen: `tests/projects/` (braucht den Treiber mit `cshift.json`, siehe Abschnitt 1), `demo/` und die FFI-Tests (brauchen `.ffi`-Import).
 
 ## 3. Abhängigkeiten des neuen Compilers (Analyse)
 
