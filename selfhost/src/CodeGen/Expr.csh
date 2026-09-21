@@ -181,8 +181,14 @@ Value EmitName(Compiler cg, Expr e)
     if (c >= 0)
         return EmitConst(cg, c, e.Loc);
 
-    if (LookupFunctions(cg, cg.Fn[0].File, n.Name).Length > 0)
-        Fail(cg, e.Loc, "cshc does not support function names as values yet ('" + n.Name + "')");
+    // A function name is a value that converts to a matching Action/Func type.
+    var group = new Candidate[0];
+    if (owner != 0)
+        group = MethodCandidates(cg, owner, n.Name);
+    if (group.Length == 0)
+        group = FreeCandidates(cg, cg.Fn[0].File, n.Name);
+    if (group.Length > 0)
+        return GroupValue(cg, group, ResolveTypeArgs(cg, n.TypeArgs), n.Name);
     if (!cg.St[0].StdlibLoaded && IsStdlibName(n.Name))
         Fail(cg, e.Loc, "cshc does not support the standard library yet ('" + n.Name + "')");
     Fail(cg, e.Loc, "undefined name '" + n.Name + "'");
@@ -427,6 +433,12 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     Value l = ToRValue(cg, l0);
     Value r = ToRValue(cg, r0);
     bool isEq = op == BinOp.Eq || op == BinOp.Ne;
+
+    // A function name compared with a function value takes the function's type.
+    if (types.Kind(l.Type) == TypeKind.MethodGroup && types.IsFunction(r.Type))
+        l = ConvertValue(cg, l, r.Type, loc);
+    else if (types.Kind(r.Type) == TypeKind.MethodGroup && types.IsFunction(l.Type))
+        r = ConvertValue(cg, r, l.Type, loc);
 
     // Comparisons with null.
     if (types.Kind(l.Type) == TypeKind.Null || types.Kind(r.Type) == TypeKind.Null)

@@ -3,8 +3,8 @@
 Ziel: den Compiler (`compiler/`, C++ mit LLVM) in CShift selbst zu schreiben, sodass er sich am Ende selbst übersetzt.
 
 **Stand:** Lexer und Parser sind vollständig und gegen den C++-Compiler abgesichert. Der Codegenerator deckt fast die ganze Sprache ab
-(Structs, Arrays, `Error<T>`/`Optional<T>`, Generics, Interfaces, Enums, `switch`, Zeiger/`unsafe`, Standardbibliothek als Prelude); von den 80
-Testfällen in `tests/cases` besteht `cshc` 72, die übrigen 8 brauchen Funktionszeiger. `tests/test.csh` läuft mit `cshc` identisch zum C++-Compiler,
+(Structs, Arrays, `Error<T>`/`Optional<T>`, Generics, Interfaces, Enums, `switch`, Zeiger/`unsafe`, Funktionszeiger, Standardbibliothek als Prelude); alle 80
+Testfälle in `tests/cases` bestehen mit `cshc`. `tests/test.csh` läuft mit `cshc` identisch zum C++-Compiler,
 und **`cshc` übersetzt sich selbst** (`selfhost/bootstrap.sh`: Stufe 1 und Stufe 2 erzeugen identisches LLVM-IR). Der Rest der Liste steht in
 [../Todo.md](../Todo.md).
 
@@ -35,6 +35,7 @@ selfhost/
 │       ├── Enums.csh        Enums und konstante Ganzzahlausdrücke
 │       ├── Generics.csh     Typargumente, Inferenz, Interfaces, Constraints, using/IDisposable
 │       ├── Pointers.csh     Zeiger: *, &, Arithmetik, Casts
+│       ├── FuncPtrs.csh     Funktionszeiger: Action/Func, Method Groups, indirekter Aufruf
 │       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
 │       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
 │       └── Module.csh       Programm übersetzen, Einstiegspunkt

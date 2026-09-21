@@ -250,6 +250,11 @@ int ConversionCost(Compiler cg, Value v, int to)
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
                 toKind == TypeKind.Optional || toKind == TypeKind.Function) ? 1 : -1;
     }
+    if (fromKind == TypeKind.MethodGroup)
+    {
+        string unused = "";
+        return types.IsFunction(to) && ResolveGroup(cg, v, to, ref unused) >= 0 ? 1 : -1;
+    }
     if (fromKind == TypeKind.ErrorLit)
         return types.IsError(to) ? 1 : -1;
 
@@ -295,6 +300,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     int from = v.Type;
     if (from == to)
         return ToRValue(cg, v);
+    if (types.Kind(from) == TypeKind.MethodGroup)
+        return ConvertGroup(cg, v, to, loc);
 
     if (ConversionCost(cg, v, to) < 0)
     {

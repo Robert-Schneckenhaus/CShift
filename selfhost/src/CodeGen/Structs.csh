@@ -384,7 +384,19 @@ Value EmitMember(Compiler cg, Expr e)
                 int c = LookupConst(cg, cg.Fn[0].File, dotted + "." + m.Name);
                 if (c >= 0)
                     return EmitConst(cg, c, e.Loc);
-                Fail(cg, e.Loc, "cshc does not support static members yet ('" + dotted + "." + m.Name + "')");
+                if (isTypeName && entry.Kind == DeclKind.Struct)
+                {
+                    // Type.Method as a value: a static method that converts to an Action/Func
+                    int owner = GetStructType(cg, entry.Index, ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object)), e.Loc);
+                    var methods = MethodCandidates(cg, owner, m.Name);
+                    if (methods.Length > 0)
+                        return GroupValue(cg, methods, ResolveTypeArgs(cg, m.TypeArgs), types.Name(owner) + "." + m.Name);
+                    Fail(cg, e.Loc, "struct '" + types.Name(owner) + "' has no static member '" + m.Name + "'");
+                }
+                var functions = FreeCandidates(cg, cg.Fn[0].File, dotted + "." + m.Name);
+                if (functions.Length > 0)
+                    return GroupValue(cg, functions, ResolveTypeArgs(cg, m.TypeArgs), dotted + "." + m.Name);
+                Fail(cg, e.Loc, "'" + dotted + "' has no value member '" + m.Name + "'");
             }
         }
     }

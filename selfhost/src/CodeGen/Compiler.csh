@@ -95,6 +95,9 @@ struct Value
     bool LitIsFloat;
     int64 LitInt;
     double LitFloat;
+    Candidate[] Group;       // a function name used as a value (type "function")
+    int[] GroupTypeArgs;
+    string GroupName;
 
     bool IsNone()
     {
@@ -533,7 +536,6 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 int ResolveFunctionType(Compiler cg, TypeRefNode node, string dotted, int file, Dictionary<string, int> env)
 {
     var types = cg.Types;
-    Fail(cg, node.Loc, "cshc does not support function pointers (Action/Func) yet");
     bool isAction = dotted == "Action";
     if (!isAction && node.Args.Length == 0)
         Fail(cg, node.Loc, "'Func' needs at least the result type: Func<TResult>, Func<TArg, TResult>, ...");

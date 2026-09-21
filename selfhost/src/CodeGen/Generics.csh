@@ -292,7 +292,14 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
     var bound = new int[d.TypeParams.Length];
     for (var i = 0; i < d.Params.Length && i < args.Length; i += 1)
     {
-        if (!Unify(cg, d.Params[i].Type, args[i].V.Type, d.TypeParams, fe.File, bound))
+        int actual = args[i].V.Type;
+        if (cg.Types.Kind(actual) == TypeKind.MethodGroup)
+        {
+            int ft = GroupFunctionType(cg, args[i].V); // the natural type of a function name with a single meaning
+            if (ft != 0)
+                actual = ft;
+        }
+        if (!Unify(cg, d.Params[i].Type, actual, d.TypeParams, fe.File, bound))
             return false;
     }
     foreach (var b in bound)

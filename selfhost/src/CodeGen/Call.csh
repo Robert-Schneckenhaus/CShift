@@ -288,8 +288,24 @@ Candidate[] FreeCandidates(Compiler cg, int file, string name)
 // A call of a free function or of a method of the current struct by its simple name.
 Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
 {
-    if (!LookupVariable(cg, n.Name).IsNone())
-        Fail(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
+    Value variable = LookupVariable(cg, n.Name);
+    if (!variable.IsNone())
+    {
+        if (!cg.Types.IsFunction(variable.Type))
+            Fail(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
+        return EmitIndirectCall(cg, variable, EmitArgs(cg, call.Args), e.Loc);
+    }
+    int currentOwner = CurrentOwner(cg);
+    if (currentOwner != 0)
+    {
+        // A field with a function type is called like a function.
+        var fieldPath = FindField(cg, currentOwner, n.Name);
+        if (fieldPath.Found && cg.Types.IsFunction(fieldPath.Type))
+        {
+            Value field = FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
+            return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
+        }
+    }
     var cands = new Candidate[0];
     int owner = CurrentOwner(cg);
     if (owner != 0)
@@ -383,7 +399,19 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
         obj = DerefPointer(cg, obj, e.Loc);
     else if (types.IsPointer(obj.Type))
         Fail(cg, e.Loc, "use '->' to call methods through a pointer");
+    if (types.IsStruct(obj.Type) && MethodCandidates(cg, obj.Type, m.Name).Length == 0)
+    {
+        // A field with a function type is called like a method: obj.Callback(x)
+        var fieldPath = FindField(cg, obj.Type, m.Name);
+        if (fieldPath.Found && types.IsFunction(fieldPath.Type))
+        {
+            Value field = FieldAccess(cg, obj, m.Name, e.Loc);
+            return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
+        }
+    }
     var args = EmitArgs(cg, call.Args);
+    if (types.IsFunction(obj.Type) && m.Name == "Invoke")
+        return EmitIndirectCall(cg, obj, args, e.Loc);
     if (!types.IsStruct(obj.Type))
         return EmitBuiltinMethod(cg, obj, m.Name, args, e.Loc);
     var cands = MethodCandidates(cg, obj.Type, m.Name);
@@ -426,8 +454,11 @@ Value EmitCall(Compiler cg, Expr e)
         return EmitNameCall(cg, e, call, cg.Tree.GetName(callee));
     if (callee.Kind == ExprKind.Member)
         return EmitMemberCall(cg, e, call, cg.Tree.GetMember(callee));
-    Fail(cg, e.Loc, "this expression cannot be called");
-    return Value { };
+    // Any other expression that yields a function: handlers[i](x), MakeCallback()(x)
+    Value fv = EmitExpr(cg, callee);
+    if (!cg.Types.IsFunction(fv.Type))
+        Fail(cg, e.Loc, "this expression cannot be called (type '" + cg.Types.Name(fv.Type) + "')");
+    return EmitIndirectCall(cg, fv, EmitArgs(cg, call.Args), e.Loc);
 }
 
 // ---------------------------------------------------------------------------

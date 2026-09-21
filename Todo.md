@@ -17,16 +17,14 @@ Erledigt:
       selfhost/DEPENDENCIES.md). Die LLVM-C-API per FFI wäre möglich gewesen (Spike lief), ist aber schwerer.
 - [x] **Codegenerator:** `selfhost/src/Sema` (Typtabelle), `Emit` (IR-Schreiber), `CodeGen` (Compiler-Zustand, Typauflösung, Funktionsinstanzen,
       Werte und Referenzzählung, Ausdrücke, Aufrufe/Überladungen, Anweisungen, Structs, Arrays, `Error<T>`/`Optional<T>`, `switch`, Enums,
-      Generics und Interfaces mit Constraints, `using`/`IDisposable`, Zeiger/`unsafe`, Laufzeit als IR-Text) und `Main.csh` als Treiber
+      Generics und Interfaces mit Constraints, `using`/`IDisposable`, Zeiger/`unsafe`, Funktionszeiger, Laufzeit als IR-Text) und `Main.csh` als Treiber
       (`cshc [--stdlib dir] datei.csh -o prog`). Die Standardbibliothek (`stdlib/*.csh`) wird als Prelude geladen.
-      **72 von 80 Fällen aus `tests/cases` bestehen mit `cshc`** (kein FAIL, 8 „unsupported“; `--arc-stats` prüft `live=0`), außerdem `tests/test.csh`
+      **alle 80 Fälle aus `tests/cases` bestehen mit `cshc`** ( `--arc-stats` prüft `live=0`), außerdem `tests/test.csh`
       (Ausgabe identisch zu `test.expected`). `selfhost/passing.txt` + `status.sh --check` schützen vor Rückschritten.
 - [x] **Bootstrap:** `cshc` übersetzt seine eigenen Quellen (`selfhost/bootstrap.sh`): Stufe 1 (mit dem C++-Compiler gebaut) und Stufe 2 (von `cshc`
       gebaut) erzeugen für die Quellen von `cshc` **identisches LLVM-IR** (Fixpunkt), Stufe 2 besteht dieselben Testfälle. Teil von `tests/run_tests.sh`.
 
 Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
-- [ ] **Funktionszeiger** (`Action`/`Func`: Method Groups als Werte, Auswahl der Überladung nach Zielty, indirekter Aufruf, Vergleich, `null`-Panic,
-      Fehlermeldungen) – 8 Testfälle in `tests/cases` (`function_pointers`, `err_function_*`, `panic_null_function`).
 - [ ] **Structs (Rest):** explizites Layout und Struct-Wrapper (FFI).
 - [ ] **Treiber:** Optionen wie `cshiftc` (`-c`, `--target`, `-l`, `-L`, `-I`, `cshiftc build/run/new`), Projektdatei `cshift.json` (JSON-Parser in
       CShift), Standardbibliothek fest einbetten statt `--stdlib` (CShift hat kein `#embed`; z. B. beim Bauen eine generierte `.csh` mit den Texten),

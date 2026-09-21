@@ -16,6 +16,12 @@ err_enum_no_base.csh
 err_extern_struct.csh
 err_fallthrough.csh
 err_foreach_struct.csh
+err_function_call_args.csh
+err_function_instance_method.csh
+err_function_ref_param.csh
+err_function_signature.csh
+err_function_too_many_params.csh
+err_function_void_result.csh
 err_increment.csh
 err_interface_not_implemented.csh
 err_interface_variable.csh
@@ -40,6 +46,7 @@ err_using_not_disposable.csh
 err_void_result_value.csh
 error_void.csh
 exit_code.csh
+function_pointers.csh
 link_extern.csh
 main_args.csh
 main_error.csh
@@ -57,6 +64,7 @@ panic_multiply.csh
 panic_negative_array.csh
 panic_negative_index.csh
 panic_null_array.csh
+panic_null_function.csh
 panic_output_kept.csh
 panic_overflow.csh
 panic_string_index.csh

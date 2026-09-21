@@ -247,6 +247,14 @@ void EmitVarDecl(Compiler cg, Stmt s)
         if (d.Init.IsNull())
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "': 'var' needs an initializer");
         t = init.Type;
+        if (types.Kind(t) == TypeKind.MethodGroup)
+        {
+            // 'var f = Square;' has the function type of Square if the name has a single meaning.
+            t = GroupFunctionType(cg, init);
+            if (t == 0)
+                Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from the function name '" + init.GroupName +
+                                "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
+        }
         var k = types.Kind(t);
         if (k == TypeKind.Null || k == TypeKind.ErrorLit || k == TypeKind.Void)
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from '" + types.Name(t) + "'");
