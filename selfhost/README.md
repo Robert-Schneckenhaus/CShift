@@ -12,6 +12,8 @@ und **`cshc` übersetzt sich selbst** (`selfhost/bootstrap.sh`: Stufe 1 und Stuf
 selfhost/
 ├── cshift.json              Projekt "cshc" (baut mit: cshiftc build selfhost)
 ├── src/
+│   ├── Driver/              Kommandozeile: Build.csh (Optionen, build/run/new, clang), Project.csh (cshift.json), Json.csh,
+│   │                        StdlibGen.csh + EmbeddedStdlib.csh (die Stdlib als Stringliterale, erzeugt mit cshc --gen-stdlib)
 │   ├── Main.csh             Kommandozeile: cshc [Optionen] datei.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
@@ -42,6 +44,7 @@ selfhost/
 ├── compare.sh               Frontend: vergleicht cshc mit dem C++-Compiler (Tokens und Syntaxbaum)
 ├── status.sh, passing.txt   Codegenerator: welche Fälle aus tests/cases bestehen
 ├── bootstrap.sh             cshc baut sich selbst; Stufe 1 und 2 müssen dasselbe IR erzeugen
+├── projects.sh              tests/projects mit cshc bauen (cshc build/run/new)
 └── DEPENDENCIES.md          Analyse: was der neue Compiler zur Laufzeit braucht und was sich sparen lässt
 ```
 

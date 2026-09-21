@@ -12,14 +12,17 @@
 using System;
 using CShift.Syntax;
 using CShift.CodeGen;
+using CShift.Driver;
 
 int Main(string[] args)
 {
     if (args.Length == 2 && args[0] == "--tokens")
         return DumpTokens(args[1]);
+    if (args.Length == 3 && args[0] == "--gen-stdlib")
+        return GenerateStdlib(args[1], args[2]);
     if (args.Length == 2 && args[0] == "--ast")
         return DumpSyntaxTree(args[1]);
-    return Compile(args);
+    return Cshc(args);
 }
 
 // Reads a source file (a UTF-8 byte order mark is skipped).
@@ -82,162 +85,4 @@ string StemOf(string path)
     string name = slash >= 0 ? path.Substring(slash + 1, path.Length - slash - 1) : path;
     int dot = name.LastIndexOf('.');
     return dot > 0 ? name.Substring(0, dot) : name;
-}
-
-// The files of the standard library.
-string[] StdlibFiles()
-{
-    return new string[] { "core.csh", "native.csh", "args.csh", "char.csh", "math.csh", "string.csh", "stringbuilder.csh",
-                          "list.csh", "dictionary.csh", "hashset.csh", "encoding.csh", "file.csh", "process.csh" };
-}
-
-// Without --stdlib the library is looked for next to the current directory.
-string FindStdlib()
-{
-    string[] candidates = new string[] { "stdlib", "../stdlib", "../../stdlib" };
-    foreach (var c in candidates)
-        if (File.Exists(c + "/core.csh"))
-            return c;
-    return "";
-}
-
-int Compile(string[] args)
-{
-    var inputs = List<string>.Create();
-    string output = "";
-    string cc = "clang";
-    string optimize = "-O2";
-    string stdlibDir = "";
-    bool emitLlvm = false;
-    bool run = false;
-    bool arcStats = false;
-    bool verbose = false;
-    for (var i = 0; i < args.Length; i += 1)
-    {
-        string a = args[i];
-        if (a == "-o" && i + 1 < args.Length)
-        {
-            i += 1;
-            output = args[i];
-        }
-        else if (a == "--cc" && i + 1 < args.Length)
-        {
-            i += 1;
-            cc = args[i];
-        }
-        else if (a == "--stdlib" && i + 1 < args.Length)
-        {
-            i += 1;
-            stdlibDir = args[i];
-        }
-        else if (a == "--no-stdlib")
-            stdlibDir = "-";
-        else if (a == "--emit-llvm")
-            emitLlvm = true;
-        else if (a == "--arc-stats")
-            arcStats = true;
-        else if (a == "--run")
-            run = true;
-        else if (a == "-v")
-            verbose = true;
-        else if (a == "-O0" || a == "-O1" || a == "-O2" || a == "-O3")
-            optimize = a;
-        else if (a.Length > 0 && a[0] == '-')
-        {
-            Console.WriteErrorLine("error: unknown option '" + a + "'");
-            return 2;
-        }
-        else
-            inputs.Add(a);
-    }
-    if (inputs.Count() == 0)
-    {
-        Console.WriteErrorLine("usage: cshc [-o file] [--emit-llvm] [-O0..-O3] [--cc clang] [--run] file.csh [file2.csh ...]");
-        return 2;
-    }
-
-    // Parse all files.
-    var diag = Diagnostics.Create();
-    var tree = Ast.Create();
-    bool windows = Process.IsWindows();
-    var cg = Compiler.Create(tree, diag, windows);
-    cg.St[0].ArcStats = arcStats;
-
-    // The standard library (stdlib/*.csh) is parsed as a prelude: its functions are only compiled when they are used.
-    if (stdlibDir != "-")
-    {
-        if (stdlibDir.Length == 0)
-            stdlibDir = FindStdlib();
-        if (stdlibDir.Length > 0)
-        {
-            foreach (var name in StdlibFiles())
-            {
-                string path = stdlibDir + "/" + name;
-                var text = ReadSource(path);
-                if (text is string source)
-                {
-                    int file = diag.AddFile(path);
-                    var lexer = Lexer.Create(source, file, diag);
-                    var parser = Parser.Create(lexer.Tokenize(), diag, tree);
-                    AddUnit(cg, parser.ParseUnit(true));
-                }
-                else
-                {
-                    return 1;
-                }
-            }
-            cg.St[0].StdlibLoaded = true;
-        }
-    }
-    for (var i = 0; i < inputs.Count(); i += 1)
-    {
-        string path = inputs.Get(i);
-        var text = ReadSource(path);
-        if (text is string source)
-        {
-            int file = diag.AddFile(path);
-            var lexer = Lexer.Create(source, file, diag);
-            var parser = Parser.Create(lexer.Tokenize(), diag, tree);
-            AddUnit(cg, parser.ParseUnit(false));
-        }
-        else
-        {
-            return 1;
-        }
-    }
-    if (diag.HasErrors())
-        return 1;
-
-    string ir = CompileProgram(cg, "");
-
-    if (output.Length == 0)
-        output = StemOf(inputs.Get(0)) + (emitLlvm ? ".ll" : (windows ? ".exe" : ""));
-    string llFile = emitLlvm ? output : output + ".ll";
-    var written = File.WriteAllText(llFile, ir);
-    if (!written)
-    {
-        Console.WriteErrorLine("error: cannot write '" + llFile + "': " + written.Message);
-        return 1;
-    }
-    if (emitLlvm)
-        return 0;
-
-    // cmd.exe (Process.Run) does not find programs that are written with forward slashes.
-    string ccPath = windows ? cc.Replace("/", "\\") : cc;
-    string command = "\"" + ccPath + "\" " + optimize + " -Wno-override-module \"" + llFile + "\" -o \"" + output + "\"";
-    foreach (var lib in cg.Links.ToArray())
-        command += " -l" + lib;
-    if (verbose)
-        Console.WriteErrorLine(command);
-    int code = Process.Run(command);
-    if (code != 0)
-    {
-        Console.WriteErrorLine("error: clang failed (exit code " + code.ToString() + ")");
-        return 1;
-    }
-    if (!verbose)
-        File.Delete(llFile);
-    if (run)
-        return Process.Run("\"" + output + "\"");
-    return 0;
 }

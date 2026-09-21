@@ -19,13 +19,13 @@ EXE=""
 case "$STAGE1" in *.exe) EXE=".exe" ;; esac
 
 # stage 2: cshc built by cshc
-if ! "$STAGE1" --stdlib "$ROOT/stdlib" "${CC_ARGS[@]}" $FILES -o "$TMP/stage2$EXE" > "$TMP/stage2.log" 2>&1; then
+if ! "$STAGE1" "${CC_ARGS[@]}" $FILES -o "$TMP/stage2$EXE" > "$TMP/stage2.log" 2>&1; then
     echo "stage 2 does not build:"; head -n 10 "$TMP/stage2.log"; exit 1
 fi
 
 # the IR that both stages generate for the sources of cshc
-"$STAGE1" --stdlib "$ROOT/stdlib" --emit-llvm $FILES -o "$TMP/stage1.ll" > "$TMP/e1.log" 2>&1 || { cat "$TMP/e1.log"; exit 1; }
-"$TMP/stage2$EXE" --stdlib "$ROOT/stdlib" --emit-llvm $FILES -o "$TMP/stage2.ll" > "$TMP/e2.log" 2>&1 || { cat "$TMP/e2.log"; exit 1; }
+"$STAGE1" --emit-llvm $FILES -o "$TMP/stage1.ll" > "$TMP/e1.log" 2>&1 || { cat "$TMP/e1.log"; exit 1; }
+"$TMP/stage2$EXE" --emit-llvm $FILES -o "$TMP/stage2.ll" > "$TMP/e2.log" 2>&1 || { cat "$TMP/e2.log"; exit 1; }
 if ! cmp -s "$TMP/stage1.ll" "$TMP/stage2.ll"; then
     echo "stage 1 and stage 2 generate different IR"
     diff "$TMP/stage1.ll" "$TMP/stage2.ll" | head -n 20

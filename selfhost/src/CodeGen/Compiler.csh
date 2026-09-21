@@ -168,6 +168,7 @@ struct CgState
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
     bool StdlibLoaded;    // the standard library was added as prelude
+    int Imports;          // number of "using X from header" declarations in the program
 }
 
 // ---------------------------------------------------------------------------

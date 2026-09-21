@@ -221,7 +221,7 @@ else
             head -n 10 "$TMP/selfhost.status"
         fi
         # The main test program built by cshc must behave exactly like the one built by the C++ compiler.
-        if "$cshc" "${CC_ARGS[@]}" --arc-stats --stdlib "$DIR/../stdlib" "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
+        if "$cshc" "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
             "$TMP/test.cshc.exe" > "$TMP/test.cshc.out" 2> "$TMP/test.cshc.err2"
             tr -d '\r' < "$TMP/test.cshc.out" > "$TMP/test.cshc.out.n"
             if [ "$(cat "$TMP/test.expected.n")" != "$(cat "$TMP/test.cshc.out.n")" ]; then
@@ -233,6 +233,21 @@ else
             fi
         else
             report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
+        fi
+        # The standard library that is embedded in cshc must be the current one (regenerate with cshc --gen-stdlib).
+        if "$cshc" --gen-stdlib "$DIR/../stdlib" "$TMP/EmbeddedStdlib.csh" 2> /dev/null &&
+           cmp -s "$TMP/EmbeddedStdlib.csh" "$DIR/../selfhost/src/Driver/EmbeddedStdlib.csh"; then
+            report_ok "selfhost embedded stdlib"
+        else
+            report_fail "selfhost embedded stdlib" "selfhost/src/Driver/EmbeddedStdlib.csh is out of date: run  cshc --gen-stdlib stdlib selfhost/src/Driver/EmbeddedStdlib.csh"
+        fi
+        # Projects (cshift.json, build/run/new) built by cshc.
+        if bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+            report_ok "selfhost projects"
+            head -n 1 "$TMP/selfhost.proj"
+        else
+            report_fail "selfhost projects" "a project does not build with cshc:"
+            head -n 10 "$TMP/selfhost.proj"
         fi
         # cshc compiles itself; the result must generate the same IR as the original (selfhost/bootstrap.sh).
         if bash "$DIR/../selfhost/bootstrap.sh" "$cshc" > "$TMP/selfhost.boot" 2>&1; then

@@ -26,12 +26,11 @@ Erledigt:
 
 Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
 - [ ] **Structs (Rest):** explizites Layout und Struct-Wrapper (FFI).
-- [ ] **Treiber / Projekte** (Voraussetzung, damit `tests/projects` und `demo` mit `cshc` gebaut werden können): `cshc new|build|run`, Optionen wie `cshiftc`
-      (`-c`, `--target`, `-l`, `-L`, `-I`), Projektdatei `cshift.json` (Felder siehe `compiler/src/Project.h`). Dafür fehlt zuerst in der **Stdlib**:
-      `Directory` (Dateien rekursiv auflisten, anlegen, prüfen, aktuelles Verzeichnis), `Path`-Hilfen, Ausgabe eines Programms einlesen
-      (`popen`), Umgebungsvariablen; außerdem ein JSON-Parser in CShift. Danach: Standardbibliothek fest einbetten statt `--stdlib` (CShift hat
-      kein `#embed`; z. B. beim Bauen eine generierte `.csh` mit den Texten), clang unter `toolchain/` neben `cshc` finden, Target statt
-      `Process.IsWindows()` bestimmen; dann `tests/projects` mit `cshc` laufen lassen.
+- [x] **Treiber / Projekte** (fertig bis auf FFI): `cshc [Optionen] Dateien`, `cshc new|build|run` mit `cshift.json`, `-c`, `--target`, `-l/-L/-I/-D`, Bibliotheken als Eingaben;
+      Stdlib um `Directory`, `Path`, `Process.RunCapture/GetEnv` ergänzt; JSON-Parser in CShift; die Stdlib ist in `cshc` eingebettet
+      (`selfhost/src/Driver/EmbeddedStdlib.csh`, erzeugt mit `cshc --gen-stdlib stdlib <datei>`; `run_tests.sh` prüft, dass sie aktuell ist).
+      `tests/projects`: 6 von 8 bauen mit `cshc` (`selfhost/projects.sh`), die 2 übrigen brauchen FFI.
+- [ ] clang finden wie `cshiftc`: das mitgelieferte `toolchain/` neben `cshc` (dafür fehlt der Pfad der eigenen Exe; bisher `--cc`, `CSHIFT_CC`, PATH, MSYS2-Ordner).
 - [ ] **FFI** (`using X from "h.h"`, Demo `demo/`): `.ffi` lesen und Deklarationen erzeugen; das Einlesen der Header braucht libclang (in `cshc`
       entweder per FFI aus CShift oder über den C++-Stufe-0-Compiler als Hilfsprogramm); Struct-Wrapper für Structs *by value*.
 - [ ] Wenn `cshc` `cshiftc` vollständig ersetzen kann: Release-Workflow und Doku umstellen (C++ nur noch als Stufe 0).
