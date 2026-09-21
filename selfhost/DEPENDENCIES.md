@@ -41,7 +41,8 @@ Abhängigkeiten selbst in CShift schreiben? Das hier ist eine Einschätzung, noc
    sehr groß und nie vollständig (Makros, Attribute, `__declspec`, Bitfelder, Layout je Plattform). Empfehlung: libclang behalten;
    wer keinen Header importieren will, braucht sie nicht, und die erzeugten `.ffi`-Dateien lassen sich mit dem Projekt ausliefern
    (der Compiler liest sie ohne libclang). Ein `.ffi` ist ein einfaches JSON: das Lesen ist mit einem JSON-Parser (klein, in
-   CShift schreibbar) erledigt.
+   CShift schreibbar) erledigt. **Stand:** `cshc` liest `.ffi`-Dateien selbst (`selfhost/src/Driver/Ffi.csh`); nur das *Erzeugen* aus einem
+   Header läuft noch über den C++-Compiler als Hilfsprogramm (`cshiftc --ffi-prepare`). Ohne ihn braucht ein Projekt mitgelieferte `.ffi`-Dateien.
 6. **Die C-Bibliothek der erzeugten Programme bleibt.** Sie ist unter Linux die ABI zum System und unter Windows (ucrt) Teil des
    Betriebssystems. Sie zu ersetzen hieße: eigene Zahlenformatierung (`double` → Text braucht einen Algorithmus wie Ryu),
    `strtod`, die Mathefunktionen und einen eigenen Speicherverwalter über `HeapAlloc`/`mmap` – machbar, aber ein eigenes

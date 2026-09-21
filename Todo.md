@@ -25,7 +25,6 @@ Erledigt:
       gebaut) erzeugen für die Quellen von `cshc` **identisches LLVM-IR** (Fixpunkt), Stufe 2 besteht dieselben Testfälle. Teil von `tests/run_tests.sh`.
 
 Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
-- [ ] **Structs (Rest):** explizites Layout und Struct-Wrapper (FFI).
 - [x] **Treiber / Projekte** (fertig bis auf FFI): `cshc [Optionen] Dateien`, `cshc new|build|run` mit `cshift.json`, `-c`, `--target`, `-l/-L/-I/-D`, Bibliotheken als Eingaben;
       Stdlib um `Directory`, `Path`, `Process.RunCapture/GetEnv` ergänzt; JSON-Parser in CShift; die Stdlib ist in `cshc` eingebettet
       (`selfhost/src/Driver/EmbeddedStdlib.csh`, erzeugt mit `cshc --gen-stdlib stdlib <datei>`; `run_tests.sh` prüft, dass sie aktuell ist).
