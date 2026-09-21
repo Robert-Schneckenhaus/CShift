@@ -2,10 +2,11 @@
 
 Ziel: den Compiler (`compiler/`, C++ mit LLVM) in CShift selbst zu schreiben, sodass er sich am Ende selbst übersetzt.
 
-**Stand:** Lexer und Parser sind vollständig und gegen den C++-Compiler abgesichert. Der Codegenerator läuft für den Kern der
-Sprache (Funktionen, Zahlen, `bool`, `char`, Strings mit Referenzzählung, Kontrollfluss, `Console`); von den 80 Testfällen in
-`tests/cases` besteht `cshc` 54, 26 brauchen noch nicht portierte Sprachteile ( `Error<T>`, Generics,
-Standardbibliothek …). Der Rest der Liste steht unten und in [../Todo.md](../Todo.md).
+**Stand:** Lexer und Parser sind vollständig und gegen den C++-Compiler abgesichert. Der Codegenerator deckt fast die ganze Sprache ab
+(Structs, Arrays, `Error<T>`/`Optional<T>`, Generics, Interfaces, Enums, `switch`, Zeiger/`unsafe`, Standardbibliothek als Prelude); von den 80
+Testfällen in `tests/cases` besteht `cshc` 72, die übrigen 8 brauchen Funktionszeiger. `tests/test.csh` läuft mit `cshc` identisch zum C++-Compiler,
+und **`cshc` übersetzt sich selbst** (`selfhost/bootstrap.sh`: Stufe 1 und Stufe 2 erzeugen identisches LLVM-IR). Der Rest der Liste steht in
+[../Todo.md](../Todo.md).
 
 ```
 selfhost/
@@ -32,11 +33,14 @@ selfhost/
 │       ├── Errors.csh       Error<T>/Optional<T>: error(...), is-Muster, try, Retain/Release der Ergebnistypen
 │       ├── Switch.csh       switch mit Konstanten- und Musterlabels
 │       ├── Enums.csh        Enums und konstante Ganzzahlausdrücke
+│       ├── Generics.csh     Typargumente, Inferenz, Interfaces, Constraints, using/IDisposable
+│       ├── Pointers.csh     Zeiger: *, &, Arithmetik, Casts
 │       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
 │       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
 │       └── Module.csh       Programm übersetzen, Einstiegspunkt
 ├── compare.sh               Frontend: vergleicht cshc mit dem C++-Compiler (Tokens und Syntaxbaum)
 ├── status.sh, passing.txt   Codegenerator: welche Fälle aus tests/cases bestehen
+├── bootstrap.sh             cshc baut sich selbst; Stufe 1 und 2 müssen dasselbe IR erzeugen
 └── DEPENDENCIES.md          Analyse: was der neue Compiler zur Laufzeit braucht und was sich sparen lässt
 ```
 

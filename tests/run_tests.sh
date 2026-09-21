@@ -220,6 +220,28 @@ else
             report_fail "selfhost code generator" "a case that passed with cshc does not pass any more:"
             head -n 10 "$TMP/selfhost.status"
         fi
+        # The main test program built by cshc must behave exactly like the one built by the C++ compiler.
+        if "$cshc" "${CC_ARGS[@]}" --arc-stats --stdlib "$DIR/../stdlib" "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
+            "$TMP/test.cshc.exe" > "$TMP/test.cshc.out" 2> "$TMP/test.cshc.err2"
+            tr -d '\r' < "$TMP/test.cshc.out" > "$TMP/test.cshc.out.n"
+            if [ "$(cat "$TMP/test.expected.n")" != "$(cat "$TMP/test.cshc.out.n")" ]; then
+                report_fail "selfhost test.csh" "output differs from test.expected"
+            elif ! grep -q "live=0" "$TMP/test.cshc.err2"; then
+                report_fail "selfhost test.csh" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.cshc.err2")"
+            else
+                report_ok "selfhost test.csh"
+            fi
+        else
+            report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
+        fi
+        # cshc compiles itself; the result must generate the same IR as the original (selfhost/bootstrap.sh).
+        if bash "$DIR/../selfhost/bootstrap.sh" "$cshc" > "$TMP/selfhost.boot" 2>&1; then
+            report_ok "selfhost bootstrap"
+            cat "$TMP/selfhost.boot"
+        else
+            report_fail "selfhost bootstrap" "cshc cannot rebuild itself:"
+            head -n 10 "$TMP/selfhost.boot"
+        fi
     fi
 fi
 

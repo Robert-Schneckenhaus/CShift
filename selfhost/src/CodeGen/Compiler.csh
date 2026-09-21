@@ -164,6 +164,7 @@ struct CgState
     int WorkHead;         // next entry of the work queue
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
+    bool StdlibLoaded;    // the standard library was added as prelude
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,9 @@ struct Compiler
     List<InterfaceEntry> Interfaces;
     List<EnumEntry> Enums;
     List<EnumInfo> EnumInfos;
+    List<InterfaceInfo> InterfaceInfos;
+    Dictionary<string, int> InterfaceTypes;
+    List<int> PendingVerify;   // struct types whose interfaces still have to be checked
     Dictionary<string, int> EnumTypes;
     List<ConstEntry> Consts;
     Dictionary<string, TypeDeclEntry> TypeDecls;
@@ -214,6 +218,9 @@ struct Compiler
         cg.Interfaces = List<InterfaceEntry>.Create();
         cg.Enums = List<EnumEntry>.Create();
         cg.EnumInfos = List<EnumInfo>.Create();
+        cg.InterfaceInfos = List<InterfaceInfo>.Create();
+        cg.InterfaceTypes = Dictionary<string, int>.Create();
+        cg.PendingVerify = List<int>.Create();
         cg.EnumTypes = Dictionary<string, int>.Create();
         cg.Consts = List<ConstEntry>.Create();
         cg.TypeDecls = Dictionary<string, TypeDeclEntry>.Create();
@@ -502,7 +509,7 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     }
     if (!found && node.Path.Length == 1 && (dotted == "Action" || dotted == "Func"))
         return ResolveFunctionType(cg, node, dotted, file, env);
-    if (!found && node.Path.Length == 1 && IsStdlibName(dotted))
+    if (!found && node.Path.Length == 1 && !cg.St[0].StdlibLoaded && IsStdlibName(dotted))
         Fail(cg, node.Loc, "cshc does not support the standard library yet ('" + dotted + "')");
     if (!found)
         Fail(cg, node.Loc, "unknown type '" + tree.TypeToString(TypeRef { Id = refType }) + "'");
@@ -518,8 +525,7 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
             Fail(cg, node.Loc, "enum '" + dotted + "' is not generic");
         return GetEnumType(cg, entry.Index);
     }
-    Fail(cg, node.Loc, "cshc does not support interfaces yet ('" + dotted + "')");
-    return types.Void;
+    return GetInterfaceType(cg, entry.Index, typeArgs, node.Loc);
 }
 
 // Action, Action<T1, ...> (no result) and Func<R>, Func<T1, ..., R> (the last argument is the result): pointers to
@@ -653,6 +659,7 @@ int GetFuncInstance(Compiler cg, int entry, int owner, Dictionary<string, int> o
     cg.Instances.Add(fi);
     int index = cg.Instances.Count() - 1;
     cg.InstanceKeys.Set(key, index);
+    CheckConstraints(cg, d.Constraints, fi.Env, fe.File, loc);
     EnsureSignature(cg, index);
     return index;
 }

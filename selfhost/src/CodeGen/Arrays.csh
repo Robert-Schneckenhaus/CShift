@@ -106,7 +106,13 @@ Value EmitIndex(Compiler cg, Expr e)
         return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), data, "i64 " + i64v), false);
     }
     if (types.IsPointer(t))
-        Fail(cg, e.Loc, "cshc does not support pointers yet");
+    {
+        RequireUnsafe(cg, e.Loc, "pointer indexing");
+        if (types.IsVoid(types.Elem(t)))
+            Fail(cg, e.Loc, "cannot index 'void*'");
+        Value p = ToRValue(cg, obj);
+        return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), p.V, "i64 " + i64v), false);
+    }
     Fail(cg, e.Loc, "cannot index a value of type '" + types.Name(t) + "'");
     return obj;
 }
@@ -123,7 +129,10 @@ void EmitForeach(Compiler cg, Stmt s)
     Value it = EmitRValue(cg, n.Iterable);
     int collType = it.Type;
     if (types.IsStruct(collType))
-        Fail(cg, s.Loc, "cshc does not support 'foreach' over structs yet");
+    {
+        EmitForeachStruct(cg, s, it);
+        return;
+    }
     if (!types.IsArray(collType) && !types.IsString(collType))
         Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
     int elemType = types.IsArray(collType) ? types.Elem(collType) : types.Char;
@@ -356,4 +365,106 @@ string CopyLoop(Compiler cg, string ty, int elem, string prefix, bool backward)
             "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %" + prefix + ".old)\n" +
             "  %" + prefix + ".next = add i64 %" + prefix + ".i, 1\n  br label %" + prefix + ".head\n";
     return text;
+}
+
+// ---------------------------------------------------------------------------
+// foreach over a struct: it must provide "int Count()" and "T Get(int index)" (e.g. List<T>)
+// ---------------------------------------------------------------------------
+
+int FindForeachMethod(Compiler cg, int collType, string name, Arg[] probe, SourceLoc loc)
+{
+    var cands = MethodCandidates(cg, collType, name);
+    if (cands.Length == 0)
+        Fail(cg, loc, "'foreach' over struct '" + cg.Types.Name(collType) + "' needs the methods 'int Count()' and 'T Get(int index)'");
+    return ResolveOverload(cg, cands, probe, new int[0], loc, name);
+}
+
+void EmitForeachStruct(Compiler cg, Stmt s, Value it)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var n = cg.Tree.GetForeach(s);
+    int collType = it.Type;
+    SourceLoc loc = n.Iterable.Loc;
+    int countInstance = FindForeachMethod(cg, collType, "Count", new Arg[0], loc);
+    var probe = new Arg[1];
+    probe[0] = Arg { V = ConstInt(cg, types.I32, 0) };
+    int getInstance = FindForeachMethod(cg, collType, "Get", probe, loc);
+    var countFn = cg.Instances.Get(countInstance);
+    var getFn = cg.Instances.Get(getInstance);
+    if (!countFn.HasThis || !getFn.HasThis || countFn.Ret != types.I32 || types.IsVoid(getFn.Ret) ||
+        getFn.ParamTypes[0] != types.I32 || getFn.ParamRefs[0] != 0)
+        Fail(cg, loc, "'foreach' over struct '" + types.Name(collType) + "' needs the methods 'int Count()' and 'T Get(int index)'");
+    UseFunction(cg, countInstance);
+    UseFunction(cg, getInstance);
+
+    PushScope(cg); // holds a copy of the struct for the duration of the loop
+    string collIr = LlvmType(cg, collType);
+    string collSlot = ir.Alloca(collIr, "foreach.coll");
+    ir.Store(collIr, Consume(cg, it), collSlot);
+    DeclareVar(cg, "$foreach", collType, collSlot);
+    FlushTemps(cg, 0, true);
+
+    string idxSlot = ir.Alloca("i32", "foreach.idx");
+    ir.Store("i32", "0", idxSlot);
+
+    string condLabel = ir.NewLabel("foreach.cond");
+    string bodyLabel = ir.NewLabel("foreach.body");
+    string incLabel = ir.NewLabel("foreach.inc");
+    string endLabel = ir.NewLabel("foreach.end");
+    ir.Br(condLabel);
+
+    ir.SetBlock(condLabel);
+    string idx = ir.Load("i32", idxSlot);
+    string count = ir.Call("i32", countFn.LlvmName, "ptr " + collSlot);
+    ir.CondBr(ir.ICmp("slt", "i32", idx, count), bodyLabel, endLabel);
+
+    ir.SetBlock(bodyLabel);
+    int outerDepth = ScopeCount(cg);
+    PushScope(cg);
+    int elemType = getFn.Ret;
+    int varType = n.Type.IsNull() ? elemType : DeclTypeOf(cg, n.Type);
+    string got = ir.Call(LlvmType(cg, elemType), getFn.LlvmName, "ptr " + collSlot + ", i32 " + idx);
+    Value elem = Rvalue(elemType, got, NeedsArc(cg, elemType));
+    Value cv = ConvertValue(cg, elem, varType, loc);
+    string varSlot = ir.Alloca(LlvmType(cg, varType), n.Name);
+    ir.Store(LlvmType(cg, varType), Consume(cg, cv), varSlot);
+    DeclareVar(cg, n.Name, varType, varSlot);
+
+    cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = endLabel, ContinueLabel = incLabel, ScopeDepth = outerDepth });
+    EmitStmt(cg, n.Body);
+    cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);
+    PopScope(cg, true);
+    ir.Br(incLabel);
+
+    ir.SetBlock(incLabel);
+    string next = ir.Bin("add", "i32", ir.Load("i32", idxSlot), "1");
+    ir.Store("i32", next, idxSlot);
+    ir.Br(condLabel);
+
+    ir.SetBlock(endLabel);
+    PopScope(cg, true);
+}
+
+// string.FromBytes(uint8[] bytes [, start, count]): a string from raw (UTF-8) bytes.
+Value EmitStringFromBytes(Compiler cg, Arg[] args, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    if (args.Length == 0 || args.Length == 2 || args.Length > 3)
+        Fail(cg, loc, "string.FromBytes takes (bytes) or (bytes, start, count)");
+    Value bytes = ToRValue(cg, args[0].V);
+    int byteArray = types.ArrayOf(types.U8);
+    if (bytes.Type != byteArray && types.Kind(bytes.Type) != TypeKind.Null)
+        Fail(cg, loc, "string.FromBytes needs a 'uint8[]', not '" + types.Name(bytes.Type) + "'");
+    HoldTemp(cg, bytes);
+    string start = "0";
+    string count = ir.Cast("trunc", "i64", ArrayLength(cg, bytes.V), "i32");
+    if (args.Length == 3)
+    {
+        start = ConvertValue(cg, args[1].V, types.I32, loc).V;
+        count = ConvertValue(cg, args[2].V, types.I32, loc).V;
+    }
+    // Arrays and strings share the block layout, so the substring helper copies the bytes.
+    return Rvalue(types.String, ir.Call("ptr", "@__cs_substring", "ptr " + bytes.V + ", i32 " + start + ", i32 " + count), true);
 }

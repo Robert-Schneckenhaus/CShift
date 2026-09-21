@@ -15,29 +15,24 @@ Erledigt:
       des Repos (inkl. Syntaxfehler-Tests und der eigenen Quellen) identisch zum C++-Compiler (`selfhost/compare.sh`, Teil von `tests/run_tests.sh`).
 - [x] **Entwurf des Backends:** `cshc` schreibt LLVM-IR als **Text** und ruft clang auf (kein LLVM im Compiler, siehe selfhost/README.md und
       selfhost/DEPENDENCIES.md). Die LLVM-C-API per FFI wäre möglich gewesen (Spike lief), ist aber schwerer.
-- [x] **Codegenerator, Kern:** `selfhost/src/Sema` (Typtabelle), `Emit` (IR-Schreiber), `CodeGen` (Compiler-Zustand, Deklarationen, Typauflösung,
-      Funktionsinstanzen, Werte und Referenzzählung, Konvertierungen, Ausdrücke, Aufrufe/Überladungen, Anweisungen, Laufzeit als IR-Text,
-      Einstiegspunkt) und `Main.csh` als Treiber (`cshc datei.csh -o prog`). Getestet: Hello World, Arithmetik mit Überlaufprüfung,
-      Kontrollfluss, Strings mit ARC, Konstanten, `extern "C"`, `?:`, Panics. **54 von 80 Fällen aus `tests/cases` bestehen mit `cshc`** (kein FAIL, 26 „unsupported“; `--arc-stats` prüft `live=0`)
-      (`selfhost/passing.txt`; `status.sh --check` in `tests/run_tests.sh` schützt vor Rückschritten).
+- [x] **Codegenerator:** `selfhost/src/Sema` (Typtabelle), `Emit` (IR-Schreiber), `CodeGen` (Compiler-Zustand, Typauflösung, Funktionsinstanzen,
+      Werte und Referenzzählung, Ausdrücke, Aufrufe/Überladungen, Anweisungen, Structs, Arrays, `Error<T>`/`Optional<T>`, `switch`, Enums,
+      Generics und Interfaces mit Constraints, `using`/`IDisposable`, Zeiger/`unsafe`, Laufzeit als IR-Text) und `Main.csh` als Treiber
+      (`cshc [--stdlib dir] datei.csh -o prog`). Die Standardbibliothek (`stdlib/*.csh`) wird als Prelude geladen.
+      **72 von 80 Fällen aus `tests/cases` bestehen mit `cshc`** (kein FAIL, 8 „unsupported“; `--arc-stats` prüft `live=0`), außerdem `tests/test.csh`
+      (Ausgabe identisch zu `test.expected`). `selfhost/passing.txt` + `status.sh --check` schützen vor Rückschritten.
+- [x] **Bootstrap:** `cshc` übersetzt seine eigenen Quellen (`selfhost/bootstrap.sh`): Stufe 1 (mit dem C++-Compiler gebaut) und Stufe 2 (von `cshc`
+      gebaut) erzeugen für die Quellen von `cshc` **identisches LLVM-IR** (Fixpunkt), Stufe 2 besteht dieselben Testfälle. Teil von `tests/run_tests.sh`.
 
-Offen (Reihenfolge nach Nutzen; C++-Vorlage in Klammern; `bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt,
-die Meldung `cshc does not support …` nennt das fehlende Feature):
-- [x] **Structs (Grundlagen):** Layout, Felder, Methoden, `this`, Initialisierer, `new T()`, Vererbung, Upcast, Retain/Release je Struct, `int.MaxValue` & Co.
-- [ ] **Structs (Rest):** generische Structs, explizites Layout (FFI), Interfaces, Constraints,
-      `verifyStruct` (`CodeGen.cpp`, `CodeGenExpr/Call.cpp`); Struct-Typen brauchen `LlvmType` (`%struct.Name`) und Größen (`sizeof` über
-      `getelementptr null`-Trick im IR)
-- [x] **Arrays (fertig):** `new T[]`/Initialisierer, Indexer mit Grenzenprüfung, `Length`, `Clone`, `Array.Copy`, `foreach` über Arrays/Strings, Release je Array-Typ, `Main(string[] args)` (`selfhost/src/CodeGen/Arrays.csh`).
-- [ ] **Rest von Arrays/Strings (offen):** `foreach` über Structs (`Count()`/`Get(int)`), `string.FromCStr`/`FromBytes` und Zeiger-Methoden (`CStr`), Array-Vergleiche mit `null`
-- [x] **`Error<T>`/`Optional<T>` (fertig):** `try`, `is`-Pattern, `switch` (Konstanten und Muster), `error(...)`, `Main` mit `Error<int>`, `sizeof`, `default(T)`, Enums (`Errors.csh`, `Switch.csh`, `Enums.csh`).
-- [ ] **`using`/`IDisposable`** (braucht Interfaces)
-- [ ] **Generics** (Instanziierung, `unify`/`inferTypeArgs`, Constraints), Interfaces, **Funktionszeiger** (Method Groups, indirekter Aufruf), `nint`, Zeiger/`unsafe`
-- [ ] **Standardbibliothek laden:** `stdlib/*.csh` neben `cshc` suchen oder einbetten (CShift hat kein `#embed`; z. B. beim Bauen eine
-      generierte `.csh`-Datei mit den Texten), Prelude-Funktionen nur bei Bedarf übersetzen (`isPrelude`), `Main(string[] args)`, `--arc-stats`
-- [ ] **Treiber:** Optionen wie `cshiftc` (`-c`, `--target`, `-l`, `-L`, `-I`), Projektdatei `cshift.json` (JSON-Parser in CShift), clang unter
-      `toolchain/` neben `cshc` finden, `--emit-llvm`-Ausgabe angleichen; das Betriebssystem/Target statt `Process.IsWindows()` bestimmen
-- [ ] **FFI:** `.ffi` lesen und Deklarationen erzeugen; Header über libclang (Funktionszeiger dafür nutzbar); Struct-Wrapper
-- [ ] Wenn der Codegenerator größer wird: sinnvolle Aufteilung in `Sema/` (Typen, Symbole), `CodeGen/`, `Driver/`, `Ffi/`
+Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
+- [ ] **Funktionszeiger** (`Action`/`Func`: Method Groups als Werte, Auswahl der Überladung nach Zielty, indirekter Aufruf, Vergleich, `null`-Panic,
+      Fehlermeldungen) – 8 Testfälle in `tests/cases` (`function_pointers`, `err_function_*`, `panic_null_function`).
+- [ ] **Structs (Rest):** explizites Layout und Struct-Wrapper (FFI).
+- [ ] **Treiber:** Optionen wie `cshiftc` (`-c`, `--target`, `-l`, `-L`, `-I`, `cshiftc build/run/new`), Projektdatei `cshift.json` (JSON-Parser in
+      CShift), Standardbibliothek fest einbetten statt `--stdlib` (CShift hat kein `#embed`; z. B. beim Bauen eine generierte `.csh` mit den Texten),
+      clang unter `toolchain/` neben `cshc` finden, Target statt `Process.IsWindows()` bestimmen; danach `tests/projects` mit `cshc` laufen lassen.
+- [ ] **FFI:** `.ffi` lesen und Deklarationen erzeugen; Header über libclang; Struct-Wrapper (`using X from "h.h"`).
+- [ ] Wenn `cshc` `cshiftc` vollständig ersetzen kann: Release-Workflow und Doku umstellen (C++ nur noch als Stufe 0).
 
 ## 2. Testen, ob der neue Compiler alles bauen kann
 

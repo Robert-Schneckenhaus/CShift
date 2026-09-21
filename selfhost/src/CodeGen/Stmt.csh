@@ -32,7 +32,7 @@ void EmitScopeCleanup(Compiler cg, int scope)
     {
         var v = f.Vars.Get(i - 1);
         if (v.Disposable)
-            Fail(cg, SourceLoc { }, "cshc does not support 'using' yet");
+            CallDispose(cg, v);
         if (v.OwnsArc && !v.IsRef)
         {
             string value = cg.Ir.Load(LlvmType(cg, v.Type), v.Slot);
@@ -113,7 +113,7 @@ void EmitFunctionBody(Compiler cg, int instance)
     {
         if (sb.Length() > 0)
             sb.Append(", ");
-        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i])) + " %arg." + i.ToString());
+        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i])) + " %arg$" + i.ToString());
     }
     ir.BeginFunction("define internal " + LlvmType(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
     PushScope(cg);
@@ -128,7 +128,7 @@ void EmitFunctionBody(Compiler cg, int instance)
     {
         int pt = fi.ParamTypes[i];
         string name = d.Params[i].Name;
-        string arg = "%arg." + i.ToString();
+        string arg = "%arg$" + i.ToString();
         if (fi.ParamRefs[i] != 0)
         {
             string slot = ir.Alloca("ptr", name);
@@ -208,6 +208,7 @@ void EmitStmt(Compiler cg, Stmt s)
     case StmtKind.For: EmitFor(cg, s); break;
     case StmtKind.Foreach: EmitForeach(cg, s); break;
     case StmtKind.Switch: EmitSwitch(cg, s); break;
+    case StmtKind.UsingBlock: EmitUsingBlock(cg, s); break;
     case StmtKind.Break: EmitBreakContinue(cg, true, s.Loc); break;
     case StmtKind.Continue: EmitBreakContinue(cg, false, s.Loc); break;
     case StmtKind.Return: EmitReturn(cg, s); break;
@@ -232,9 +233,6 @@ void EmitVarDecl(Compiler cg, Stmt s)
     var types = cg.Types;
     var ir = cg.Ir;
     var d = cg.Tree.GetVarDecl(s);
-    if (d.IsUsing)
-        Fail(cg, s.Loc, "cshc does not support 'using' yet");
-
     int t = 0;
     if (!d.Type.IsNull())
         t = DeclTypeOf(cg, d.Type);
@@ -267,6 +265,15 @@ void EmitVarDecl(Compiler cg, Stmt s)
     }
     FlushTemps(cg, 0, true);
     DeclareVar(cg, d.Name, t, slot);
+    if (d.IsUsing)
+    {
+        if (!ImplementsDisposable(cg, t))
+            Fail(cg, s.Loc, "'using' requires a struct that implements IDisposable, but '" + types.Name(t) + "' does not");
+        var vars = cg.Fn[0].Vars;
+        var last = vars.Get(vars.Count() - 1);
+        last.Disposable = true;
+        vars.Set(vars.Count() - 1, last);
+    }
 }
 
 void EmitIf(Compiler cg, Stmt s)

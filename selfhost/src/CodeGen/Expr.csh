@@ -43,6 +43,15 @@ Value EmitExpr(Compiler cg, Expr e)
             Fail(cg, e.Loc, "default(void) is not defined");
         return Rvalue(t, ZeroValue(cg, t), false);
     }
+    case ExprKind.Unchecked:
+    {
+        // integer overflow does not panic inside 'unchecked(...)'
+        bool old = cg.Fn[0].Checked;
+        cg.Fn[0].Checked = false;
+        Value v = EmitExpr(cg, cg.Tree.GetUnchecked(e).Operand);
+        cg.Fn[0].Checked = old;
+        return v;
+    }
     case ExprKind.StructInit: return EmitStructInit(cg, e);
     case ExprKind.NewObject: return EmitNewObject(cg, e);
     case ExprKind.This: return ThisValue(cg, e.Loc);
@@ -174,7 +183,7 @@ Value EmitName(Compiler cg, Expr e)
 
     if (LookupFunctions(cg, cg.Fn[0].File, n.Name).Length > 0)
         Fail(cg, e.Loc, "cshc does not support function names as values yet ('" + n.Name + "')");
-    if (IsStdlibName(n.Name))
+    if (!cg.St[0].StdlibLoaded && IsStdlibName(n.Name))
         Fail(cg, e.Loc, "cshc does not support the standard library yet ('" + n.Name + "')");
     Fail(cg, e.Loc, "undefined name '" + n.Name + "'");
     return Value { };
@@ -354,10 +363,7 @@ Value EmitArithmetic(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     }
 
     if (types.IsPointer(l.Type) || types.IsPointer(r.Type))
-    {
-        Fail(cg, loc, "cshc does not support pointer arithmetic yet");
-        return l;
-    }
+        return EmitPointerArithmetic(cg, op, l, r, loc);
 
     // Bit operations on enums and bools.
     if (l.Type == r.Type && (op == BinOp.BitAnd || op == BinOp.BitOr || op == BinOp.BitXor))
@@ -432,6 +438,11 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         var k = types.Kind(other.Type);
         if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.Function)
             isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        else if (k == TypeKind.Optional)
+        {
+            HoldTemp(cg, other);
+            isNull = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, other.Type), other.V, "0"), "true");
+        }
         else if (k == TypeKind.Null)
             isNull = "true";
         else
@@ -575,6 +586,10 @@ Value EmitUnary(Compiler cg, Expr e)
     var u = cg.Tree.GetUnary(e);
     switch (u.Op)
     {
+    case UnOp.Deref:
+        return DerefPointer(cg, EmitExpr(cg, u.Operand), e.Loc);
+    case UnOp.AddrOf:
+        return EmitAddressOf(cg, e, u.Operand);
     case UnOp.Neg:
     case UnOp.Plus:
     {
@@ -784,6 +799,9 @@ Value EmitCast(Compiler cg, Expr e)
             Fail(cg, e.Loc, "cannot cast an enum to a floating point type");
         return Rvalue(to, NumericConvert(cg, v.V, from, to), false);
     }
+    var casted = Value { };
+    if (EmitPointerCast(cg, v, to, e.Loc, ref casted))
+        return casted;
     Fail(cg, e.Loc, "cannot cast '" + types.Name(from) + "' to '" + types.Name(to) + "'");
     return v;
 }

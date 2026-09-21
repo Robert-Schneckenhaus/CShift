@@ -24,6 +24,7 @@ struct StructInfo
     Dictionary<string, int> Env;
     int Base;                         // base struct type, 0 = none
     FieldInfo[] Fields;               // own fields only
+    int[] Interfaces;                 // interface types the struct lists in its base list
     bool LayoutInProgress;
     string IrName;                    // %"Name"
 }
@@ -68,12 +69,10 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     var decl = se.Decl;
     if (args.Length != decl.TypeParams.Length)
         Fail(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
-    if (decl.TypeParams.Length > 0)
-        Fail(cg, loc, "cshc does not support generic structs yet ('" + decl.Name + "')");
     if (decl.ExplicitLayout)
         Fail(cg, decl.Loc, "cshc does not support imported C structs yet ('" + decl.Name + "')");
 
-    string key = Qualified(cg, se.File, decl.Name);
+    string key = Qualified(cg, se.File, decl.Name) + TypeArgsSuffix(cg, args);
     var existing = cg.StructTypes.TryGet(key);
     if (existing is int found)
         return found;
@@ -81,6 +80,9 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     int t = types.Add(TypeKind.Struct, key, 0, false);
     var info = StructInfo { Entry = entry, Name = key, Type = t, IrName = "%\"" + key + "\"" };
     info.Env = Dictionary<string, int>.Create();
+    info.Interfaces = new int[0];
+    for (var i = 0; i < args.Length; i += 1)
+        info.Env.Set(decl.TypeParams[i], args[i]);
     cg.StructInfos.Add(info);
     int index = cg.StructInfos.Count() - 1;
     var ti = types.Info(t);
@@ -89,6 +91,8 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     cg.StructTypes.Set(key, t);
 
     LayoutStruct(cg, index);
+    CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
+    cg.PendingVerify.Add(t);
 
     // The methods of a struct of the program are always generated.
     if (!cg.Files.Get(se.File).IsPrelude)
@@ -125,6 +129,14 @@ void LayoutStruct(Compiler cg, int index)
             if (GetStructInfo(cg, b).LayoutInProgress)
                 Fail(cg, bnode.Loc, "cyclic struct inheritance");
             si.Base = b;
+        }
+        else if (types.Kind(b) == TypeKind.Interface)
+        {
+            var grown = new int[si.Interfaces.Length + 1];
+            for (var k = 0; k < si.Interfaces.Length; k += 1)
+                grown[k] = si.Interfaces[k];
+            grown[si.Interfaces.Length] = b;
+            si.Interfaces = grown;
         }
         else
         {
@@ -341,10 +353,6 @@ Value EmitMember(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var m = cg.Tree.GetMember(e);
-    if (m.TypeArgs.Length > 0)
-        Fail(cg, e.Loc, "cshc does not support generic members yet");
-    if (m.ViaArrow)
-        Fail(cg, e.Loc, "cshc does not support pointers yet");
 
     // A name that is not a variable may be a type or a namespace.
     string dotted = DottedName(cg, m.Object);
@@ -382,6 +390,10 @@ Value EmitMember(Compiler cg, Expr e)
     }
 
     Value obj = EmitExpr(cg, m.Object);
+    if (m.ViaArrow)
+        obj = DerefPointer(cg, obj, e.Loc);
+    else if (types.IsPointer(obj.Type))
+        Fail(cg, e.Loc, "use '->' to access members through a pointer");
     int t = obj.Type;
     if (types.IsStruct(t))
         return FieldAccess(cg, obj, m.Name, e.Loc);

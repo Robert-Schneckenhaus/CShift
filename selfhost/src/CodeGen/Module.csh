@@ -64,11 +64,21 @@ string CompileProgram(Compiler cg, string triple)
     cg.St[0].MainFunc = main + 1;
 
     // 3. Generate the function bodies. Calls add work while this runs.
-    while (cg.St[0].WorkHead < cg.WorkQueue.Count())
+    while (cg.St[0].WorkHead < cg.WorkQueue.Count() || cg.PendingVerify.Count() > 0)
     {
-        int instance = cg.WorkQueue.Get(cg.St[0].WorkHead);
-        cg.St[0].WorkHead += 1;
-        EmitFunctionBody(cg, instance);
+        while (cg.PendingVerify.Count() > 0)
+        {
+            int last = cg.PendingVerify.Count() - 1;
+            int pending = cg.PendingVerify.Get(last);
+            cg.PendingVerify.RemoveAt(last);
+            VerifyStruct(cg, pending);
+        }
+        if (cg.St[0].WorkHead < cg.WorkQueue.Count())
+        {
+            int instance = cg.WorkQueue.Get(cg.St[0].WorkHead);
+            cg.St[0].WorkHead += 1;
+            EmitFunctionBody(cg, instance);
+        }
     }
 
     EmitEntryPoint(cg);
@@ -83,7 +93,7 @@ string CompileProgram(Compiler cg, string triple)
     sb.Append('\n');
     sb.Append(cg.Ir.Functions.ToString());
     sb.Append(cg.Ir.Helpers.ToString());
-    sb.Append(RuntimeFunctions(windows, cg.St[0].ArcStats));
+    sb.Append(RuntimeFunctions(windows, cg.St[0].ArcStats, cg.Ir));
     sb.Append(cg.Ir.Declares.ToString());
     return sb.ToString();
 }

@@ -7,6 +7,7 @@
 namespace CShift.CodeGen;
 
 using System;
+using CShift.Emit;
 
 // stderr comes from the C library in different ways.
 string StderrLoad(bool windows)
@@ -38,21 +39,30 @@ string RuntimeGlobals(bool windows, bool arcStats)
     return text + "\n";
 }
 
-string RuntimeFunctions(bool windows, bool arcStats)
+// A declaration of a C function that the runtime calls, unless the program declares the function itself (possibly
+// with another signature: the runtime then calls it through its own type).
+string CDeclare(IrWriter ir, string name, string declaration)
+{
+    if (ir.Declared.Contains("@" + name))
+        return "";
+    return declaration + "\n";
+}
+
+string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
 {
     string text =
-        "declare ptr @calloc(i64, i64)\n" +
-        "declare void @free(ptr)\n" +
-        "declare void @exit(i32)\n" +
-        "declare i32 @memcmp(ptr, ptr, i64)\n" +
-        "declare i64 @strlen(ptr)\n" +
-        "declare i32 @printf(ptr, ...)\n" +
-        "declare i32 @fprintf(ptr, ptr, ...)\n" +
-        "declare i32 @snprintf(ptr, i64, ptr, ...)\n" +
+        CDeclare(ir, "calloc", "declare ptr @calloc(i64, i64)") +
+        CDeclare(ir, "free", "declare void @free(ptr)") +
+        CDeclare(ir, "exit", "declare void @exit(i32)") +
+        CDeclare(ir, "memcmp", "declare i32 @memcmp(ptr, ptr, i64)") +
+        CDeclare(ir, "strlen", "declare i64 @strlen(ptr)") +
+        CDeclare(ir, "printf", "declare i32 @printf(ptr, ...)") +
+        CDeclare(ir, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)") +
+        CDeclare(ir, "snprintf", "declare i32 @snprintf(ptr, i64, ptr, ...)") +
         "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)\n" +
         "declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)\n";
     if (windows)
-        text += "declare ptr @__acrt_iob_func(i32)\n";
+        text += CDeclare(ir, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)");
     text += "\n";
 
     // panic: prints "panic: <message>" to stderr and exits with code 101
@@ -140,6 +150,14 @@ string RuntimeFunctions(bool windows, bool arcStats)
             "  %fmt = select i1 %nl, ptr @.cs.line, ptr @.cs.text\n" +
             "  %d = call ptr @__cs_data(ptr %s)\n" +
             "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr %fmt, i32 %len32, ptr %d)\n  ret void\n}\n\n";
+
+    // from_cstr(char*): copies a NUL-terminated C string into a new string (null stays null)
+    text += "define internal ptr @__cs_from_cstr(ptr %p) {\nentry:\n" +
+            "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %null, label %copy\n" +
+            "null:\n  ret ptr null\n" +
+            "copy:\n  %len = call i64 @strlen(ptr %p)\n  %size = add i64 %len, 1\n" +
+            "  %r = call ptr @__cs_alloc(i64 %size, i64 %len)\n  %dst = getelementptr i8, ptr %r, i64 16\n" +
+            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %p, i64 %len, i1 false)\n  ret ptr %r\n}\n\n";
 
     // make_args(argc, argv): the command line arguments without the program name as a string array
     text += "define internal ptr @__cs_make_args(i32 %argc, ptr %argv) {\nentry:\n" +

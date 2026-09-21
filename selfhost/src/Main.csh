@@ -84,12 +84,30 @@ string StemOf(string path)
     return dot > 0 ? name.Substring(0, dot) : name;
 }
 
+// The files of the standard library.
+string[] StdlibFiles()
+{
+    return new string[] { "core.csh", "native.csh", "args.csh", "char.csh", "math.csh", "string.csh", "stringbuilder.csh",
+                          "list.csh", "dictionary.csh", "hashset.csh", "encoding.csh", "file.csh", "process.csh" };
+}
+
+// Without --stdlib the library is looked for next to the current directory.
+string FindStdlib()
+{
+    string[] candidates = new string[] { "stdlib", "../stdlib", "../../stdlib" };
+    foreach (var c in candidates)
+        if (File.Exists(c + "/core.csh"))
+            return c;
+    return "";
+}
+
 int Compile(string[] args)
 {
     var inputs = List<string>.Create();
     string output = "";
     string cc = "clang";
     string optimize = "-O2";
+    string stdlibDir = "";
     bool emitLlvm = false;
     bool run = false;
     bool arcStats = false;
@@ -107,6 +125,13 @@ int Compile(string[] args)
             i += 1;
             cc = args[i];
         }
+        else if (a == "--stdlib" && i + 1 < args.Length)
+        {
+            i += 1;
+            stdlibDir = args[i];
+        }
+        else if (a == "--no-stdlib")
+            stdlibDir = "-";
         else if (a == "--emit-llvm")
             emitLlvm = true;
         else if (a == "--arc-stats")
@@ -137,6 +162,33 @@ int Compile(string[] args)
     bool windows = Process.IsWindows();
     var cg = Compiler.Create(tree, diag, windows);
     cg.St[0].ArcStats = arcStats;
+
+    // The standard library (stdlib/*.csh) is parsed as a prelude: its functions are only compiled when they are used.
+    if (stdlibDir != "-")
+    {
+        if (stdlibDir.Length == 0)
+            stdlibDir = FindStdlib();
+        if (stdlibDir.Length > 0)
+        {
+            foreach (var name in StdlibFiles())
+            {
+                string path = stdlibDir + "/" + name;
+                var text = ReadSource(path);
+                if (text is string source)
+                {
+                    int file = diag.AddFile(path);
+                    var lexer = Lexer.Create(source, file, diag);
+                    var parser = Parser.Create(lexer.Tokenize(), diag, tree);
+                    AddUnit(cg, parser.ParseUnit(true));
+                }
+                else
+                {
+                    return 1;
+                }
+            }
+            cg.St[0].StdlibLoaded = true;
+        }
+    }
     for (var i = 0; i < inputs.Count(); i += 1)
     {
         string path = inputs.Get(i);

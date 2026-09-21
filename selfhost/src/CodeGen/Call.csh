@@ -47,7 +47,7 @@ int ArgCost(Compiler cg, Arg arg, int paramType, int refKind)
 }
 
 // Chooses the function that matches the arguments best. Candidates are indices in Compiler.Funcs.
-int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, SourceLoc loc, string name)
+int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name)
 {
     var best = -1;
     int bestCost = 0;
@@ -57,16 +57,38 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, SourceLoc l
     foreach (var cand in candidates)
     {
         var d = cg.Funcs.Get(cand.Entry).Decl;
-        if (d.TypeParams.Length > 0)
-            Fail(cg, loc, "cshc does not support generic functions yet ('" + name + "')");
         if (args.Length < d.Params.Length || (!d.IsVariadic && args.Length != d.Params.Length))
         {
             reason = "expected " + d.Params.Length.ToString() + " argument(s), got " + args.Length.ToString();
             continue;
         }
 
+        var targs = new int[0];
+        if (d.TypeParams.Length > 0)
+        {
+            if (explicitTypeArgs.Length > 0)
+            {
+                if (explicitTypeArgs.Length != d.TypeParams.Length)
+                {
+                    reason = "wrong number of type arguments";
+                    continue;
+                }
+                targs = explicitTypeArgs;
+            }
+            else if (!InferTypeArgs(cg, cand, args, ref targs))
+            {
+                reason = "cannot infer the type arguments, specify them explicitly (e.g. " + name + "<int>(...))";
+                continue;
+            }
+        }
+        else if (explicitTypeArgs.Length > 0)
+        {
+            reason = "'" + name + "' is not generic";
+            continue;
+        }
+
         var ownerEnv = cand.Owner != 0 ? GetStructInfo(cg, cand.Owner).Env : NoEnv();
-        int instance = GetFuncInstance(cg, cand.Entry, cand.Owner, ownerEnv, new int[0], loc);
+        int instance = GetFuncInstance(cg, cand.Entry, cand.Owner, ownerEnv, targs, loc);
         var fi = cg.Instances.Get(instance);
 
         int total = 0;
@@ -92,7 +114,7 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, SourceLoc l
         if (!ok)
             continue;
 
-        int score = total * 2;
+        int score = total * 2 + (d.TypeParams.Length > 0 ? 1 : 0);
         if (best < 0 || score < bestCost)
         {
             best = instance;
@@ -268,9 +290,6 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
 {
     if (!LookupVariable(cg, n.Name).IsNone())
         Fail(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
-    if (n.TypeArgs.Length > 0)
-        Fail(cg, e.Loc, "cshc does not support generic functions yet ('" + n.Name + "')");
-
     var cands = new Candidate[0];
     int owner = CurrentOwner(cg);
     if (owner != 0)
@@ -281,7 +300,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
         Fail(cg, e.Loc, "undefined function '" + n.Name + "'");
 
     var args = EmitArgs(cg, call.Args);
-    int instance = ResolveOverload(cg, cands, args, e.Loc, n.Name);
+    int instance = ResolveOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name);
     string thisPtr = "";
     if (cg.Instances.Get(instance).HasThis)
     {
@@ -297,16 +316,12 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
 {
     var types = cg.Types;
     int file = cg.Fn[0].File;
-    if (m.TypeArgs.Length > 0)
-        Fail(cg, e.Loc, "cshc does not support generic functions yet ('" + m.Name + "')");
-    if (m.ViaArrow)
-        Fail(cg, e.Loc, "cshc does not support pointers yet");
-
+    var methodTypeArgs = ResolveTypeArgs(cg, m.TypeArgs);
     string dotted = DottedName(cg, m.Object);
     if (dotted.Length > 0 && !IsLocalName(cg, dotted.Split('.')[0]) &&
         (CurrentOwner(cg) == 0 || !FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found))
     {
-        if (dotted == "Console" || dotted == "Environment")
+        if (dotted == "Console" || dotted == "Environment" || dotted == "Memory")
         {
             var builtinArgs = EmitArgs(cg, call.Args);
             return EmitBuiltinStatic(cg, dotted, m.Name, builtinArgs, e.Loc);
@@ -318,6 +333,19 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
                 Fail(cg, e.Loc, "Array has no function '" + m.Name + "'");
             return EmitArrayCopy(cg, EmitArgs(cg, call.Args), e.Loc);
         }
+        if (dotted == "string")
+        {
+            var stringArgs = EmitArgs(cg, call.Args);
+            if (m.Name == "FromCStr")
+                return EmitStringFromCStr(cg, stringArgs, e.Loc);
+            if (m.Name == "FromBytes")
+                return EmitStringFromBytes(cg, stringArgs, e.Loc);
+            var foundStatic = false;
+            Value sr = EmitExtensionCall(cg, "String", false, Value { }, m.Name, stringArgs, e.Loc, ref foundStatic);
+            if (foundStatic)
+                return sr;
+            Fail(cg, e.Loc, "type 'string' has no static method '" + m.Name + "'");
+        }
         if (PrimitiveType(cg, dotted) != 0)
             Fail(cg, e.Loc, "cshc does not support '" + dotted + "." + m.Name + "' yet");
         if (LookupTypeDecl(cg, file, dotted, ref entry))
@@ -325,12 +353,12 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
             if (entry.Kind != DeclKind.Struct)
                 Fail(cg, e.Loc, "cshc does not support enums and interfaces yet ('" + dotted + "')");
             // Type.Method(...): a static method
-            int st = GetStructType(cg, entry.Index, new int[0], e.Loc);
+            int st = GetStructType(cg, entry.Index, ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object)), e.Loc);
             var scands = MethodCandidates(cg, st, m.Name);
             if (scands.Length == 0)
                 Fail(cg, e.Loc, "struct '" + types.Name(st) + "' has no method '" + m.Name + "'");
             var sargs = EmitArgs(cg, call.Args);
-            int sinstance = ResolveOverload(cg, scands, sargs, e.Loc, m.Name);
+            int sinstance = ResolveOverload(cg, scands, sargs, methodTypeArgs, e.Loc, m.Name);
             var sfi = cg.Instances.Get(sinstance);
             if (sfi.HasThis)
                 Fail(cg, e.Loc, "'" + types.Name(st) + "." + m.Name + "' is an instance method and needs an object");
@@ -344,20 +372,24 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
             if (ncands.Length == 0)
                 Fail(cg, e.Loc, "namespace '" + dotted + "' has no function '" + m.Name + "'");
             var nargs = EmitArgs(cg, call.Args);
-            int ninstance = ResolveOverload(cg, ncands, nargs, e.Loc, m.Name);
+            int ninstance = ResolveOverload(cg, ncands, nargs, methodTypeArgs, e.Loc, m.Name);
             return EmitDirectCall(cg, ninstance, "", nargs, e.Loc);
         }
     }
 
     // An instance call.
     Value obj = EmitExpr(cg, m.Object);
+    if (m.ViaArrow)
+        obj = DerefPointer(cg, obj, e.Loc);
+    else if (types.IsPointer(obj.Type))
+        Fail(cg, e.Loc, "use '->' to call methods through a pointer");
     var args = EmitArgs(cg, call.Args);
     if (!types.IsStruct(obj.Type))
         return EmitBuiltinMethod(cg, obj, m.Name, args, e.Loc);
     var cands = MethodCandidates(cg, obj.Type, m.Name);
     if (cands.Length == 0)
         Fail(cg, e.Loc, "struct '" + types.Name(obj.Type) + "' has no method '" + m.Name + "'");
-    int instance = ResolveOverload(cg, cands, args, e.Loc, m.Name);
+    int instance = ResolveOverload(cg, cands, args, methodTypeArgs, e.Loc, m.Name);
     var fi = cg.Instances.Get(instance);
     if (!fi.HasThis)
         Fail(cg, e.Loc, "'" + m.Name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + m.Name + "(...)'");
@@ -445,6 +477,34 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
         return none;
     }
 
+    if (type == "Memory")
+    {
+        RequireUnsafe(cg, loc, "Memory." + method);
+        if (method == "Allocate")
+        {
+            if (args.Length != 1)
+                Fail(cg, loc, "Memory.Allocate takes one argument (size in bytes)");
+            Value n = ToRValue(cg, args[0].V);
+            if (!types.IsIntegral(n.Type))
+                Fail(cg, loc, "Memory.Allocate needs an integer size");
+            bool sizeSigned = types.IsInt(n.Type) && types.IsSigned(n.Type);
+            string size = NumericConvert(cg, n.V, n.Type, sizeSigned ? types.I64 : types.U64);
+            ir.Declare("@malloc", "declare ptr @malloc(i64)");
+            return Rvalue(types.PointerTo(types.Void), ir.Call("ptr", "@malloc", "i64 " + size), false);
+        }
+        if (method == "Free")
+        {
+            if (args.Length != 1)
+                Fail(cg, loc, "Memory.Free takes one argument");
+            Value p = ToRValue(cg, args[0].V);
+            if (!types.IsPointer(p.Type) && types.Kind(p.Type) != TypeKind.Null)
+                Fail(cg, loc, "Memory.Free needs a pointer");
+            ir.Call("void", "@free", "ptr " + p.V);
+            return none;
+        }
+        Fail(cg, loc, "Memory has no function '" + method + "'");
+    }
+
     if (type == "Environment")
     {
         if (method == "Exit")
@@ -472,6 +532,23 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
     }
     Fail(cg, loc, "cshc does not support '" + type + "." + method + "' yet");
     return none;
+}
+
+// Calls a function of the standard library that extends a built-in type: "String.Method(self, args...)".
+Value EmitExtensionCall(Compiler cg, string ns, bool hasSelf, Value self, string method, Arg[] args, SourceLoc loc, ref bool found)
+{
+    var cands = FreeCandidates(cg, cg.Fn[0].File, ns + "." + method);
+    found = cands.Length > 0;
+    if (!found)
+        return Value { };
+    var all = List<Arg>.Create();
+    if (hasSelf)
+        all.Add(Arg { V = self });
+    foreach (var a in args)
+        all.Add(a);
+    var list = all.ToArray();
+    int instance = ResolveOverload(cg, cands, list, new int[0], loc, ns + "." + method);
+    return EmitDirectCall(cg, instance, "", list, loc);
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +604,14 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
                 count = ir.Bin("sub", "i32", ir.Cast("trunc", "i64", ir.Call("i64", "@__cs_len", "ptr " + s.V), "i32"), start);
             return Rvalue(types.String, ir.Call("ptr", "@__cs_substring", "ptr " + s.V + ", i32 " + start + ", i32 " + count), true);
         }
-        Fail(cg, loc, "cshc does not support the string method '" + method + "' yet (the standard library is not loaded)");
+        // Everything else (Contains, Trim, Split, ...) is written in CShift: namespace String of the standard library.
+        var found = false;
+        Value r = EmitExtensionCall(cg, "String", true, s, method, args, loc, ref found);
+        if (found)
+            return r;
+        if (!cg.St[0].StdlibLoaded)
+            Fail(cg, loc, "cshc does not support the string method '" + method + "' yet (the standard library is not loaded)");
+        Fail(cg, loc, "type 'string' has no method '" + method + "'");
     }
     else if (types.IsArray(t))
     {
