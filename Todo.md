@@ -26,10 +26,14 @@ Erledigt:
 
 Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
 - [ ] **Structs (Rest):** explizites Layout und Struct-Wrapper (FFI).
-- [ ] **Treiber:** Optionen wie `cshiftc` (`-c`, `--target`, `-l`, `-L`, `-I`, `cshiftc build/run/new`), Projektdatei `cshift.json` (JSON-Parser in
-      CShift), Standardbibliothek fest einbetten statt `--stdlib` (CShift hat kein `#embed`; z. B. beim Bauen eine generierte `.csh` mit den Texten),
-      clang unter `toolchain/` neben `cshc` finden, Target statt `Process.IsWindows()` bestimmen; danach `tests/projects` mit `cshc` laufen lassen.
-- [ ] **FFI:** `.ffi` lesen und Deklarationen erzeugen; Header über libclang; Struct-Wrapper (`using X from "h.h"`).
+- [ ] **Treiber / Projekte** (Voraussetzung, damit `tests/projects` und `demo` mit `cshc` gebaut werden können): `cshc new|build|run`, Optionen wie `cshiftc`
+      (`-c`, `--target`, `-l`, `-L`, `-I`), Projektdatei `cshift.json` (Felder siehe `compiler/src/Project.h`). Dafür fehlt zuerst in der **Stdlib**:
+      `Directory` (Dateien rekursiv auflisten, anlegen, prüfen, aktuelles Verzeichnis), `Path`-Hilfen, Ausgabe eines Programms einlesen
+      (`popen`), Umgebungsvariablen; außerdem ein JSON-Parser in CShift. Danach: Standardbibliothek fest einbetten statt `--stdlib` (CShift hat
+      kein `#embed`; z. B. beim Bauen eine generierte `.csh` mit den Texten), clang unter `toolchain/` neben `cshc` finden, Target statt
+      `Process.IsWindows()` bestimmen; dann `tests/projects` mit `cshc` laufen lassen.
+- [ ] **FFI** (`using X from "h.h"`, Demo `demo/`): `.ffi` lesen und Deklarationen erzeugen; das Einlesen der Header braucht libclang (in `cshc`
+      entweder per FFI aus CShift oder über den C++-Stufe-0-Compiler als Hilfsprogramm); Struct-Wrapper für Structs *by value*.
 - [ ] Wenn `cshc` `cshiftc` vollständig ersetzen kann: Release-Workflow und Doku umstellen (C++ nur noch als Stufe 0).
 
 ## 2. Testen, ob der neue Compiler alles bauen kann
