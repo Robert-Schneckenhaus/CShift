@@ -23,6 +23,12 @@ Value EmitExpr(Compiler cg, Expr e)
         return EmitLiteral(cg, e);
     case ExprKind.Name: return EmitName(cg, e);
     case ExprKind.Call: return EmitCall(cg, e);
+    case ExprKind.Member: return EmitMember(cg, e);
+    case ExprKind.Index: return EmitIndex(cg, e);
+    case ExprKind.NewArray: return EmitNewArray(cg, e);
+    case ExprKind.StructInit: return EmitStructInit(cg, e);
+    case ExprKind.NewObject: return EmitNewObject(cg, e);
+    case ExprKind.This: return ThisValue(cg, e.Loc);
     case ExprKind.Unary: return EmitUnary(cg, e);
     case ExprKind.Binary: return EmitBinary(cg, e);
     case ExprKind.Assign: return EmitAssign(cg, e);
@@ -140,12 +146,19 @@ Value EmitName(Compiler cg, Expr e)
     if (!v.IsNone())
         return v;
 
+    // A field of the current struct (in a method).
+    int owner = CurrentOwner(cg);
+    if (owner != 0 && FindField(cg, owner, n.Name).Found)
+        return FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
+
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
     if (c >= 0)
         return EmitConst(cg, c, e.Loc);
 
     if (LookupFunctions(cg, cg.Fn[0].File, n.Name).Length > 0)
         Fail(cg, e.Loc, "cshc does not support function names as values yet ('" + n.Name + "')");
+    if (IsStdlibName(n.Name))
+        Fail(cg, e.Loc, "cshc does not support the standard library yet ('" + n.Name + "')");
     Fail(cg, e.Loc, "undefined name '" + n.Name + "'");
     return Value { };
 }

@@ -162,6 +162,7 @@ struct CgState
     int MainFunc;         // index in Compiler.Instances + 1, 0 = none
     int WorkHead;         // next entry of the work queue
     bool Windows;
+    bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +191,8 @@ struct Compiler
     HashSet<string> Symbols;     // names of the generated functions (to find duplicates)
     List<string> Links;
 
+    List<StructInfo> StructInfos;
+    Dictionary<string, int> StructTypes;
     List<FuncInfo> Instances;
     Dictionary<string, int> InstanceKeys;
     List<int> WorkQueue;
@@ -215,6 +218,8 @@ struct Compiler
         cg.Symbols = HashSet<string>.Create();
         cg.Namespaces.Add("System");
         cg.Links = List<string>.Create();
+        cg.StructInfos = List<StructInfo>.Create();
+        cg.StructTypes = Dictionary<string, int>.Create();
         cg.Instances = List<FuncInfo>.Create();
         cg.InstanceKeys = Dictionary<string, int>.Create();
         cg.WorkQueue = List<int>.Create();
@@ -452,7 +457,6 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         return types.PointerTo(ResolveType(cg, node.Elem.Id, file, env));
     if (node.Kind == TypeRefKind.Array)
     {
-        Fail(cg, node.Loc, "cshc does not support arrays yet");
         int elem = ResolveValueType(cg, node.Elem.Id, file, env);
         if (types.IsVoid(elem))
             Fail(cg, node.Loc, "arrays of 'void' are not allowed");
@@ -494,10 +498,17 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     }
     if (!found && node.Path.Length == 1 && (dotted == "Action" || dotted == "Func"))
         return ResolveFunctionType(cg, node, dotted, file, env);
+    if (!found && node.Path.Length == 1 && IsStdlibName(dotted))
+        Fail(cg, node.Loc, "cshc does not support the standard library yet ('" + dotted + "')");
     if (!found)
         Fail(cg, node.Loc, "unknown type '" + tree.TypeToString(TypeRef { Id = refType }) + "'");
 
-    Fail(cg, node.Loc, "cshc does not support structs, interfaces and enums yet ('" + dotted + "')");
+    var typeArgs = new int[node.Args.Length];
+    for (var i = 0; i < node.Args.Length; i += 1)
+        typeArgs[i] = ResolveValueType(cg, node.Args[i].Id, file, env);
+    if (entry.Kind == DeclKind.Struct)
+        return GetStructType(cg, entry.Index, typeArgs, node.Loc);
+    Fail(cg, node.Loc, "cshc does not support interfaces and enums yet ('" + dotted + "')");
     return types.Void;
 }
 
@@ -557,8 +568,7 @@ string LlvmType(Compiler cg, int t)
     case TypeKind.ErrorLit:
         return "{ ptr, i32 }";
     case TypeKind.Struct:
-        Fail(cg, SourceLoc { }, "cshc does not support structs yet");
-        return "{}";
+        return StructIrName(cg, t);
     default:
         return "ptr"; // string, pointer, array, null, function
     }
@@ -582,6 +592,9 @@ bool NeedsArc(Compiler cg, int t)
         break;
     case TypeKind.Optional:
         r = NeedsArc(cg, info.Elem);
+        break;
+    case TypeKind.Struct:
+        r = StructNeedsArc(cg, t);
         break;
     default:
         break;
@@ -618,7 +631,7 @@ int GetFuncInstance(Compiler cg, int entry, int owner, Dictionary<string, int> o
         fi.Env.Set(kv.Key, kv.Value);
     for (var i = 0; i < typeArgs.Length; i += 1)
         fi.Env.Set(d.TypeParams[i], typeArgs[i]);
-    fi.Name = Qualified(cg, fe.File, d.Name);
+    fi.Name = owner != 0 ? cg.Types.Name(owner) + "." + d.Name : Qualified(cg, fe.File, d.Name);
     if (typeArgs.Length > 0)
     {
         fi.Name += "<";
@@ -654,6 +667,18 @@ void EnsureSignature(Compiler cg, int instance)
     fi.ParamTypes = paramTypes;
     fi.ParamRefs = paramRefs;
     fi.Ret = ResolveValueType(cg, d.Ret.Id, fi.File, fi.Env);
+    if (d.IsExtern)
+    {
+        // Aggregates are not passed according to the C ABI yet, so only scalars and pointers are allowed.
+        for (var i = 0; i < paramTypes.Length; i += 1)
+        {
+            int t = paramTypes[i];
+            if (paramRefs[i] == 0 && (cg.Types.IsStruct(t) || cg.Types.IsResultLike(t)))
+                Fail(cg, d.Loc, "extern function '" + d.Name + "': passing '" + cg.Types.Name(t) + "' by value to C is not supported, pass a pointer instead");
+        }
+        if (!d.RetOut && (cg.Types.IsStruct(fi.Ret) || cg.Types.IsResultLike(fi.Ret)))
+            Fail(cg, d.Loc, "extern function '" + d.Name + "': returning '" + cg.Types.Name(fi.Ret) + "' by value from C is not supported, use a pointer instead");
+    }
     fi.SignatureResolved = true;
     fi.LlvmName = FunctionSymbol(cg, fi);
     if (!d.IsExtern && !cg.Symbols.Add(fi.LlvmName))
@@ -717,4 +742,13 @@ void DeclareExtern(Compiler cg, int instance)
 Dictionary<string, int> NoEnv()
 {
     return Dictionary<string, int>.Create();
+}
+
+// Names of the standard library (stdlib/*.csh). cshc does not load the library yet, so a use of one of these names
+// is reported as "not supported" instead of "unknown".
+bool IsStdlibName(string name)
+{
+    return name == "List" || name == "Dictionary" || name == "HashSet" || name == "StringBuilder" || name == "KeyValuePair" ||
+           name == "Encoding" || name == "Process" || name == "File" || name == "Math" || name == "Char" || name == "String" ||
+           name == "IEquatable" || name == "IHashable" || name == "IComparable" || name == "IDisposable";
 }

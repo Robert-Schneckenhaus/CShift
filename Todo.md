@@ -18,16 +18,17 @@ Erledigt:
 - [x] **Codegenerator, Kern:** `selfhost/src/Sema` (Typtabelle), `Emit` (IR-Schreiber), `CodeGen` (Compiler-Zustand, Deklarationen, Typauflösung,
       Funktionsinstanzen, Werte und Referenzzählung, Konvertierungen, Ausdrücke, Aufrufe/Überladungen, Anweisungen, Laufzeit als IR-Text,
       Einstiegspunkt) und `Main.csh` als Treiber (`cshc datei.csh -o prog`). Getestet: Hello World, Arithmetik mit Überlaufprüfung,
-      Kontrollfluss, Strings mit ARC, Konstanten, `extern "C"`, `?:`, Panics. **28 von 80 Fällen aus `tests/cases` bestehen mit `cshc`**
+      Kontrollfluss, Strings mit ARC, Konstanten, `extern "C"`, `?:`, Panics. **43 von 80 Fällen aus `tests/cases` bestehen mit `cshc`** (kein FAIL, 37 „unsupported“; `--arc-stats` prüft `live=0`)
       (`selfhost/passing.txt`; `status.sh --check` in `tests/run_tests.sh` schützt vor Rückschritten).
 
 Offen (Reihenfolge nach Nutzen; C++-Vorlage in Klammern; `bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt,
 die Meldung `cshc does not support …` nennt das fehlende Feature):
-- [ ] **Structs:** Layout (`layoutStruct`), Felder, Methoden, `this`, Initialisierer, `new T()`, Vererbung, Interfaces, Constraints,
+- [x] **Structs (Grundlagen):** Layout, Felder, Methoden, `this`, Initialisierer, `new T()`, Vererbung, Upcast, Retain/Release je Struct, `int.MaxValue` & Co.
+- [ ] **Structs (Rest):** generische Structs, explizites Layout (FFI), Interfaces, Constraints,
       `verifyStruct` (`CodeGen.cpp`, `CodeGenExpr/Call.cpp`); Struct-Typen brauchen `LlvmType` (`%struct.Name`) und Größen (`sizeof` über
       `getelementptr null`-Trick im IR)
-- [ ] **Arrays und String-Methoden:** `new T[]`, Indexer mit Grenzenprüfung, `Length`, `Clone`, `Substring`, `CStr`, `foreach`,
-      `Array.Copy`, Per-Typ-Retain/Release (`retainFor`/`releaseFor`) für Arrays und Structs mit ARC-Feldern
+- [x] **Arrays (fertig):** `new T[]`/Initialisierer, Indexer mit Grenzenprüfung, `Length`, `Clone`, `Array.Copy`, `foreach` über Arrays/Strings, Release je Array-Typ, `Main(string[] args)` (`selfhost/src/CodeGen/Arrays.csh`).
+- [ ] **Rest von Arrays/Strings (offen):** `foreach` über Structs (`Count()`/`Get(int)`), `string.FromCStr`/`FromBytes` und Zeiger-Methoden (`CStr`), Array-Vergleiche mit `null`
 - [ ] **`Error<T>`/`Optional<T>`:** `try`, `is`-Pattern, `switch`-Pattern, `error(...)`, `using`/`IDisposable`, `Main` mit `Error<int>`
 - [ ] **Enums, Generics** (Instanziierung, `unify`/`inferTypeArgs`), **Funktionszeiger**, `nint`, Zeiger/`unsafe`, `sizeof`, `default(T)`
 - [ ] **Standardbibliothek laden:** `stdlib/*.csh` neben `cshc` suchen oder einbetten (CShift hat kein `#embed`; z. B. beim Bauen eine

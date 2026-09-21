@@ -54,16 +54,14 @@ void EmitRetain(Compiler cg, int type, string v)
 {
     if (!NeedsArc(cg, type))
         return;
-    cg.Ir.Call("void", "@__cs_retain", "ptr " + v);
+    cg.Ir.Call("void", RetainFunction(cg, type), LlvmType(cg, type) + " " + v);
 }
 
 void EmitRelease(Compiler cg, int type, string v)
 {
     if (!NeedsArc(cg, type))
         return;
-    if (!cg.Types.IsString(type))
-        Fail(cg, SourceLoc { }, "cshc does not release values of type '" + cg.Types.Name(type) + "' yet");
-    cg.Ir.Call("void", "@__cs_release_flat", "ptr " + v);
+    cg.Ir.Call("void", ReleaseFunction(cg, type), LlvmType(cg, type) + " " + v);
 }
 
 // The operand of the value with a +1 reference count.
@@ -264,6 +262,12 @@ int ConversionCost(Compiler cg, Value v, int to)
         return 2;
     if (types.IsPointer(from) && types.IsPointer(to) && types.IsVoid(types.Elem(to)))
         return 2;
+    if (types.IsStruct(from) && types.IsStruct(to))
+    {
+        var path = new int[0];
+        if (StructIsAncestor(cg, to, from, ref path))
+            return 2;
+    }
     if (types.IsResultLike(to) && !types.IsResultLike(from))
     {
         int inner = ConversionCost(cg, v, types.Elem(to));
@@ -329,6 +333,15 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     }
     if (types.IsPointer(from) && types.IsPointer(to))
         return Rvalue(to, ToRValue(cg, v).V, false);
+    if (types.IsStruct(from) && types.IsStruct(to))
+    {
+        // upcast: the base struct is the first member of the derived one
+        var path = new int[0];
+        StructIsAncestor(cg, to, from, ref path);
+        Value r = ToRValue(cg, v);
+        HoldTemp(cg, r);
+        return Rvalue(to, cg.Ir.ExtractValue(LlvmType(cg, from), r.V, IndexList(path)), false);
+    }
     Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'");
     return v;
 }

@@ -105,15 +105,23 @@ void EmitFunctionBody(Compiler cg, int instance)
     cg.Fn[0] = f;
 
     var sb = StringBuilder.Create();
+    if (fi.HasThis)
+        sb.Append("ptr %this.arg");
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {
-        if (i > 0)
+        if (sb.Length() > 0)
             sb.Append(", ");
         sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i])) + " %arg." + i.ToString());
     }
     ir.BeginFunction("define internal " + LlvmType(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
     PushScope(cg);
 
+    if (fi.HasThis)
+    {
+        string thisSlot = ir.Alloca("ptr", "this");
+        ir.Store("ptr", "%this.arg", thisSlot);
+        cg.Fn[0].ThisSlot = thisSlot;
+    }
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {
         int pt = fi.ParamTypes[i];
@@ -190,6 +198,7 @@ void EmitStmt(Compiler cg, Stmt s)
     case StmtKind.While: EmitWhile(cg, s); break;
     case StmtKind.DoWhile: EmitDoWhile(cg, s); break;
     case StmtKind.For: EmitFor(cg, s); break;
+    case StmtKind.Foreach: EmitForeach(cg, s); break;
     case StmtKind.Break: EmitBreakContinue(cg, true, s.Loc); break;
     case StmtKind.Continue: EmitBreakContinue(cg, false, s.Loc); break;
     case StmtKind.Return: EmitReturn(cg, s); break;

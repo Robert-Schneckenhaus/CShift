@@ -25,7 +25,7 @@ for file in "$ROOT"/tests/cases/*.csh; do
     want_error="$(directives "$file" expect-error | head -n 1)"
     exe="$TMP/case.exe"
     rm -f "$exe"
-    if "$CSHC" -O0 "${CC_ARGS[@]}" "$file" -o "$exe" > "$TMP/c.out" 2> "$TMP/c.err"; then compiled=1; else compiled=0; fi
+    if "$CSHC" -O0 --arc-stats "${CC_ARGS[@]}" "$file" -o "$exe" > "$TMP/c.out" 2> "$TMP/c.err"; then compiled=1; else compiled=0; fi
     if [ -n "$want_error" ]; then
         if [ $compiled -eq 0 ] && grep -qF -- "$want_error" "$TMP/c.err"; then pass+=("$name"); continue; fi
         if grep -q "cshc does not support" "$TMP/c.err"; then unsupported+=("$name"); else fail+=("$name"); fi
@@ -41,6 +41,8 @@ for file in "$ROOT"/tests/cases/*.csh; do
     [ "$code" -ne "$want_exit" ] && ok=0
     while IFS= read -r text; do [ -z "$text" ] && continue; grep -qF -- "$text" "$TMP/r.out" || ok=0; done < <(directives "$file" expect-stdout)
     while IFS= read -r text; do [ -z "$text" ] && continue; grep -qF -- "$text" "$TMP/r.err" || ok=0; done < <(directives "$file" expect-stderr)
+    # every heap block must be released again (unless the test says otherwise)
+    if ! grep -q "^// arc-ignore" "$file" && grep -qF "[arc]" "$TMP/r.err"; then grep -q "live=0" "$TMP/r.err" || ok=0; fi
     if [ $ok -eq 1 ]; then pass+=("$name"); else fail+=("$name"); fi
 done
 total=$(( ${#pass[@]} + ${#unsupported[@]} + ${#fail[@]} ))

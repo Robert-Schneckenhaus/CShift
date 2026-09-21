@@ -92,6 +92,7 @@ int Compile(string[] args)
     string optimize = "-O2";
     bool emitLlvm = false;
     bool run = false;
+    bool arcStats = false;
     bool verbose = false;
     for (var i = 0; i < args.Length; i += 1)
     {
@@ -108,6 +109,8 @@ int Compile(string[] args)
         }
         else if (a == "--emit-llvm")
             emitLlvm = true;
+        else if (a == "--arc-stats")
+            arcStats = true;
         else if (a == "--run")
             run = true;
         else if (a == "-v")
@@ -133,6 +136,7 @@ int Compile(string[] args)
     var tree = Ast.Create();
     bool windows = Process.IsWindows();
     var cg = Compiler.Create(tree, diag, windows);
+    cg.St[0].ArcStats = arcStats;
     for (var i = 0; i < inputs.Count(); i += 1)
     {
         string path = inputs.Get(i);

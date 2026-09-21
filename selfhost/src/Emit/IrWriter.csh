@@ -26,6 +26,7 @@ struct IrWriter
     StringBuilder Globals;    // constants
     StringBuilder Declares;   // declarations of external functions and intrinsics
     StringBuilder Functions;  // finished function definitions
+    StringBuilder Helpers;    // helper functions that are created while another function is written
     StringBuilder Body;       // the function being written
     StringBuilder Allocas;    // its allocas (they must be in the entry block)
     HashSet<string> Declared;
@@ -38,6 +39,7 @@ struct IrWriter
         w.Globals = StringBuilder.Create();
         w.Declares = StringBuilder.Create();
         w.Functions = StringBuilder.Create();
+        w.Helpers = StringBuilder.Create();
         w.Body = StringBuilder.Create();
         w.Allocas = StringBuilder.Create();
         w.Declared = HashSet<string>.Create();
@@ -167,6 +169,13 @@ struct IrWriter
     {
         Functions.Append(text);
         Functions.Append('\n');
+    }
+
+    // A helper function that is needed while another function is being written (it goes after the finished functions).
+    void AppendHelper(string text)
+    {
+        Helpers.Append(text);
+        Helpers.Append('\n');
     }
 
     // ---- blocks ----
