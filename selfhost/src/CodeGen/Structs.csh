@@ -361,7 +361,17 @@ Value EmitMember(Compiler cg, Expr e)
         var entry = TypeDeclEntry { };
         if (CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found == false)
         {
-            if (LookupTypeDecl(cg, cg.Fn[0].File, dotted, ref entry) || IsNamespace(cg, cg.Fn[0].File, dotted))
+            bool isTypeName = LookupTypeDecl(cg, cg.Fn[0].File, dotted, ref entry);
+            if (isTypeName && entry.Kind == DeclKind.Enum)
+            {
+                int et = GetEnumType(cg, entry.Index);
+                var einfo = GetEnumInfo(cg, et);
+                int member = FindEnumMember(einfo, m.Name);
+                if (member < 0)
+                    Fail(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
+                return ConstInt(cg, et, einfo.Values[member]);
+            }
+            if (isTypeName || IsNamespace(cg, cg.Fn[0].File, dotted))
             {
                 int c = LookupConst(cg, cg.Fn[0].File, dotted + "." + m.Name);
                 if (c >= 0)
@@ -381,6 +391,14 @@ Value EmitMember(Compiler cg, Expr e)
         HoldTemp(cg, o);
         string len = cg.Ir.Call("i64", "@__cs_len", "ptr " + o.V);
         return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
+    }
+    if (types.IsError(t) && (m.Name == "Message" || m.Name == "Code"))
+    {
+        Value o = ToRValue(cg, obj);
+        HoldTemp(cg, o);
+        if (m.Name == "Message")
+            return Rvalue(types.String, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2"), false);
+        return Rvalue(types.I32, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "3"), false);
     }
     Fail(cg, e.Loc, "type '" + types.Name(t) + "' has no member '" + m.Name + "'");
     return obj;

@@ -226,6 +226,8 @@ string ReleaseFunction(Compiler cg, int t)
         return NeedsArc(cg, types.Elem(t)) ? ArrayHelper(cg, t, "release") : "@__cs_release_flat";
     if (types.IsStruct(t))
         return StructHelper(cg, t, false);
+    if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
+        return ResultHelper(cg, t, false);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -237,6 +239,8 @@ string RetainFunction(Compiler cg, int t)
         return "@__cs_retain";
     if (types.IsStruct(t))
         return StructHelper(cg, t, true);
+    if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
+        return ResultHelper(cg, t, true);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
 }

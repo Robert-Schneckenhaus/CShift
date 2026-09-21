@@ -37,6 +37,8 @@ void EmitScopeCleanup(Compiler cg, int scope)
         {
             string value = cg.Ir.Load(LlvmType(cg, v.Type), v.Slot);
             EmitRelease(cg, v.Type, value);
+            if (v.ResetOnCleanup)
+                cg.Ir.Store(LlvmType(cg, v.Type), ZeroValue(cg, v.Type), v.Slot);
         }
     }
 }
@@ -155,6 +157,12 @@ void EmitFunctionBody(Compiler cg, int instance)
             EmitCleanupsDownTo(cg, 0);
             ir.Ret("void", "");
         }
+        else if (IsVoidResult(cg, fi.Ret))
+        {
+            // Falling off the end of an Error<void> function means success.
+            EmitCleanupsDownTo(cg, 0);
+            ir.Ret(LlvmType(cg, fi.Ret), MakeSome(cg, fi.Ret, ""));
+        }
         else
         {
             Fail(cg, d.Loc, "not all code paths of '" + fi.Name + "' return a value");
@@ -199,6 +207,7 @@ void EmitStmt(Compiler cg, Stmt s)
     case StmtKind.DoWhile: EmitDoWhile(cg, s); break;
     case StmtKind.For: EmitFor(cg, s); break;
     case StmtKind.Foreach: EmitForeach(cg, s); break;
+    case StmtKind.Switch: EmitSwitch(cg, s); break;
     case StmtKind.Break: EmitBreakContinue(cg, true, s.Loc); break;
     case StmtKind.Continue: EmitBreakContinue(cg, false, s.Loc); break;
     case StmtKind.Return: EmitReturn(cg, s); break;
@@ -421,6 +430,13 @@ void EmitReturn(Compiler cg, Stmt s)
         FlushTemps(cg, 0, true);
         EmitCleanupsDownTo(cg, 0);
         ir.Ret(LlvmType(cg, rt), rv);
+        return;
+    }
+    if (IsVoidResult(cg, rt))
+    {
+        // "return;" in an Error<void> function reports success.
+        EmitCleanupsDownTo(cg, 0);
+        ir.Ret(LlvmType(cg, rt), MakeSome(cg, rt, ""));
         return;
     }
     if (!types.IsVoid(rt))

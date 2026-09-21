@@ -315,16 +315,16 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     if (fromKind == TypeKind.Null)
     {
         if (types.IsOptional(to))
-        {
-            Fail(cg, loc, "cshc does not support Optional<T> yet");
-            return v;
-        }
+            return Rvalue(to, "zeroinitializer", false);
         return Rvalue(to, "null", false);
     }
-    if (fromKind == TypeKind.ErrorLit || types.IsResultLike(to))
+    if (fromKind == TypeKind.ErrorLit)
     {
-        Fail(cg, loc, "cshc does not support Error<T> and Optional<T> yet");
-        return v;
+        Value r = ToRValue(cg, v);
+        string litIr = LlvmType(cg, from);
+        string msg = cg.Ir.ExtractValue(litIr, r.V, "0");
+        string code = cg.Ir.ExtractValue(litIr, r.V, "1");
+        return Rvalue(to, MakeErr(cg, to, msg, code), true);
     }
     if (types.IsNumeric(from) && types.IsNumeric(to))
     {
@@ -341,6 +341,12 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         Value r = ToRValue(cg, v);
         HoldTemp(cg, r);
         return Rvalue(to, cg.Ir.ExtractValue(LlvmType(cg, from), r.V, IndexList(path)), false);
+    }
+    if (types.IsResultLike(to))
+    {
+        Value inner = ConvertValue(cg, v, types.Elem(to), loc);
+        string payload = Consume(cg, inner);
+        return Rvalue(to, MakeSome(cg, to, payload), NeedsArc(cg, to));
     }
     Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'");
     return v;

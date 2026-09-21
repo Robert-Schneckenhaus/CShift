@@ -4,7 +4,7 @@ Ziel: den Compiler (`compiler/`, C++ mit LLVM) in CShift selbst zu schreiben, so
 
 **Stand:** Lexer und Parser sind vollständig und gegen den C++-Compiler abgesichert. Der Codegenerator läuft für den Kern der
 Sprache (Funktionen, Zahlen, `bool`, `char`, Strings mit Referenzzählung, Kontrollfluss, `Console`); von den 80 Testfällen in
-`tests/cases` besteht `cshc` 43, 37 brauchen noch nicht portierte Sprachteile ( `Error<T>`, Generics,
+`tests/cases` besteht `cshc` 54, 26 brauchen noch nicht portierte Sprachteile ( `Error<T>`, Generics,
 Standardbibliothek …). Der Rest der Liste steht unten und in [../Todo.md](../Todo.md).
 
 ```
@@ -29,6 +29,9 @@ selfhost/
 │       ├── Call.csh         Aufrufe, Überladungsauflösung, Console/Environment (CodeGenCall.cpp)
 │       ├── Structs.csh      Structs: Layout, Felder, Methoden, Initialisierer, Vererbung, Retain/Release je Struct
 │       ├── Arrays.csh       Arrays: new T[], Indexer, foreach, Array.Copy, Clone, Release je Array-Typ
+│       ├── Errors.csh       Error<T>/Optional<T>: error(...), is-Muster, try, Retain/Release der Ergebnistypen
+│       ├── Switch.csh       switch mit Konstanten- und Musterlabels
+│       ├── Enums.csh        Enums und konstante Ganzzahlausdrücke
 │       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
 │       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
 │       └── Module.csh       Programm übersetzen, Einstiegspunkt
@@ -95,7 +98,7 @@ Die C++-Dateien geben den Umfang vor; als CShift dürften es ähnlich viele Zeil
 |---|---|---|
 | 1 | Structs: Layout, Felder, Methoden, `this`, Initialisierer, Vererbung (fertig); Interfaces, Constraints, Generics, `sizeof` offen | `CodeGen.cpp`, `CodeGenExpr/Call.cpp` |
 | 2 | Arrays und Strings-Methoden (`Length`, Indexer, `Substring`, `CStr`), `new T[]`, `foreach`, Grenzenprüfung (fertig bis auf `foreach` über Structs und Zeiger-Methoden) | `CodeGenExpr.cpp`, `CodeGenRuntime.cpp` |
-| 3 | `Error<T>`, `Optional<T>`, `try`, `is`-Pattern, `switch`, `using`/`IDisposable` | `CodeGenExpr.cpp`, `CodeGenStmt.cpp` |
+| 3 | `Error<T>`, `Optional<T>`, `try`, `is`-Pattern, `switch` (fertig); `using`/`IDisposable` offen | `CodeGenExpr.cpp`, `CodeGenStmt.cpp` |
 | 4 | Enums, Generics (Instanziierung, Typinferenz), Funktionszeiger, `nint`, Zeiger/`unsafe` | `CodeGen*.cpp` |
 | 5 | Standardbibliothek laden (`stdlib/*.csh` neben `cshc` oder eingebettet), `Main(string[] args)`, `--arc-stats` | `main.cpp`, `StdlibData` |
 | 6 | Treiber: Projektdatei (`cshift.json`, JSON-Parser in CShift), Optionen wie `cshiftc`, clang finden (`toolchain/`) | `main.cpp`, `Project.cpp` |

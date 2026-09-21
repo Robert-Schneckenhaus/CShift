@@ -125,6 +125,7 @@ struct ScopeVar
     bool IsConst;
     bool OwnsArc;      // release at the end of the scope
     bool Disposable;   // call Dispose() at the end of the scope
+    bool ResetOnCleanup; // zero the slot after releasing (pattern variables)
 }
 
 struct TempRelease
@@ -183,6 +184,8 @@ struct Compiler
     List<StructEntry> Structs;
     List<InterfaceEntry> Interfaces;
     List<EnumEntry> Enums;
+    List<EnumInfo> EnumInfos;
+    Dictionary<string, int> EnumTypes;
     List<ConstEntry> Consts;
     Dictionary<string, TypeDeclEntry> TypeDecls;
     Dictionary<string, List<int>> FuncDecls;
@@ -210,6 +213,8 @@ struct Compiler
         cg.Structs = List<StructEntry>.Create();
         cg.Interfaces = List<InterfaceEntry>.Create();
         cg.Enums = List<EnumEntry>.Create();
+        cg.EnumInfos = List<EnumInfo>.Create();
+        cg.EnumTypes = Dictionary<string, int>.Create();
         cg.Consts = List<ConstEntry>.Create();
         cg.TypeDecls = Dictionary<string, TypeDeclEntry>.Create();
         cg.FuncDecls = Dictionary<string, List<int>>.Create();
@@ -485,7 +490,6 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     bool found = LookupTypeDecl(cg, file, dotted, ref entry);
     if (!found && node.Path.Length == 1 && (dotted == "Error" || dotted == "Optional"))
     {
-        Fail(cg, node.Loc, "cshc does not support Error<T> and Optional<T> yet");
         if (node.Args.Length != 1)
             Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument");
         int inner = ResolveValueType(cg, node.Args[0].Id, file, env);
@@ -508,7 +512,13 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         typeArgs[i] = ResolveValueType(cg, node.Args[i].Id, file, env);
     if (entry.Kind == DeclKind.Struct)
         return GetStructType(cg, entry.Index, typeArgs, node.Loc);
-    Fail(cg, node.Loc, "cshc does not support interfaces and enums yet ('" + dotted + "')");
+    if (entry.Kind == DeclKind.Enum)
+    {
+        if (typeArgs.Length > 0)
+            Fail(cg, node.Loc, "enum '" + dotted + "' is not generic");
+        return GetEnumType(cg, entry.Index);
+    }
+    Fail(cg, node.Loc, "cshc does not support interfaces yet ('" + dotted + "')");
     return types.Void;
 }
 

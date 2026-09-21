@@ -23,6 +23,12 @@ string CompileProgram(Compiler cg, string triple)
         }
     }
 
+    for (var en = 0; en < cg.Enums.Count(); en += 1)
+    {
+        if (!cg.Files.Get(cg.Enums.Get(en).File).IsPrelude)
+            GetEnumType(cg, en);
+    }
+
     // Every struct of the program is checked (layout, bases), also if nothing uses it.
     for (var s = 0; s < cg.Structs.Count(); s += 1)
     {
@@ -89,8 +95,9 @@ void EmitEntryPoint(Compiler cg)
     var ir = cg.Ir;
     var m = cg.Instances.Get(cg.St[0].MainFunc - 1);
     int rt = m.Ret;
-    if (!(types.IsVoid(rt) || types.IsInt(rt)))
-        Fail(cg, cg.Funcs.Get(m.Entry).Decl.Loc, "'Main' must return void or int (cshc does not support Error<int> yet)");
+    bool okRet = types.IsVoid(rt) || types.IsInt(rt) || (types.IsError(rt) && types.IsInt(types.Elem(rt)));
+    if (!okRet)
+        Fail(cg, cg.Funcs.Get(m.Entry).Decl.Loc, "'Main' must return void, int or Error<int>");
 
     // Main(string[] args) gets the arguments without the program name; it only borrows the array.
     string prepare = "";
@@ -102,35 +109,57 @@ void EmitEntryPoint(Compiler cg)
         argument = "ptr %args";
         cleanup = "  call void " + ReleaseFunction(cg, m.ParamTypes[0]) + "(ptr %args)\n";
     }
-    string call;
-    string result;
+
+    // Returns from main; with --arc-stats the heap block balance is printed first.
+    string stats = ArcStatsCode(cg, "");
+    string body;
     if (types.IsVoid(rt))
     {
-        call = prepare + "  call void " + m.LlvmName + "(" + argument + ")\n" + cleanup;
-        result = "  ret i32 0\n";
+        body = prepare + "  call void " + m.LlvmName + "(" + argument + ")\n" + cleanup + stats + "  ret i32 0\n";
+    }
+    else if (types.IsInt(rt))
+    {
+        body = prepare + "  %r = call " + LlvmType(cg, rt) + " " + m.LlvmName + "(" + argument + ")\n" + cleanup + stats +
+               ExitCodeConversion(cg, rt, "%r");
     }
     else
     {
-        call = prepare + "  %r = call " + LlvmType(cg, rt) + " " + m.LlvmName + "(" + argument + ")\n" + cleanup;
-        result = ExitCodeConversion(cg, rt);
+        // Error<int>: the payload is the exit code, an error is printed and gives exit code 1
+        int elem = types.Elem(rt);
+        string ty = LlvmType(cg, rt);
+        body = prepare + "  %r = call " + ty + " " + m.LlvmName + "(" + argument + ")\n" + cleanup +
+               "  %isok = extractvalue " + ty + " %r, 0\n  br i1 %isok, label %ok, label %fail\n" +
+               "ok:\n  %v = extractvalue " + ty + " %r, 1\n" + ArcStatsCode(cg, ".ok") +
+               ExitCodeConversion(cg, elem, "%v") +
+               "fail:\n  %msg = extractvalue " + ty + " %r, 2\n  %text = call ptr @__cs_data(ptr %msg)\n" +
+               StderrLoad(cg.St[0].Windows).Replace("%err", "%err.msg") +
+               "  call i32 (ptr, ptr, ...) @fprintf(ptr %err.msg, ptr " + ir.CString("error: %s\n") + ", ptr %text)\n" +
+               stats + "  ret i32 1\n";
     }
-    string stats = "";
-    if (cg.St[0].ArcStats)
-    {
-        stats = StderrLoad(cg.St[0].Windows) +
-                "  %allocs = load i64, ptr @__cs_allocs\n  %frees = load i64, ptr @__cs_frees\n  %live = sub i64 %allocs, %frees\n" +
-                "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.arc, i64 %allocs, i64 %frees, i64 %live)\n";
-    }
-    ir.AppendFunctionText("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" + call + stats + result + "}\n");
+    ir.AppendFunctionText("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" + body + "}\n");
 }
 
-// Converts the result of Main to the int the C entry point returns.
-string ExitCodeConversion(Compiler cg, int rt)
+// Converts the result of Main (in the register 'value') to the int the C entry point returns.
+string ExitCodeConversion(Compiler cg, int rt, string value)
 {
     var types = cg.Types;
     int bits = types.Bits(rt);
     if (bits == 32)
-        return "  ret i32 %r\n";
+        return "  ret i32 " + value + "\n";
     string op = bits > 32 ? "trunc" : (types.IsSigned(rt) ? "sext" : "zext");
-    return "  %c = " + op + " " + LlvmType(cg, rt) + " %r to i32\n  ret i32 %c\n";
+    return "  %c = " + op + " " + LlvmType(cg, rt) + " " + value + " to i32\n  ret i32 %c\n";
+}
+
+// The code that prints the balance of heap blocks (--arc-stats); the suffix keeps the register names unique.
+string ArcStatsCode(Compiler cg, string suffix)
+{
+    if (!cg.St[0].ArcStats)
+        return "";
+    string a = "%allocs" + suffix;
+    string f = "%frees" + suffix;
+    string l = "%live" + suffix;
+    string e = "%err" + suffix;
+    return StderrLoad(cg.St[0].Windows).Replace("%err", e) +
+           "  " + a + " = load i64, ptr @__cs_allocs\n  " + f + " = load i64, ptr @__cs_frees\n  " + l + " = sub i64 " + a + ", " + f + "\n" +
+           "  call i32 (ptr, ptr, ...) @fprintf(ptr " + e + ", ptr @.cs.arc, i64 " + a + ", i64 " + f + ", i64 " + l + ")\n";
 }

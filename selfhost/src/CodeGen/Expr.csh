@@ -26,6 +26,23 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Member: return EmitMember(cg, e);
     case ExprKind.Index: return EmitIndex(cg, e);
     case ExprKind.NewArray: return EmitNewArray(cg, e);
+    case ExprKind.Is: return EmitIs(cg, e);
+    case ExprKind.Try: return EmitTry(cg, e);
+    case ExprKind.ErrorLit: return EmitErrorLit(cg, e);
+    case ExprKind.SizeOf:
+    {
+        int t = DeclTypeOf(cg, cg.Tree.GetSizeOf(e).Type);
+        if (cg.Types.IsVoid(t))
+            Fail(cg, e.Loc, "sizeof(void) is not defined");
+        return Rvalue(cg.Types.I32, "trunc (i64 " + SizeOfType(cg, t) + " to i32)", false);
+    }
+    case ExprKind.Default:
+    {
+        int t = DeclTypeOf(cg, cg.Tree.GetDefault(e).Type);
+        if (cg.Types.IsVoid(t))
+            Fail(cg, e.Loc, "default(void) is not defined");
+        return Rvalue(t, ZeroValue(cg, t), false);
+    }
     case ExprKind.StructInit: return EmitStructInit(cg, e);
     case ExprKind.NewObject: return EmitNewObject(cg, e);
     case ExprKind.This: return ThisValue(cg, e.Loc);
@@ -495,7 +512,10 @@ Value EmitCondition(Compiler cg, Expr e)
     if (cg.Types.IsBool(v.Type))
         return v;
     if (cg.Types.IsResultLike(v.Type))
-        Fail(cg, e.Loc, "cshc does not support Error<T> and Optional<T> yet");
+    {
+        HoldTemp(cg, v);
+        return MakeBool(cg, cg.Ir.ExtractValue(LlvmType(cg, v.Type), v.V, "0"));
+    }
     Fail(cg, e.Loc, "a condition must be of type 'bool', not '" + cg.Types.Name(v.Type) + "' (there is no implicit conversion to bool)");
     return v;
 }
@@ -593,6 +613,11 @@ Value EmitUnary(Compiler cg, Expr e)
         Value v = EmitRValue(cg, u.Operand);
         if (types.IsBool(v.Type))
             return MakeBool(cg, ir.Bin("xor", "i1", v.V, "true"));
+        if (types.IsResultLike(v.Type))
+        {
+            HoldTemp(cg, v);
+            return MakeBool(cg, ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, v.Type), v.V, "0"), "true"));
+        }
         Fail(cg, e.Loc, "operator '!' cannot be applied to '" + types.Name(v.Type) + "'");
         return v;
     }
