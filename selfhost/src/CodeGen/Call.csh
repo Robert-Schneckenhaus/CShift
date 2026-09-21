@@ -409,6 +409,8 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
         cands = MethodCandidates(cg, owner, n.Name);
     if (cands.Length == 0)
         cands = FreeCandidates(cg, cg.Fn[0].File, n.Name);
+    if (cands.Length == 0 && IsEmbedName(n.Name))
+        return EmitEmbed(cg, e, call, n.Name);
     if (cands.Length == 0)
         Fail(cg, e.Loc, "undefined function '" + n.Name + "'");
 

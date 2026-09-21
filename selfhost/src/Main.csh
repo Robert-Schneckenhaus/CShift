@@ -18,8 +18,6 @@ int Main(string[] args)
 {
     if (args.Length == 2 && args[0] == "--tokens")
         return DumpTokens(args[1]);
-    if (args.Length == 3 && args[0] == "--gen-stdlib")
-        return GenerateStdlib(args[1], args[2]);
     if (args.Length == 2 && args[0] == "--ast")
         return DumpSyntaxTree(args[1]);
     return Cshc(args);

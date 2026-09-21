@@ -4,6 +4,10 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/Path.h>
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // Argument handling
@@ -556,6 +560,77 @@ void CodeGen::callDispose(const ScopeVar& var)
 // Calls
 // ---------------------------------------------------------------------------
 
+// Files that are embedded into the program at compile time (paths are relative to the source file with the call):
+//   EmbedText("file")            the text of a file (string)
+//   EmbedNames("dir", ".ext")    the names of the files of a directory with this extension, sorted (string[])
+//   EmbedTexts("dir", ".ext")    their texts in the same order (string[])
+// Line ends are normalized to '\n' and a byte order mark is removed.
+Value CodeGen::emitEmbed(CallExpr* e, const std::string& name)
+{
+    size_t wanted = name == "EmbedText" ? 1 : 2;
+    if (e->args.size() != wanted)
+        err(e->loc, name + " takes " + std::to_string(wanted) + " string literal argument(s)");
+    std::vector<std::string> literals;
+    for (auto& a : e->args)
+    {
+        if (a->kind != ExprKind::StringLit)
+            err(a->loc, name + " needs string literals (the files are read when the program is compiled)");
+        literals.push_back(static_cast<StringLitExpr*>(a.get())->value);
+    }
+    std::string source = e->loc.file < (int)diag.files.size() ? diag.files[e->loc.file] : "";
+    llvm::SmallString<256> base(llvm::sys::path::parent_path(source));
+    auto resolve = [&](const std::string& relative) {
+        llvm::SmallString<256> p(base);
+        llvm::sys::path::append(p, relative);
+        return std::string(p.str());
+    };
+    auto readText = [&](const std::string& path) {
+        auto buffer = llvm::MemoryBuffer::getFile(path);
+        if (!buffer)
+            err(e->loc, name + ": cannot read '" + path + "'");
+        std::string text = (*buffer)->getBuffer().str();
+        if (text.size() >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF)
+            text.erase(0, 3);
+        std::string normalized;
+        for (char c : text)
+            if (c != '\r')
+                normalized += c;
+        return normalized;
+    };
+
+    if (name == "EmbedText")
+    {
+        Value v = Value::rvalue(types.stringTy, stringLiteral(readText(resolve(literals[0])))); // literals are never freed
+        return v;
+    }
+
+    std::string dir = resolve(literals[0]);
+    if (!llvm::sys::fs::is_directory(dir))
+        err(e->loc, name + ": '" + dir + "' is not a directory");
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (llvm::sys::fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+    {
+        std::string file = llvm::sys::path::filename(it->path()).str();
+        bool matches = literals[1].empty() ||
+                       (file.size() >= literals[1].size() && file.compare(file.size() - literals[1].size(), literals[1].size(), literals[1]) == 0);
+        if (matches && llvm::sys::fs::is_regular_file(it->path()))
+            names.push_back(file);
+    }
+    std::sort(names.begin(), names.end());
+
+    Type* arrT = types.arrayOf(types.stringTy);
+    uint64_t n = names.size();
+    llvm::Value* arr = builder.CreateCall(allocFn(), {builder.getInt64(n * sizeOf(types.stringTy)), builder.getInt64(n)});
+    for (uint64_t i = 0; i < n; i += 1)
+    {
+        std::string text = name == "EmbedNames" ? names[i] : readText(resolve(literals[0] + "/" + names[i]));
+        llvm::Value* slot = builder.CreateGEP(llvmTypeOf(types.stringTy), dataPtr(arr), {builder.getInt64(i)});
+        builder.CreateStore(stringLiteral(text), slot);
+    }
+    return Value::rvalue(arrT, arr, true);
+}
+
 Value CodeGen::emitCall(CallExpr* e)
 {
     Expr* callee = e->callee.get();
@@ -592,6 +667,8 @@ Value CodeGen::emitCall(CallExpr* e)
             for (FuncDecl* d : lookupFunctions(fs->func->file, n->name))
                 cands.push_back(Candidate{d, nullptr, nullptr, d->file});
         }
+        if (cands.empty() && (n->name == "EmbedText" || n->name == "EmbedTexts" || n->name == "EmbedNames"))
+            return emitEmbed(e, n->name);
         if (cands.empty())
             err(e->loc, "undefined function '" + n->name + "'");
 

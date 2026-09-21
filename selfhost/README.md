@@ -13,7 +13,7 @@ selfhost/
 ├── cshift.json              Projekt "cshc" (baut mit: cshiftc build selfhost)
 ├── src/
 │   ├── Driver/              Kommandozeile: Build.csh (Optionen, build/run/new, clang), Project.csh (cshift.json), Json.csh,
-│   │                        Ffi.csh (.ffi laden), StdlibGen.csh + EmbeddedStdlib.csh (die Stdlib als Stringliterale, erzeugt mit cshc --gen-stdlib)
+│   │                        Ffi.csh (.ffi laden), EmbeddedStdlib.csh (die Stdlib per EmbedTexts eingebettet)
 │   ├── Main.csh             Kommandozeile: cshc [Optionen] datei.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics

@@ -201,6 +201,7 @@ if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
 else
     work="$TMP/selfhost"
     cp -r "$DIR/../selfhost" "$work"
+    cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by EmbedTexts (../../../stdlib from selfhost/src/Driver)
     if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
         report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
     else
@@ -233,13 +234,6 @@ else
             fi
         else
             report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
-        fi
-        # The standard library that is embedded in cshc must be the current one (regenerate with cshc --gen-stdlib).
-        if "$cshc" --gen-stdlib "$DIR/../stdlib" "$TMP/EmbeddedStdlib.csh" 2> /dev/null &&
-           cmp -s "$TMP/EmbeddedStdlib.csh" "$DIR/../selfhost/src/Driver/EmbeddedStdlib.csh"; then
-            report_ok "selfhost embedded stdlib"
-        else
-            report_fail "selfhost embedded stdlib" "selfhost/src/Driver/EmbeddedStdlib.csh is out of date: run  cshc --gen-stdlib stdlib selfhost/src/Driver/EmbeddedStdlib.csh"
         fi
         # Projects (cshift.json, build/run/new) built by cshc. C headers are imported through the C++ compiler (libclang).
         if CSHIFT_FFI_TOOL="$COMPILER" bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then

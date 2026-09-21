@@ -200,7 +200,8 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
 * **Methoden auf `const ref`-Objekten** arbeiten auf einer Kopie (wie C# `in`), damit der Schreibschutz gilt.
 * **Eingebaut** (direkt vom Compiler als IR erzeugt, keine Runtime-Bibliothek): `Console.Write/WriteLine`, `Memory.Allocate/Free`,
   `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` auf Zahlen,
-  `int.MaxValue/MinValue`. Alles Weitere steht in der Standardbibliothek (nächster Abschnitt) oder kommt über `extern "C"`.
+  `int.MaxValue/MinValue`, `EmbedText("datei")`/`EmbedNames("ordner", ".ext")`/`EmbedTexts("ordner", ".ext")` (Dateien werden beim
+  Übersetzen in das Programm eingebettet; Pfade relativ zur Quelldatei, nur Stringliterale als Argumente). Alles Weitere steht in der Standardbibliothek (nächster Abschnitt) oder kommt über `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` prüft nur auf Fehler; `Optional<void>` gibt es nicht.
 * **Konstanten:** `const double PI = 3.14;` auf oberster Ebene (Zahl, `bool`, `char`, `string`; Initialisierer aus Literalen,
   Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).

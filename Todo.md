@@ -27,7 +27,7 @@ Erledigt:
 Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die Meldung `cshc does not support …` nennt das Feature):
 - [x] **Treiber / Projekte** (fertig bis auf FFI): `cshc [Optionen] Dateien`, `cshc new|build|run` mit `cshift.json`, `-c`, `--target`, `-l/-L/-I/-D`, Bibliotheken als Eingaben;
       Stdlib um `Directory`, `Path`, `Process.RunCapture/GetEnv` ergänzt; JSON-Parser in CShift; die Stdlib ist in `cshc` eingebettet
-      (`selfhost/src/Driver/EmbeddedStdlib.csh`, erzeugt mit `cshc --gen-stdlib stdlib <datei>`; `run_tests.sh` prüft, dass sie aktuell ist).
+      (`selfhost/src/Driver/EmbeddedStdlib.csh` liest `stdlib/*.csh` beim Übersetzen mit der neuen Compiler-Funktion `EmbedNames`/`EmbedTexts`, siehe unten).
       `tests/projects` bauen mit `cshc` (`selfhost/projects.sh`).
 - [ ] clang finden wie `cshiftc`: das mitgelieferte `toolchain/` neben `cshc` (dafür fehlt der Pfad der eigenen Exe; bisher `--cc`, `CSHIFT_CC`, PATH, MSYS2-Ordner).
 - [x] **FFI (Lesen)**: `using X from "h.h"` und `from "x.ffi"` mit `cshc`: `.ffi` laden (`Driver/Ffi.csh`), C-Structs mit explizitem Layout (`CodeGen/Layout.csh`), Marshalling

@@ -2,4 +2,3 @@
 *.sh text eol=lf
 tests/test.expected text eol=lf
 selfhost/passing.txt text eol=lf
-selfhost/src/Driver/EmbeddedStdlib.csh text eol=lf

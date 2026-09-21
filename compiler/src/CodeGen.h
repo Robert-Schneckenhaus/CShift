@@ -347,6 +347,7 @@ private:
 
     // ---- Calls (CodeGenCall.cpp) ----
     Value emitCall(CallExpr* e);
+    Value emitEmbed(CallExpr* e, const std::string& name);
     Value emitBuiltinStatic(const std::string& type, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitBuiltinMethod(Value obj, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitExtensionCall(const std::string& ns, const Value* self, const std::string& method,
