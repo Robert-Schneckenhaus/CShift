@@ -238,6 +238,13 @@ void EmitVarDecl(Compiler cg, Stmt s)
         t = DeclTypeOf(cg, d.Type);
     if (t != 0 && types.IsVoid(t))
         Fail(cg, s.Loc, "variable '" + d.Name + "' cannot have type 'void'");
+    if (d.IsConst)
+    {
+        if (!IsConstantType(cg, t))
+            Fail(cg, s.Loc, "constants can only be numbers, bool, char, string or enum values");
+        if (!IsConstExpr(cg, d.Init, cg.Fn[0].File))
+            Fail(cg, s.Loc, "the initializer of constant '" + d.Name + "' must be a constant expression (literals, operators, other constants)");
+    }
 
     Value init = Value { };
     if (!d.Init.IsNull())
@@ -275,6 +282,14 @@ void EmitVarDecl(Compiler cg, Stmt s)
     }
     FlushTemps(cg, 0, true);
     DeclareVar(cg, d.Name, t, slot);
+    if (d.IsConst)
+    {
+        var constVars = cg.Fn[0].Vars;
+        var constVar = constVars.Get(constVars.Count() - 1);
+        constVar.IsConst = true; // read-only
+        constVar.IsConstant = true;
+        constVars.Set(constVars.Count() - 1, constVar);
+    }
     if (d.IsUsing)
     {
         if (!ImplementsDisposable(cg, t))

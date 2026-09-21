@@ -279,6 +279,7 @@ FuncInfo* CodeGen::resolveOverload(const std::vector<Candidate>& candidates, std
 Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Arg>& args, SourceLoc loc)
 {
     useFunction(fi);
+    noteCall(fi);
     std::vector<llvm::Value*> callArgs;
     if (fi.hasThis)
         callArgs.push_back(thisPtr);
@@ -550,6 +551,7 @@ void CodeGen::callDispose(const ScopeVar& var)
             continue;
         FuncInfo* fi = getFuncInstance(c.decl, c.owner, c.ownerEnv, c.file, {}, c.decl->loc);
         useFunction(*fi);
+        noteCall(*fi);
         builder.CreateCall(fi->fn, {var.slot});
         return;
     }

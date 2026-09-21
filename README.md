@@ -204,11 +204,16 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
   `int.MaxValue/MinValue`, `EmbedText("datei")`/`EmbedNames("ordner", ".ext")`/`EmbedTexts("ordner", ".ext")` (Dateien werden beim
   Übersetzen in das Programm eingebettet; Pfade relativ zur Quelldatei, nur Stringliterale als Argumente). Alles Weitere steht in der Standardbibliothek (nächster Abschnitt) oder kommt über `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` prüft nur auf Fehler; `Optional<void>` gibt es nicht.
-* **Konstanten:** `const double PI = 3.14;` auf oberster Ebene (Zahl, `bool`, `char`, `string`; Initialisierer aus Literalen,
-  Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).
+* **Konstanten:** `const int MyConst = 5;` auf oberster Ebene oder in Funktionen. Erlaubt sind Zahlen, `bool`, `char`, Enums und `string`; eine
+  Konstante muss immer initialisiert werden, und der Initialisierer besteht nur aus Literalen, Operatoren, Casts, Enum-Werten und anderen Konstanten
+  (`const Color Fav = Color.Green;`, `const Flags Rw = Flags.Read | Flags.Write;`, `const int Sum = A * 2 + 1;`). Konstanten von oberster Ebene dürfen vor
+  ihrer Deklaration benutzt werden und werden immer geprüft, auch wenn sie niemand benutzt; Zugriff auch qualifiziert (`Math.PI`). Lokale
+  Konstanten sind schreibgeschützte Variablen (Zuweisen ist ein Fehler) und dürfen einen Namen in einem inneren Block verdecken.
 * **Globale Variablen:** `int Counter;`, `string Name = "x";`, `List<string> Names = List<string>.Create();` auf oberster Ebene, beliebiger Typ.
   Ohne Initialisierer startet die Variable mit dem Nullwert. Initialisierer sind beliebige Ausdrücke; sie laufen vor `Main` in der Reihenfolge der
-  Deklarationen (Dateien in der Reihenfolge, in der sie dem Compiler übergeben werden; ein Initialisierer sieht später deklarierte Globals noch als 0).
+  Deklarationen (Dateien in der Reihenfolge, in der sie dem Compiler übergeben werden). **Die Reihenfolge wird geprüft:** ein Initialisierer darf kein
+  Global benutzen, das später initialisiert wird (oder sich selbst) – auch nicht über Funktionen, die er aufruft (Funktionszeiger, die er bildet, zählen mit).
+  Globals ohne Initialisierer (Nullwert) darf man jederzeit lesen.
   Namensauflösung wie bei Konstanten (Namespace der Datei, `using`, qualifiziert `Ns.Counter`). Globals sind ganz normale Lvalues (zuweisen, `ref`,
   `&` in `unsafe`, Felder/Elemente ändern, Methoden aufrufen; Funktionszeiger-Globals rufen sich wie Funktionen auf). Werte, die Heap-Blöcke
   besitzen (Strings, Arrays, Listen …), werden nach dem Ende von `Main` freigegeben. Kein `var` (der Typ muss dastehen), kein Multithreading.

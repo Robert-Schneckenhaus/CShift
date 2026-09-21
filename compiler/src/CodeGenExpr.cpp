@@ -264,6 +264,7 @@ Value CodeGen::convertValue(const Value& v, Type* to, SourceLoc loc)
             err(loc, to->isFunction() ? "cannot convert function '" + v.groupName + "' to '" + to->name + "': " + why
                                       : "'" + v.groupName + "' is a function; call it with '()' or assign it to an Action/Func");
         useFunction(*fi);
+        noteCall(*fi); // taking the address of a function counts as a call (it is called through the pointer later)
         return Value::rvalue(to, fi->fn);
     }
 
@@ -404,8 +405,28 @@ GlobalInfo* CodeGen::lookupGlobal(FileContext* f, const std::string& name) const
 }
 
 // The variable of a global as an lvalue. Its type and the LLVM variable are created on first use.
-Value CodeGen::globalValue(GlobalInfo& g)
+void CodeGen::noteGlobalUse(GlobalInfo& g)
 {
+    if (!fs || !fs->func)
+        return;
+    const void* key = fs->func == initInfo.get() ? (const void*)currentInit : (const void*)fs->func;
+    if (key)
+        codeUses[key].globals.insert(&g);
+}
+
+void CodeGen::noteCall(FuncInfo& fi)
+{
+    if (!fs || !fs->func)
+        return;
+    const void* key = fs->func == initInfo.get() ? (const void*)currentInit : (const void*)fs->func;
+    if (key)
+        codeUses[key].calls.insert(&fi);
+}
+
+Value CodeGen::globalValue(GlobalInfo& g, bool note)
+{
+    if (note)
+        noteGlobalUse(g);
     if (!g.var)
     {
         Type* t = resolveValueType(*g.decl->type, g.decl->file, nullptr);
@@ -432,22 +453,7 @@ void CodeGen::emitGlobalsInit()
     if (!any)
         return;
 
-    initDecl = std::make_unique<FuncDecl>();
-    initDecl->name = "global initializers";
-    initInfo = std::make_unique<FuncInfo>();
-    initInfo->decl = initDecl.get();
-    initInfo->name = initDecl->name;
-    initInfo->ret = types.voidTy;
-    initInfo->signatureResolved = true;
-    globalsInitFn = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
-                                           llvm::GlobalValue::InternalLinkage, "__cs_init_globals", mod.get());
-    initInfo->fn = globalsInitFn;
-
-    fs = std::make_unique<FnState>();
-    fs->func = initInfo.get();
-    fs->fn = globalsInitFn;
-    fs->retType = types.voidTy;
-    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", globalsInitFn));
+    globalsInitFn = beginSyntheticFunction("__cs_init_globals");
     for (auto& u : units)
     {
         for (auto& g : u->globals)
@@ -459,7 +465,8 @@ void CodeGen::emitGlobalsInit()
             try
             {
                 GlobalInfo& info = *globalDecls.at(qualified(&u->file, g->name));
-                Value target = globalValue(info);
+                Value target = globalValue(info, false);
+                currentInit = &info;
                 Value v = convertValue(emitExpr(g->init.get()), info.type, g->init->loc);
                 storeSlot(info.type, target.v, consume(v), false);
                 flushTemps(0);
@@ -471,18 +478,151 @@ void CodeGen::emitGlobalsInit()
                 fs->scopes.clear();
                 pushScope();
             }
+            currentInit = nullptr;
             ensureInsertPoint();
         }
     }
+    endSyntheticFunction(globalsInitFn, true);
+}
+
+// A function without parameters that only exists for the code generator: the initializers of the globals (kept) and the
+// check of the constants (dropped). Its code is written with the normal expression and statement code.
+llvm::Function* CodeGen::beginSyntheticFunction(const std::string& name)
+{
+    if (!initInfo)
+    {
+        initDecl = std::make_unique<FuncDecl>();
+        initDecl->name = "global initializers";
+        initInfo = std::make_unique<FuncInfo>();
+        initInfo->decl = initDecl.get();
+        initInfo->name = initDecl->name;
+        initInfo->ret = types.voidTy;
+        initInfo->signatureResolved = true;
+    }
+    llvm::Function* f = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
+                                               llvm::GlobalValue::InternalLinkage, name, mod.get());
+    initInfo->fn = f;
+    fs = std::make_unique<FnState>();
+    fs->func = initInfo.get();
+    fs->fn = f;
+    fs->retType = types.voidTy;
+    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
+    return f;
+}
+
+void CodeGen::endSyntheticFunction(llvm::Function* f, bool keep)
+{
     if (blockOpen())
         builder.CreateRetVoid();
-    for (llvm::BasicBlock& bb : *globalsInitFn)
+    for (llvm::BasicBlock& bb : *f)
         if (!bb.getTerminator())
         {
             builder.SetInsertPoint(&bb);
             builder.CreateUnreachable();
         }
     fs.reset();
+    if (!keep)
+        f->eraseFromParent();
+}
+
+// The constants of the program are checked even if nothing uses them: type, initializer and value.
+void CodeGen::checkConstants()
+{
+    bool any = false;
+    for (auto& u : units)
+        any = any || (!u->file.isPrelude && !u->consts.empty());
+    if (!any)
+        return;
+    llvm::Function* f = beginSyntheticFunction("__cs_check_constants");
+    for (auto& u : units)
+    {
+        if (u->file.isPrelude)
+            continue;
+        for (auto& c : u->consts)
+        {
+            initInfo->file = &u->file;
+            try
+            {
+                emitConst(c.get(), c->loc);
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+            }
+            ensureInsertPoint();
+        }
+    }
+    endSyntheticFunction(f, false);
+}
+
+// An initializer must not use a global that is initialized later (or itself): the value would still be zero. The code the
+// initializer calls counts as well, so the functions it reaches (directly or through other functions) are searched.
+void CodeGen::checkGlobalInitOrder()
+{
+    for (auto& u : units)
+    {
+        for (auto& gd : u->globals)
+        {
+            if (!gd->init)
+                continue;
+            GlobalInfo* g = globalDecls.at(qualified(&u->file, gd->name)).get();
+            std::set<GlobalInfo*> reported;
+            auto report = [&](GlobalInfo* h, FuncInfo* via) {
+                if (h->order < g->order || !h->decl->init || !reported.insert(h).second)
+                    return;
+                std::string message = "the initializer of global '" + g->name + "' uses global '" + h->name + "'" +
+                                      (via ? " (through '" + via->name + "')" : "") + " before it is initialized";
+                message += h == g ? " (a global cannot use itself in its own initializer)"
+                                  : "; declare '" + h->name + "' before '" + g->name + "'";
+                diag.error(g->decl->loc, message);
+            };
+            auto own = codeUses.find(g);
+            if (own == codeUses.end())
+                continue;
+            for (GlobalInfo* h : own->second.globals)
+                report(h, nullptr);
+            // the functions the initializer calls, breadth first; 'via' is the function the initializer calls directly
+            std::set<FuncInfo*> seen;
+            std::vector<std::pair<FuncInfo*, FuncInfo*>> work;
+            for (FuncInfo* callee : own->second.calls)
+                work.push_back({callee, callee});
+            while (!work.empty())
+            {
+                auto [fn, via] = work.back();
+                work.pop_back();
+                if (!seen.insert(fn).second)
+                    continue;
+                auto uses = codeUses.find(fn);
+                if (uses == codeUses.end())
+                    continue;
+                for (GlobalInfo* h : uses->second.globals)
+                    report(h, via);
+                for (FuncInfo* callee : uses->second.calls)
+                    work.push_back({callee, via});
+            }
+        }
+    }
+}
+
+bool CodeGen::isConstantType(Type* t) const
+{
+    return t->isNumeric() || t->isBool() || t->isString() || t->isEnum();
+}
+
+// A local variable or constant of the current function by name (the innermost one); null if there is none. While the
+// initializer of a top-level constant is evaluated, the locals of the function that happens to be written are hidden.
+ScopeVar* CodeGen::findLocal(const std::string& name)
+{
+    if (!fs || constDepth > 0)
+        return nullptr;
+    for (size_t s = fs->scopes.size(); s > 0; s -= 1)
+    {
+        auto& vars = fs->scopes[s - 1].vars;
+        for (size_t i = vars.size(); i > 0; i -= 1)
+            if (vars[i - 1].name == name)
+                return &vars[i - 1];
+    }
+    return nullptr;
 }
 
 // The function that releases the values of the globals at the end of the program (so that no heap block is left over).
@@ -515,13 +655,44 @@ bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
     case ExprKind::BoolLit:
         return true;
     case ExprKind::Name:
-        return lookupConst(file, static_cast<NameExpr*>(e)->name) != nullptr;
+    {
+        const std::string& name = static_cast<NameExpr*>(e)->name;
+        if (ScopeVar* local = const_cast<CodeGen*>(this)->findLocal(name))
+            return local->isConstant; // a local constant (other locals are not constant)
+        return lookupConst(file, name) != nullptr;
+    }
     case ExprKind::Member:
     {
+        // Ns.Constant or Enum.Member
         auto* m = static_cast<MemberExpr*>(e);
-        return m->object->kind == ExprKind::Name &&
-               lookupConst(file, static_cast<NameExpr*>(m->object.get())->name + "." + m->name) != nullptr;
+        std::string dotted;
+        for (Expr* o = m->object.get();;)
+        {
+            if (o->kind == ExprKind::Name)
+            {
+                std::string n = static_cast<NameExpr*>(o)->name;
+                dotted = dotted.empty() ? n : n + "." + dotted;
+                break;
+            }
+            if (o->kind != ExprKind::Member || static_cast<MemberExpr*>(o)->viaArrow)
+                return false;
+            dotted = dotted.empty() ? static_cast<MemberExpr*>(o)->name : static_cast<MemberExpr*>(o)->name + "." + dotted;
+            o = static_cast<MemberExpr*>(o)->object.get();
+        }
+        if (lookupConst(file, dotted + "." + m->name))
+            return true;
+        const TypeDeclEntry* entry = lookupTypeDecl(file, dotted);
+        if (entry && entry->kind == TypeDeclEntry::Enum)
+        {
+            Type* et = const_cast<CodeGen*>(this)->getEnumType(entry->enumDecl);
+            for (const auto& member : et->en->members)
+                if (member.first == m->name)
+                    return true;
+        }
+        return false;
     }
+    case ExprKind::Cast:
+        return isConstExpr(static_cast<CastExpr*>(e)->operand.get(), file);
     case ExprKind::Unary:
     {
         auto* u = static_cast<UnaryExpr*>(e);
@@ -542,13 +713,25 @@ bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
 Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
 {
     (void)loc;
-    if (!isConstExpr(c->init.get(), c->file))
-        err(c->loc, "the initializer of constant '" + c->name + "' must be a constant expression (literals, operators, other constants)");
     if (constDepth > 32)
         err(c->loc, "constant '" + c->name + "' depends on itself");
     Type* t = resolveValueType(*c->type, c->file, nullptr);
-    if (!(t->isNumeric() || t->isBool() || t->isString() || t->isEnum()))
+    if (!isConstantType(t))
         err(c->loc, "constants can only be numbers, bool, char, string or enum values");
+    constDepth += 1; // hides the locals of the function that is being written while the constant is evaluated
+    bool constantOk = false;
+    try
+    {
+        constantOk = isConstExpr(c->init.get(), c->file);
+    }
+    catch (...)
+    {
+        constDepth -= 1;
+        throw;
+    }
+    constDepth -= 1;
+    if (!constantOk)
+        err(c->loc, "the initializer of constant '" + c->name + "' must be a constant expression (literals, operators, other constants)");
 
     FileContext* savedFile = fs->func->file;
     fs->func->file = c->file;
@@ -556,10 +739,21 @@ Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
     try
     {
         Value v;
-        if (t->isEnum())
-            v = constInt(t, constEvalInt(c->init.get(), nullptr, c->loc)); // enumerators of imported C enums
+        auto integerLiteral = [](Expr* x, auto&& self) -> bool {
+            switch (x->kind)
+            {
+            case ExprKind::IntLit:
+            case ExprKind::CharLit: return true;
+            case ExprKind::Unary: return self(static_cast<UnaryExpr*>(x)->operand.get(), self);
+            case ExprKind::Binary:
+                return self(static_cast<BinaryExpr*>(x)->lhs.get(), self) && self(static_cast<BinaryExpr*>(x)->rhs.get(), self);
+            default: return false;
+            }
+        };
+        if (t->isEnum() && integerLiteral(c->init.get(), integerLiteral))
+            v = constInt(t, constEvalInt(c->init.get(), nullptr, c->loc)); // enumerators of imported C enums are integers
         else
-            v = convertValue(emitExpr(c->init.get()), t, c->init->loc);
+            v = convertValue(emitExpr(c->init.get()), t, c->init->loc); // Color.Green, (Color)1, Color.A | Color.B, ...
         constDepth -= 1;
         fs->func->file = savedFile;
         return v;
@@ -574,6 +768,8 @@ Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
 
 Value CodeGen::lookupVariable(const std::string& name)
 {
+    if (constDepth > 0)
+        return Value{}; // a top-level constant is being evaluated: the locals of the current function are not visible
     for (size_t s = fs->scopes.size(); s > 0; s -= 1)
     {
         auto& vars = fs->scopes[s - 1].vars;
@@ -613,7 +809,7 @@ Value CodeGen::emitName(NameExpr* e)
     if (v.type)
         return v;
 
-    if (fs->func->owner)
+    if (fs->func->owner && constDepth == 0)
     {
         FieldPath p;
         if (findField(fs->func->owner, e->name, p))
@@ -1312,7 +1508,7 @@ Value CodeGen::emitAssign(AssignExpr* e)
     if (!target.isLValue)
         err(e->loc, "the left side of an assignment must be a variable, field or element");
     if (target.isConst)
-        err(e->loc, "cannot assign to a read-only value ('const ref' parameter)");
+        err(e->loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
 
     Value val;
     if (e->op)

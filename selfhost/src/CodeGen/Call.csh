@@ -185,6 +185,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
     var types = cg.Types;
     var ir = cg.Ir;
     UseFunction(cg, instance);
+    NoteCall(cg, instance);
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
     var callArgs = StringBuilder.Create();
@@ -406,7 +407,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
     int globalIndex = LookupGlobal(cg, cg.Fn[0].File, n.Name);
     if (globalIndex >= 0 && (CurrentOwner(cg) == 0 || MethodCandidates(cg, CurrentOwner(cg), n.Name).Length == 0))
     {
-        Value global = GlobalValue(cg, globalIndex);
+        Value global = GlobalUse(cg, globalIndex);
         if (cg.Types.IsFunction(global.Type))
             return EmitIndirectCall(cg, global, EmitArgs(cg, call.Args), e.Loc);
     }

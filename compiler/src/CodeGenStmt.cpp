@@ -280,6 +280,13 @@ void CodeGen::emitVarDecl(VarDeclStmt* s)
     Type* t = s->type ? declTypeOf(*s->type) : nullptr;
     if (t && t->isVoid())
         err(s->loc, "variable '" + s->name + "' cannot have type 'void'");
+    if (s->isConst)
+    {
+        if (!isConstantType(t))
+            err(s->loc, "constants can only be numbers, bool, char, string or enum values");
+        if (!isConstExpr(s->init.get(), fs->func->file))
+            err(s->loc, "the initializer of constant '" + s->name + "' must be a constant expression (literals, operators, other constants)");
+    }
 
     Value init;
     if (s->init)
@@ -316,6 +323,11 @@ void CodeGen::emitVarDecl(VarDeclStmt* s)
     flushTemps(0);
 
     ScopeVar& var = declareVar(s->name, t, slot);
+    if (s->isConst)
+    {
+        var.isConst = true; // read-only
+        var.isConstant = true;
+    }
     if (s->isUsing)
     {
         if (!implementsDisposable(t))
@@ -529,6 +541,8 @@ void CodeGen::emitForeachStruct(ForeachStmt* s, const Value& it)
         err(loc, "'foreach' over struct '" + collType->name + "' needs the methods 'int Count()' and 'T Get(int index)'");
     useFunction(*countFn);
     useFunction(*getFn);
+    noteCall(*countFn);
+    noteCall(*getFn);
 
     pushScope(); // holds a copy of the struct for the duration of the loop
     llvm::AllocaInst* collSlot = entryAlloca(llvmTypeOf(collType), "foreach.coll");

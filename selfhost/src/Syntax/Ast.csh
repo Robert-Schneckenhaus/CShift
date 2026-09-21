@@ -265,8 +265,9 @@ struct VarDeclStmt
 {
     TypeRef Type; // none means 'var'
     string Name;
-    Expr Init;    // optional
+    Expr Init;    // optional (never for constants)
     bool IsUsing;
+    bool IsConst; // const int X = 5;  (a read-only variable with a constant initializer)
 }
 
 struct ExprStmt

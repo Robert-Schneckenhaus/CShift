@@ -280,8 +280,9 @@ struct VarDeclStmt : Stmt
     VarDeclStmt(SourceLoc l) : Stmt(StmtKind::VarDecl, l) {}
     TypeRefPtr type; // null means 'var'
     std::string name;
-    ExprPtr init;    // may be null
+    ExprPtr init;    // may be null (never for constants)
     bool isUsing = false;
+    bool isConst = false; // const int X = 5;  (a read-only variable with a constant initializer)
 };
 
 struct ExprStmt : Stmt

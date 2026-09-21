@@ -175,7 +175,7 @@ void Parser::parseTopLevel(CompilationUnit& u)
         c->type = parseType();
         c->loc = cur().loc;
         c->name = expectIdent("constant name");
-        expect(Tok::Assign, "'=' in constant declaration");
+        expect(Tok::Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
         c->init = parseExpr();
         expect(Tok::Semi, "';' after constant");
         u.consts.push_back(std::move(c));
@@ -573,6 +573,22 @@ StmtPtr Parser::parseStatement()
     case Tok::KwForeach: return parseForeach();
     case Tok::KwSwitch: return parseSwitch();
     case Tok::KwUsing: return parseUsing();
+    case Tok::KwConst:
+    {
+        // const int X = 5;  (a local constant)
+        advance();
+        auto d = std::make_unique<VarDeclStmt>(loc);
+        d->isConst = true;
+        TypeRefPtr t = parseType();
+        if (t->kind == TypeRef::Named && t->path.size() == 1 && t->path[0] == "var" && t->args.empty())
+            fail(loc, "a constant needs an explicit type, e.g. const int X = 5;");
+        d->type = std::move(t);
+        d->name = expectIdent("constant name");
+        expect(Tok::Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
+        d->init = parseExpr();
+        expect(Tok::Semi, "';' after constant");
+        return d;
+    }
     case Tok::KwBreak:
         advance();
         expect(Tok::Semi, "';'");

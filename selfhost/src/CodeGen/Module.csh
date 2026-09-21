@@ -29,6 +29,8 @@ string CompileProgram(Compiler cg, string triple)
             GetEnumType(cg, en);
     }
 
+    CheckConstants(cg);
+
     // The globals of the program are checked even if nothing uses them; their initializers run before Main.
     for (var gi = 0; gi < cg.Globals.Count(); gi += 1)
     {
@@ -89,6 +91,7 @@ string CompileProgram(Compiler cg, string triple)
         }
     }
 
+    CheckGlobalInitOrder(cg);
     EmitEntryPoint(cg);
 
     bool windows = cg.St[0].Windows;

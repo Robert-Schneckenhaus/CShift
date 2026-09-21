@@ -329,7 +329,7 @@ struct AstDumper
         case StmtKind.VarDecl:
         {
             var n = Tree.GetVarDecl(s);
-            Line(indent, role, "VarDecl" + at + " name=" + n.Name + TypeAttr("type", n.Type) + Flag(n.IsUsing, "using"));
+            Line(indent, role, "VarDecl" + at + " name=" + n.Name + TypeAttr("type", n.Type) + Flag(n.IsUsing, "using") + Flag(n.IsConst, "const"));
             DumpExpr(indent + 1, "init", n.Init);
             break;
         }

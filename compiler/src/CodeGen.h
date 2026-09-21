@@ -79,6 +79,7 @@ struct GlobalInfo
 {
     GlobalDecl* decl = nullptr;
     std::string name; // qualified
+    int order = 0;    // position in the order of the declarations (the order of the initializers)
     Type* type = nullptr;
     llvm::GlobalVariable* var = nullptr;
 };
@@ -159,6 +160,7 @@ struct ScopeVar
     bool ownsArc = false;   // release on scope exit
     bool disposable = false; // call Dispose() on scope exit
     bool resetOnCleanup = false; // zero the slot after releasing (pattern variables)
+    bool isConstant = false;    // declared with 'const' (its initializer is a constant expression)
 };
 
 struct Scope
@@ -336,7 +338,15 @@ private:
     Value emitLiteral(Expr* e);
     ConstDecl* lookupConst(FileContext* f, const std::string& name) const;
     GlobalInfo* lookupGlobal(FileContext* f, const std::string& name) const;
-    Value globalValue(GlobalInfo& g);
+    Value globalValue(GlobalInfo& g, bool note = true);
+    void noteGlobalUse(GlobalInfo& g);
+    void noteCall(FuncInfo& fi);
+    void checkGlobalInitOrder();
+    void checkConstants();
+    llvm::Function* beginSyntheticFunction(const std::string& name);
+    void endSyntheticFunction(llvm::Function* f, bool keep);
+    bool isConstantType(Type* t) const;
+    ScopeVar* findLocal(const std::string& name);
     void emitGlobalsInit();
     llvm::Function* emitGlobalsRelease();
     Value emitConst(ConstDecl* c, SourceLoc loc);
@@ -423,6 +433,16 @@ private:
     std::unordered_map<std::string, std::vector<FuncDecl*>> funcDecls;
     std::unordered_map<std::string, ConstDecl*> constDecls;
     std::unordered_map<std::string, std::unique_ptr<GlobalInfo>> globalDecls;
+    // Which globals and functions the code of every function (and every global initializer) uses; checked after all bodies
+    // are written to see whether an initializer needs a global that is initialized later.
+    struct CodeUses
+    {
+        std::set<GlobalInfo*> globals;
+        std::set<FuncInfo*> calls;
+    };
+    std::unordered_map<const void*, CodeUses> codeUses; // key: FuncInfo* or the GlobalInfo* whose initializer it is
+    GlobalInfo* currentInit = nullptr;
+    int globalCounter = 0;
     std::vector<GlobalInfo*> createdGlobals; // in the order in which the LLVM variables were created
     llvm::Function* globalsInitFn = nullptr;
     std::unique_ptr<FuncDecl> initDecl; // the function that initializes the globals looks like a function to the code generator

@@ -143,6 +143,8 @@ Value EmitLiteral(Compiler cg, Expr e)
 // A local variable or parameter; the value has no type if there is none with that name.
 Value LookupVariable(Compiler cg, string name)
 {
+    if (cg.St[0].ConstDepth > 0)
+        return Value { }; // a top-level constant is being evaluated: the locals of the current function are not visible
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
     {
@@ -156,8 +158,22 @@ Value LookupVariable(Compiler cg, string name)
     return Value { };
 }
 
+// The innermost local variable or constant with the name: its index in the variables, or -1.
+int FindLocal(Compiler cg, string name)
+{
+    if (cg.St[0].ConstDepth > 0)
+        return -1;
+    var vars = cg.Fn[0].Vars;
+    for (var i = vars.Count(); i > 0; i -= 1)
+        if (vars.Get(i - 1).Name == name)
+            return i - 1;
+    return -1;
+}
+
 bool IsLocalName(Compiler cg, string name)
 {
+    if (cg.St[0].ConstDepth > 0)
+        return false;
     var vars = cg.Fn[0].Vars;
     for (var i = 0; i < vars.Count(); i += 1)
         if (vars.Get(i).Name == name)
@@ -174,7 +190,7 @@ Value EmitName(Compiler cg, Expr e)
 
     // A field of the current struct (in a method).
     int owner = CurrentOwner(cg);
-    if (owner != 0 && FindField(cg, owner, n.Name).Found)
+    if (owner != 0 && cg.St[0].ConstDepth == 0 && FindField(cg, owner, n.Name).Found)
         return FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
 
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
@@ -182,7 +198,7 @@ Value EmitName(Compiler cg, Expr e)
         return EmitConst(cg, c, e.Loc);
     int g = LookupGlobal(cg, cg.Fn[0].File, n.Name);
     if (g >= 0)
-        return GlobalValue(cg, g);
+        return GlobalUse(cg, g);
 
     // A function name is a value that converts to a matching Action/Func type.
     var group = new Candidate[0];
@@ -210,7 +226,29 @@ bool IsConstExpr(Compiler cg, Expr e, int file)
     case ExprKind.BoolLit:
         return true;
     case ExprKind.Name:
-        return LookupConst(cg, file, cg.Tree.GetName(e).Name) >= 0;
+    {
+        string name = cg.Tree.GetName(e).Name;
+        int local = FindLocal(cg, name);
+        if (local >= 0)
+            return cg.Fn[0].Vars.Get(local).IsConstant; // a local constant (other locals are not constant)
+        return LookupConst(cg, file, name) >= 0;
+    }
+    case ExprKind.Member:
+    {
+        // Ns.Constant or Enum.Member
+        var m = cg.Tree.GetMember(e);
+        string dotted = DottedName(cg, m.Object);
+        if (dotted.Length == 0)
+            return false;
+        if (LookupConst(cg, file, dotted + "." + m.Name) >= 0)
+            return true;
+        var entry = TypeDeclEntry { };
+        if (LookupTypeDecl(cg, file, dotted, ref entry) && entry.Kind == DeclKind.Enum)
+            return FindEnumMember(GetEnumInfo(cg, GetEnumType(cg, entry.Index)), m.Name) >= 0;
+        return false;
+    }
+    case ExprKind.Cast:
+        return IsConstExpr(cg, cg.Tree.GetCast(e).Operand, file);
     case ExprKind.Unary:
     {
         var u = cg.Tree.GetUnary(e);
@@ -232,27 +270,60 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
 {
     var entry = cg.Consts.Get(index);
     var c = entry.Decl;
-    if (!IsConstExpr(cg, c.Init, entry.File))
-        Fail(cg, c.Loc, "the initializer of constant '" + c.Name + "' must be a constant expression (literals, operators, other constants)");
+    if (cg.St[0].ConstDepth > 32)
+        Fail(cg, c.Loc, "constant '" + c.Name + "' depends on itself");
     int t = ResolveValueType(cg, c.Type.Id, entry.File, NoEnv());
     var types = cg.Types;
-    if (!(types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t)))
+    if (!IsConstantType(cg, t))
         Fail(cg, c.Loc, "constants can only be numbers, bool, char, string or enum values");
+    cg.St[0].ConstDepth += 1; // hides the locals of the function that is being written while the constant is evaluated
+    bool constantOk = IsConstExpr(cg, c.Init, entry.File);
+    cg.St[0].ConstDepth -= 1;
+    if (!constantOk)
+        Fail(cg, c.Loc, "the initializer of constant '" + c.Name + "' must be a constant expression (literals, operators, other constants)");
     int savedFile = cg.Fn[0].File;
     cg.Fn[0].File = entry.File;
+    cg.St[0].ConstDepth += 1;
     Value v;
-    if (types.IsEnum(t))
+    if (types.IsEnum(t) && IsIntegerLiteralExpr(cg, c.Init))
     {
-        // enumerators of imported C enums
+        // enumerators of imported C enums are integers
         var noMembers = EnumInfo { Names = new string[0], Values = new int64[0] };
         v = ConstInt(cg, t, ConstEvalInt(cg, c.Init, noMembers, c.Loc));
     }
     else
     {
-        v = ConvertValue(cg, EmitExpr(cg, c.Init), t, c.Init.Loc);
+        v = ConvertValue(cg, EmitExpr(cg, c.Init), t, c.Init.Loc); // Color.Green, (Color)1, Color.A | Color.B, ...
     }
+    cg.St[0].ConstDepth -= 1;
     cg.Fn[0].File = savedFile;
     return v;
+}
+
+bool IsConstantType(Compiler cg, int t)
+{
+    var types = cg.Types;
+    return types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
+}
+
+// Integer literals combined with operators (no names).
+bool IsIntegerLiteralExpr(Compiler cg, Expr e)
+{
+    switch (e.Kind)
+    {
+    case ExprKind.IntLit:
+    case ExprKind.CharLit:
+        return true;
+    case ExprKind.Unary:
+        return IsIntegerLiteralExpr(cg, cg.Tree.GetUnary(e).Operand);
+    case ExprKind.Binary:
+    {
+        var b = cg.Tree.GetBinary(e);
+        return IsIntegerLiteralExpr(cg, b.Lhs) && IsIntegerLiteralExpr(cg, b.Rhs);
+    }
+    default:
+        return false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +761,7 @@ Value EmitAssign(Compiler cg, Expr e)
     if (!target.IsLValue)
         Fail(cg, e.Loc, "the left side of an assignment must be a variable, field or element");
     if (target.IsConst)
-        Fail(cg, e.Loc, "cannot assign to a read-only value ('const ref' parameter)");
+        Fail(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
 
     Value val;
     if (a.HasOp)

@@ -325,7 +325,7 @@ private:
         case StmtKind::VarDecl:
         {
             auto* n = static_cast<const VarDeclStmt*>(s);
-            line(indent, role, "VarDecl" + loc + " name=" + n->name + typeAttr("type", n->type.get()) + flag(n->isUsing, "using"));
+            line(indent, role, "VarDecl" + loc + " name=" + n->name + typeAttr("type", n->type.get()) + flag(n->isUsing, "using") + flag(n->isConst, "const"));
             expr(indent + 1, "init", n->init.get());
             break;
         }

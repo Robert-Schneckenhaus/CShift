@@ -397,6 +397,8 @@ void EmitForeachStruct(Compiler cg, Stmt s, Value it)
         Fail(cg, loc, "'foreach' over struct '" + types.Name(collType) + "' needs the methods 'int Count()' and 'T Get(int index)'");
     UseFunction(cg, countInstance);
     UseFunction(cg, getInstance);
+    NoteCall(cg, countInstance);
+    NoteCall(cg, getInstance);
 
     PushScope(cg); // holds a copy of the struct for the duration of the loop
     string collIr = LlvmType(cg, collType);

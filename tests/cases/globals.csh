@@ -23,8 +23,14 @@ Point Origin = Point { X = 1, Y = 2, Label = "origin" };
 List<string> Names = List<string>.Create();
 int[] Table = new int[] { 3, 1, 4 };
 Func<int, int> Twice = Double;
-int UsedBeforeDeclaration = Later + 1;  // Later is not initialized yet: 0
-int Later = 5;
+int UsedBeforeDeclaration = Later + 1;  // Later has no initializer, so it is zero here
+int FromFunction = ReadStart() + 1;    // a function that reads an earlier global is fine
+int Later;                              // no initializer: may be used before its declaration
+
+int ReadStart()
+{
+    return Start;
+}
 
 int Double(int v)
 {
@@ -67,7 +73,8 @@ int Main()
     failed += Check("struct", Origin.X == 1 && Origin.Y == 2 && Origin.Label == "origin");
     failed += Check("array", Table.Length == 3 && Table[1] == 1);
     failed += Check("function pointer", Twice(21) == 42);
-    failed += Check("order", UsedBeforeDeclaration == 1 && Later == 5);
+    failed += Check("through a function", FromFunction == 43);
+    failed += Check("order", UsedBeforeDeclaration == 1 && Later == 0);
 
     Next();
     Next();

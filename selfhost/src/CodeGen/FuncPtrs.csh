@@ -137,6 +137,7 @@ Value ConvertGroup(Compiler cg, Value v, int to, SourceLoc loc)
         Fail(cg, loc, "'" + v.GroupName + "' is a function; call it with '()' or assign it to an Action/Func");
     }
     UseFunction(cg, instance);
+    NoteCall(cg, instance); // taking the address of a function counts as a call (it is called through the pointer later)
     return Rvalue(to, cg.Instances.Get(instance).LlvmName, false);
 }
 

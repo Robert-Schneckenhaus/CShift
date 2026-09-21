@@ -129,6 +129,7 @@ struct ScopeVar
     bool OwnsArc;      // release at the end of the scope
     bool Disposable;   // call Dispose() at the end of the scope
     bool ResetOnCleanup; // zero the slot after releasing (pattern variables)
+    bool IsConstant;     // declared with 'const' (its initializer is a constant expression)
 }
 
 struct TempRelease
@@ -169,6 +170,10 @@ struct CgState
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
     bool StdlibLoaded;    // the standard library was added as prelude
     bool HasGlobalsInit;  // __cs_init_globals exists
+    int InitInstance;     // the pseudo function instance of synthetic code (+1, 0 = none)
+    int CurrentInit;      // the global whose initializer is being written
+    bool InitActive;
+    int ConstDepth;       // > 0 while the initializer of a top-level constant is evaluated
     int Imports;          // number of "using X from header" declarations in the program
 }
 
@@ -199,6 +204,8 @@ struct Compiler
     List<GlobalEntry> Globals;
     Dictionary<string, int> GlobalDecls;
     List<int> CreatedGlobals;    // globals whose LLVM variable exists, in creation order
+    Dictionary<int, List<int>> CodeGlobals;   // key: function instance, or -1 - g for the initializer of global g
+    Dictionary<int, List<int>> CodeCalls;
     Dictionary<string, TypeDeclEntry> TypeDecls;
     Dictionary<string, List<int>> FuncDecls;
     Dictionary<string, int> ConstDecls;
@@ -234,6 +241,8 @@ struct Compiler
         cg.Globals = List<GlobalEntry>.Create();
         cg.GlobalDecls = Dictionary<string, int>.Create();
         cg.CreatedGlobals = List<int>.Create();
+        cg.CodeGlobals = Dictionary<int, List<int>>.Create();
+        cg.CodeCalls = Dictionary<int, List<int>>.Create();
         cg.TypeDecls = Dictionary<string, TypeDeclEntry>.Create();
         cg.FuncDecls = Dictionary<string, List<int>>.Create();
         cg.ConstDecls = Dictionary<string, int>.Create();

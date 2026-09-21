@@ -341,6 +341,7 @@ void CallDispose(Compiler cg, ScopeVar v)
             continue;
         int instance = GetFuncInstance(cg, c.Entry, c.Owner, GetStructInfo(cg, c.Owner).Env, new int[0], cd.Loc);
         UseFunction(cg, instance);
+        NoteCall(cg, instance);
         cg.Ir.Call("void", cg.Instances.Get(instance).LlvmName, "ptr " + v.Slot);
         return;
     }

@@ -109,6 +109,7 @@ void CodeGen::registerUnit(CompilationUnit& u)
             auto info = std::make_unique<GlobalInfo>();
             info->decl = g.get();
             info->name = q;
+            info->order = globalCounter++;
             globalDecls[q] = std::move(info);
         }
     }
@@ -1168,6 +1169,8 @@ bool CodeGen::compile()
         }
     }
 
+    checkConstants();
+
     // The globals of the program are checked even if nothing uses them; their initializers run before Main.
     for (auto& u : units)
     {
@@ -1210,6 +1213,8 @@ bool CodeGen::compile()
             emitFunctionBody(*fi);
         }
     }
+
+    checkGlobalInitOrder();
 
     if (diag.hasErrors())
         return false;

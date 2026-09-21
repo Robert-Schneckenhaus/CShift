@@ -223,7 +223,7 @@ struct Parser
             c.Type = try ParseType();
             c.Loc = Cur().Loc;
             c.Name = try ExpectIdent("constant name");
-            try Expect(TokenKind.Assign, "'=' in constant declaration");
+            try Expect(TokenKind.Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
             c.Init = try ParseExpr();
             try Expect(TokenKind.Semi, "';' after constant");
             Unit.Consts.Add(c);
@@ -650,6 +650,21 @@ struct Parser
             return ParseSwitch();
         case TokenKind.KwUsing:
             return ParseUsing();
+        case TokenKind.KwConst:
+        {
+            // const int X = 5;  (a local constant)
+            Advance();
+            var d = VarDeclStmt { IsConst = true };
+            TypeRef t = try ParseType();
+            if (IsVarType(t))
+                return error("a constant needs an explicit type, e.g. const int X = 5;", loc.Pack());
+            d.Type = t;
+            d.Name = try ExpectIdent("constant name");
+            try Expect(TokenKind.Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
+            d.Init = try ParseExpr();
+            try Expect(TokenKind.Semi, "';' after constant");
+            return Tree.AddVarDecl(loc, d);
+        }
         case TokenKind.KwBreak:
             Advance();
             try Expect(TokenKind.Semi, "';'");
