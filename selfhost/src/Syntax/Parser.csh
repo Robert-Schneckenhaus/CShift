@@ -254,8 +254,29 @@ struct Parser
         }
         else if (Check(TokenKind.Ident))
         {
-            FuncDecl f = try ParseFunction(false, false);
-            Unit.Funcs.Add(f);
+            // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
+            int start = Pos;
+            bool isGlobal = false;
+            var probe = ParseType();
+            if (probe)
+                isGlobal = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Semi || PeekKind(1) == TokenKind.Assign);
+            Pos = start;
+            if (isGlobal)
+            {
+                var g = GlobalDecl { };
+                g.Type = try ParseType();
+                g.Loc = Cur().Loc;
+                g.Name = try ExpectIdent("variable name");
+                if (Match(TokenKind.Assign))
+                    g.Init = try ParseExpr();
+                try Expect(TokenKind.Semi, "';' after variable declaration");
+                Unit.Globals.Add(g);
+            }
+            else
+            {
+                FuncDecl f = try ParseFunction(false, false);
+                Unit.Funcs.Add(f);
+            }
         }
         else
         {

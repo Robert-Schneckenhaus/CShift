@@ -94,10 +94,23 @@ void CodeGen::registerUnit(CompilationUnit& u)
     for (auto& c : u.consts)
     {
         std::string q = qualified(&u.file, c->name);
-        if (constDecls.count(q))
+        if (constDecls.count(q) || globalDecls.count(q))
             diag.error(c->loc, "constant '" + q + "' is already defined");
         else
             constDecls[q] = c.get();
+    }
+    for (auto& g : u.globals)
+    {
+        std::string q = qualified(&u.file, g->name);
+        if (constDecls.count(q) || globalDecls.count(q))
+            diag.error(g->loc, "'" + q + "' is already defined");
+        else
+        {
+            auto info = std::make_unique<GlobalInfo>();
+            info->decl = g.get();
+            info->name = q;
+            globalDecls[q] = std::move(info);
+        }
     }
 
     for (auto& l : u.links)
@@ -1155,6 +1168,25 @@ bool CodeGen::compile()
         }
     }
 
+    // The globals of the program are checked even if nothing uses them; their initializers run before Main.
+    for (auto& u : units)
+    {
+        if (u->file.isPrelude)
+            continue;
+        for (auto& g : u->globals)
+        {
+            try
+            {
+                globalValue(*globalDecls.at(qualified(&u->file, g->name)));
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+            }
+        }
+    }
+    emitGlobalsInit();
+
     // 3. Generate function bodies. Generic instantiations add new work while this runs.
     while (!workQueue.empty() || !pendingVerify.empty())
     {
@@ -1221,7 +1253,10 @@ void CodeGen::emitEntryPoint()
     auto* ptrArg = llvm::PointerType::getUnqual(ctx);
 
     // Returns from main; with --arc-stats the heap block balance is printed first.
+    llvm::Function* releaseGlobals = emitGlobalsRelease();
     auto finish = [&](llvm::Value* code) {
+        if (releaseGlobals)
+            b.CreateCall(releaseGlobals);
         if (arcStats)
         {
             llvm::Value* allocs = b.CreateLoad(b.getInt64Ty(), arcCounter("__cs_allocs"));
@@ -1232,6 +1267,9 @@ void CodeGen::emitEntryPoint()
         }
         b.CreateRet(code);
     };
+
+    if (globalsInitFn)
+        b.CreateCall(globalsInitFn);
 
     llvm::Value* result;
     if (mainArgsHelper)

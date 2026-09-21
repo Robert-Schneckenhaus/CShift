@@ -29,6 +29,14 @@ string CompileProgram(Compiler cg, string triple)
             GetEnumType(cg, en);
     }
 
+    // The globals of the program are checked even if nothing uses them; their initializers run before Main.
+    for (var gi = 0; gi < cg.Globals.Count(); gi += 1)
+    {
+        if (!cg.Files.Get(cg.Globals.Get(gi).File).IsPrelude)
+            GlobalValue(cg, gi);
+    }
+    EmitGlobalsInit(cg);
+
     // Every struct of the program is checked (layout, bases), also if nothing uses it.
     for (var s = 0; s < cg.Structs.Count(); s += 1)
     {
@@ -110,18 +118,20 @@ void EmitEntryPoint(Compiler cg)
         Fail(cg, cg.Funcs.Get(m.Entry).Decl.Loc, "'Main' must return void, int or Error<int>");
 
     // Main(string[] args) gets the arguments without the program name; it only borrows the array.
-    string prepare = "";
+    string prepare = cg.St[0].HasGlobalsInit ? "  call void @__cs_init_globals()\n" : "";
     string argument = "";
     string cleanup = "";
+    // the values of the globals are released when Main has returned (before the balance of heap blocks is printed)
+    string releaseGlobals = EmitGlobalsRelease(cg) ? "  call void @__cs_release_globals()\n" : "";
     if (m.ParamTypes.Length == 1)
     {
-        prepare = "  %args = call ptr @__cs_make_args(i32 %argc, ptr %argv)\n";
+        prepare += "  %args = call ptr @__cs_make_args(i32 %argc, ptr %argv)\n";
         argument = "ptr %args";
         cleanup = "  call void " + ReleaseFunction(cg, m.ParamTypes[0]) + "(ptr %args)\n";
     }
 
     // Returns from main; with --arc-stats the heap block balance is printed first.
-    string stats = ArcStatsCode(cg, "");
+    string stats = releaseGlobals + ArcStatsCode(cg, "");
     string body;
     if (types.IsVoid(rt))
     {
@@ -139,7 +149,7 @@ void EmitEntryPoint(Compiler cg)
         string ty = LlvmType(cg, rt);
         body = prepare + "  %r = call " + ty + " " + m.LlvmName + "(" + argument + ")\n" + cleanup +
                "  %isok = extractvalue " + ty + " %r, 0\n  br i1 %isok, label %ok, label %fail\n" +
-               "ok:\n  %v = extractvalue " + ty + " %r, 1\n" + ArcStatsCode(cg, ".ok") +
+               "ok:\n  %v = extractvalue " + ty + " %r, 1\n" + releaseGlobals + ArcStatsCode(cg, ".ok") +
                ExitCodeConversion(cg, elem, "%v") +
                "fail:\n  %msg = extractvalue " + ty + " %r, 2\n  %text = call ptr @__cs_data(ptr %msg)\n" +
                StderrLoad(cg.St[0].Windows).Replace("%err", "%err.msg") +

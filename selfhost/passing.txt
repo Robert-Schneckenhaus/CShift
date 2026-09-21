@@ -23,6 +23,9 @@ err_function_ref_param.csh
 err_function_signature.csh
 err_function_too_many_params.csh
 err_function_void_result.csh
+err_global_duplicate.csh
+err_global_init_type.csh
+err_global_void.csh
 err_increment.csh
 err_interface_not_implemented.csh
 err_interface_variable.csh
@@ -48,6 +51,7 @@ err_void_result_value.csh
 error_void.csh
 exit_code.csh
 function_pointers.csh
+globals.csh
 link_extern.csh
 main_args.csh
 main_error.csh

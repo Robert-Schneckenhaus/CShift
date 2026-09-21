@@ -658,6 +658,16 @@ Value CodeGen::emitCall(CallExpr* e)
             }
         }
 
+        if (GlobalInfo* g = lookupGlobal(fs->func->file, n->name))
+        {
+            Value global = globalValue(*g);
+            if (global.type->isFunction() && !(fs->func->owner && methodCandidates(fs->func->owner, n->name).size()))
+            {
+                std::vector<Arg> args = emitArgs(e->args);
+                return emitIndirectCall(global, args, e->loc);
+            }
+        }
+
         std::vector<Type*> targs = resolveTypeArgs(n->typeArgs);
         std::vector<Candidate> cands;
         if (fs->func->owner)

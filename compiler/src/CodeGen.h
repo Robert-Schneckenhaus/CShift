@@ -74,6 +74,15 @@ struct FuncInfo
     bool queued = false;
 };
 
+// A global variable of the program; its type and LLVM variable are created when it is first needed.
+struct GlobalInfo
+{
+    GlobalDecl* decl = nullptr;
+    std::string name; // qualified
+    Type* type = nullptr;
+    llvm::GlobalVariable* var = nullptr;
+};
+
 struct TypeDeclEntry
 {
     enum Kind { Struct, Interface, Enum } kind = Struct;
@@ -326,6 +335,10 @@ private:
     Value emitErrorLit(ErrorLitExpr* e);
     Value emitLiteral(Expr* e);
     ConstDecl* lookupConst(FileContext* f, const std::string& name) const;
+    GlobalInfo* lookupGlobal(FileContext* f, const std::string& name) const;
+    Value globalValue(GlobalInfo& g);
+    void emitGlobalsInit();
+    llvm::Function* emitGlobalsRelease();
     Value emitConst(ConstDecl* c, SourceLoc loc);
     bool isConstExpr(Expr* e, FileContext* file) const;
 
@@ -409,6 +422,11 @@ private:
     std::unordered_map<std::string, TypeDeclEntry> typeDecls;
     std::unordered_map<std::string, std::vector<FuncDecl*>> funcDecls;
     std::unordered_map<std::string, ConstDecl*> constDecls;
+    std::unordered_map<std::string, std::unique_ptr<GlobalInfo>> globalDecls;
+    std::vector<GlobalInfo*> createdGlobals; // in the order in which the LLVM variables were created
+    llvm::Function* globalsInitFn = nullptr;
+    std::unique_ptr<FuncDecl> initDecl; // the function that initializes the globals looks like a function to the code generator
+    std::unique_ptr<FuncInfo> initInfo;
     std::unordered_set<std::string> namespaces;
 
     std::unordered_map<std::string, Type*> structTypes;

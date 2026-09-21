@@ -53,6 +53,12 @@ public:
             line(1, "", "Const" + at(d->loc) + " name=" + d->name + typeAttr("type", d->type.get()));
             expr(2, "init", d->init.get());
         }
+        for (const auto& d : u.globals)
+        {
+            line(1, "", "Global" + at(d->loc) + " name=" + d->name + typeAttr("type", d->type.get()));
+            if (d->init)
+                expr(2, "init", d->init.get());
+        }
         for (const auto& d : u.structs)
         {
             line(1, "", "Struct" + at(d->loc) + " name=" + d->name +

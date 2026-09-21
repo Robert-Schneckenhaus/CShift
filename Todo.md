@@ -57,4 +57,4 @@ Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die
       "Assemble" und "Test the assembled folder" zuletzt offen). In der Linux-Job-Umgebung ist `CSHIFT_SKIP_SELFHOST=1` gesetzt:
       nach dem ersten grünen Lauf entfernen, damit die selfhost-Prüfungen auch dort gelten (sie brauchen `clang` im `PATH`).
 - [ ] `demo/`: `libminifb.a` wird nicht eingecheckt (`demo/build-minifb.ps1` baut sie); Callbacks funktionieren, Lambdas gibt es nicht.
-- [ ] Sprache: Lambdas/Closures, globale Variablen, Interfaces als Werttyp, `List<T>`-Indexer sind weiter offen (siehe README, "Bekannte Einschränkungen").
+- [ ] Sprache: Lambdas/Closures, Interfaces als Werttyp, `List<T>`-Indexer sind weiter offen (siehe README, "Bekannte Einschränkungen").

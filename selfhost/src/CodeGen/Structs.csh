@@ -388,6 +388,9 @@ Value EmitMember(Compiler cg, Expr e)
                 int c = LookupConst(cg, cg.Fn[0].File, dotted + "." + m.Name);
                 if (c >= 0)
                     return EmitConst(cg, c, e.Loc);
+                int g = LookupGlobal(cg, cg.Fn[0].File, dotted + "." + m.Name);
+                if (g >= 0)
+                    return GlobalValue(cg, g);
                 if (isTypeName && entry.Kind == DeclKind.Struct)
                 {
                     // Type.Method as a value: a static method that converts to an Action/Func

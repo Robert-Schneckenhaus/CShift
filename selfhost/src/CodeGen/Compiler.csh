@@ -168,6 +168,7 @@ struct CgState
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
     bool StdlibLoaded;    // the standard library was added as prelude
+    bool HasGlobalsInit;  // __cs_init_globals exists
     int Imports;          // number of "using X from header" declarations in the program
 }
 
@@ -195,6 +196,9 @@ struct Compiler
     List<int> PendingVerify;   // struct types whose interfaces still have to be checked
     Dictionary<string, int> EnumTypes;
     List<ConstEntry> Consts;
+    List<GlobalEntry> Globals;
+    Dictionary<string, int> GlobalDecls;
+    List<int> CreatedGlobals;    // globals whose LLVM variable exists, in creation order
     Dictionary<string, TypeDeclEntry> TypeDecls;
     Dictionary<string, List<int>> FuncDecls;
     Dictionary<string, int> ConstDecls;
@@ -227,6 +231,9 @@ struct Compiler
         cg.PendingVerify = List<int>.Create();
         cg.EnumTypes = Dictionary<string, int>.Create();
         cg.Consts = List<ConstEntry>.Create();
+        cg.Globals = List<GlobalEntry>.Create();
+        cg.GlobalDecls = Dictionary<string, int>.Create();
+        cg.CreatedGlobals = List<int>.Create();
         cg.TypeDecls = Dictionary<string, TypeDeclEntry>.Create();
         cg.FuncDecls = Dictionary<string, List<int>>.Create();
         cg.ConstDecls = Dictionary<string, int>.Create();
@@ -327,12 +334,21 @@ void AddUnit(Compiler cg, CompilationUnit unit)
     {
         var c = unit.Consts.Get(i);
         string q = Qualified(cg, file, c.Name);
-        if (cg.ConstDecls.ContainsKey(q))
+        if (cg.ConstDecls.ContainsKey(q) || cg.GlobalDecls.ContainsKey(q))
         {
             Fail(cg, c.Loc, "constant '" + q + "' is already defined");
         }
         cg.Consts.Add(ConstEntry { Decl = c, File = file });
         cg.ConstDecls.Set(q, cg.Consts.Count() - 1);
+    }
+    for (var i = 0; i < unit.Globals.Count(); i += 1)
+    {
+        var g = unit.Globals.Get(i);
+        string q = Qualified(cg, file, g.Name);
+        if (cg.ConstDecls.ContainsKey(q) || cg.GlobalDecls.ContainsKey(q))
+            Fail(cg, g.Loc, "'" + q + "' is already defined");
+        cg.Globals.Add(GlobalEntry { Decl = g, File = file, Name = q });
+        cg.GlobalDecls.Set(q, cg.Globals.Count() - 1);
     }
     for (var i = 0; i < unit.Links.Count(); i += 1)
         cg.Links.Add(unit.Links.Get(i));

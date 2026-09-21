@@ -157,6 +157,7 @@ Umgesetzt aus dem Konzept:
 | Bereich | Stand |
 |---|---|
 | Namespaces (`namespace A.B;`), `using`, mehrere Dateien, globale Symbolauflösung | ✔ |
+| Globale Variablen (Nullwert oder Initialisierer, laufen vor `Main`) | ✔ |
 | Structs (Wertsemantik), Initializer, `new T()`, Methoden, `static`-Methoden, verschachtelte Structs | ✔ |
 | Sichtbarkeit über `_`-Präfix (privat) für Felder und Methoden | ✔ |
 | Struct-Vererbung (eine Basis, Basis liegt im Layout zuerst), Upcast, Methoden verdecken | ✔ |
@@ -205,6 +206,12 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` prüft nur auf Fehler; `Optional<void>` gibt es nicht.
 * **Konstanten:** `const double PI = 3.14;` auf oberster Ebene (Zahl, `bool`, `char`, `string`; Initialisierer aus Literalen,
   Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).
+* **Globale Variablen:** `int Counter;`, `string Name = "x";`, `List<string> Names = List<string>.Create();` auf oberster Ebene, beliebiger Typ.
+  Ohne Initialisierer startet die Variable mit dem Nullwert. Initialisierer sind beliebige Ausdrücke; sie laufen vor `Main` in der Reihenfolge der
+  Deklarationen (Dateien in der Reihenfolge, in der sie dem Compiler übergeben werden; ein Initialisierer sieht später deklarierte Globals noch als 0).
+  Namensauflösung wie bei Konstanten (Namespace der Datei, `using`, qualifiziert `Ns.Counter`). Globals sind ganz normale Lvalues (zuweisen, `ref`,
+  `&` in `unsafe`, Felder/Elemente ändern, Methoden aufrufen; Funktionszeiger-Globals rufen sich wie Funktionen auf). Werte, die Heap-Blöcke
+  besitzen (Strings, Arrays, Listen …), werden nach dem Ende von `Main` freigegeben. Kein `var` (der Typ muss dastehen), kein Multithreading.
 * **`foreach` über Structs:** funktioniert für jeden Struct mit `int Count()` und `T Get(int index)` (z. B. `List<T>`).
 * **Namensauflösung** wie in C#: Namespaces der eigenen Datei und der globale Namespace gehen `using`-Namespaces vor.
 * **Funktionszeiger:** `Action`, `Action<T1, …>` (ohne Ergebnis) und `Func<R>`, `Func<T1, …, R>` (der letzte Typ ist das Ergebnis) sind
@@ -332,7 +339,7 @@ tests/run_tests.sh [pfad/zu/cshiftc] [-O0..-O3]      # bzw. .\build.ps1 -Test
 
 * Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `Stack`/`Queue`, keine weiteren Encodings,
   keine Datums-/Zeitfunktionen, keine Formatierung (`Format`, Interpolation). Indexer (`list[i]`) gibt es nicht, es heißt `Get`/`Set`.
-* Interfaces als Werttyp (dynamischer Aufruf), Lambdas/Closures, globale *Variablen* (Konstanten gehen),
+* Interfaces als Werttyp (dynamischer Aufruf), Lambdas/Closures,
   Struct-Übergabe *by value* bei handgeschriebenem `extern "C"` fehlen noch (über `using X from "header.h"` funktioniert es). Grenzen der Header-Importe: [FFI.md](FFI.md).
 * Referenzzähler sind nicht atomar (kein Multithreading).
 * Generische Körper werden erst bei der Instanziierung geprüft (wie C++-Templates); unbenutzte generische Funktionen werden nicht analysiert.

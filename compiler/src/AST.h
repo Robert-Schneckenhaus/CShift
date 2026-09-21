@@ -494,6 +494,17 @@ struct ConstDecl
     FileContext* file = nullptr;
 };
 
+// A global variable:   int Counter = 0;   string Name;   List<string> Names = List<string>.Create();
+// (top level; the initializer is any expression, evaluated before Main in the order of the declarations)
+struct GlobalDecl
+{
+    SourceLoc loc;
+    TypeRefPtr type;
+    std::string name;
+    ExprPtr init; // may be null: the variable starts zeroed
+    FileContext* file = nullptr;
+};
+
 // using Name from "header.h";   -- imports the declarations of a C header as namespace Name
 struct ImportDecl
 {
@@ -507,6 +518,7 @@ struct CompilationUnit
     FileContext file;
     std::vector<ImportDecl> imports;
     std::vector<std::unique_ptr<ConstDecl>> consts;
+    std::vector<std::unique_ptr<GlobalDecl>> globals;
     std::vector<std::unique_ptr<StructDecl>> structs;
     std::vector<std::unique_ptr<InterfaceDecl>> interfaces;
     std::vector<std::unique_ptr<EnumDecl>> enums;

@@ -445,6 +445,15 @@ struct ConstDecl
     Expr Init;
 }
 
+// A global variable:   int Counter = 0;   string Name;   List<string> Names = List<string>.Create();
+struct GlobalDecl
+{
+    SourceLoc Loc;
+    TypeRef Type;
+    string Name;
+    Expr Init;      // none: the variable starts zeroed
+}
+
 // using Name from "header.h";
 struct ImportDecl
 {
@@ -458,6 +467,7 @@ struct CompilationUnit
     FileContext File;
     List<ImportDecl> Imports;
     List<ConstDecl> Consts;
+    List<GlobalDecl> Globals;
     List<StructDecl> Structs;
     List<InterfaceDecl> Interfaces;
     List<EnumDecl> Enums;
@@ -470,6 +480,7 @@ struct CompilationUnit
         unit.File = FileContext { FileId = fileId, Ns = "", Usings = List<string>.Create(), IsPrelude = isPrelude };
         unit.Imports = List<ImportDecl>.Create();
         unit.Consts = List<ConstDecl>.Create();
+        unit.Globals = List<GlobalDecl>.Create();
         unit.Structs = List<StructDecl>.Create();
         unit.Interfaces = List<InterfaceDecl>.Create();
         unit.Enums = List<EnumDecl>.Create();

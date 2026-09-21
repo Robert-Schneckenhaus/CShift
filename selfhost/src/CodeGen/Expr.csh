@@ -180,6 +180,9 @@ Value EmitName(Compiler cg, Expr e)
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
     if (c >= 0)
         return EmitConst(cg, c, e.Loc);
+    int g = LookupGlobal(cg, cg.Fn[0].File, n.Name);
+    if (g >= 0)
+        return GlobalValue(cg, g);
 
     // A function name is a value that converts to a matching Action/Func type.
     var group = new Candidate[0];

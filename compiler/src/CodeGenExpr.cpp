@@ -392,6 +392,117 @@ ConstDecl* CodeGen::lookupConst(FileContext* f, const std::string& name) const
     return nullptr;
 }
 
+GlobalInfo* CodeGen::lookupGlobal(FileContext* f, const std::string& name) const
+{
+    for (const auto& c : candidateNames(f, name))
+    {
+        auto it = globalDecls.find(c);
+        if (it != globalDecls.end())
+            return it->second.get();
+    }
+    return nullptr;
+}
+
+// The variable of a global as an lvalue. Its type and the LLVM variable are created on first use.
+Value CodeGen::globalValue(GlobalInfo& g)
+{
+    if (!g.var)
+    {
+        Type* t = resolveValueType(*g.decl->type, g.decl->file, nullptr);
+        if (t->isVoid())
+            err(g.decl->loc, "variable '" + g.name + "' cannot have type 'void'");
+        if (t->isStruct() && t->st->opaque)
+            err(g.decl->loc, "'" + t->name + "' is an incomplete C type and can only be used through a pointer ('" + t->name + "*')");
+        g.type = t;
+        g.var = new llvm::GlobalVariable(*mod, llvmTypeOf(t), false, llvm::GlobalValue::InternalLinkage,
+                                         llvm::Constant::getNullValue(llvmTypeOf(t)), "global." + g.name);
+        createdGlobals.push_back(&g);
+    }
+    return Value::lvalue(g.type, g.var);
+}
+
+// The code that gives the globals their initial values. It runs before Main, in the order of the declarations (files in
+// the order they were given to the compiler).
+void CodeGen::emitGlobalsInit()
+{
+    bool any = false;
+    for (auto& u : units)
+        for (auto& g : u->globals)
+            any = any || g->init;
+    if (!any)
+        return;
+
+    initDecl = std::make_unique<FuncDecl>();
+    initDecl->name = "global initializers";
+    initInfo = std::make_unique<FuncInfo>();
+    initInfo->decl = initDecl.get();
+    initInfo->name = initDecl->name;
+    initInfo->ret = types.voidTy;
+    initInfo->signatureResolved = true;
+    globalsInitFn = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
+                                           llvm::GlobalValue::InternalLinkage, "__cs_init_globals", mod.get());
+    initInfo->fn = globalsInitFn;
+
+    fs = std::make_unique<FnState>();
+    fs->func = initInfo.get();
+    fs->fn = globalsInitFn;
+    fs->retType = types.voidTy;
+    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", globalsInitFn));
+    for (auto& u : units)
+    {
+        for (auto& g : u->globals)
+        {
+            if (!g->init)
+                continue;
+            initInfo->file = &u->file;
+            pushScope();
+            try
+            {
+                GlobalInfo& info = *globalDecls.at(qualified(&u->file, g->name));
+                Value target = globalValue(info);
+                Value v = convertValue(emitExpr(g->init.get()), info.type, g->init->loc);
+                storeSlot(info.type, target.v, consume(v), false);
+                flushTemps(0);
+                popScope(true);
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+                fs->scopes.clear();
+                pushScope();
+            }
+            ensureInsertPoint();
+        }
+    }
+    if (blockOpen())
+        builder.CreateRetVoid();
+    for (llvm::BasicBlock& bb : *globalsInitFn)
+        if (!bb.getTerminator())
+        {
+            builder.SetInsertPoint(&bb);
+            builder.CreateUnreachable();
+        }
+    fs.reset();
+}
+
+// The function that releases the values of the globals at the end of the program (so that no heap block is left over).
+llvm::Function* CodeGen::emitGlobalsRelease()
+{
+    std::vector<GlobalInfo*> arcGlobals;
+    for (GlobalInfo* g : createdGlobals)
+        if (needsArc(g->type))
+            arcGlobals.push_back(g);
+    if (arcGlobals.empty())
+        return nullptr;
+    llvm::Function* f = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
+                                               llvm::GlobalValue::InternalLinkage, "__cs_release_globals", mod.get());
+    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
+    for (GlobalInfo* g : arcGlobals)
+        emitReleaseValue(g->type, builder.CreateLoad(llvmTypeOf(g->type), g->var));
+    builder.CreateRetVoid();
+    return f;
+}
+
 // Constant expressions: literals, operators and other constants.
 bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
 {
@@ -511,6 +622,8 @@ Value CodeGen::emitName(NameExpr* e)
 
     if (ConstDecl* c = lookupConst(fs->func->file, e->name))
         return emitConst(c, e->loc);
+    if (GlobalInfo* g = lookupGlobal(fs->func->file, e->name))
+        return globalValue(*g);
 
     StaticTarget st = resolveStaticTarget(e);
     if (st.kind == StaticTarget::TypeName || st.kind == StaticTarget::Builtin)
@@ -664,6 +777,8 @@ Value CodeGen::emitMember(MemberExpr* e)
     {
         if (ConstDecl* c = lookupConst(fs->func->file, st.name + "." + e->name))
             return emitConst(c, e->loc);
+        if (GlobalInfo* g = lookupGlobal(fs->func->file, st.name + "." + e->name))
+            return globalValue(*g);
         std::vector<Candidate> cands;
         for (FuncDecl* d : lookupFunctions(fs->func->file, st.name + "." + e->name))
             cands.push_back(Candidate{d, nullptr, nullptr, d->file});

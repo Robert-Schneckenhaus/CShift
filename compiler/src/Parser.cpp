@@ -202,7 +202,34 @@ void Parser::parseTopLevel(CompilationUnit& u)
     }
     else if (check(Tok::Ident))
     {
-        u.funcs.push_back(parseFunction(u, false, false));
+        // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
+        size_t start = pos;
+        bool isGlobal = false;
+        try
+        {
+            parseType();
+            isGlobal = check(Tok::Ident) && (peekTok().kind == Tok::Semi || peekTok().kind == Tok::Assign);
+        }
+        catch (const CompileError&)
+        {
+        }
+        pos = start;
+        if (isGlobal)
+        {
+            auto g = std::make_unique<GlobalDecl>();
+            g->file = &u.file;
+            g->type = parseType();
+            g->loc = cur().loc;
+            g->name = expectIdent("variable name");
+            if (match(Tok::Assign))
+                g->init = parseExpr();
+            expect(Tok::Semi, "';' after variable declaration");
+            u.globals.push_back(std::move(g));
+        }
+        else
+        {
+            u.funcs.push_back(parseFunction(u, false, false));
+        }
     }
     else
     {

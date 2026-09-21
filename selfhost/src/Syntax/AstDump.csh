@@ -475,6 +475,13 @@ struct AstDumper
             Line(1, "", "Const" + At(d.Loc) + " name=" + d.Name + TypeAttr("type", d.Type));
             DumpExpr(2, "init", d.Init);
         }
+        for (var i = 0; i < unit.Globals.Count(); i += 1)
+        {
+            var d = unit.Globals.Get(i);
+            Line(1, "", "Global" + At(d.Loc) + " name=" + d.Name + TypeAttr("type", d.Type));
+            if (!d.Init.IsNull())
+                DumpExpr(2, "init", d.Init);
+        }
         for (var i = 0; i < unit.Structs.Count(); i += 1)
         {
             var d = unit.Structs.Get(i);

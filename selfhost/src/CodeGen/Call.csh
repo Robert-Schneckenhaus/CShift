@@ -403,6 +403,14 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
             return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
         }
     }
+    int globalIndex = LookupGlobal(cg, cg.Fn[0].File, n.Name);
+    if (globalIndex >= 0 && (CurrentOwner(cg) == 0 || MethodCandidates(cg, CurrentOwner(cg), n.Name).Length == 0))
+    {
+        Value global = GlobalValue(cg, globalIndex);
+        if (cg.Types.IsFunction(global.Type))
+            return EmitIndirectCall(cg, global, EmitArgs(cg, call.Args), e.Loc);
+    }
+
     var cands = new Candidate[0];
     int owner = CurrentOwner(cg);
     if (owner != 0)
