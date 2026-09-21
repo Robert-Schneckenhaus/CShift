@@ -166,7 +166,9 @@ int Compile(string[] args)
     if (emitLlvm)
         return 0;
 
-    string command = "\"" + cc + "\" " + optimize + " -Wno-override-module \"" + llFile + "\" -o \"" + output + "\"";
+    // cmd.exe (Process.Run) does not find programs that are written with forward slashes.
+    string ccPath = windows ? cc.Replace("/", "\\") : cc;
+    string command = "\"" + ccPath + "\" " + optimize + " -Wno-override-module \"" + llFile + "\" -o \"" + output + "\"";
     foreach (var lib in cg.Links.ToArray())
         command += " -l" + lib;
     if (verbose)

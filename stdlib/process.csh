@@ -27,12 +27,16 @@ struct Process
         return result;
     }
 
+    // True on Windows. The environment variable OS is not always passed on (e.g. by an MSYS2 login shell), so the
+    // system's cmd.exe is looked for as well.
     static bool IsWindows()
     {
         unsafe
         {
             char* os = getenv("OS".CStr());
-            return os != null && string.FromCStr(os) == "Windows_NT";
+            if (os != null && string.FromCStr(os) == "Windows_NT")
+                return true;
         }
+        return File.Exists("C:\\Windows\\System32\\cmd.exe");
     }
 }
