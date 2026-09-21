@@ -59,6 +59,10 @@ struct Options
     bool arcStats = false;
     bool dumpTokens = false; // development: print the tokens / the syntax tree of the input files
     bool dumpAst = false;
+    // Helper for cshc (the compiler written in CShift, which has no libclang): prepare the .ffi file of a C header.
+    bool ffiPrepare = false;
+    std::string ffiBaseDir;
+    std::string ffiCacheDir;
 };
 
 void printUsage()
@@ -135,6 +139,12 @@ bool parseArgs(int argc, char** argv, Options& o)
             o.dumpTokens = true;
         else if (a == "--dump-ast")
             o.dumpAst = true;
+        else if (a == "--ffi-prepare")
+            o.ffiPrepare = true;
+        else if (a == "--ffi-base-dir")
+            o.ffiBaseDir = next("--ffi-base-dir");
+        else if (a == "--ffi-cache-dir")
+            o.ffiCacheDir = next("--ffi-cache-dir");
         else if (a == "-h" || a == "--help")
             return false;
         else if (a == "-o")
@@ -175,6 +185,8 @@ bool parseArgs(int argc, char** argv, Options& o)
         else
             o.inputs.push_back(a);
     }
+    if (o.ffiPrepare)
+        return o.inputs.size() == 2;
     switch (o.command)
     {
     case Command::Compile: return !o.inputs.empty();
@@ -346,6 +358,39 @@ int main(int argc, char** argv)
             }
         }
         return diag.hasErrors() ? 1 : 0;
+    }
+
+    // ffi-prepare: "cshiftc --ffi-prepare <name> <header> --ffi-base-dir <dir> --ffi-cache-dir <dir> [-I..] [-D..]"
+    // makes sure the .ffi file of a C header is up to date and prints "ffi <path>" and "shim <path>" lines.
+    if (opt.ffiPrepare)
+    {
+        llvm::InitializeAllTargetInfos();
+        std::string tripleStr = opt.target.empty() ? llvm::sys::getDefaultTargetTriple() : opt.target;
+        bool isWin = llvm::Triple(tripleStr).isOSWindows();
+        FfiOptions ffiOptions;
+        ffiOptions.target = tripleStr;
+        ffiOptions.includePaths = opt.includePaths;
+        ffiOptions.defines = opt.defines;
+        ffiOptions.apiPaths = opt.apiPaths;
+        ffiOptions.verbose = opt.verbose;
+        FfiImportRequest request;
+        request.name = opt.inputs[0];
+        request.header = opt.inputs[1];
+        request.baseDir = opt.ffiBaseDir.empty() ? "." : opt.ffiBaseDir;
+        request.cacheDir = opt.ffiCacheDir.empty() ? joinPath(request.baseDir, "obj/ffi") : opt.ffiCacheDir;
+        bool isFfiFile = request.header.size() > 4 && request.header.compare(request.header.size() - 4, 4, ".ffi") == 0;
+        ffiOptions.clang = isFfiFile ? "" : locateClang(opt.cc, isWin, bundledClang(argv[0], isWin));
+        FfiResult result;
+        std::string error;
+        if (!prepareFfi(request, ffiOptions, result, error))
+        {
+            std::cerr << "error: cannot import \"" << request.header << "\": " << error << "\n";
+            return 1;
+        }
+        std::cout << "ffi " << result.ffiPath << "\n";
+        for (const auto& s : result.shimSources)
+            std::cout << "shim " << s << "\n";
+        return 0;
     }
 
     // ---- Project commands ----

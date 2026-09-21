@@ -51,7 +51,10 @@ struct Process
         var sb = StringBuilder.Create();
         unsafe
         {
-            void* pipe = popen(command.CStr(), "r".CStr());
+            string line = command;
+            if (IsWindows())
+                line = "\"" + command + "\""; // cmd.exe strips the outer quotes
+            void* pipe = popen(line.CStr(), "r".CStr());
             if (pipe == null)
                 return null;
             uint8* buffer = (uint8*)Memory.Allocate(4096);

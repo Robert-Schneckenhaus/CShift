@@ -237,7 +237,17 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
         Fail(cg, c.Loc, "constants can only be numbers, bool, char, string or enum values");
     int savedFile = cg.Fn[0].File;
     cg.Fn[0].File = entry.File;
-    Value v = ConvertValue(cg, EmitExpr(cg, c.Init), t, c.Init.Loc);
+    Value v;
+    if (types.IsEnum(t))
+    {
+        // enumerators of imported C enums
+        var noMembers = EnumInfo { Names = new string[0], Values = new int64[0] };
+        v = ConstInt(cg, t, ConstEvalInt(cg, c.Init, noMembers, c.Loc));
+    }
+    else
+    {
+        v = ConvertValue(cg, EmitExpr(cg, c.Init), t, c.Init.Loc);
+    }
     cg.Fn[0].File = savedFile;
     return v;
 }

@@ -751,11 +751,15 @@ void DeclareExtern(Compiler cg, int instance)
     {
         if (i > 0)
             sb.Append(", ");
-        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i]));
+        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : (d.Params[i].CString ? "ptr" : AbiParam(cg, fi.ParamTypes[i])));
     }
+    // A shim returns a struct through an extra trailing pointer parameter and itself returns void.
+    if (d.RetOut)
+        sb.Append(fi.ParamTypes.Length > 0 ? ", ptr" : "ptr");
     if (d.IsVariadic)
-        sb.Append(fi.ParamTypes.Length > 0 ? ", ..." : "...");
-    cg.Ir.Declare(fi.LlvmName, "declare " + LlvmType(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
+        sb.Append(fi.ParamTypes.Length > 0 || d.RetOut ? ", ..." : "...");
+    string result = d.RetOut ? "void" : (d.RetCString ? "ptr" : AbiReturn(cg, fi.Ret));
+    cg.Ir.Declare(fi.LlvmName, "declare " + result + " " + fi.LlvmName + "(" + sb.ToString() + ")");
 }
 
 // An empty type environment (a Dictionary is a struct, so 'null' cannot stand for "none").

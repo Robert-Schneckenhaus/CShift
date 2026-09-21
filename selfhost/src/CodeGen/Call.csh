@@ -24,10 +24,25 @@ Arg[] EmitArgs(Compiler cg, Expr[] args)
 }
 
 // The cost of passing an argument to a parameter (-1 = impossible).
-int ArgCost(Compiler cg, Arg arg, int paramType, int refKind)
+int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, bool cstring)
 {
     var v = arg.V;
     var types = cg.Types;
+    // Parameters that come from C pointers accept null (NULL) and a raw pointer to the same type.
+    if (nullable && refKind != 0 && !v.IsRefArg)
+    {
+        if (types.Kind(v.Type) == TypeKind.Null)
+            return 1;
+        if (types.IsPointer(v.Type) && types.Elem(v.Type) == paramType)
+            return 2;
+    }
+    // A parameter that C declares as const char* also takes a raw char* (e.g. a string that came from C).
+    if (cstring && refKind == 0 && !v.IsRefArg && types.IsPointer(v.Type))
+    {
+        int pointee = types.Elem(v.Type);
+        if (types.IsChar(pointee) || pointee == types.I8 || pointee == types.U8 || types.IsVoid(pointee))
+            return 2;
+    }
     switch (refKind)
     {
     case 0:
@@ -35,14 +50,29 @@ int ArgCost(Compiler cg, Arg arg, int paramType, int refKind)
             return -1;
         return ConversionCost(cg, v, paramType);
     case 1:
+    {
         if (!v.IsRefArg || !v.IsLValue || v.IsConst)
             return -1;
-        return v.Type == paramType ? 0 : -1;
-    default:
-        if (v.IsLValue && v.Type == paramType)
+        if (v.Type == paramType)
             return 0;
+        var path = new int[0];
+        if (types.IsStruct(v.Type) && types.IsStruct(paramType) && StructIsAncestor(cg, paramType, v.Type, ref path))
+            return 1;
+        return -1;
+    }
+    default:
+    {
+        if (v.IsLValue)
+        {
+            if (v.Type == paramType)
+                return 0;
+            var path = new int[0];
+            if (types.IsStruct(v.Type) && types.IsStruct(paramType) && StructIsAncestor(cg, paramType, v.Type, ref path))
+                return 1;
+        }
         int c = ConversionCost(cg, v, paramType);
         return c < 0 ? -1 : c + 1;
+    }
     }
 }
 
@@ -95,7 +125,7 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] expli
         bool ok = true;
         for (var i = 0; i < fi.ParamTypes.Length; i += 1)
         {
-            int cost = ArgCost(cg, args[i], fi.ParamTypes[i], fi.ParamRefs[i]);
+            int cost = ArgCost(cg, args[i], fi.ParamTypes[i], fi.ParamRefs[i], d.Params[i].Nullable, d.Params[i].CString);
             if (cost < 0)
             {
                 string prefix = fi.ParamRefs[i] == 1 ? "ref " : (fi.ParamRefs[i] == 2 ? "const ref " : "");
@@ -167,12 +197,36 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         SourceLoc aloc = a.Source.IsNull() ? loc : a.Source.Loc;
         string passed;
         string passedType;
-        if (fi.ParamRefs[i] == 0)
+        bool nullable = d.Params[i].Nullable;
+        bool cstring = d.Params[i].CString;
+        if (fi.ParamRefs[i] == 0 && cstring && types.IsPointer(ToRValue(cg, a.V).Type))
+        {
+            passed = ToRValue(cg, a.V).V; // a raw char* is passed as it is
+            passedType = "ptr";
+        }
+        else if (fi.ParamRefs[i] == 0)
         {
             Value cv = ConvertValue(cg, a.V, pt, aloc);
             HoldTemp(cg, cv);
             passed = cv.V;
-            passedType = LlvmType(cg, pt);
+            passedType = AbiParam(cg, pt);
+            if (cstring)
+            {
+                // const char*: pass the character data of the string (null stays NULL). Strings are NUL-terminated.
+                string isNull = ir.ICmp("eq", "ptr", cv.V, "null");
+                passed = ir.Select(isNull, "ptr", "null", ir.ByteGep(cv.V, "16"));
+                passedType = "ptr";
+            }
+        }
+        else if (nullable && !a.V.IsRefArg && types.Kind(a.V.Type) == TypeKind.Null)
+        {
+            passed = "null";
+            passedType = "ptr";
+        }
+        else if (nullable && !a.V.IsRefArg && types.IsPointer(a.V.Type) && types.Elem(a.V.Type) == pt)
+        {
+            passed = ToRValue(cg, a.V).V;
+            passedType = "ptr";
         }
         else if (fi.ParamRefs[i] == 1)
         {
@@ -182,7 +236,8 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         else
         {
             passedType = "ptr";
-            if (a.V.IsLValue && a.V.Type == pt)
+            var ancestorPath = new int[0];
+            if (a.V.IsLValue && (a.V.Type == pt || (types.IsStruct(a.V.Type) && types.IsStruct(pt) && StructIsAncestor(cg, pt, a.V.Type, ref ancestorPath))))
             {
                 passed = a.V.V;
             }
@@ -238,7 +293,17 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         callArgs.Append(t + " " + v);
     }
 
-    string retType = LlvmType(cg, fi.Ret);
+    // Shims return structs through an extra trailing pointer parameter and themselves return void.
+    string outSlot = "";
+    if (d.RetOut)
+    {
+        outSlot = ir.Alloca(LlvmType(cg, fi.Ret), "ret");
+        if (callArgs.Length() > 0)
+            callArgs.Append(", ");
+        callArgs.Append("ptr " + outSlot);
+    }
+
+    string retType = d.RetOut ? "void" : AbiReturn(cg, fi.Ret);
     string result;
     if (d.IsVariadic)
     {
@@ -255,9 +320,41 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
     {
         result = ir.Call(retType, fi.LlvmName, callArgs.ToString());
     }
+    if (d.RetOut)
+        return Rvalue(fi.Ret, ir.Load(LlvmType(cg, fi.Ret), outSlot), NeedsArc(cg, fi.Ret));
     if (types.IsVoid(fi.Ret))
         return Rvalue(types.Void, "", false);
+    if (d.RetCString)
+    {
+        // const char* result: copy it into a string that the caller owns.
+        return Rvalue(types.String, ir.Call("ptr", "@__cs_from_cstr", "ptr " + result), true);
+    }
     return Rvalue(fi.Ret, result, NeedsArc(cg, fi.Ret));
+}
+
+// How the C ABI passes small integers: they are extended to 32 bits by the caller.
+string AbiExtension(Compiler cg, int t)
+{
+    var types = cg.Types;
+    if (types.IsBool(t))
+        return "zeroext";
+    if ((types.IsIntegral(t) || types.IsEnum(t)) && types.Bits(t) < 32)
+        return (types.IsInt(t) && types.IsSigned(t)) ? "signext" : "zeroext";
+    return "";
+}
+
+// "i8 zeroext" for a parameter of the type.
+string AbiParam(Compiler cg, int t)
+{
+    string ext = AbiExtension(cg, t);
+    return ext.Length > 0 ? LlvmType(cg, t) + " " + ext : LlvmType(cg, t);
+}
+
+// "zeroext i8" for a result of the type.
+string AbiReturn(Compiler cg, int t)
+{
+    string ext = AbiExtension(cg, t);
+    return ext.Length > 0 ? ext + " " + LlvmType(cg, t) : LlvmType(cg, t);
 }
 
 // The dotted name of an expression like A.B.C, or "" if it is anything else.

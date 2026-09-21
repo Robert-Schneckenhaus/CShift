@@ -161,12 +161,12 @@ Value EmitIndirectCall(Compiler cg, Value callee, Arg[] args, SourceLoc loc)
         HoldTemp(cg, cv);
         if (i > 0)
             callArgs.Append(", ");
-        callArgs.Append(LlvmType(cg, ptypes[i]) + " " + cv.V);
+        callArgs.Append(AbiParam(cg, ptypes[i]) + " " + cv.V);
     }
 
     EmitPanicIf(cg, ir.ICmp("eq", "ptr", f.V, "null"), "call of a null function");
     int ret = types.Elem(ft);
-    string result = ir.Call(LlvmType(cg, ret), f.V, callArgs.ToString());
+    string result = ir.Call(AbiReturn(cg, ret), f.V, callArgs.ToString());
     if (types.IsVoid(ret))
         return Rvalue(types.Void, "", false);
     return Rvalue(ret, result, NeedsArc(cg, ret));

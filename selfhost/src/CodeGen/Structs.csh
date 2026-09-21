@@ -26,6 +26,7 @@ struct StructInfo
     FieldInfo[] Fields;               // own fields only
     int[] Interfaces;                 // interface types the struct lists in its base list
     bool LayoutInProgress;
+    bool Opaque;                      // an incomplete C type: only usable through pointers
     string IrName;                    // %"Name"
 }
 
@@ -69,8 +70,6 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     var decl = se.Decl;
     if (args.Length != decl.TypeParams.Length)
         Fail(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
-    if (decl.ExplicitLayout)
-        Fail(cg, decl.Loc, "cshc does not support imported C structs yet ('" + decl.Name + "')");
 
     string key = Qualified(cg, se.File, decl.Name) + TypeArgsSuffix(cg, args);
     var existing = cg.StructTypes.TryGet(key);
@@ -116,6 +115,11 @@ void LayoutStruct(Compiler cg, int index)
     var decl = se.Decl;
     si.LayoutInProgress = true;
     cg.StructInfos.Set(index, si);
+    if (decl.ExplicitLayout)
+    {
+        LayoutExplicitStruct(cg, index);
+        return;
+    }
 
     var elems = List<string>.Create();
     for (var i = 0; i < decl.Bases.Length; i += 1)

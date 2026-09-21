@@ -241,8 +241,8 @@ else
         else
             report_fail "selfhost embedded stdlib" "selfhost/src/Driver/EmbeddedStdlib.csh is out of date: run  cshc --gen-stdlib stdlib selfhost/src/Driver/EmbeddedStdlib.csh"
         fi
-        # Projects (cshift.json, build/run/new) built by cshc.
-        if bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+        # Projects (cshift.json, build/run/new) built by cshc. C headers are imported through the C++ compiler (libclang).
+        if CSHIFT_FFI_TOOL="$COMPILER" bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
             report_ok "selfhost projects"
             head -n 1 "$TMP/selfhost.proj"
         else

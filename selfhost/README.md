@@ -13,7 +13,7 @@ selfhost/
 ├── cshift.json              Projekt "cshc" (baut mit: cshiftc build selfhost)
 ├── src/
 │   ├── Driver/              Kommandozeile: Build.csh (Optionen, build/run/new, clang), Project.csh (cshift.json), Json.csh,
-│   │                        StdlibGen.csh + EmbeddedStdlib.csh (die Stdlib als Stringliterale, erzeugt mit cshc --gen-stdlib)
+│   │                        Ffi.csh (.ffi laden), StdlibGen.csh + EmbeddedStdlib.csh (die Stdlib als Stringliterale, erzeugt mit cshc --gen-stdlib)
 │   ├── Main.csh             Kommandozeile: cshc [Optionen] datei.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
@@ -38,6 +38,7 @@ selfhost/
 │       ├── Generics.csh     Typargumente, Inferenz, Interfaces, Constraints, using/IDisposable
 │       ├── Pointers.csh     Zeiger: *, &, Arithmetik, Casts
 │       ├── FuncPtrs.csh     Funktionszeiger: Action/Func, Method Groups, indirekter Aufruf
+│       ├── Layout.csh       Größen/Ausrichtung, Layout von C-Structs (FFI)
 │       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
 │       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
 │       └── Module.csh       Programm übersetzen, Einstiegspunkt

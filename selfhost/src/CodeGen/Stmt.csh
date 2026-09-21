@@ -113,9 +113,9 @@ void EmitFunctionBody(Compiler cg, int instance)
     {
         if (sb.Length() > 0)
             sb.Append(", ");
-        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i])) + " %arg$" + i.ToString());
+        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i])) + " %arg$" + i.ToString());
     }
-    ir.BeginFunction("define internal " + LlvmType(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
+    ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
     PushScope(cg);
 
     if (fi.HasThis)
@@ -260,6 +260,8 @@ void EmitVarDecl(Compiler cg, Stmt s)
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from '" + types.Name(t) + "'");
     }
 
+    if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)
+        Fail(cg, s.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");
     string llvm = LlvmType(cg, t);
     string slot = ir.Alloca(llvm, d.Name);
     if (!d.Init.IsNull())

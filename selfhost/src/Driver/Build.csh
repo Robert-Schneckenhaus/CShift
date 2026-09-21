@@ -20,6 +20,9 @@ struct BuildOptions
     string Target;
     string Cc;
     string Stdlib;
+    string FfiTool;
+    string ProjectDir;
+    List<FfiImport> Imports;    // "using X from header" declarations found in the sources
     int Optimize;
     bool OptimizeGiven;
     bool ObjectOnly;
@@ -38,7 +41,8 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", Optimize = 2, ProjectName = "" };
+        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", FfiTool = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
+        o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
         o.Libs = List<string>.Create();
         o.LibFiles = List<string>.Create();
@@ -103,6 +107,11 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         {
             i += 1;
             o.Target = args[i];
+        }
+        else if (a == "--ffi-tool" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.FfiTool = args[i];
         }
         else if (a == "--no-stdlib")
             o.Stdlib = "-";
@@ -195,6 +204,7 @@ int Cshc(string[] args)
         {
             o.FromProject = true;
             o.ProjectName = project.Name;
+            o.ProjectDir = project.Dir;
             o.Inputs = project.Sources;
             if (o.Output.Length == 0)
                 o.Output = project.Output;
@@ -304,7 +314,7 @@ int Build(BuildOptions o)
         string[] names = EmbeddedStdlibNames();
         string[] texts = EmbeddedStdlibTexts();
         for (var i = 0; i < names.Length; i += 1)
-            AddSourceText(cg, diag, tree, "<stdlib>/" + names[i], texts[i], true);
+            AddSourceText(cg, diag, tree, "<stdlib>/" + names[i], texts[i], true, o.Imports);
         cg.St[0].StdlibLoaded = names.Length > 0;
     }
     else if (o.Stdlib != "-")
@@ -312,22 +322,56 @@ int Build(BuildOptions o)
         var libFiles = Directory.FindFiles(o.Stdlib, ".csh");
         foreach (var libFile in libFiles)
         {
-            if (!AddSource(cg, diag, tree, libFile, true))
+            if (!AddSource(cg, diag, tree, libFile, true, o.Imports))
                 return 1;
         }
         cg.St[0].StdlibLoaded = libFiles.Count() > 0;
     }
     foreach (var path in o.Inputs)
     {
-        if (!AddSource(cg, diag, tree, path, false))
+        if (!AddSource(cg, diag, tree, path, false, o.Imports))
             return 1;
     }
     if (diag.HasErrors())
         return 1;
-    if (cg.St[0].Imports > 0)
+
+    // ---- FFI: C headers imported with "using Name from "header.h";" ----
+    var shimSources = List<string>.Create();
+    var importedNames = Dictionary<string, string>.Create();
+    foreach (var imp in o.Imports)
     {
-        Console.WriteErrorLine("error: cshc does not support C header imports (using X from \"header.h\") yet");
-        return 1;
+        var seen = importedNames.TryGet(imp.Name);
+        if (seen is string seenHeader)
+        {
+            if (seenHeader != imp.Header)
+            {
+                diag.ReportAt(imp.Loc, "namespace '" + imp.Name + "' is already imported from \"" + seenHeader + "\"");
+                return 1;
+            }
+            continue;
+        }
+        importedNames.Set(imp.Name, imp.Header);
+        string cacheBase = (o.FromProject && o.ProjectDir.Length > 0) ? o.ProjectDir : Path.GetDirectory(imp.SourcePath);
+        string cacheDir = Path.Combine(cacheBase.Length > 0 ? cacheBase : ".", "obj/ffi");
+        var prepared = PrepareFfi(imp, o, cacheDir);
+        if (prepared is FfiFiles files)
+        {
+            var loaded = LoadFfiUnit(files.FfiPath, imp.Name, diag, tree);
+            if (loaded is CompilationUnit ffiUnit)
+                AddUnit(cg, ffiUnit);
+            else
+            {
+                diag.ReportAt(imp.Loc, loaded.Message);
+                return 1;
+            }
+            foreach (var shim in files.Shims)
+                shimSources.Add(shim);
+        }
+        else
+        {
+            diag.ReportAt(imp.Loc, "cannot import \"" + imp.Header + "\": " + prepared.Message);
+            return 1;
+        }
     }
 
     string triple = o.Target;
@@ -383,6 +427,29 @@ int Build(BuildOptions o)
         return 1;
     }
 
+    // Shims (generated C code for functions that take or return structs by value) are compiled with clang, which
+    // knows the platform ABI.
+    var shimObjects = List<string>.Create();
+    foreach (var shim in shimSources)
+    {
+        string shimObject = Path.ChangeExtension(shim, objExt);
+        var shimCommand = StringBuilder.Create();
+        shimCommand.Append("\"" + ccPath + "\" -c" + targetFlag + " -O1 -I\"" + NativePath(Path.GetDirectory(shim), windows) + "\"");
+        foreach (var inc in o.IncludePaths)
+            shimCommand.Append(" -I\"" + NativePath(inc, windows) + "\"");
+        foreach (var def in o.Defines)
+            shimCommand.Append(" -D" + def);
+        shimCommand.Append(" \"" + NativePath(shim, windows) + "\" -o \"" + NativePath(shimObject, windows) + "\"");
+        if (o.Verbose)
+            Console.WriteErrorLine(shimCommand.ToString());
+        if (Process.Run(shimCommand.ToString()) != 0)
+        {
+            Console.WriteErrorLine("error: compiling the FFI shim '" + shim + "' failed");
+            return 1;
+        }
+        shimObjects.Add(shimObject);
+    }
+
     var command = StringBuilder.Create();
     command.Append("\"" + ccPath + "\" " + optimize + " -Wno-override-module" + targetFlag);
     if (o.ObjectOnly)
@@ -390,6 +457,8 @@ int Build(BuildOptions o)
     command.Append(" \"" + NativePath(llFile, windows) + "\" -o \"" + NativePath(outPath, windows) + "\"");
     if (!o.ObjectOnly)
     {
+        foreach (var shimObject in shimObjects)
+            command.Append(" \"" + NativePath(shimObject, windows) + "\"");
         foreach (var f in o.LibFiles)
             command.Append(" \"" + NativePath(f, windows) + "\"");
         foreach (var p in o.LibPaths)
@@ -406,6 +475,16 @@ int Build(BuildOptions o)
     int code = Process.Run(command.ToString());
     if (!o.Verbose)
         File.Delete(llFile);
+    if (!o.ObjectOnly)
+    {
+        foreach (var shimObject in shimObjects)
+            File.Delete(shimObject);
+    }
+    else
+    {
+        foreach (var shimObject in shimObjects)
+            Console.WriteLine("Also link " + shimObject + " (FFI wrappers)");
+    }
     if (code != 0)
     {
         Console.WriteErrorLine(o.ObjectOnly ? "error: clang failed (exit code " + code.ToString() + ")" : "error: linking failed");
@@ -427,23 +506,24 @@ int Build(BuildOptions o)
 }
 
 // Parses a source file and adds it to the compiler. Returns false after printing an error.
-bool AddSource(Compiler cg, Diagnostics diag, Ast tree, string path, bool prelude)
+bool AddSource(Compiler cg, Diagnostics diag, Ast tree, string path, bool prelude, List<FfiImport> imports)
 {
     var text = ReadSource(path);
     if (text is string source)
     {
-        AddSourceText(cg, diag, tree, path, source, prelude);
+        AddSourceText(cg, diag, tree, path, source, prelude, imports);
         return true;
     }
     return false;
 }
 
-void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string source, bool prelude)
+void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string source, bool prelude, List<FfiImport> imports)
 {
     int file = diag.AddFile(path);
     var lexer = Lexer.Create(source, file, diag);
     var parser = Parser.Create(lexer.Tokenize(), diag, tree);
     var unit = parser.ParseUnit(prelude);
-    cg.St[0].Imports += unit.Imports.Count();
+    foreach (var imp in unit.Imports)
+        imports.Add(FfiImport { Name = imp.Name, Header = imp.Header, SourcePath = path, Loc = imp.Loc });
     AddUnit(cg, unit);
 }

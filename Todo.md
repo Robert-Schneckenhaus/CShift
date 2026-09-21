@@ -29,17 +29,20 @@ Offen (`bash selfhost/status.sh selfhost/bin/cshc -v` zeigt, was noch fehlt; die
 - [x] **Treiber / Projekte** (fertig bis auf FFI): `cshc [Optionen] Dateien`, `cshc new|build|run` mit `cshift.json`, `-c`, `--target`, `-l/-L/-I/-D`, Bibliotheken als Eingaben;
       Stdlib um `Directory`, `Path`, `Process.RunCapture/GetEnv` ergänzt; JSON-Parser in CShift; die Stdlib ist in `cshc` eingebettet
       (`selfhost/src/Driver/EmbeddedStdlib.csh`, erzeugt mit `cshc --gen-stdlib stdlib <datei>`; `run_tests.sh` prüft, dass sie aktuell ist).
-      `tests/projects`: 6 von 8 bauen mit `cshc` (`selfhost/projects.sh`), die 2 übrigen brauchen FFI.
+      `tests/projects` bauen mit `cshc` (`selfhost/projects.sh`).
 - [ ] clang finden wie `cshiftc`: das mitgelieferte `toolchain/` neben `cshc` (dafür fehlt der Pfad der eigenen Exe; bisher `--cc`, `CSHIFT_CC`, PATH, MSYS2-Ordner).
-- [ ] **FFI** (`using X from "h.h"`, Demo `demo/`): `.ffi` lesen und Deklarationen erzeugen; das Einlesen der Header braucht libclang (in `cshc`
-      entweder per FFI aus CShift oder über den C++-Stufe-0-Compiler als Hilfsprogramm); Struct-Wrapper für Structs *by value*.
+- [x] **FFI (Lesen)**: `using X from "h.h"` und `from "x.ffi"` mit `cshc`: `.ffi` laden (`Driver/Ffi.csh`), C-Structs mit explizitem Layout (`CodeGen/Layout.csh`), Marshalling
+      (`cstring`, `nullable`, `retCString`, `retOut`), ABI-Attribute für kleine Ganzzahlen, Shims mit clang übersetzen und linken. `tests/projects` (8 von 8) und `demo/` bauen mit `cshc`.
+- [ ] **FFI (Erzeugen)**: die `.ffi`-Datei aus einem Header erzeugt bisher der C++-Compiler als Hilfsprogramm (`cshiftc --ffi-prepare`, gefunden über
+      `--ffi-tool`, `CSHIFT_FFI_TOOL` oder PATH). Für einen C++-freien `cshc` müsste `FfiGenerator.cpp` (1600 Zeilen, libclang) nach CShift portiert werden
+      (libclang per FFI aus CShift ansprechen) oder die `.ffi`-Dateien werden mitgeliefert.
 - [ ] Wenn `cshc` `cshiftc` vollständig ersetzen kann: Release-Workflow und Doku umstellen (C++ nur noch als Stufe 0).
 
 ## 2. Testen, ob der neue Compiler alles bauen kann
 
 - [x] `tests/cases/` (80 von 80), `tests/test.csh` (Ausgabe identisch, keine Leaks) und der Bootstrap laufen mit `cshc` (`tests/run_tests.sh`, Abschnitt selfhost;
       `selfhost/bootstrap.sh`: Stufe 1 = mit `cshiftc` gebaut, Stufe 2 = von `cshc` gebaut, gleiches IR für die Quellen von `cshc`).
-- [ ] Offen: `tests/projects/` (braucht den Treiber mit `cshift.json`, siehe Abschnitt 1), `demo/` und die FFI-Tests (brauchen `.ffi`-Import).
+- [x] `tests/projects/` (8 von 8, `selfhost/projects.sh`) und `demo/` bauen mit `cshc` (Header-Import über das C++-Hilfsprogramm, siehe Abschnitt 1).
 
 ## 3. Abhängigkeiten des neuen Compilers (Analyse)
 
