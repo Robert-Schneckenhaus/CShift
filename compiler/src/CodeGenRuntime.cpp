@@ -348,19 +348,29 @@ llvm::Function* CodeGen::substringFn()
     return f;
 }
 
-llvm::Function* CodeGen::printFn()
+// Console.Write/WriteLine (stdout) and Console.WriteError/WriteErrorLine (stderr): "void print(string, bool newline)".
+llvm::Function* CodeGen::printFn(bool toStderr)
 {
-    auto it = helpers.find("__cs_print");
+    std::string name = toStderr ? "__cs_eprint" : "__cs_print";
+    auto it = helpers.find(name);
     if (it != helpers.end())
         return it->second;
 
     auto* ptrTy = llvm::PointerType::getUnqual(ctx);
-    llvm::Function* f = makeHelper("__cs_print", llvm::Type::getVoidTy(ctx), {ptrTy, llvm::Type::getInt1Ty(ctx)});
+    llvm::Function* f = makeHelper(name, llvm::Type::getVoidTy(ctx), {ptrTy, llvm::Type::getInt1Ty(ctx)});
     llvm::IRBuilder<> b(llvm::BasicBlock::Create(ctx, "entry", f));
     llvm::Value* len = b.CreateTrunc(b.CreateCall(lenFn(), {f->getArg(0)}), b.getInt32Ty());
     llvm::Value* fmt = b.CreateSelect(f->getArg(1), cString("%.*s\n"), cString("%.*s"));
-    llvm::FunctionCallee printfFn = cFunction("printf", b.getInt32Ty(), {ptrTy}, true);
-    b.CreateCall(printfFn, {fmt, len, b.CreateCall(dataFn(), {f->getArg(0)})});
+    if (toStderr)
+    {
+        llvm::FunctionCallee fprintfFn = cFunction("fprintf", b.getInt32Ty(), {ptrTy, ptrTy}, true);
+        b.CreateCall(fprintfFn, {stderrHandle(b), fmt, len, b.CreateCall(dataFn(), {f->getArg(0)})});
+    }
+    else
+    {
+        llvm::FunctionCallee printfFn = cFunction("printf", b.getInt32Ty(), {ptrTy}, true);
+        b.CreateCall(printfFn, {fmt, len, b.CreateCall(dataFn(), {f->getArg(0)})});
+    }
     b.CreateRetVoid();
     return f;
 }

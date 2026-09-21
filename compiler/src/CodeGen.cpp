@@ -1121,7 +1121,9 @@ bool CodeGen::compile()
             {
                 FuncInfo* fi = getFuncInstance(f.get(), nullptr, nullptr, &u->file, {}, f->loc);
                 useFunction(*fi);
-                if (f->name == "Main" && f->params.empty())
+                bool takesArgs = fi->paramTypes.size() == 1 && fi->paramTypes[0] == types.arrayOf(types.stringTy) &&
+                                 fi->paramRefs[0] == RefKind::None;
+                if (f->name == "Main" && (f->params.empty() || takesArgs))
                 {
                     if (mainFunc)
                         diag.error(f->loc, "more than one 'Main' function");
@@ -1133,6 +1135,23 @@ bool CodeGen::compile()
             {
                 diag.error(e);
             }
+        }
+    }
+
+    // 'Main(string[] args)' gets its argument array from a helper written in CShift (stdlib/args.csh).
+    if (mainFunc && !mainFunc->paramTypes.empty())
+    {
+        try
+        {
+            std::vector<FuncDecl*> helper = lookupFunctions(mainFunc->file, "System.Native.MakeArgs");
+            if (helper.empty())
+                err(mainFunc->decl->loc, "internal error: System.Native.MakeArgs is missing from the standard library");
+            mainArgsHelper = getFuncInstance(helper[0], nullptr, nullptr, helper[0]->file, {}, helper[0]->loc);
+            useFunction(*mainArgsHelper);
+        }
+        catch (const CompileError& e)
+        {
+            diag.error(e);
         }
     }
 
@@ -1214,7 +1233,18 @@ void CodeGen::emitEntryPoint()
         b.CreateRet(code);
     };
 
-    llvm::Value* result = b.CreateCall(m.fn, {});
+    llvm::Value* result;
+    if (mainArgsHelper)
+    {
+        llvm::Value* args = b.CreateCall(mainArgsHelper->fn, {cmain->getArg(0), cmain->getArg(1)});
+        result = b.CreateCall(m.fn, {args});
+        builder.SetInsertPoint(b.GetInsertBlock());
+        emitReleaseValue(m.paramTypes[0], args); // Main only borrows its parameter
+    }
+    else
+    {
+        result = b.CreateCall(m.fn, {});
+    }
     if (rt->isVoid())
     {
         finish(b.getInt32(0));

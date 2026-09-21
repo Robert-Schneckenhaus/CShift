@@ -30,7 +30,7 @@ std::vector<Arg> CodeGen::emitArgs(std::vector<ExprPtr>& args)
     return out;
 }
 
-int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable)
+int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable, bool cstring)
 {
     const Value& v = arg.v;
     // Parameters that come from C pointers accept null (NULL) and a raw pointer to the same type.
@@ -41,6 +41,10 @@ int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable)
         if (v.type->isPointer() && v.type->elem == paramType)
             return 2;
     }
+    // A parameter that C declares as const char* also takes a raw char* (e.g. a string that came from C).
+    if (cstring && rk == RefKind::None && !v.isRefArg && v.type->isPointer() &&
+        (v.type->elem->isChar() || v.type->elem == types.i8 || v.type->elem == types.u8 || v.type->elem->isVoid()))
+        return 2;
     switch (rk)
     {
     case RefKind::None:
@@ -225,7 +229,7 @@ FuncInfo* CodeGen::resolveOverload(const std::vector<Candidate>& candidates, std
         bool ok = true;
         for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
         {
-            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i], fi->paramNullable[i]);
+            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i], fi->paramNullable[i], fi->paramCString[i]);
             if (cost < 0)
             {
                 reason = "argument " + std::to_string(i + 1) + ": cannot convert '" + args[i].v.type->name + "' to '" +
@@ -284,6 +288,11 @@ Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Ar
         {
         case RefKind::None:
         {
+            if (fi.paramCString[i] && a.v.type->isPointer())
+            {
+                callArgs.push_back(toRValue(a.v).v); // a raw char* is passed as it is
+                break;
+            }
             Value cv = convertValue(a.v, pt, aloc);
             holdTemp(cv);
             llvm::Value* passed = cv.v;
@@ -648,6 +657,19 @@ Value CodeGen::emitCall(CallExpr* e)
                     // Arrays and strings share the block layout, so the substring helper copies the bytes.
                     return Value::rvalue(types.stringTy, builder.CreateCall(substringFn(), {bytes.v, start, count}), true);
                 }
+                if (m->name == "FromCStr")
+                {
+                    // string.FromCStr(char* p): copies a NUL-terminated C string into a string (null -> null).
+                    if (args.size() != 1)
+                        err(e->loc, "string.FromCStr takes one argument (char*)");
+                    requireUnsafe(e->loc, "string.FromCStr");
+                    Value p = toRValue(args[0].v);
+                    if (!(p.type->isPointer() && (p.type->elem->isChar() || p.type->elem->isVoid() || p.type->elem == types.u8 ||
+                                                  p.type->elem == types.i8)) &&
+                        p.type->kind != TypeKind::Null)
+                        err(e->loc, "string.FromCStr needs a 'char*', not '" + p.type->name + "'");
+                    return Value::rvalue(types.stringTy, builder.CreateCall(fromCStrFn(), {p.v}), true);
+                }
                 bool found = false;
                 Value r = emitExtensionCall("String", nullptr, m->name, args, e->loc, found);
                 if (found)
@@ -739,9 +761,10 @@ Value CodeGen::emitBuiltinStatic(const std::string& type, const std::string& met
 
     if (type == "Console")
     {
-        if (method != "Write" && method != "WriteLine")
+        bool toStderr = method == "WriteError" || method == "WriteErrorLine";
+        if (method != "Write" && method != "WriteLine" && !toStderr)
             err(loc, "Console has no function '" + method + "'");
-        bool newline = method == "WriteLine";
+        bool newline = method == "WriteLine" || method == "WriteErrorLine";
         if (args.size() > 1)
             err(loc, "Console." + method + " takes at most one argument");
         llvm::Value* s;
@@ -769,7 +792,7 @@ Value CodeGen::emitBuiltinStatic(const std::string& type, const std::string& met
                 holdTemp(Value::rvalue(types.stringTy, s, true)); // emitToString returns a +1 reference
             }
         }
-        builder.CreateCall(printFn(), {s, builder.getInt1(newline)});
+        builder.CreateCall(printFn(toStderr), {s, builder.getInt1(newline)});
         return voidValue;
     }
 

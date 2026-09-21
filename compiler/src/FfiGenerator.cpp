@@ -397,7 +397,8 @@ std::vector<std::string> Generator::compilerArgs() const
     for (const std::string& dir : systemIncludes())
         args.push_back("-isystem" + slash(dir));
     for (const std::string& f : ffiFlags(options))
-        args.push_back(f);
+        if (f.compare(0, 12, "-cshift-api=") != 0)
+            args.push_back(f);
     return args;
 }
 
@@ -437,7 +438,11 @@ bool Generator::isApiFile(CXFile file)
     std::string name = slash(cx(api.clang_getFileName(file)));
     bool system = api.clang_Location_isInSystemHeader(api.clang_getLocation(tu, file, 1, 1)) != 0;
     bool underMain = !mainDir.empty() && name.compare(0, mainDir.size(), mainDir) == 0;
-    bool result = name != wrapperFile && (!system || (mainIsSystem ? systemApiFiles.count(name) != 0 : underMain));
+    bool explicitApi = false; // "apiPaths" in cshift.json / --ffi-api: umbrella headers for libraries in system paths
+    for (const std::string& p : options.apiPaths)
+        if (name.find(p) != std::string::npos)
+            explicitApi = true;
+    bool result = name != wrapperFile && (explicitApi || !system || (mainIsSystem ? systemApiFiles.count(name) != 0 : underMain));
     apiFiles[file] = result;
     return result;
 }

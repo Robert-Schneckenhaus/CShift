@@ -191,6 +191,38 @@ else
     report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
 fi
 
+# --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
+#   The lexer and parser of selfhost/ are built with the compiler under test. Token and syntax tree dumps of all
+#   .csh files of the repository must be identical to those of the C++ front end (selfhost/compare.sh).
+#   CSHIFT_SKIP_SELFHOST=1 skips this section.
+echo "== selfhost/"
+if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
+    echo "skipped"
+else
+    work="$TMP/selfhost"
+    cp -r "$DIR/../selfhost" "$work"
+    if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
+        report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
+    else
+        cshc="$work/bin/cshc"
+        [ -f "$cshc.exe" ] && cshc="$cshc.exe"
+        if bash "$DIR/../selfhost/compare.sh" "$COMPILER" "$cshc" > "$TMP/selfhost.cmp" 2>&1; then
+            report_ok "selfhost front end"
+        else
+            report_fail "selfhost front end" "different output from the C++ front end:"
+            head -n 20 "$TMP/selfhost.cmp"
+        fi
+        # The code generator written in CShift: the cases that passed once (selfhost/passing.txt) must keep passing.
+        if bash "$DIR/../selfhost/status.sh" "$cshc" --check > "$TMP/selfhost.status" 2>&1; then
+            report_ok "selfhost code generator"
+            echo "ok    selfhost code generator ($(head -n 1 "$TMP/selfhost.status" | sed 's/^tests.cases with cshc: //'))"
+        else
+            report_fail "selfhost code generator" "a case that passed with cshc does not pass any more:"
+            head -n 10 "$TMP/selfhost.status"
+        fi
+    fi
+fi
+
 echo
 echo "$PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]

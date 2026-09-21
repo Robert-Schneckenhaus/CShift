@@ -40,6 +40,7 @@ aber nicht, *wie* man ein Projekt beschreibt. Dieses Dokument füllt die Lücke.
 | `includePaths` | Suchpfade für C-Header (`using X from "h.h"`), relativ zur `cshift.json` | `[]` |
 | `defines` | Makros beim Parsen von C-Headern (`NAME`, `NAME=wert`) | `[]` |
 | `libraryPaths` | Suchpfade des Linkers (`-L`) | `[]` |
+| `ffiApi` | Pfadteile von C-Headern, die zur importierten API gehören, auch wenn sie in System-Pfaden liegen (`--ffi-api=`, siehe FFI.md) | `[]` |
 | `target` | Target-Triple | Host |
 
 Unbekannte Schlüssel erzeugen eine Warnung, falsche Werte einen Fehler mit Dateinamen. `$schema` ist erlaubt; die VS-Code-Extension

@@ -1,0 +1,8 @@
+{
+	"name": "cshc",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/cshc",
+	"optimize": 1
+}

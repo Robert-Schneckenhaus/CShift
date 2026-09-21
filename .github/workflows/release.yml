@@ -120,6 +120,9 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       LLVM_PREFIX: /usr/lib/llvm-22 # keep in sync with LLVM_VERSION above
+      # The selfhost/ front end (written in CShift) is not part of the release gate on Linux until it has run there
+      # once (see Todo.md). Remove this line to enable it.
+      CSHIFT_SKIP_SELFHOST: "1"
     steps:
       - uses: actions/checkout@v5
 

@@ -33,6 +33,7 @@ struct Project
     std::vector<std::string> includePaths; // C header search paths (-I), relative to the project file
     std::vector<std::string> libraryPaths; // linker search paths (-L)
     std::vector<std::string> defines;      // macros for parsing C headers (-D)
+    std::vector<std::string> apiPaths;     // headers with these path parts belong to the imported API (--ffi-api)
     std::string target;             // target triple, empty = host
 };
 

@@ -57,6 +57,7 @@ cshiftc prog.csh -lz   # Einzeldatei
 | `includePaths` | Suchpfade für C-Header (relativ zur `cshift.json`) | `-I<dir>` |
 | `defines` | Makros beim Parsen der Header | `-D<name>[=wert]` |
 | `libraryPaths` | Suchpfade des Linkers | `-L<dir>` |
+| `ffiApi` | Pfadteile von Headern, die auch aus System-Include-Pfaden zur importierten API gehören (Umbrella-Header) | `--ffi-api=<text>` |
 | `links` | Eintrag ohne Pfad/Endung: Bibliotheksname (`-l<name>`); Eintrag mit Pfad oder Endung `.a .o .obj .lib .so .dylib .dll`: Datei, die direkt gelinkt wird | `-l<name>`, `datei.a` |
 
 ## Abbildung der C-Typen
@@ -160,3 +161,30 @@ Nicht übernommen (steht im Feld `skipped` der `.ffi`-Datei mit Begründung, die
 * Callbacks mit Struct-Werten als Parameter oder Ergebnis, variadische Funktionszeiger, mehr als 8 Parameter: bleiben `void*`
 * Variadische Funktionen mit Struct-Werten (Variadische mit einfachen Werten wie `printf` funktionieren)
 * Nur C, kein C++ (Namespaces, Klassen, Templates)
+
+## Umbrella-Header und Bibliotheken in Systempfaden
+
+Ein Header aus einem System-Include-Pfad (`llvm-c/Core.h`, `zlib.h`) bringt nur seine eigenen Deklarationen mit; Header, die er
+einbindet, gelten als Systemheader und werden nicht übernommen. Um mehrere Header einer Bibliothek in **einen** Namensraum zu
+holen, schreibt man einen eigenen Header, der sie einbindet (ein *Umbrella-Header*), und nennt in der Projektdatei die Pfadteile, die
+zur API gehören sollen:
+
+```json
+{
+	"includePaths": ["C:/msys64/clang64/include"],
+	"ffiApi": ["llvm-c/", "llvm/Config"]
+}
+```
+
+```c
+/* native/llvm.h */
+#include <llvm-c/Core.h>
+#include <llvm-c/TargetMachine.h>
+```
+
+```csharp
+using Llvm from "native/llvm.h";
+```
+
+Auf der Kommandozeile: `--ffi-api=<text>`. Ein `const char*`-Parameter (`string` in CShift) nimmt auch ein rohes `char*` an,
+etwa einen Zeiger, den eine andere C-Funktion geliefert hat (`string.FromCStr(char*)` kopiert einen C-String in einen `string`).

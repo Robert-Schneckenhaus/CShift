@@ -276,7 +276,7 @@ private:
     llvm::Function* concatFn();
     llvm::Function* streqFn();
     llvm::Function* substringFn();
-    llvm::Function* printFn();
+    llvm::Function* printFn(bool toStderr = false);
     llvm::Function* fmtFn(const std::string& key, const char* format, llvm::Type* argType);
     llvm::Function* retainFor(Type* t);
     llvm::Function* releaseFor(Type* t);
@@ -357,7 +357,7 @@ private:
     bool inferTypeArgs(const Candidate& c, std::vector<Arg>& args, std::vector<Type*>& out);
     bool unify(const TypeRef& pattern, Type* actual, const std::vector<std::string>& params, FileContext* file,
                const TypeEnv* env, std::vector<Type*>& bound);
-    int argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable);
+    int argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable, bool cstring = false);
     Value emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Arg>& args, SourceLoc loc);
     std::vector<Arg> emitArgs(std::vector<ExprPtr>& args);
     std::vector<Type*> resolveTypeArgs(const std::vector<TypeRefPtr>& refs);
@@ -425,6 +425,7 @@ private:
     std::unordered_map<std::string, llvm::Constant*> stringLiterals;
     std::unordered_map<std::string, llvm::Constant*> cStrings;
     FuncInfo* mainFunc = nullptr;
+    FuncInfo* mainArgsHelper = nullptr; // System.Native.MakeArgs, when Main takes string[] args
     bool arcStats = false;
     int constDepth = 0;
 

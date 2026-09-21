@@ -109,6 +109,7 @@ cshiftc [Optionen] datei.csh [weitere.csh ...]
   -L<dir>            Suchpfad des Linkers
   -I<dir>            Suchpfad für C-Header (using X from "header.h")
   -D<name>[=wert]    Makro beim Parsen von C-Headern
+  --ffi-api=<text>   Header mit diesem Pfadteil gehören zur importierten API (Umbrella-Header)
   datei.a, datei.o   Bibliotheken/Objektdateien werden mitgelinkt
   --run              Programm nach dem Bauen ausführen
   --arc-stats        Debug: Anzahl Heap-Allokationen/-Freigaben beim Programmende ausgeben
@@ -224,7 +225,9 @@ tatsächlich benutzt, wird übersetzt (Generics werden pro Typ instanziiert). Be
 | Namespace | Datei | Inhalt |
 |---|---|---|
 | global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
-| `System` | `list.csh`, `dictionary.csh`, `file.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `KeyValuePair<K,V>`, `File`, `Encoding` (`using System;`) |
+| `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Encoding` (`using System;`) |
+| `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
+| `System.Native` | `args.csh` | Hilfsfunktion für `Main(string[] args)` |
 | `Math` | `math.csh` | mathematische Funktionen und Konstanten (ohne `using`: `Math.Sqrt(2)`) |
 | `String` | `string.csh` | String-Helfer, werden als Methoden auf `string` sichtbar |
 | `System.Native` | `native.csh` | C-Importe (`fopen`, `sin`, …), auch für eigene Programme (`using System.Native;`) |
@@ -243,6 +246,13 @@ tatsächlich benutzt, wird übersetzt (Generics werden pro Typ instanziiert). Be
 > (Zuweisung, Argumente) sehen dieselben Elemente. Der Speicher entsteht in `Create()` bzw. beim ersten `Add`/`Set`; eine leere
 > Liste aus `new List<T>()` ist vor dem ersten Einfügen noch nicht mit ihren Kopien verbunden – mit `Create()` starten, wenn man sie
 > vor dem ersten Element weitergibt.
+
+**`StringBuilder`** – baut Text ohne Kopie bei jedem `+`: `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
+sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (wie `List` ein Handle auf gemeinsamen Speicher).
+**`HashSet<T>`** – `Create()`, `Add(v)` (`true`, wenn neu), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`, `ToArray()`.
+**`Process.Run("befehl")`** führt eine Kommandozeile über die Shell aus und liefert den Exit-Code.
+**Kommandozeile:** `int Main(string[] args)` bekommt die Argumente ohne den Programmnamen. `Console.WriteError(Line)` schreibt nach stderr,
+`string.FromCStr(char*)` kopiert einen C-String (`unsafe`) in einen `string`.
 
 **`File`** (statisch, Text standardmäßig UTF-8): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`, `WriteAllText(path, text [, encoding])`,
 `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`. Lesen liefert `Error<string>` bzw. `Error<uint8[]>`, Schreiben und Löschen
@@ -292,6 +302,8 @@ Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Para
 | `compiler/src/Project.*` | Projektdatei `cshift.json` lesen, `cshiftc new` |
 | `compiler/src/Ffi.h`, `FfiImport.cpp` | `using X from "…"`: `.ffi`-Cache (Aktualität per Hash), Deklarationen aus der `.ffi`-Datei erzeugen |
 | `compiler/src/FfiGenerator.cpp` | C-Header mit libclang (zur Laufzeit geladen) in eine `.ffi`-Datei und C-Wrapper für Struct-Werte übersetzen |
+| `compiler/src/Dump.*`, `DumpAst.cpp` | Entwicklungshilfe: `--dump-tokens` / `--dump-ast` (zum Vergleich mit `selfhost/`) |
+| `selfhost/` | der Compiler in CShift: Lexer und Parser (gegen den C++-Compiler abgesichert) und ein Codegenerator für den Kern der Sprache (schreibt LLVM-IR-Text, clang übersetzt), siehe [selfhost/README.md](selfhost/README.md) |
 | `.github/workflows/release.yml`, `packaging/` | Release-Workflow (Windows/Linux) und die Skripte, die den Archivordner mit Toolchain zusammenstellen |
 
 Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
@@ -317,10 +329,10 @@ tests/run_tests.sh [pfad/zu/cshiftc] [-O0..-O3]      # bzw. .\build.ps1 -Test
 
 ## Bekannte Einschränkungen / nächste Schritte
 
-* Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `HashSet`/`Stack`/`Queue`, keine weiteren Encodings,
+* Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `Stack`/`Queue`, keine weiteren Encodings,
   keine Datums-/Zeitfunktionen, keine Formatierung (`Format`, Interpolation). Indexer (`list[i]`) gibt es nicht, es heißt `Get`/`Set`.
 * Interfaces als Werttyp (dynamischer Aufruf), Lambdas/Closures, globale *Variablen* (Konstanten gehen),
-  `Main(string[] args)`, Struct-Übergabe *by value* bei handgeschriebenem `extern "C"` fehlen noch (über `using X from "header.h"` funktioniert es). Grenzen der Header-Importe: [FFI.md](FFI.md).
+  Struct-Übergabe *by value* bei handgeschriebenem `extern "C"` fehlen noch (über `using X from "header.h"` funktioniert es). Grenzen der Header-Importe: [FFI.md](FFI.md).
 * Referenzzähler sind nicht atomar (kein Multithreading).
 * Generische Körper werden erst bei der Instanziierung geprüft (wie C++-Templates); unbenutzte generische Funktionen werden nicht analysiert.
 * Keine Debug-Informationen (DWARF/PDB).
