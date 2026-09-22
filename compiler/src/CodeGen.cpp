@@ -94,10 +94,24 @@ void CodeGen::registerUnit(CompilationUnit& u)
     for (auto& c : u.consts)
     {
         std::string q = qualified(&u.file, c->name);
-        if (constDecls.count(q))
+        if (constDecls.count(q) || globalDecls.count(q))
             diag.error(c->loc, "constant '" + q + "' is already defined");
         else
             constDecls[q] = c.get();
+    }
+    for (auto& g : u.globals)
+    {
+        std::string q = qualified(&u.file, g->name);
+        if (constDecls.count(q) || globalDecls.count(q))
+            diag.error(g->loc, "'" + q + "' is already defined");
+        else
+        {
+            auto info = std::make_unique<GlobalInfo>();
+            info->decl = g.get();
+            info->name = q;
+            info->order = globalCounter++;
+            globalDecls[q] = std::move(info);
+        }
     }
 
     for (auto& l : u.links)
@@ -520,66 +534,6 @@ Type* CodeGen::getInterfaceType(InterfaceDecl* decl, const std::vector<Type*>& a
     return t;
 }
 
-int64_t CodeGen::constEvalInt(Expr* e, EnumInfo* current, SourceLoc loc)
-{
-    switch (e->kind)
-    {
-    case ExprKind::IntLit: return (int64_t) static_cast<IntLitExpr*>(e)->value;
-    case ExprKind::CharLit: return static_cast<CharLitExpr*>(e)->value;
-    case ExprKind::Unary:
-    {
-        auto* u = static_cast<UnaryExpr*>(e);
-        int64_t v = constEvalInt(u->operand.get(), current, loc);
-        switch (u->op)
-        {
-        case UnOp::Neg: return -v;
-        case UnOp::Plus: return v;
-        case UnOp::BitNot: return ~v;
-        default: break;
-        }
-        break;
-    }
-    case ExprKind::Binary:
-    {
-        auto* b = static_cast<BinaryExpr*>(e);
-        int64_t l = constEvalInt(b->lhs.get(), current, loc);
-        int64_t r = constEvalInt(b->rhs.get(), current, loc);
-        switch (b->op)
-        {
-        case BinOp::Add: return l + r;
-        case BinOp::Sub: return l - r;
-        case BinOp::Mul: return l * r;
-        case BinOp::Div:
-            if (r == 0)
-                err(e->loc, "division by zero in constant expression");
-            return l / r;
-        case BinOp::Rem:
-            if (r == 0)
-                err(e->loc, "division by zero in constant expression");
-            return l % r;
-        case BinOp::BitAnd: return l & r;
-        case BinOp::BitOr: return l | r;
-        case BinOp::BitXor: return l ^ r;
-        case BinOp::Shl: return l << r;
-        case BinOp::Shr: return l >> r;
-        default: break;
-        }
-        break;
-    }
-    case ExprKind::Name:
-    {
-        auto* n = static_cast<NameExpr*>(e);
-        if (current)
-            for (const auto& m : current->members)
-                if (m.first == n->name)
-                    return m.second;
-        break;
-    }
-    default: break;
-    }
-    err(e->loc.line ? e->loc : loc, "expected a constant integer expression");
-}
-
 static bool fitsInt(int64_t v, Type* t)
 {
     if (t->bits >= 64)
@@ -617,8 +571,8 @@ Type* CodeGen::getEnumType(EnumDecl* decl)
     int64_t next = 0;
     for (auto& m : decl->members)
     {
-        int64_t v = m.value ? constEvalInt(m.value.get(), &ei, m.loc) : next;
-        if (!fitsInt(v, base))
+        int64_t v = m.value ? constEvalEnumMember(m.value.get(), ei, decl->file, m.name, m.loc) : next;
+        if (!m.value && !fitsInt(v, base))
             err(m.loc, "enum value " + std::to_string(v) + " does not fit into " + base->name);
         for (const auto& other : ei.members)
             if (other.first == m.name)
@@ -1121,7 +1075,9 @@ bool CodeGen::compile()
             {
                 FuncInfo* fi = getFuncInstance(f.get(), nullptr, nullptr, &u->file, {}, f->loc);
                 useFunction(*fi);
-                if (f->name == "Main" && f->params.empty())
+                bool takesArgs = fi->paramTypes.size() == 1 && fi->paramTypes[0] == types.arrayOf(types.stringTy) &&
+                                 fi->paramRefs[0] == RefKind::None;
+                if (f->name == "Main" && (f->params.empty() || takesArgs))
                 {
                     if (mainFunc)
                         diag.error(f->loc, "more than one 'Main' function");
@@ -1135,6 +1091,44 @@ bool CodeGen::compile()
             }
         }
     }
+
+    // 'Main(string[] args)' gets its argument array from a helper written in CShift (stdlib/args.csh).
+    if (mainFunc && !mainFunc->paramTypes.empty())
+    {
+        try
+        {
+            std::vector<FuncDecl*> helper = lookupFunctions(mainFunc->file, "System.Native.MakeArgs");
+            if (helper.empty())
+                err(mainFunc->decl->loc, "internal error: System.Native.MakeArgs is missing from the standard library");
+            mainArgsHelper = getFuncInstance(helper[0], nullptr, nullptr, helper[0]->file, {}, helper[0]->loc);
+            useFunction(*mainArgsHelper);
+        }
+        catch (const CompileError& e)
+        {
+            diag.error(e);
+        }
+    }
+
+    checkConstants();
+
+    // The globals of the program are checked even if nothing uses them; their initializers run before Main.
+    for (auto& u : units)
+    {
+        if (u->file.isPrelude)
+            continue;
+        for (auto& g : u->globals)
+        {
+            try
+            {
+                globalValue(*globalDecls.at(qualified(&u->file, g->name)));
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+            }
+        }
+    }
+    emitGlobalsInit();
 
     // 3. Generate function bodies. Generic instantiations add new work while this runs.
     while (!workQueue.empty() || !pendingVerify.empty())
@@ -1159,6 +1153,8 @@ bool CodeGen::compile()
             emitFunctionBody(*fi);
         }
     }
+
+    checkGlobalInitOrder();
 
     if (diag.hasErrors())
         return false;
@@ -1202,7 +1198,10 @@ void CodeGen::emitEntryPoint()
     auto* ptrArg = llvm::PointerType::getUnqual(ctx);
 
     // Returns from main; with --arc-stats the heap block balance is printed first.
+    llvm::Function* releaseGlobals = emitGlobalsRelease();
     auto finish = [&](llvm::Value* code) {
+        if (releaseGlobals)
+            b.CreateCall(releaseGlobals);
         if (arcStats)
         {
             llvm::Value* allocs = b.CreateLoad(b.getInt64Ty(), arcCounter("__cs_allocs"));
@@ -1214,7 +1213,21 @@ void CodeGen::emitEntryPoint()
         b.CreateRet(code);
     };
 
-    llvm::Value* result = b.CreateCall(m.fn, {});
+    if (globalsInitFn)
+        b.CreateCall(globalsInitFn);
+
+    llvm::Value* result;
+    if (mainArgsHelper)
+    {
+        llvm::Value* args = b.CreateCall(mainArgsHelper->fn, {cmain->getArg(0), cmain->getArg(1)});
+        result = b.CreateCall(m.fn, {args});
+        builder.SetInsertPoint(b.GetInsertBlock());
+        emitReleaseValue(m.paramTypes[0], args); // Main only borrows its parameter
+    }
+    else
+    {
+        result = b.CreateCall(m.fn, {});
+    }
     if (rt->isVoid())
     {
         finish(b.getInt32(0));

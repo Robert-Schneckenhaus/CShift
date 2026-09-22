@@ -206,7 +206,7 @@
 				},
 				{
 					"name": "support.class.cshift",
-					"match": "\\b(Console|Memory|Environment|Array|Math|String|File|Encoding|EncodingKind|List|Dictionary)\\b"
+					"match": "\\b(Console|Memory|Environment|Array|Math|String|File|Encoding|EncodingKind|List|Dictionary|Char|StringBuilder|HashSet|Process)\\b"
 				}
 			]
 		},

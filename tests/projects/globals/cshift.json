@@ -1,0 +1,6 @@
+{
+	"name": "globals",
+	"sources": ["src"],
+	"output": "out/globals",
+	"optimize": 1
+}

@@ -43,11 +43,14 @@ add_executable(cshiftc
     ${STDLIB_DATA_CPP}
     compiler/src/main.cpp
     compiler/src/Project.cpp
+    compiler/src/Dump.cpp
+    compiler/src/DumpAst.cpp
     compiler/src/FfiImport.cpp
     compiler/src/FfiGenerator.cpp
     compiler/src/Types.cpp
     compiler/src/Lexer.cpp
     compiler/src/Parser.cpp
+    compiler/src/ConstEval.cpp
     compiler/src/CodeGen.cpp
     compiler/src/CodeGenRuntime.cpp
     compiler/src/CodeGenExpr.cpp

@@ -264,6 +264,7 @@ Value CodeGen::convertValue(const Value& v, Type* to, SourceLoc loc)
             err(loc, to->isFunction() ? "cannot convert function '" + v.groupName + "' to '" + to->name + "': " + why
                                       : "'" + v.groupName + "' is a function; call it with '()' or assign it to an Action/Func");
         useFunction(*fi);
+        noteCall(*fi); // taking the address of a function counts as a call (it is called through the pointer later)
         return Value::rvalue(to, fi->fn);
     }
 
@@ -392,73 +393,246 @@ ConstDecl* CodeGen::lookupConst(FileContext* f, const std::string& name) const
     return nullptr;
 }
 
-// Constant expressions: literals, operators and other constants.
-bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
+GlobalInfo* CodeGen::lookupGlobal(FileContext* f, const std::string& name) const
 {
-    switch (e->kind)
+    for (const auto& c : candidateNames(f, name))
     {
-    case ExprKind::IntLit:
-    case ExprKind::FloatLit:
-    case ExprKind::CharLit:
-    case ExprKind::StringLit:
-    case ExprKind::BoolLit:
-        return true;
-    case ExprKind::Name:
-        return lookupConst(file, static_cast<NameExpr*>(e)->name) != nullptr;
-    case ExprKind::Member:
-    {
-        auto* m = static_cast<MemberExpr*>(e);
-        return m->object->kind == ExprKind::Name &&
-               lookupConst(file, static_cast<NameExpr*>(m->object.get())->name + "." + m->name) != nullptr;
+        auto it = globalDecls.find(c);
+        if (it != globalDecls.end())
+            return it->second.get();
     }
-    case ExprKind::Unary:
+    return nullptr;
+}
+
+// The variable of a global as an lvalue. Its type and the LLVM variable are created on first use.
+void CodeGen::noteGlobalUse(GlobalInfo& g)
+{
+    if (!fs || !fs->func)
+        return;
+    const void* key = fs->func == initInfo.get() ? (const void*)currentInit : (const void*)fs->func;
+    if (key)
+        codeUses[key].globals.insert(&g);
+}
+
+void CodeGen::noteCall(FuncInfo& fi)
+{
+    if (!fs || !fs->func)
+        return;
+    const void* key = fs->func == initInfo.get() ? (const void*)currentInit : (const void*)fs->func;
+    if (key)
+        codeUses[key].calls.insert(&fi);
+}
+
+Value CodeGen::globalValue(GlobalInfo& g, bool note)
+{
+    if (note)
+        noteGlobalUse(g);
+    if (!g.var)
     {
-        auto* u = static_cast<UnaryExpr*>(e);
-        return u->op != UnOp::Deref && u->op != UnOp::AddrOf && isConstExpr(u->operand.get(), file);
+        Type* t = resolveValueType(*g.decl->type, g.decl->file, nullptr);
+        if (t->isVoid())
+            err(g.decl->loc, "variable '" + g.name + "' cannot have type 'void'");
+        if (t->isStruct() && t->st->opaque)
+            err(g.decl->loc, "'" + t->name + "' is an incomplete C type and can only be used through a pointer ('" + t->name + "*')");
+        g.type = t;
+        g.var = new llvm::GlobalVariable(*mod, llvmTypeOf(t), false, llvm::GlobalValue::InternalLinkage,
+                                         llvm::Constant::getNullValue(llvmTypeOf(t)), "global." + g.name);
+        createdGlobals.push_back(&g);
     }
-    case ExprKind::Binary:
+    return Value::lvalue(g.type, g.var);
+}
+
+// The code that gives the globals their initial values. It runs before Main, in the order of the declarations (files in
+// the order they were given to the compiler).
+void CodeGen::emitGlobalsInit()
+{
+    bool any = false;
+    for (auto& u : units)
+        for (auto& g : u->globals)
+            any = any || g->init;
+    if (!any)
+        return;
+
+    globalsInitFn = beginSyntheticFunction("__cs_init_globals");
+    for (auto& u : units)
     {
-        auto* b = static_cast<BinaryExpr*>(e);
-        return isConstExpr(b->lhs.get(), file) && isConstExpr(b->rhs.get(), file);
+        for (auto& g : u->globals)
+        {
+            if (!g->init)
+                continue;
+            initInfo->file = &u->file;
+            pushScope();
+            try
+            {
+                GlobalInfo& info = *globalDecls.at(qualified(&u->file, g->name));
+                Value target = globalValue(info, false);
+                currentInit = &info;
+                Value v = convertValue(emitExpr(g->init.get()), info.type, g->init->loc);
+                storeSlot(info.type, target.v, consume(v), false);
+                flushTemps(0);
+                popScope(true);
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+                fs->scopes.clear();
+                pushScope();
+            }
+            currentInit = nullptr;
+            ensureInsertPoint();
+        }
     }
-    default:
-        return false;
+    endSyntheticFunction(globalsInitFn, true);
+}
+
+// A function without parameters that only exists for the code generator: the initializers of the globals (kept) and the
+// check of the constants (dropped). Its code is written with the normal expression and statement code.
+llvm::Function* CodeGen::beginSyntheticFunction(const std::string& name)
+{
+    if (!initInfo)
+    {
+        initDecl = std::make_unique<FuncDecl>();
+        initDecl->name = "global initializers";
+        initInfo = std::make_unique<FuncInfo>();
+        initInfo->decl = initDecl.get();
+        initInfo->name = initDecl->name;
+        initInfo->ret = types.voidTy;
+        initInfo->signatureResolved = true;
+    }
+    llvm::Function* f = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
+                                               llvm::GlobalValue::InternalLinkage, name, mod.get());
+    initInfo->fn = f;
+    fs = std::make_unique<FnState>();
+    fs->func = initInfo.get();
+    fs->fn = f;
+    fs->retType = types.voidTy;
+    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
+    return f;
+}
+
+void CodeGen::endSyntheticFunction(llvm::Function* f, bool keep)
+{
+    if (blockOpen())
+        builder.CreateRetVoid();
+    for (llvm::BasicBlock& bb : *f)
+        if (!bb.getTerminator())
+        {
+            builder.SetInsertPoint(&bb);
+            builder.CreateUnreachable();
+        }
+    fs.reset();
+    if (!keep)
+        f->eraseFromParent();
+}
+
+// The constants of the program are checked even if nothing uses them: type, initializer and value.
+void CodeGen::checkConstants()
+{
+    for (auto& u : units)
+    {
+        if (u->file.isPrelude)
+            continue;
+        for (auto& c : u->consts)
+        {
+            try
+            {
+                constEvalDecl(c.get());
+            }
+            catch (const CompileError& e)
+            {
+                diag.error(e);
+            }
+        }
     }
 }
 
-// A constant is inlined at every use. Its initializer only consists of literals and other constants, so
-// evaluating it has no side effects. It is evaluated in the file context of the declaration.
+// An initializer must not use a global that is initialized later (or itself): the value would still be zero. The code the
+// initializer calls counts as well, so the functions it reaches (directly or through other functions) are searched.
+void CodeGen::checkGlobalInitOrder()
+{
+    for (auto& u : units)
+    {
+        for (auto& gd : u->globals)
+        {
+            if (!gd->init)
+                continue;
+            GlobalInfo* g = globalDecls.at(qualified(&u->file, gd->name)).get();
+            std::set<GlobalInfo*> reported;
+            auto report = [&](GlobalInfo* h, FuncInfo* via) {
+                if (h->order < g->order || !h->decl->init || !reported.insert(h).second)
+                    return;
+                std::string message = "the initializer of global '" + g->name + "' uses global '" + h->name + "'" +
+                                      (via ? " (through '" + via->name + "')" : "") + " before it is initialized";
+                message += h == g ? " (a global cannot use itself in its own initializer)"
+                                  : "; declare '" + h->name + "' before '" + g->name + "'";
+                diag.error(g->decl->loc, message);
+            };
+            auto own = codeUses.find(g);
+            if (own == codeUses.end())
+                continue;
+            for (GlobalInfo* h : own->second.globals)
+                report(h, nullptr);
+            // the functions the initializer calls, breadth first; 'via' is the function the initializer calls directly
+            std::set<FuncInfo*> seen;
+            std::vector<std::pair<FuncInfo*, FuncInfo*>> work;
+            for (FuncInfo* callee : own->second.calls)
+                work.push_back({callee, callee});
+            while (!work.empty())
+            {
+                auto [fn, via] = work.back();
+                work.pop_back();
+                if (!seen.insert(fn).second)
+                    continue;
+                auto uses = codeUses.find(fn);
+                if (uses == codeUses.end())
+                    continue;
+                for (GlobalInfo* h : uses->second.globals)
+                    report(h, via);
+                for (FuncInfo* callee : uses->second.calls)
+                    work.push_back({callee, via});
+            }
+        }
+    }
+}
+
+// A local variable or constant of the current function by name (the innermost one); null if there is none.
+ScopeVar* CodeGen::findLocal(const std::string& name)
+{
+    if (!fs)
+        return nullptr;
+    for (size_t s = fs->scopes.size(); s > 0; s -= 1)
+    {
+        auto& vars = fs->scopes[s - 1].vars;
+        for (size_t i = vars.size(); i > 0; i -= 1)
+            if (vars[i - 1].name == name)
+                return &vars[i - 1];
+    }
+    return nullptr;
+}
+
+// The function that releases the values of the globals at the end of the program (so that no heap block is left over).
+llvm::Function* CodeGen::emitGlobalsRelease()
+{
+    std::vector<GlobalInfo*> arcGlobals;
+    for (GlobalInfo* g : createdGlobals)
+        if (needsArc(g->type))
+            arcGlobals.push_back(g);
+    if (arcGlobals.empty())
+        return nullptr;
+    llvm::Function* f = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false),
+                                               llvm::GlobalValue::InternalLinkage, "__cs_release_globals", mod.get());
+    builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
+    for (GlobalInfo* g : arcGlobals)
+        emitReleaseValue(g->type, builder.CreateLoad(llvmTypeOf(g->type), g->var));
+    builder.CreateRetVoid();
+    return f;
+}
+
+// A constant is inlined at every use: its value was computed by the compile-time evaluator.
 Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
 {
     (void)loc;
-    if (!isConstExpr(c->init.get(), c->file))
-        err(c->loc, "the initializer of constant '" + c->name + "' must be a constant expression (literals, operators, other constants)");
-    if (constDepth > 32)
-        err(c->loc, "constant '" + c->name + "' depends on itself");
-    Type* t = resolveValueType(*c->type, c->file, nullptr);
-    if (!(t->isNumeric() || t->isBool() || t->isString() || t->isEnum()))
-        err(c->loc, "constants can only be numbers, bool, char, string or enum values");
-
-    FileContext* savedFile = fs->func->file;
-    fs->func->file = c->file;
-    constDepth += 1;
-    try
-    {
-        Value v;
-        if (t->isEnum())
-            v = constInt(t, constEvalInt(c->init.get(), nullptr, c->loc)); // enumerators of imported C enums
-        else
-            v = convertValue(emitExpr(c->init.get()), t, c->init->loc);
-        constDepth -= 1;
-        fs->func->file = savedFile;
-        return v;
-    }
-    catch (...)
-    {
-        constDepth -= 1;
-        fs->func->file = savedFile;
-        throw;
-    }
+    return constToValue(constEvalDecl(c));
 }
 
 Value CodeGen::lookupVariable(const std::string& name)
@@ -471,6 +645,8 @@ Value CodeGen::lookupVariable(const std::string& name)
             ScopeVar& v = vars[i - 1];
             if (v.name != name)
                 continue;
+            if (v.isConstant)
+                return constToValue(v.constValue); // a local constant is inlined
             if (v.isRef)
                 return Value::lvalue(v.type, builder.CreateLoad(llvm::PointerType::getUnqual(ctx), v.slot), v.isConst);
             return Value::lvalue(v.type, v.slot, v.isConst);
@@ -511,6 +687,8 @@ Value CodeGen::emitName(NameExpr* e)
 
     if (ConstDecl* c = lookupConst(fs->func->file, e->name))
         return emitConst(c, e->loc);
+    if (GlobalInfo* g = lookupGlobal(fs->func->file, e->name))
+        return globalValue(*g);
 
     StaticTarget st = resolveStaticTarget(e);
     if (st.kind == StaticTarget::TypeName || st.kind == StaticTarget::Builtin)
@@ -664,6 +842,8 @@ Value CodeGen::emitMember(MemberExpr* e)
     {
         if (ConstDecl* c = lookupConst(fs->func->file, st.name + "." + e->name))
             return emitConst(c, e->loc);
+        if (GlobalInfo* g = lookupGlobal(fs->func->file, st.name + "." + e->name))
+            return globalValue(*g);
         std::vector<Candidate> cands;
         for (FuncDecl* d : lookupFunctions(fs->func->file, st.name + "." + e->name))
             cands.push_back(Candidate{d, nullptr, nullptr, d->file});
@@ -1195,9 +1375,19 @@ Value CodeGen::emitAssign(AssignExpr* e)
 {
     Value target = emitExpr(e->target.get());
     if (!target.isLValue)
+    {
+        // a constant (local or top level) is a value, not a variable
+        if (e->target->kind == ExprKind::Name)
+        {
+            const std::string& name = static_cast<NameExpr*>(e->target.get())->name;
+            ScopeVar* local = findLocal(name);
+            if (local ? local->isConstant : lookupConst(fs->func->file, name) != nullptr)
+                err(e->loc, "cannot assign to a read-only value: '" + name + "' is a constant");
+        }
         err(e->loc, "the left side of an assignment must be a variable, field or element");
+    }
     if (target.isConst)
-        err(e->loc, "cannot assign to a read-only value ('const ref' parameter)");
+        err(e->loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
 
     Value val;
     if (e->op)

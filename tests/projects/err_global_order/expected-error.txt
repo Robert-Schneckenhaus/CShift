@@ -1,0 +1,1 @@
+the initializer of global 'First' uses global 'Second' before it is initialized

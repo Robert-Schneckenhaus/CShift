@@ -4,6 +4,10 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/Path.h>
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // Argument handling
@@ -30,7 +34,7 @@ std::vector<Arg> CodeGen::emitArgs(std::vector<ExprPtr>& args)
     return out;
 }
 
-int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable)
+int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable, bool cstring)
 {
     const Value& v = arg.v;
     // Parameters that come from C pointers accept null (NULL) and a raw pointer to the same type.
@@ -41,6 +45,10 @@ int CodeGen::argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable)
         if (v.type->isPointer() && v.type->elem == paramType)
             return 2;
     }
+    // A parameter that C declares as const char* also takes a raw char* (e.g. a string that came from C).
+    if (cstring && rk == RefKind::None && !v.isRefArg && v.type->isPointer() &&
+        (v.type->elem->isChar() || v.type->elem == types.i8 || v.type->elem == types.u8 || v.type->elem->isVoid()))
+        return 2;
     switch (rk)
     {
     case RefKind::None:
@@ -225,7 +233,7 @@ FuncInfo* CodeGen::resolveOverload(const std::vector<Candidate>& candidates, std
         bool ok = true;
         for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
         {
-            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i], fi->paramNullable[i]);
+            int cost = argCost(args[i], fi->paramTypes[i], fi->paramRefs[i], fi->paramNullable[i], fi->paramCString[i]);
             if (cost < 0)
             {
                 reason = "argument " + std::to_string(i + 1) + ": cannot convert '" + args[i].v.type->name + "' to '" +
@@ -271,6 +279,7 @@ FuncInfo* CodeGen::resolveOverload(const std::vector<Candidate>& candidates, std
 Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Arg>& args, SourceLoc loc)
 {
     useFunction(fi);
+    noteCall(fi);
     std::vector<llvm::Value*> callArgs;
     if (fi.hasThis)
         callArgs.push_back(thisPtr);
@@ -284,6 +293,11 @@ Value CodeGen::emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Ar
         {
         case RefKind::None:
         {
+            if (fi.paramCString[i] && a.v.type->isPointer())
+            {
+                callArgs.push_back(toRValue(a.v).v); // a raw char* is passed as it is
+                break;
+            }
             Value cv = convertValue(a.v, pt, aloc);
             holdTemp(cv);
             llvm::Value* passed = cv.v;
@@ -537,6 +551,7 @@ void CodeGen::callDispose(const ScopeVar& var)
             continue;
         FuncInfo* fi = getFuncInstance(c.decl, c.owner, c.ownerEnv, c.file, {}, c.decl->loc);
         useFunction(*fi);
+        noteCall(*fi);
         builder.CreateCall(fi->fn, {var.slot});
         return;
     }
@@ -546,6 +561,77 @@ void CodeGen::callDispose(const ScopeVar& var)
 // ---------------------------------------------------------------------------
 // Calls
 // ---------------------------------------------------------------------------
+
+// Files that are embedded into the program at compile time (paths are relative to the source file with the call):
+//   EmbedText("file")            the text of a file (string)
+//   EmbedNames("dir", ".ext")    the names of the files of a directory with this extension, sorted (string[])
+//   EmbedTexts("dir", ".ext")    their texts in the same order (string[])
+// Line ends are normalized to '\n' and a byte order mark is removed.
+Value CodeGen::emitEmbed(CallExpr* e, const std::string& name)
+{
+    size_t wanted = name == "EmbedText" ? 1 : 2;
+    if (e->args.size() != wanted)
+        err(e->loc, name + " takes " + std::to_string(wanted) + " string literal argument(s)");
+    std::vector<std::string> literals;
+    for (auto& a : e->args)
+    {
+        if (a->kind != ExprKind::StringLit)
+            err(a->loc, name + " needs string literals (the files are read when the program is compiled)");
+        literals.push_back(static_cast<StringLitExpr*>(a.get())->value);
+    }
+    std::string source = e->loc.file < (int)diag.files.size() ? diag.files[e->loc.file] : "";
+    llvm::SmallString<256> base(llvm::sys::path::parent_path(source));
+    auto resolve = [&](const std::string& relative) {
+        llvm::SmallString<256> p(base);
+        llvm::sys::path::append(p, relative);
+        return std::string(p.str());
+    };
+    auto readText = [&](const std::string& path) {
+        auto buffer = llvm::MemoryBuffer::getFile(path);
+        if (!buffer)
+            err(e->loc, name + ": cannot read '" + path + "'");
+        std::string text = (*buffer)->getBuffer().str();
+        if (text.size() >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF)
+            text.erase(0, 3);
+        std::string normalized;
+        for (char c : text)
+            if (c != '\r')
+                normalized += c;
+        return normalized;
+    };
+
+    if (name == "EmbedText")
+    {
+        Value v = Value::rvalue(types.stringTy, stringLiteral(readText(resolve(literals[0])))); // literals are never freed
+        return v;
+    }
+
+    std::string dir = resolve(literals[0]);
+    if (!llvm::sys::fs::is_directory(dir))
+        err(e->loc, name + ": '" + dir + "' is not a directory");
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (llvm::sys::fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+    {
+        std::string file = llvm::sys::path::filename(it->path()).str();
+        bool matches = literals[1].empty() ||
+                       (file.size() >= literals[1].size() && file.compare(file.size() - literals[1].size(), literals[1].size(), literals[1]) == 0);
+        if (matches && llvm::sys::fs::is_regular_file(it->path()))
+            names.push_back(file);
+    }
+    std::sort(names.begin(), names.end());
+
+    Type* arrT = types.arrayOf(types.stringTy);
+    uint64_t n = names.size();
+    llvm::Value* arr = builder.CreateCall(allocFn(), {builder.getInt64(n * sizeOf(types.stringTy)), builder.getInt64(n)});
+    for (uint64_t i = 0; i < n; i += 1)
+    {
+        std::string text = name == "EmbedNames" ? names[i] : readText(resolve(literals[0] + "/" + names[i]));
+        llvm::Value* slot = builder.CreateGEP(llvmTypeOf(types.stringTy), dataPtr(arr), {builder.getInt64(i)});
+        builder.CreateStore(stringLiteral(text), slot);
+    }
+    return Value::rvalue(arrT, arr, true);
+}
 
 Value CodeGen::emitCall(CallExpr* e)
 {
@@ -574,6 +660,16 @@ Value CodeGen::emitCall(CallExpr* e)
             }
         }
 
+        if (GlobalInfo* g = lookupGlobal(fs->func->file, n->name))
+        {
+            Value global = globalValue(*g);
+            if (global.type->isFunction() && !(fs->func->owner && methodCandidates(fs->func->owner, n->name).size()))
+            {
+                std::vector<Arg> args = emitArgs(e->args);
+                return emitIndirectCall(global, args, e->loc);
+            }
+        }
+
         std::vector<Type*> targs = resolveTypeArgs(n->typeArgs);
         std::vector<Candidate> cands;
         if (fs->func->owner)
@@ -583,6 +679,8 @@ Value CodeGen::emitCall(CallExpr* e)
             for (FuncDecl* d : lookupFunctions(fs->func->file, n->name))
                 cands.push_back(Candidate{d, nullptr, nullptr, d->file});
         }
+        if (cands.empty() && (n->name == "EmbedText" || n->name == "EmbedTexts" || n->name == "EmbedNames"))
+            return emitEmbed(e, n->name);
         if (cands.empty())
             err(e->loc, "undefined function '" + n->name + "'");
 
@@ -647,6 +745,19 @@ Value CodeGen::emitCall(CallExpr* e)
                     }
                     // Arrays and strings share the block layout, so the substring helper copies the bytes.
                     return Value::rvalue(types.stringTy, builder.CreateCall(substringFn(), {bytes.v, start, count}), true);
+                }
+                if (m->name == "FromCStr")
+                {
+                    // string.FromCStr(char* p): copies a NUL-terminated C string into a string (null -> null).
+                    if (args.size() != 1)
+                        err(e->loc, "string.FromCStr takes one argument (char*)");
+                    requireUnsafe(e->loc, "string.FromCStr");
+                    Value p = toRValue(args[0].v);
+                    if (!(p.type->isPointer() && (p.type->elem->isChar() || p.type->elem->isVoid() || p.type->elem == types.u8 ||
+                                                  p.type->elem == types.i8)) &&
+                        p.type->kind != TypeKind::Null)
+                        err(e->loc, "string.FromCStr needs a 'char*', not '" + p.type->name + "'");
+                    return Value::rvalue(types.stringTy, builder.CreateCall(fromCStrFn(), {p.v}), true);
                 }
                 bool found = false;
                 Value r = emitExtensionCall("String", nullptr, m->name, args, e->loc, found);
@@ -739,9 +850,10 @@ Value CodeGen::emitBuiltinStatic(const std::string& type, const std::string& met
 
     if (type == "Console")
     {
-        if (method != "Write" && method != "WriteLine")
+        bool toStderr = method == "WriteError" || method == "WriteErrorLine";
+        if (method != "Write" && method != "WriteLine" && !toStderr)
             err(loc, "Console has no function '" + method + "'");
-        bool newline = method == "WriteLine";
+        bool newline = method == "WriteLine" || method == "WriteErrorLine";
         if (args.size() > 1)
             err(loc, "Console." + method + " takes at most one argument");
         llvm::Value* s;
@@ -769,7 +881,7 @@ Value CodeGen::emitBuiltinStatic(const std::string& type, const std::string& met
                 holdTemp(Value::rvalue(types.stringTy, s, true)); // emitToString returns a +1 reference
             }
         }
-        builder.CreateCall(printFn(), {s, builder.getInt1(newline)});
+        builder.CreateCall(printFn(toStderr), {s, builder.getInt1(newline)});
         return voidValue;
     }
 

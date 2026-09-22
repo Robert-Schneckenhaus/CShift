@@ -74,6 +74,16 @@ struct FuncInfo
     bool queued = false;
 };
 
+// A global variable of the program; its type and LLVM variable are created when it is first needed.
+struct GlobalInfo
+{
+    GlobalDecl* decl = nullptr;
+    std::string name; // qualified
+    int order = 0;    // position in the order of the declarations (the order of the initializers)
+    Type* type = nullptr;
+    llvm::GlobalVariable* var = nullptr;
+};
+
 struct TypeDeclEntry
 {
     enum Kind { Struct, Interface, Enum } kind = Struct;
@@ -140,6 +150,30 @@ struct StaticTarget
     std::string name;
 };
 
+// The value of a constant expression, computed at compile time (ConstEval.cpp).
+struct ConstVal
+{
+    enum Kind { Int, Float, Bool, String } kind = Int;
+    Type* type = nullptr;
+    bool neg = false;      // Int (also char and enum): sign and magnitude
+    uint64_t mag = 0;
+    double f = 0;          // Float (a float32 holds a value that is exactly representable as float)
+    bool b = false;        // Bool
+    std::string s;         // String
+    bool hasLit = false;   // an unsuffixed literal: adapts to the type of the value it is combined with
+};
+
+// What a constant expression may refer to.
+struct ConstScope
+{
+    FileContext* file = nullptr;        // names are looked up from this file
+    bool locals = false;                // the local constants of the function that is being written are visible
+    EnumInfo* enumInfo = nullptr;       // the enum whose members are being declared (earlier members are visible)
+    std::string what;                   // for error messages: "constant 'X'" or "enum member 'X'"
+    SourceLoc declLoc;
+    const TypeEnv* env = nullptr;       // type parameters (for casts and sizeof in generic functions)
+};
+
 struct ScopeVar
 {
     std::string name;
@@ -150,6 +184,8 @@ struct ScopeVar
     bool ownsArc = false;   // release on scope exit
     bool disposable = false; // call Dispose() on scope exit
     bool resetOnCleanup = false; // zero the slot after releasing (pattern variables)
+    bool isConstant = false;    // a local constant: no variable, its value is constValue
+    ConstVal constValue;
 };
 
 struct Scope
@@ -225,7 +261,18 @@ private:
                           SourceLoc loc);
     bool satisfiesInterface(Type* t, Type* iface);
     bool structImplements(Type* structType, Type* iface);
-    int64_t constEvalInt(Expr* e, EnumInfo* current, SourceLoc loc);
+    // The compile-time evaluator (ConstEval.cpp)
+    ConstVal constEval(Expr* e, const ConstScope& sc);
+    ConstVal constEvalDecl(ConstDecl* c);
+    int64_t constEvalEnumMember(Expr* init, EnumInfo& ei, FileContext* file, const std::string& memberName, SourceLoc loc);
+    ConstVal constConvert(const ConstVal& v, Type* to, SourceLoc loc, bool allowEnumInt = false);
+    ConstVal constNumericConvert(const ConstVal& v, Type* to);
+    ConstVal constAdaptLiteral(const ConstVal& v, Type* to);
+    ConstVal constIntOp(BinOp op, const ConstVal& l, const ConstVal& r, Type* t, SourceLoc loc);
+    ConstVal constArith(BinOp op, ConstVal l, ConstVal r, SourceLoc loc);
+    ConstVal constCompare(BinOp op, ConstVal l, ConstVal r, SourceLoc loc);
+    std::string constToText(const ConstVal& v);
+    Value constToValue(const ConstVal& v);
 
     llvm::Type* llvmTypeOf(Type* t);
     bool needsArc(Type* t);
@@ -276,7 +323,7 @@ private:
     llvm::Function* concatFn();
     llvm::Function* streqFn();
     llvm::Function* substringFn();
-    llvm::Function* printFn();
+    llvm::Function* printFn(bool toStderr = false);
     llvm::Function* fmtFn(const std::string& key, const char* format, llvm::Type* argType);
     llvm::Function* retainFor(Type* t);
     llvm::Function* releaseFor(Type* t);
@@ -326,8 +373,19 @@ private:
     Value emitErrorLit(ErrorLitExpr* e);
     Value emitLiteral(Expr* e);
     ConstDecl* lookupConst(FileContext* f, const std::string& name) const;
+    GlobalInfo* lookupGlobal(FileContext* f, const std::string& name) const;
+    Value globalValue(GlobalInfo& g, bool note = true);
+    void noteGlobalUse(GlobalInfo& g);
+    void noteCall(FuncInfo& fi);
+    void checkGlobalInitOrder();
+    void checkConstants();
+    llvm::Function* beginSyntheticFunction(const std::string& name);
+    void endSyntheticFunction(llvm::Function* f, bool keep);
+    bool isConstantType(Type* t) const;
+    ScopeVar* findLocal(const std::string& name);
+    void emitGlobalsInit();
+    llvm::Function* emitGlobalsRelease();
     Value emitConst(ConstDecl* c, SourceLoc loc);
-    bool isConstExpr(Expr* e, FileContext* file) const;
 
     Value convertValue(const Value& v, Type* to, SourceLoc loc);
     int conversionCost(const Value& v, Type* to);
@@ -347,6 +405,7 @@ private:
 
     // ---- Calls (CodeGenCall.cpp) ----
     Value emitCall(CallExpr* e);
+    Value emitEmbed(CallExpr* e, const std::string& name);
     Value emitBuiltinStatic(const std::string& type, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitBuiltinMethod(Value obj, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitExtensionCall(const std::string& ns, const Value* self, const std::string& method,
@@ -357,7 +416,7 @@ private:
     bool inferTypeArgs(const Candidate& c, std::vector<Arg>& args, std::vector<Type*>& out);
     bool unify(const TypeRef& pattern, Type* actual, const std::vector<std::string>& params, FileContext* file,
                const TypeEnv* env, std::vector<Type*>& bound);
-    int argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable);
+    int argCost(const Arg& arg, Type* paramType, RefKind rk, bool nullable, bool cstring = false);
     Value emitDirectCall(FuncInfo& fi, llvm::Value* thisPtr, std::vector<Arg>& args, SourceLoc loc);
     std::vector<Arg> emitArgs(std::vector<ExprPtr>& args);
     std::vector<Type*> resolveTypeArgs(const std::vector<TypeRefPtr>& refs);
@@ -408,6 +467,21 @@ private:
     std::unordered_map<std::string, TypeDeclEntry> typeDecls;
     std::unordered_map<std::string, std::vector<FuncDecl*>> funcDecls;
     std::unordered_map<std::string, ConstDecl*> constDecls;
+    std::unordered_map<std::string, std::unique_ptr<GlobalInfo>> globalDecls;
+    // Which globals and functions the code of every function (and every global initializer) uses; checked after all bodies
+    // are written to see whether an initializer needs a global that is initialized later.
+    struct CodeUses
+    {
+        std::set<GlobalInfo*> globals;
+        std::set<FuncInfo*> calls;
+    };
+    std::unordered_map<const void*, CodeUses> codeUses; // key: FuncInfo* or the GlobalInfo* whose initializer it is
+    GlobalInfo* currentInit = nullptr;
+    int globalCounter = 0;
+    std::vector<GlobalInfo*> createdGlobals; // in the order in which the LLVM variables were created
+    llvm::Function* globalsInitFn = nullptr;
+    std::unique_ptr<FuncDecl> initDecl; // the function that initializes the globals looks like a function to the code generator
+    std::unique_ptr<FuncInfo> initInfo;
     std::unordered_set<std::string> namespaces;
 
     std::unordered_map<std::string, Type*> structTypes;
@@ -425,8 +499,14 @@ private:
     std::unordered_map<std::string, llvm::Constant*> stringLiterals;
     std::unordered_map<std::string, llvm::Constant*> cStrings;
     FuncInfo* mainFunc = nullptr;
+    FuncInfo* mainArgsHelper = nullptr; // System.Native.MakeArgs, when Main takes string[] args
     bool arcStats = false;
-    int constDepth = 0;
+    struct ConstState
+    {
+        int state = 0; // 0 = not evaluated, 1 = being evaluated, 2 = done
+        ConstVal value;
+    };
+    std::unordered_map<ConstDecl*, ConstState> constCache;
 
     std::unique_ptr<FnState> fs;
 };

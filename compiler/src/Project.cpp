@@ -208,7 +208,7 @@ bool loadProject(const std::string& location, Project& project, std::string& err
     {
         std::string key = llvm::StringRef(entry.first).str();
         static const char* known[] = {"$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                         "includePaths", "libraryPaths", "defines"};
+                                         "includePaths", "libraryPaths", "defines", "ffiApi"};
         if (std::find(std::begin(known), std::end(known), key) == std::end(known))
             std::cerr << file << ": warning: unknown key '" << key << "' is ignored\n";
     }
@@ -248,6 +248,7 @@ bool loadProject(const std::string& location, Project& project, std::string& err
     readStringList("includePaths", includeEntries, pathsPresent, ok);
     readStringList("libraryPaths", libraryEntries, pathsPresent, ok);
     readStringList("defines", project.defines, pathsPresent, ok);
+    readStringList("ffiApi", project.apiPaths, pathsPresent, ok);
     std::vector<std::string> sourceEntries;
     bool sourcesPresent = false;
     readStringList("sources", sourceEntries, sourcesPresent, ok);

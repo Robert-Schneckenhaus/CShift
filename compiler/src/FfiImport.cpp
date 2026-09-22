@@ -125,6 +125,8 @@ std::vector<std::string> ffiFlags(const FfiOptions& options)
         flags.push_back("-I" + p);
     for (const auto& d : options.defines)
         flags.push_back("-D" + d);
+    for (const auto& p : options.apiPaths)
+        flags.push_back("-cshift-api=" + p); // not a clang flag: recorded so that the cache notices changes
     return flags;
 }
 

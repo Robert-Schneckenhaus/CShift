@@ -18,6 +18,7 @@ struct FfiOptions
     std::string target;                     // target triple the header is parsed for
     std::vector<std::string> includePaths;  // -I
     std::vector<std::string> defines;       // -D
+    std::vector<std::string> apiPaths;      // headers whose path contains one of these texts belong to the API even if they are system headers
     std::string clang;                      // path of the clang executable (libclang is looked up next to it)
     bool verbose = false;
 };

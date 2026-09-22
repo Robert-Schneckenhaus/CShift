@@ -55,6 +55,11 @@
 			"items": { "type": "string" },
 			"description": "Macros defined while parsing C headers (like -D), e.g. \"NAME\" or \"NAME=value\"."
 		},
+		"ffiApi": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Headers whose path contains one of these texts belong to the API of an imported C header even if they are system headers (for umbrella headers, e.g. \"llvm-c/\")."
+		},
 		"libraryPaths": {
 			"type": "array",
 			"items": { "type": "string" },

@@ -191,6 +191,69 @@ else
     report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
 fi
 
+# --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
+#   The lexer and parser of selfhost/ are built with the compiler under test. Token and syntax tree dumps of all
+#   .csh files of the repository must be identical to those of the C++ front end (selfhost/compare.sh).
+#   CSHIFT_SKIP_SELFHOST=1 skips this section.
+echo "== selfhost/"
+if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
+    echo "skipped"
+else
+    work="$TMP/selfhost"
+    cp -r "$DIR/../selfhost" "$work"
+    cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by EmbedTexts (../../../stdlib from selfhost/src/Driver)
+    if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
+        report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
+    else
+        cshc="$work/bin/cshc"
+        [ -f "$cshc.exe" ] && cshc="$cshc.exe"
+        if bash "$DIR/../selfhost/compare.sh" "$COMPILER" "$cshc" > "$TMP/selfhost.cmp" 2>&1; then
+            report_ok "selfhost front end"
+        else
+            report_fail "selfhost front end" "different output from the C++ front end:"
+            head -n 20 "$TMP/selfhost.cmp"
+        fi
+        # The code generator written in CShift: the cases that passed once (selfhost/passing.txt) must keep passing.
+        if bash "$DIR/../selfhost/status.sh" "$cshc" --check > "$TMP/selfhost.status" 2>&1; then
+            report_ok "selfhost code generator"
+            echo "ok    selfhost code generator ($(head -n 1 "$TMP/selfhost.status" | sed 's/^tests.cases with cshc: //'))"
+        else
+            report_fail "selfhost code generator" "a case that passed with cshc does not pass any more:"
+            head -n 10 "$TMP/selfhost.status"
+        fi
+        # The main test program built by cshc must behave exactly like the one built by the C++ compiler.
+        if "$cshc" "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
+            "$TMP/test.cshc.exe" > "$TMP/test.cshc.out" 2> "$TMP/test.cshc.err2"
+            tr -d '\r' < "$TMP/test.cshc.out" > "$TMP/test.cshc.out.n"
+            if [ "$(cat "$TMP/test.expected.n")" != "$(cat "$TMP/test.cshc.out.n")" ]; then
+                report_fail "selfhost test.csh" "output differs from test.expected"
+            elif ! grep -q "live=0" "$TMP/test.cshc.err2"; then
+                report_fail "selfhost test.csh" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.cshc.err2")"
+            else
+                report_ok "selfhost test.csh"
+            fi
+        else
+            report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
+        fi
+        # Projects (cshift.json, build/run/new) built by cshc. C headers are imported through the C++ compiler (libclang).
+        if CSHIFT_FFI_TOOL="$COMPILER" bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+            report_ok "selfhost projects"
+            head -n 1 "$TMP/selfhost.proj"
+        else
+            report_fail "selfhost projects" "a project does not build with cshc:"
+            head -n 10 "$TMP/selfhost.proj"
+        fi
+        # cshc compiles itself; the result must generate the same IR as the original (selfhost/bootstrap.sh).
+        if bash "$DIR/../selfhost/bootstrap.sh" "$cshc" > "$TMP/selfhost.boot" 2>&1; then
+            report_ok "selfhost bootstrap"
+            cat "$TMP/selfhost.boot"
+        else
+            report_fail "selfhost bootstrap" "cshc cannot rebuild itself:"
+            head -n 10 "$TMP/selfhost.boot"
+        fi
+    fi
+fi
+
 echo
 echo "$PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]

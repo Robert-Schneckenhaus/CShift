@@ -1,12 +1,12 @@
 # CShift
 
-CShift ist eine native, C#-artige Systemsprache (siehe [Sprachkonzept.md](Sprachkonzept.md)):
-Structs statt Klassen, kein GC (ARC), keine Header, Generics per Monomorphisierung, direkte C-FFI.
+CShift is a native, C#-like systems language (see [LanguageDesign.md](LanguageDesign.md)):
+structs instead of classes, no GC (ARC), no headers, generics via monomorphization, direct C FFI.
 
-Dieses Verzeichnis enthält den ersten Compiler `cshiftc`, geschrieben in C++17 mit LLVM als Backend.
+This repository contains the first compiler, `cshiftc`, written in C++17 with LLVM as its back end.
 
 ```
-Quelltext (.csh) ─▶ Lexer ─▶ Parser ─▶ AST ─▶ Typprüfung + Codegen ─▶ LLVM IR ─▶ Optimierung ─▶ .obj ─▶ clang (Linker) ─▶ .exe
+source (.csh) ─▶ lexer ─▶ parser ─▶ AST ─▶ type checking + codegen ─▶ LLVM IR ─▶ optimization ─▶ .obj ─▶ clang (linker) ─▶ .exe
 ```
 
 ```csharp
@@ -30,15 +30,18 @@ int Main()
 }
 ```
 
-## Fertige Releases
+For a guided tour of the language with more examples, see **[docs/language/README.md](docs/language/README.md)**.
 
-Zu jedem Release gibt es ein Archiv für **Windows (x64)** und **Linux (Ubuntu, x64)** auf der
-[Releases-Seite](https://github.com/Robert-Schneckenhaus/CShift/releases). Es enthält alles, was man braucht: den Compiler und eine
-passende Toolchain (clang, libclang, unter Windows zusätzlich lld sowie die MinGW-w64-Header und -Bibliotheken).
+## Ready-made releases
+
+Every release has an archive for **Windows (x64)** and **Linux (Ubuntu, x64)** on the
+[releases page](https://github.com/Robert-Schneckenhaus/CShift/releases). It contains everything you need: the
+compiler and a matching toolchain (clang, libclang, and on Windows also lld plus the MinGW-w64 headers and
+libraries).
 
 ```
-Windows:  cshift-1.05-windows-x64.zip       entpacken, Ordner zum PATH hinzufügen
-Linux:    cshift-1.05-linux-x64.tar.xz      tar -xf ... -C ~ ; PATH ergänzen; sudo apt install build-essential
+Windows:  cshift-1.05-windows-x64.zip       unpack it, add the folder to PATH
+Linux:    cshift-1.05-linux-x64.tar.xz      tar -xf ... -C ~ ; add to PATH; sudo apt install build-essential
 ```
 
 ```
@@ -47,92 +50,93 @@ cshiftc new hello
 cshiftc run hello
 ```
 
-`cshiftc` sucht clang zuerst im Ordner `toolchain` neben sich; eine vorhandene LLVM-/MSYS2-Installation wird dann nicht gebraucht.
-Unter Linux kommen C-Bibliothek und Linker vom System (`build-essential`).
+`cshiftc` first looks for clang in a `toolchain` folder next to itself; an existing LLVM/MSYS2 installation is then
+not needed. On Linux, the C library and linker come from the system (`build-essential`).
 
-**Release veröffentlichen:** einen Branch `release/vX.XX` pushen (z. B. `release/v1.05` → Version `1.05`, Tag `v1.05`). Der Workflow
-[.github/workflows/release.yml](.github/workflows/release.yml) baut den Compiler für beide Plattformen, führt die Tests aus (auch
-noch einmal gegen das fertig zusammengestellte Archiv), und veröffentlicht das Release. Ein weiterer Push auf denselben Branch
-ersetzt das Release. Der Branch muss die Workflow-Datei enthalten, also von einem Stand ab diesem Commit abzweigen.
-Das Bauen der Archive selbst: [packaging/](packaging/).
+**Publishing a release:** push a `release/vX.XX` branch (e.g. `release/v1.05` → version `1.05`, tag `v1.05`). The
+workflow [.github/workflows/release.yml](.github/workflows/release.yml) builds the compiler for both platforms, runs
+the tests (including once more against the fully assembled archive), and publishes the release. Pushing to the same
+branch again replaces the release. The branch has to contain the workflow file, so branch off from a commit at or
+after this one. The archives themselves are built by [packaging/](packaging/).
 
-## Bauen
+## Building it
 
-Voraussetzung: C++17-Compiler, CMake ≥ 3.20, **LLVM-Entwicklungspakete** (Header + Bibliotheken; getestet mit
-LLVM 22.1.8) und `clang` zum Linken der erzeugten Programme.
+Requirements: a C++17 compiler, CMake ≥ 3.20, the **LLVM development packages** (headers + libraries; tested with
+LLVM 22.1.8), and `clang` to link the generated programs.
 
-### Windows (empfohlen: MSYS2)
+### Windows (recommended: MSYS2)
 
-Visual Studio bringt keine LLVM-Bibliotheken zum Programmieren gegen die LLVM-API mit, MSYS2 schon:
+Visual Studio doesn't come with the LLVM libraries needed to program against the LLVM API; MSYS2 does:
 
 ```powershell
 winget install MSYS2.MSYS2
-# In der "MSYS2 CLANG64"-Shell einmalig:
+# Once, in the "MSYS2 CLANG64" shell:
 pacman -S --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm `
                    mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-ninja
 
-.\build.ps1          # baut nach .\build\cshiftc.exe
-.\build.ps1 -Test    # baut und führt die Tests aus
+.\build.ps1          # builds into .\build\cshiftc.exe
+.\build.ps1 -Test    # builds and runs the tests
 ```
 
-`build.ps1` baut `cshiftc.exe` standardmäßig **statisch** (`-DCSHIFT_STATIC=ON`, ca. 120 MB): Die Exe startet aus jeder Shell,
-ohne MSYS2-DLLs im `PATH`. Zum Übersetzen von Programmen braucht sie `clang` als Linker; liegt es nicht im `PATH`, wird
-`C:\msys64\clang64\bin` (oder `%MSYS2_ROOT%\clang64\bin`) automatisch probiert, sonst hilft `--cc <pfad>`.
-Mit `.\build.ps1 -Dynamic` entsteht die kleinere DLL-Variante, die nur mit `C:\msys64\clang64\bin` im `PATH` startet
-(startet sie nicht, bricht Windows lautlos ab).
+By default, `build.ps1` builds `cshiftc.exe` **statically** (`-DCSHIFT_STATIC=ON`, about 120 MB): the exe starts from
+any shell, without needing the MSYS2 DLLs on `PATH`. To compile programs it needs `clang` as the linker; if it's not
+on `PATH`, `C:\msys64\clang64\bin` (or `%MSYS2_ROOT%\clang64\bin`) is tried automatically, otherwise `--cc <path>`
+helps. `.\build.ps1 -Dynamic` produces the smaller DLL-based build, which only starts with `C:\msys64\clang64\bin` on
+`PATH` (if it doesn't find it, Windows aborts silently).
 
 ### Linux / macOS
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # ggf. -DLLVM_DIR=<llvm>/lib/cmake/llvm
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # add -DLLVM_DIR=<llvm>/lib/cmake/llvm if needed
 cmake --build build
 tests/run_tests.sh
 ```
 
 ## VS Code
 
-Im Ordner `vscode-extension/` liegt eine Extension für `.csh`-Dateien (Syntax-Highlighting, Snippets, Klammern/Kommentare) – Installation siehe
-[vscode-extension/README.md](vscode-extension/README.md).
+The `vscode-extension/` folder has an extension for `.csh` files (syntax highlighting, snippets,
+brackets/comments) — see [vscode-extension/README.md](vscode-extension/README.md) for installation.
 
-## Benutzung
+## Usage
 
 ```
-cshiftc [Optionen] datei.csh [weitere.csh ...]
+cshiftc [options] file.csh [more.csh ...]
 
-  -o <datei>         Ausgabedatei
-  -c                 nur Objektdatei erzeugen (kein Linken)
-  --emit-llvm        LLVM IR (.ll) statt Programm ausgeben
-  -O0 .. -O3         Optimierungsstufe (Standard -O2)
-  --target <triple>  Zielplattform (Standard: Host)
-  --cc <programm>    Linker-Treiber (Standard: clang)
-  -l<name>           zusätzliche Bibliothek linken
-  -L<dir>            Suchpfad des Linkers
-  -I<dir>            Suchpfad für C-Header (using X from "header.h")
-  -D<name>[=wert]    Makro beim Parsen von C-Headern
-  datei.a, datei.o   Bibliotheken/Objektdateien werden mitgelinkt
-  --run              Programm nach dem Bauen ausführen
-  --arc-stats        Debug: Anzahl Heap-Allokationen/-Freigaben beim Programmende ausgeben
-  --version          Version ausgeben
+  -o <file>          output file
+  -c                 generate an object file only (no linking)
+  --emit-llvm        output LLVM IR (.ll) instead of a program
+  -O0 .. -O3         optimization level (default -O2)
+  --target <triple>  target platform (default: host)
+  --cc <program>     linker driver (default: clang)
+  -l<name>           link an additional library
+  -L<dir>            linker search path
+  -I<dir>            search path for C headers (using X from "header.h")
+  -D<name>[=value]   macro used when parsing C headers
+  --ffi-api=<text>   headers with this path fragment belong to the imported API (umbrella headers)
+  file.a, file.o     libraries/object files are linked in
+  --run              run the program after building it
+  --arc-stats        debug: print the number of heap allocations/frees when the program ends
+  --version          print the version
 ```
 
-Alle übergebenen Dateien (oder die Quellen eines Projekts) bilden ein Programm; Typen und Funktionen können in beliebiger Reihenfolge und
-Datei definiert werden (keine Forward Declarations nötig).
+All the files passed to it (or the sources of a project) form one program; types and functions can be defined in any
+order and in any file (no forward declarations needed).
 
 ```
 cshiftc tests/test.csh tests/mathlib.csh -o test.exe --run
 ```
 
-Fehler werden im Format `datei:zeile:spalte: error: text` ausgegeben.
+Errors are printed in the form `file:line:column: error: text`.
 
-## Projekte
+## Projects
 
-Größere Programme beschreibt man mit einer `cshift.json` (Name, Quellen, Ausgabe, Optimierung, Bibliotheken); Konzept und Ausblick
-(ein Zig-artiges `build.csh`) stehen in [Buildkonzept.md](Buildkonzept.md).
+Larger programs are described with a `cshift.json` (name, sources, output, optimization, libraries); the design and
+a look ahead (a Zig-like `build.csh`) are in [BuildDesign.md](BuildDesign.md).
 
 ```
-cshiftc new hello       # neues Projekt: hello/cshift.json, hello/src/main.csh
-cshiftc run hello       # bauen und starten (ohne Argument: cshift.json im aktuellen Ordner oder darüber)
-cshiftc build           # nur bauen  ->  bin/<name>[.exe]
+cshiftc new hello       # a new project: hello/cshift.json, hello/src/main.csh
+cshiftc run hello       # build and run (without an argument: cshift.json in the current folder or a parent)
+cshiftc build           # build only  ->  bin/<name>[.exe]
 ```
 
 ```json
@@ -145,109 +149,159 @@ cshiftc build           # nur bauen  ->  bin/<name>[.exe]
 }
 ```
 
-Ein fertiges Beispiel liegt in [demo/](demo/): ein MiniFB-Fenster mit animiertem Plasma (C-Header-Import und Callbacks, mit VS-Code-Tasks).
+A finished example is in [demo/](demo/): a MiniFB window with animated plasma (C header import and callbacks, with
+VS Code tasks).
 
-C-Bibliotheken bindet man ohne handgeschriebene Deklarationen ein: `using Zlib from "zlib.h";` importiert den Header als Namensraum (siehe [FFI.md](FFI.md)); `includePaths`, `defines`, `libraryPaths` und `links` (auch Dateien wie `libminifb.a`) stehen in der `cshift.json`.
+C libraries are imported without hand-written declarations: `using Zlib from "zlib.h";` imports the header as a
+namespace (see [FFI.md](FFI.md)); `includePaths`, `defines`, `libraryPaths` and `links` (files like `libminifb.a`
+too) go in `cshift.json`.
 
-## Sprachstand
+## Language status
 
-Umgesetzt aus dem Konzept:
+Implemented from the design:
 
-| Bereich | Stand |
+| Area | Status |
 |---|---|
-| Namespaces (`namespace A.B;`), `using`, mehrere Dateien, globale Symbolauflösung | ✔ |
-| Structs (Wertsemantik), Initializer, `new T()`, Methoden, `static`-Methoden, verschachtelte Structs | ✔ |
-| Sichtbarkeit über `_`-Präfix (privat) für Felder und Methoden | ✔ |
-| Struct-Vererbung (eine Basis, Basis liegt im Layout zuerst), Upcast, Methoden verdecken | ✔ |
-| Interfaces (Methoden), mehrere pro Struct, Prüfung der Implementierung | ✔ (nur statisch, s. u.) |
-| Generics: Structs und Funktionen, Monomorphisierung, Typinferenz, explizite Typargumente | ✔ |
-| Constraints (`where T : IComparable<T>`), zur Compile-Zeit geprüft | ✔ |
-| Enums mit Pflicht-Basistyp und expliziten Werten | ✔ |
-| ARC für Strings und Arrays (Referenzsemantik, `Clone()`), auch in Structs/`Error`/`Optional` | ✔ |
-| Strings: UTF-8, unveränderlich, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
-| `Error<T>` / `Optional<T>`, Bool-Semantik, `is T x`, `switch`-Pattern, `try`, Verschachtelungsverbot | ✔ |
-| `IDisposable` + `using` (Deklaration und Block; auch bei `return`/`break`/`continue`/`try`) | ✔ |
-| `ref` / `const ref` (Wert, schreibgeschützter Alias, Alias) | ✔ |
-| Primitive Typen mit Aliasen (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (Zeigergröße) | ✔ |
-| Geprüfte Integer-Arithmetik (Überlauf, Division durch 0, Array-/String-Grenzen → Panic), `unchecked` | ✔ |
-| Operatoren und Rangfolge wie C# (ohne `++`/`--`), `?:`, Casts, `sizeof` | ✔ |
-| `if`/`while`/`do`/`for`/`foreach` (Arrays, Strings)/`switch`/`break`/`continue`/`return` | ✔ |
-| Funktionsüberladung | ✔ |
-| C-FFI: `extern "C"`, variadische Funktionen (`printf`), `link "lib"`, Pointer | ✔ |
-| Funktionszeiger `Action<…>`/`Func<…,R>` (Funktionsnamen, ohne Closures), C-kompatibel | ✔ (Erweiterung) |
-| C-Header importieren: `using Name from "header.h";` (libclang, `.ffi`-Cache), `nint`/`nuint`, Structs by value | ✔ (siehe [FFI.md](FFI.md)) |
-| `unsafe`: Pointer, `&`, `*`, Pointer-Arithmetik, `Memory.Allocate/Free` | ✔ |
-| Einstiegspunkt: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
-| `Error<void>` (Ergebnis ohne Wert; `return;` oder Funktionsende = Erfolg) | ✔ (Erweiterung) |
-| Top-Level-`const`, `default(T)`, `foreach` über Structs mit `Count()`/`Get(int)` | ✔ (Erweiterung) |
-| Standardbibliothek: `List<T>`, `Dictionary<K,V>`, `File`, `Encoding`, `Math`, String-Helfer | ✔ (siehe unten) |
+| Namespaces (`namespace A.B;`), `using`, multiple files, global symbol resolution | ✔ |
+| Global variables (zero value or an initializer, running before `Main`) | ✔ |
+| Structs (value semantics), initializers, `new T()`, methods, `static` methods, nested structs | ✔ |
+| Visibility via a `_` prefix (private) for fields and methods | ✔ |
+| Struct inheritance (one base, the base comes first in the layout), upcasting, hiding methods | ✔ |
+| Interfaces (methods), several per struct, checking the implementation | ✔ (static only, see below) |
+| Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
+| Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
+| Enums with a mandatory base type and explicit values | ✔ |
+| ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
+| Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
+| `Error<T>` / `Optional<T>`, bool semantics, `is T x`, `switch` patterns, `try`, no nesting allowed | ✔ |
+| `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
+| `ref` / `const ref` (value, read-only alias, alias) | ✔ |
+| Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |
+| Checked integer arithmetic (overflow, division by zero, array/string bounds → panic), `unchecked` | ✔ |
+| Operators and precedence like C# (without `++`/`--`), `?:`, casts, `sizeof` | ✔ |
+| `if`/`while`/`do`/`for`/`foreach` (arrays, strings)/`switch`/`break`/`continue`/`return` | ✔ |
+| Function overloading | ✔ |
+| C FFI: `extern "C"`, variadic functions (`printf`), `link "lib"`, pointers | ✔ |
+| Function pointers `Action<…>`/`Func<…,R>` (function names, no closures), C-compatible | ✔ (extension) |
+| Importing C headers: `using Name from "header.h";` (libclang, a `.ffi` cache), `nint`/`nuint`, structs by value | ✔ (see [FFI.md](FFI.md)) |
+| `unsafe`: pointers, `&`, `*`, pointer arithmetic, `Memory.Allocate/Free` | ✔ |
+| Entry point: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
+| `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
+| Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
+| Standard library: `List<T>`, `Dictionary<K,V>`, `File`, `Directory`, `Encoding`, `Math`, string helpers | ✔ (see below) |
 
-### Auslegung und Erweiterungen gegenüber dem Konzept
+### Interpretation and extensions beyond the design
 
-Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
+The design document leaves a number of things open; these are the decisions that were made:
 
-* **Fehler erzeugen:** `return error("Text");` oder `error("Text", code)`; `Error<T>` hat `.Message` und `.Code`.
-* **Implizite Konvertierung** `T → Error<T>` / `T → Optional<T>`; `null` steht für "kein Wert" (`Optional`).
-* **Bool-Semantik** von `Error`/`Optional` gilt in Bedingungen sowie bei `!`, `&&`, `||`; nicht als Argument für einen `bool`-Parameter (`x is T` verwenden).
-* **`is`/`case`-Pattern:** `x is int v` bindet den Wert; `x is Error<int> r` bindet das ganze Ergebnis. Pattern-Variablen gelten für das `if`/`while` bzw. den `case`.
-* **`try` in `int Main()`:** Im Zielbild des Konzepts wird `try` in einer `int`-Funktion benutzt. Dort gibt ein Fehler
-  `error: <Text>` auf stderr aus und beendet das Programm mit Code 1.
-* **Ganzzahl-Arithmetik** wie in C#: Typen unter 32 Bit werden zu `int` erweitert; ein Literal passt sich dem anderen Operanden an
-  (`uint8 x = 200; int y = x * 3;` ergibt 600). Explizite Casts brechen nicht ab (wrap/sättigend), nur `+ - * / %` sind geprüft.
-* **Interfaces** sind vorerst nur als Constraint und in Basislisten nutzbar, nicht als Variablen-/Parametertyp
-  (das bräuchte Fat-Pointer für dynamischen Aufruf ohne Boxing).
-* **Methoden auf `const ref`-Objekten** arbeiten auf einer Kopie (wie C# `in`), damit der Schreibschutz gilt.
-* **Eingebaut** (direkt vom Compiler als IR erzeugt, keine Runtime-Bibliothek): `Console.Write/WriteLine`, `Memory.Allocate/Free`,
-  `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` auf Zahlen,
-  `int.MaxValue/MinValue`. Alles Weitere steht in der Standardbibliothek (nächster Abschnitt) oder kommt über `extern "C"`.
-* **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` prüft nur auf Fehler; `Optional<void>` gibt es nicht.
-* **Konstanten:** `const double PI = 3.14;` auf oberster Ebene (Zahl, `bool`, `char`, `string`; Initialisierer aus Literalen,
-  Operatoren und anderen Konstanten). Zugriff auch qualifiziert (`Math.PI`).
-* **`foreach` über Structs:** funktioniert für jeden Struct mit `int Count()` und `T Get(int index)` (z. B. `List<T>`).
-* **Namensauflösung** wie in C#: Namespaces der eigenen Datei und der globale Namespace gehen `using`-Namespaces vor.
-* **Funktionszeiger:** `Action`, `Action<T1, …>` (ohne Ergebnis) und `Func<R>`, `Func<T1, …, R>` (der letzte Typ ist das Ergebnis) sind
-  eingebaute Typen wie in C#, bis zu 8 Parameter. Es sind reine Zeiger auf Funktionen, **ohne Closures/Lambdas**: zuweisen kann man
-  den Namen einer freien Funktion oder einer `static`-Methode (`Func<int, int> f = Square;`, `var g = Add;`, `Handlers.Triple`). Die
-  Signatur muss exakt passen; bei Überladungen und generischen Funktionen (`Identity<int>` oder aus dem Zieltyp abgeleitet) wählt der
-  Zieltyp aus. Aufruf mit `f(x)`, `obj.Callback(x)` (Feld), `table[i](x)` oder `f.Invoke(x)`. `null` ist erlaubt; ein Aufruf von `null`
-  ist ein Panic. Vergleich mit `==`/`!=`. Funktionszeiger sind normale Werte (Felder, Arrays, Parameter, Rückgabewerte, Typargumente).
-  `ref`-Parameter gibt es nicht; Instanzmethoden können nicht zugewiesen werden. Sie sind C-kompatibel: an C übergeben (siehe
-  [FFI.md](FFI.md)) ruft C die CShift-Funktion direkt auf; ein von C gelieferter Funktionszeiger lässt sich direkt aufrufen.
-  `(void*)`-Casts gehen in `unsafe`.
-* Erlaubte Zusatzsyntax: `cond ? a : b`, `new int[3][]` (Jagged Arrays), `new T[] { ... }`, `sizeof(T)`.
+* **Creating errors:** `return error("text");` or `error("text", code)`; `Error<T>` has `.Message` and `.Code`.
+* **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
+* **Bool semantics** of `Error`/`Optional` apply in conditions and with `!`, `&&`, `||`, but not as an argument for a
+  `bool` parameter (use `x is T` instead).
+* **`is`/`case` patterns:** `x is int v` binds the value; `x is Error<int> r` binds the whole result. Pattern
+  variables are scoped to the `if`/`while`, or to the `case`.
+* **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
+  prints `error: <text>` to stderr and ends the program with exit code 1.
+* **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int`; a literal adapts to the
+  other operand (`uint8 x = 200; int y = x * 3;` gives 600). Explicit casts never abort (they wrap/saturate); only
+  `+ - * / %` are checked.
+* **Interfaces** are, for now, only usable as a constraint and in base lists, not as a variable/parameter type (that
+  would need fat pointers for dynamic dispatch without boxing).
+* **Methods on `const ref` objects** operate on a copy (like C#'s `in`), so the read-only guarantee holds.
+* **Built in** (generated directly by the compiler as IR, no runtime library): `Console.Write/WriteLine`,
+  `Memory.Allocate/Free`, `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`,
+  `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue`,
+  `EmbedText("file")`/`EmbedNames("folder", ".ext")`/`EmbedTexts("folder", ".ext")` (files are embedded into the
+  program at compile time; paths are relative to the source file, and only string literals are accepted as
+  arguments). Everything else is in the standard library (next section) or comes via `extern "C"`.
+* **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
+  `Optional<void>`.
+* **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums and
+  `string` are allowed; a constant must always be initialized, and the initializer consists only of literals,
+  operators, casts, enum values and other constants (`const Color Fav = Color.Green;`,
+  `const Flags Rw = Flags.Read | Flags.Write;`, `const int Sum = A * 2 + 1;`). Top-level constants may be used before
+  their declaration and are always checked, even if nothing uses them; they can also be accessed qualified
+  (`Math.PI`). Local constants have no storage (assigning to one is an error) and may shadow a name from an
+  enclosing block. **The compiler computes constants at compile time**
+  (`compiler/src/ConstEval.cpp`, in `cshc`: `ConstEval.csh`), following the same rules as the code that would be
+  generated for the expression at run time (the type of literals, promotion of small integers, shifts, comparisons,
+  casts that saturate floating-point values, string concatenation with numbers, `sizeof(T)`), but it reports
+  overflow (`2147483647 + 1`), division by zero, and `MIN / -1` as compile errors. The same expressions are allowed
+  for the values of enum members (`B = A * 2`, `C = sizeof(int64)`); `&&`/`||` only evaluate the right side when it
+  can change the result.
+* **Global variables:** `int Counter;`, `string Name = "x";`, `List<string> Names = List<string>.Create();` at the
+  top level, of any type. Without an initializer, the variable starts at its zero value. Initializers are arbitrary
+  expressions; they run before `Main`, in the order of the declarations (files in the order they're given to the
+  compiler). **The order is checked:** an initializer must not use a global that's initialized later (or itself) —
+  not even through functions it calls (function pointers it creates count too). A global with no initializer (zero
+  value) can be read at any time. Name resolution works like for constants (the file's namespace, `using`,
+  qualified as `Ns.Counter`). Globals are ordinary lvalues (assign to them, `ref`, `&` in `unsafe`, modify
+  fields/elements, call methods; a function-pointer global calls like a function). Values that own heap blocks
+  (strings, arrays, lists, …) are released once `Main` returns. No `var` (the type must be written out), no
+  multithreading.
+* **`foreach` over structs:** works for any struct with `int Count()` and `T Get(int index)` (e.g. `List<T>`).
+* **Name resolution** works like in C#: the current file's namespaces and the global namespace win over `using`
+  namespaces.
+* **Function pointers:** `Action`, `Action<T1, …>` (no result) and `Func<R>`, `Func<T1, …, R>` (the last type is the
+  result) are built-in types like in C#, with up to 8 parameters. They are plain pointers to functions,
+  **with no closures/lambdas**: you can assign the name of a free function or a `static` method
+  (`Func<int, int> f = Square;`, `var g = Add;`, `Handlers.Triple`). The signature must match exactly; for overloads
+  and generic functions (`Identity<int>`, or inferred from the target type), the target type picks the match. Call
+  with `f(x)`, `obj.Callback(x)` (a field), `table[i](x)`, or `f.Invoke(x)`. `null` is allowed; calling `null` is a
+  panic. Compare with `==`/`!=`. Function pointers are ordinary values (fields, arrays, parameters, return values,
+  type arguments). There are no `ref` parameters, and instance methods can't be assigned. They're C-compatible:
+  passed to C (see [FFI.md](FFI.md)), C calls the CShift function directly; a function pointer returned from C can be
+  called directly. `(void*)` casts need `unsafe`.
+* Extra syntax allowed: `cond ? a : b`, `new int[3][]` (jagged arrays), `new T[] { ... }`, `sizeof(T)`.
 
-## Standardbibliothek
+## Standard library
 
-Die Standardbibliothek ist in CShift selbst geschrieben (`stdlib/*.csh`) und im Compiler eingebettet. Nur was ein Programm
-tatsächlich benutzt, wird übersetzt (Generics werden pro Typ instanziiert). Beispiele stehen in `tests/cases/stdlib_*.csh`.
+The standard library is written in CShift itself (`stdlib/*.csh`) and embedded in the compiler. Only what a program
+actually uses gets compiled (generics are instantiated per type). Examples are in `tests/cases/stdlib_*.csh`.
 
-| Namespace | Datei | Inhalt |
+| Namespace | File | Contents |
 |---|---|---|
 | global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
-| `System` | `list.csh`, `dictionary.csh`, `file.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `KeyValuePair<K,V>`, `File`, `Encoding` (`using System;`) |
-| `Math` | `math.csh` | mathematische Funktionen und Konstanten (ohne `using`: `Math.Sqrt(2)`) |
-| `String` | `string.csh` | String-Helfer, werden als Methoden auf `string` sichtbar |
-| `System.Native` | `native.csh` | C-Importe (`fopen`, `sin`, …), auch für eigene Programme (`using System.Native;`) |
+| `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
+| `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
+| `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
+| `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
+| `String` | `string.csh` | string helpers, visible as methods on `string` |
+| `System.Native` | `native.csh` | C imports (`fopen`, `sin`, …), also usable by your own programs (`using System.Native;`) |
 
-**`List<T>`** – wachsendes Array. Erzeugen mit `List<int>.Create()` (oder `new List<int>()`).
-`Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)`, `Set(i, v)`, `Count()`, `Capacity()`,
-`IndexOf(v)`, `Contains(v)` (T: `IEquatable<T>`), `Sort()` (T: `IComparable<T>`, stabil), `Reverse()`, `ToArray()`;
-`foreach (var x in list)` funktioniert. Ein ungültiger Index beendet das Programm mit einem Panic.
+**`List<T>`** — a growable array. Create it with `List<int>.Create()` (or `new List<int>()`).
+`Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)`, `Set(i, v)`, `Count()`,
+`Capacity()`, `IndexOf(v)`, `Contains(v)` (T: `IEquatable<T>`), `Sort()` (T: `IComparable<T>`, stable), `Reverse()`,
+`ToArray()`; `foreach (var x in list)` works. An invalid index ends the program with a panic.
 
-**`Dictionary<TKey, TValue>`** – Hashtabelle. `Create()`, `Set(k, v)`, `Add(k, v)` (`Error<void>`, Fehler bei doppeltem Schlüssel),
-`TryGet(k)` (`Optional<TValue>`), `GetOrDefault(k, fallback)`, `ContainsKey(k)`, `Remove(k)`, `Clear()`, `Count()`,
-`Keys()`, `Values()`, `Entries()` (`KeyValuePair<K,V>[]`). Schlüssel müssen `IEquatable` und `IHashable` erfüllen: Zahlen, `bool`,
-`char`, Enums und `string` tun das eingebaut, eigene Structs definieren `bool Equals(T other)` und `int GetHashCode()`.
+**`Dictionary<TKey, TValue>`** — a hash table. `Create()`, `Set(k, v)`, `Add(k, v)` (`Error<void>`, fails on a
+duplicate key), `TryGet(k)` (`Optional<TValue>`), `GetOrDefault(k, fallback)`, `ContainsKey(k)`, `Remove(k)`,
+`Clear()`, `Count()`, `Keys()`, `Values()`, `Entries()` (`KeyValuePair<K,V>[]`). Keys must satisfy `IEquatable` and
+`IHashable`: numbers, `bool`, `char`, enums and `string` do so out of the box; your own structs define
+`bool Equals(T other)` and `int GetHashCode()`.
 
-> Da es keine Klassen gibt, sind `List` und `Dictionary` kleine Structs, die auf gemeinsamen Speicher zeigen: Kopien
-> (Zuweisung, Argumente) sehen dieselben Elemente. Der Speicher entsteht in `Create()` bzw. beim ersten `Add`/`Set`; eine leere
-> Liste aus `new List<T>()` ist vor dem ersten Einfügen noch nicht mit ihren Kopien verbunden – mit `Create()` starten, wenn man sie
-> vor dem ersten Element weitergibt.
+> Since there are no classes, `List` and `Dictionary` are small structs that point at shared storage: copies
+> (assignment, arguments) see the same elements. The storage is created by `Create()`, or by the first `Add`/`Set`; an
+> empty list from `new List<T>()` isn't yet connected to its copies before the first element is added — start with
+> `Create()` if you hand it out before adding to it.
 
-**`File`** (statisch, Text standardmäßig UTF-8): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`, `WriteAllText(path, text [, encoding])`,
-`WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`. Lesen liefert `Error<string>` bzw. `Error<uint8[]>`, Schreiben und Löschen
-`Error<void>`; ein UTF-8-BOM wird beim Textlesen übersprungen. Pfade gehen unverändert an die C-Bibliothek (unter Windows also
-keine Nicht-ASCII-Zeichen im Pfad).
+**`StringBuilder`** — builds text without copying on every `+`: `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
+sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (a handle to shared storage, like `List`).
+**`HashSet<T>`** — `Create()`, `Add(v)` (`true` if it was new), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`,
+`ToArray()`.
+**`Process.Run("command")`** runs a command line through the shell and returns its exit code; `RunCapture("command")`
+also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
+(`Optional<string>`); `IsWindows()` reports the platform.
+**`Directory`** — `Exists(path)`, `Create(path)` (including parent directories), `GetEntries(path)` (names, sorted),
+`FindFiles(path, extension)` (recursive, sorted). **`Path`** — `Combine`, `Normalize`, `GetDirectory`, `GetFileName`,
+`GetExtension`, `GetStem`, `ChangeExtension`.
+**Command line:** `int Main(string[] args)` receives the arguments without the program name. `Console.WriteError(Line)`
+writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`.
+
+**`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
+`WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`. Reading returns
+`Error<string>` or `Error<uint8[]>`, writing and deleting return `Error<void>`; a UTF-8 BOM is skipped when reading
+text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
 
 ```csharp
 using System;
@@ -260,68 +314,76 @@ Error<string> Load(string path)
 }
 ```
 
-**`Encoding`** – `Encoding.UTF8()` und `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])` (`Error<string>`:
-ungültiges UTF-8 bzw. Bytes über 127 bei ASCII sind Fehler), `GetByteCount`, `Name()`. Strings sind im Speicher immer UTF-8;
-`GetBytes` mit ASCII ersetzt andere Zeichen durch `?`. Weitere Kodierungen lassen sich als neue `EncodingKind` ergänzen.
+**`Encoding`** — `Encoding.UTF8()` and `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])`
+(`Error<string>`: invalid UTF-8, or bytes above 127 for ASCII, are errors), `GetByteCount`, `Name()`. Strings are
+always UTF-8 in memory; `GetBytes` with ASCII replaces other characters with `?`. More encodings can be added as a
+new `EncodingKind`.
 
-**`Math`** – Konstanten `PI`, `E`, `Tau`; `Abs`/`Min`/`Max`/`Clamp` (int, int64, float, double), `Sign`; `Sqrt`, `Cbrt`, `Pow`, `Exp`,
-`Log`, `Log2`, `Log10`, `Hypot`; `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan`, `Atan2`, `Sinh`, `Cosh`, `Tanh`,
-`DegreesToRadians`, `RadiansToDegrees`; `Floor`, `Ceiling`, `Truncate`, `Round` (Halbe zur geraden Zahl wie in C#), `Lerp`, `IsNaN`,
-`IsInfinity`. Ganzzahl-Argumente werden zu `double` (`Math.Sqrt(2)`).
+**`Math`** — constants `PI`, `E`, `Tau`; `Abs`/`Min`/`Max`/`Clamp` (int, int64, float, double), `Sign`; `Sqrt`,
+`Cbrt`, `Pow`, `Exp`, `Log`, `Log2`, `Log10`, `Hypot`; `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan`, `Atan2`, `Sinh`,
+`Cosh`, `Tanh`, `DegreesToRadians`, `RadiansToDegrees`; `Floor`, `Ceiling`, `Truncate`, `Round` (rounds half to even,
+like in C#), `Lerp`, `IsNaN`, `IsInfinity`. Integer arguments are widened to `double` (`Math.Sqrt(2)`).
 
-**String-Helfer** (`s.Contains(x)` ≙ `String.Contains(s, x)`, statisch `string.Join(sep, parts)`): `IsNullOrEmpty`, `Contains`,
-`IndexOf`, `LastIndexOf`, `StartsWith`, `EndsWith`, `Trim`, `ToUpper`/`ToLower` (nur ASCII), `Replace`, `Repeat`, `Split` (Zeichen
-oder String), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`Error<…>`), außerdem `Equals`, `GetHashCode` (FNV-1a) und
-`CompareTo` (bytesweise). Positionen sind Byte-Offsets, `string.FromBytes(bytes [, start, count])` baut einen String aus Bytes.
-Neue Helfer schreibt man einfach als Funktion in `namespace String` (erster Parameter = der String).
+**String helpers** (`s.Contains(x)` ≙ `String.Contains(s, x)`, static as `string.Join(sep, parts)`): `IsNullOrEmpty`,
+`Contains`, `IndexOf`, `LastIndexOf`, `StartsWith`, `EndsWith`, `Trim`, `ToUpper`/`ToLower` (ASCII only), `Replace`,
+`Repeat`, `Split` (by character or string), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`Error<…>`), plus
+`Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise). Positions are byte offsets;
+`string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written as a function in
+`namespace String` (the first parameter is the string).
 
-## Aufbau des Compilers
+## Compiler structure
 
-| Datei | Inhalt |
+| File | Contents |
 |---|---|
-| `compiler/src/Lexer.*` | Tokenizer (UTF-8, Escapes, Zahlenliterale) |
-| `compiler/src/Parser.*`, `AST.h` | Rekursiver Abstieg mit Backtracking für Generics, Casts, Deklarationen |
-| `compiler/src/Types.*` | Internierte Typen (Pointergleichheit = Typgleichheit) |
-| `compiler/src/CodeGen.*` | Symboltabellen, Typauflösung, Struct-Layout, Generics-Instanziierung, Constraints |
-| `compiler/src/CodeGenExpr.cpp` | Ausdrücke, Konvertierungen, Arithmetik mit Überlaufprüfung, `is`/`try` |
-| `compiler/src/CodeGenCall.cpp` | Überladungsauflösung, Typinferenz, Aufrufe, eingebaute Funktionen |
-| `compiler/src/CodeGenStmt.cpp` | Anweisungen, Scopes, Cleanup (ARC, `using`), Funktionskörper |
-| `compiler/src/CodeGenRuntime.cpp` | ARC-Helfer, Strings, Panic – direkt als LLVM-IR erzeugt |
-| `stdlib/*.csh` | Standardbibliothek in CShift; wird von CMake als Byte-Arrays in den Compiler eingebettet (`StdlibData.cpp`) |
-| `compiler/src/main.cpp` | Driver: Kommandozeile, Optimierung, Objektdatei, Linken |
-| `compiler/src/Project.*` | Projektdatei `cshift.json` lesen, `cshiftc new` |
-| `compiler/src/Ffi.h`, `FfiImport.cpp` | `using X from "…"`: `.ffi`-Cache (Aktualität per Hash), Deklarationen aus der `.ffi`-Datei erzeugen |
-| `compiler/src/FfiGenerator.cpp` | C-Header mit libclang (zur Laufzeit geladen) in eine `.ffi`-Datei und C-Wrapper für Struct-Werte übersetzen |
-| `.github/workflows/release.yml`, `packaging/` | Release-Workflow (Windows/Linux) und die Skripte, die den Archivordner mit Toolchain zusammenstellen |
+| `compiler/src/Lexer.*` | the tokenizer (UTF-8, escapes, number literals) |
+| `compiler/src/Parser.*`, `AST.h` | recursive descent with backtracking for generics, casts, declarations |
+| `compiler/src/Types.*` | interned types (pointer equality = type equality) |
+| `compiler/src/CodeGen.*` | symbol tables, type resolution, struct layout, generics instantiation, constraints |
+| `compiler/src/CodeGenExpr.cpp` | expressions, conversions, arithmetic with overflow checks, `is`/`try` |
+| `compiler/src/CodeGenCall.cpp` | overload resolution, type inference, calls, built-in functions |
+| `compiler/src/CodeGenStmt.cpp` | statements, scopes, cleanup (ARC, `using`), function bodies |
+| `compiler/src/CodeGenRuntime.cpp` | ARC helpers, strings, panics — generated directly as LLVM IR |
+| `compiler/src/ConstEval.cpp` | the compile-time evaluator: constants, enum values, `sizeof(T)` |
+| `stdlib/*.csh` | the standard library, written in CShift; CMake embeds it in the compiler as byte arrays (`StdlibData.cpp`) |
+| `compiler/src/main.cpp` | the driver: command line, optimization, object file, linking |
+| `compiler/src/Project.*` | reading the project file `cshift.json`, `cshiftc new` |
+| `compiler/src/Ffi.h`, `FfiImport.cpp` | `using X from "…"`: the `.ffi` cache (freshness by hash), building declarations from the `.ffi` file |
+| `compiler/src/FfiGenerator.cpp` | compiling a C header (via libclang, loaded at runtime) into a `.ffi` file and a C wrapper for struct values |
+| `compiler/src/Dump.*`, `DumpAst.cpp` | a development aid: `--dump-tokens` / `--dump-ast` (for comparing against `selfhost/`) |
+| `selfhost/` | the compiler written in CShift: a lexer and parser (verified against the C++ compiler) and a code generator that covers almost the whole language (writes LLVM IR as text, clang compiles it); see [selfhost/README.md](selfhost/README.md) |
+| `.github/workflows/release.yml`, `packaging/` | the release workflow (Windows/Linux) and the scripts that assemble the archive folder with its toolchain |
 
-Es gibt keine getrennte Typprüfungs-Phase: Typprüfung und Codegeneration laufen in einem Durchgang über den AST. Das
-macht die Monomorphisierung einfach (der Körper einer generischen Funktion wird pro Typkombination erneut durchlaufen).
+There is no separate type-checking phase: type checking and code generation happen in one pass over the AST. That
+makes monomorphization straightforward (a generic function's body is walked again for every type combination).
 
-**Referenzzählung:** Variablen, Felder und Array-Elemente besitzen eine Referenz; Zwischenergebnisse tragen ein "+1", das beim
-Speichern übernommen oder am Ende des Statements freigegeben wird. Argumente werden geborgt übergeben, die aufgerufene Funktion
-behält ihre Parameter selbst. Heap-Blöcke (Strings/Arrays) haben den Kopf `{int64 refcount, int64 length}`.
-Mit `--arc-stats` lässt sich prüfen, dass jede Allokation wieder freigegeben wurde.
+**Reference counting:** variables, fields and array elements own a reference; intermediate results carry a "+1" that
+is either taken over when stored, or released at the end of the statement. Arguments are passed borrowed; the called
+function retains its own parameters itself. Heap blocks (strings/arrays) have the header
+`{int64 refcount, int64 length}`. `--arc-stats` lets you check that every allocation was eventually released.
 
 ## Tests
 
 ```
-tests/run_tests.sh [pfad/zu/cshiftc] [-O0..-O3]      # bzw. .\build.ps1 -Test
+tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]      # or .\build.ps1 -Test
 ```
 
-* `tests/test.csh` (+ `tests/mathlib.csh`): großes Testprogramm mit ~165 Prüfungen über alle Sprachbereiche. Ausgabe wird gegen
-  `tests/test.expected` verglichen, zusätzlich muss die ARC-Bilanz aufgehen.
-* `tests/cases/*.csh`: kleine Programme mit Erwartungen in Kommentaren – Compilerfehler (`err_*`), Laufzeit-Panics (`panic_*`),
-  Programmverhalten (`main_*`), ARC-Stresstest, Sonderfälle (`misc_features`, `builtins`, `error_void`, `const_default`) und die
-  Tests der Standardbibliothek (`stdlib_*`; `stdlib_file` legt Dateien im temporären Verzeichnis an).
-* `tests/projects/ffi`: C-Bibliothek (`native/geo.c`, vom Test-Runner mit clang übersetzt) über `using Geo from "geo.h"`: Zeiger, Strings, Structs by value, opake Handles, Callbacks in beide Richtungen; dazu `native_int`, `function_pointers` (+ `err_function_*`, `panic_null_function`) und Importfehler.
+* `tests/test.csh` (+ `tests/mathlib.csh`): a large test program with ~165 checks covering every area of the
+  language. Its output is compared against `tests/test.expected`, and the ARC balance must come out even too.
+* `tests/cases/*.csh`: small programs with expectations written as comments — compiler errors (`err_*`), runtime
+  panics (`panic_*`), program behavior (`main_*`), an ARC stress test, special cases (`misc_features`, `builtins`,
+  `error_void`, `const_default`) and the standard library tests (`stdlib_*`; `stdlib_file` creates files in the
+  temp directory).
+* `tests/projects/ffi`: a C library (`native/geo.c`, compiled with clang by the test runner) via
+  `using Geo from "geo.h"`: pointers, strings, structs by value, opaque handles, callbacks in both directions; plus
+  `native_int`, `function_pointers` (+ `err_function_*`, `panic_null_function`) and import errors.
 
-## Bekannte Einschränkungen / nächste Schritte
+## Known limitations / next steps
 
-* Standardbibliothek ist klein: keine Streams/Verzeichnisoperationen, kein `HashSet`/`Stack`/`Queue`, keine weiteren Encodings,
-  keine Datums-/Zeitfunktionen, keine Formatierung (`Format`, Interpolation). Indexer (`list[i]`) gibt es nicht, es heißt `Get`/`Set`.
-* Interfaces als Werttyp (dynamischer Aufruf), Lambdas/Closures, globale *Variablen* (Konstanten gehen),
-  `Main(string[] args)`, Struct-Übergabe *by value* bei handgeschriebenem `extern "C"` fehlen noch (über `using X from "header.h"` funktioniert es). Grenzen der Header-Importe: [FFI.md](FFI.md).
-* Referenzzähler sind nicht atomar (kein Multithreading).
-* Generische Körper werden erst bei der Instanziierung geprüft (wie C++-Templates); unbenutzte generische Funktionen werden nicht analysiert.
-* Keine Debug-Informationen (DWARF/PDB).
-* Fehlermeldungen: Nach Syntaxfehlern wird die semantische Analyse nicht mehr ausgeführt.
+* The standard library is small: no streams, no `Stack`/`Queue`, no further encodings, no date/time functions, no
+  formatting (`Format`, interpolation). There's no indexer (`list[i]`); it's `Get`/`Set` instead.
+* Interfaces as a value type (dynamic dispatch), lambdas/closures, and passing structs *by value* in a hand-written
+  `extern "C"` (it works via `using X from "header.h"`) are still missing. Limits of header imports: [FFI.md](FFI.md).
+* Reference counts are not atomic (no multithreading).
+* Generic bodies are only checked upon instantiation (like C++ templates); unused generic functions are not analyzed.
+* No debug information (DWARF/PDB).
+* Error messages: after a syntax error, semantic analysis no longer runs.

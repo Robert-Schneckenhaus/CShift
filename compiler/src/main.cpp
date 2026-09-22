@@ -20,6 +20,7 @@
 #include <llvm/TargetParser/Triple.h>
 
 #include "CodeGen.h"
+#include "Dump.h"
 #include "Ffi.h"
 #include "Lexer.h"
 #include "Parser.h"
@@ -49,12 +50,19 @@ struct Options
     std::vector<std::string> libraryPaths; // -L<dir>
     std::vector<std::string> includePaths; // -I<dir> (for C headers imported with "using X from")
     std::vector<std::string> defines;      // -D<name>[=value]
+    std::vector<std::string> apiPaths;     // --ffi-api=<text>
     int optLevel = 2;
     bool objectOnly = false;
     bool emitLlvm = false;
     bool run = false;
     bool verbose = false;
     bool arcStats = false;
+    bool dumpTokens = false; // development: print the tokens / the syntax tree of the input files
+    bool dumpAst = false;
+    // Helper for cshc (the compiler written in CShift, which has no libclang): prepare the .ffi file of a C header.
+    bool ffiPrepare = false;
+    std::string ffiBaseDir;
+    std::string ffiCacheDir;
 };
 
 void printUsage()
@@ -80,6 +88,7 @@ void printUsage()
                  "  -L<dir>          library search path for the linker\n"
                  "  -I<dir>          include path for C headers (using X from \"header.h\")\n"
                  "  -D<name>[=value] define a macro when parsing C headers\n"
+                 "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n"
                  "  file.a, file.o   libraries and object files are passed to the linker\n"
                  "  --run            run the program after building\n"
                  "  --arc-stats      debug: print heap allocations/frees when the program exits\n"
@@ -126,7 +135,17 @@ bool parseArgs(int argc, char** argv, Options& o)
             i += 1;
             return argv[i];
         };
-        if (a == "-h" || a == "--help")
+        if (a == "--dump-tokens")
+            o.dumpTokens = true;
+        else if (a == "--dump-ast")
+            o.dumpAst = true;
+        else if (a == "--ffi-prepare")
+            o.ffiPrepare = true;
+        else if (a == "--ffi-base-dir")
+            o.ffiBaseDir = next("--ffi-base-dir");
+        else if (a == "--ffi-cache-dir")
+            o.ffiCacheDir = next("--ffi-cache-dir");
+        else if (a == "-h" || a == "--help")
             return false;
         else if (a == "-o")
             o.output = next("-o");
@@ -152,6 +171,8 @@ bool parseArgs(int argc, char** argv, Options& o)
             o.libraryPaths.push_back(a.substr(2));
         else if (a.size() > 2 && a.compare(0, 2, "-I") == 0)
             o.includePaths.push_back(a.substr(2));
+        else if (a.compare(0, 10, "--ffi-api=") == 0)
+            o.apiPaths.push_back(a.substr(10));
         else if (a.size() > 2 && a.compare(0, 2, "-D") == 0)
             o.defines.push_back(a.substr(2));
         else if (!a.empty() && a[0] == '-')
@@ -164,6 +185,8 @@ bool parseArgs(int argc, char** argv, Options& o)
         else
             o.inputs.push_back(a);
     }
+    if (o.ffiPrepare)
+        return o.inputs.size() == 2;
     switch (o.command)
     {
     case Command::Compile: return !o.inputs.empty();
@@ -308,6 +331,68 @@ int main(int argc, char** argv)
         return 2;
     }
 
+    // Development aid (see Dump.h): print tokens or the syntax tree of the given files and stop.
+    if (opt.dumpTokens || opt.dumpAst)
+    {
+        Diagnostics diag;
+        for (const auto& path : opt.inputs)
+        {
+            std::string text;
+            if (!readFile(path, text))
+            {
+                std::cerr << "error: cannot read '" << path << "'\n";
+                return 1;
+            }
+            int fileId = diag.addFile(path);
+            Lexer lexer(text, fileId, diag);
+            std::vector<Token> tokens = lexer.tokenize();
+            if (opt.dumpTokens)
+            {
+                dumpTokens(tokens, std::cout);
+            }
+            else
+            {
+                Parser parser(tokens, diag);
+                std::unique_ptr<CompilationUnit> unit = parser.parseUnit(false);
+                dumpUnit(*unit, std::cout);
+            }
+        }
+        return diag.hasErrors() ? 1 : 0;
+    }
+
+    // ffi-prepare: "cshiftc --ffi-prepare <name> <header> --ffi-base-dir <dir> --ffi-cache-dir <dir> [-I..] [-D..]"
+    // makes sure the .ffi file of a C header is up to date and prints "ffi <path>" and "shim <path>" lines.
+    if (opt.ffiPrepare)
+    {
+        llvm::InitializeAllTargetInfos();
+        std::string tripleStr = opt.target.empty() ? llvm::sys::getDefaultTargetTriple() : opt.target;
+        bool isWin = llvm::Triple(tripleStr).isOSWindows();
+        FfiOptions ffiOptions;
+        ffiOptions.target = tripleStr;
+        ffiOptions.includePaths = opt.includePaths;
+        ffiOptions.defines = opt.defines;
+        ffiOptions.apiPaths = opt.apiPaths;
+        ffiOptions.verbose = opt.verbose;
+        FfiImportRequest request;
+        request.name = opt.inputs[0];
+        request.header = opt.inputs[1];
+        request.baseDir = opt.ffiBaseDir.empty() ? "." : opt.ffiBaseDir;
+        request.cacheDir = opt.ffiCacheDir.empty() ? joinPath(request.baseDir, "obj/ffi") : opt.ffiCacheDir;
+        bool isFfiFile = request.header.size() > 4 && request.header.compare(request.header.size() - 4, 4, ".ffi") == 0;
+        ffiOptions.clang = isFfiFile ? "" : locateClang(opt.cc, isWin, bundledClang(argv[0], isWin));
+        FfiResult result;
+        std::string error;
+        if (!prepareFfi(request, ffiOptions, result, error))
+        {
+            std::cerr << "error: cannot import \"" << request.header << "\": " << error << "\n";
+            return 1;
+        }
+        std::cout << "ffi " << result.ffiPath << "\n";
+        for (const auto& s : result.shimSources)
+            std::cout << "shim " << s << "\n";
+        return 0;
+    }
+
     // ---- Project commands ----
     Project project;
     bool fromProject = false;
@@ -345,6 +430,7 @@ int main(int argc, char** argv)
         opt.libraryPaths.insert(opt.libraryPaths.begin(), project.libraryPaths.begin(), project.libraryPaths.end());
         opt.includePaths.insert(opt.includePaths.begin(), project.includePaths.begin(), project.includePaths.end());
         opt.defines.insert(opt.defines.begin(), project.defines.begin(), project.defines.end());
+        opt.apiPaths.insert(opt.apiPaths.begin(), project.apiPaths.begin(), project.apiPaths.end());
         if (project.type == "object")
             opt.objectOnly = true;
         if (opt.command == Command::Run)
@@ -428,6 +514,7 @@ int main(int argc, char** argv)
         ffiOptions.target = tripleStr;
         ffiOptions.includePaths = opt.includePaths;
         ffiOptions.defines = opt.defines;
+        ffiOptions.apiPaths = opt.apiPaths;
         ffiOptions.verbose = opt.verbose;
 
         std::map<std::string, std::string> importedHeaders; // namespace -> header

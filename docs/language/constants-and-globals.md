@@ -1,0 +1,63 @@
+← [Language guide](README.md)
+
+# Constants and global variables
+
+## `const`
+
+A constant is declared at the top level of a file or inside a function, and must always be initialized:
+
+```csharp
+const int MaxPlayers = 8;
+const double Pi = 3.14159;
+const string Greeting = "Hello, " + "World!";     // string concatenation is allowed
+const Color Favorite = Color.Green;                 // enum members too
+const int Doubled = MaxPlayers * 2;                  // other constants, operators, casts
+```
+
+Only numbers, `bool`, `char`, `string` and enums are allowed as a constant's type. A local constant (inside a
+function) has no storage — its value is inlined wherever it's used, and assigning to it is an error. A top-level
+constant may be used before its own declaration in the file, and is checked even if nothing ever uses it.
+
+**The compiler evaluates every constant at compile time**, following the exact same rules the generated code would
+use at run time (literal types, promotion of small integers, checked arithmetic, shifts, comparisons, casts that
+saturate floating-point values, string concatenation). The difference is that overflow, division by zero, and
+similar problems are reported as **compile errors**, not runtime panics:
+
+```csharp
+const int Broken = 2147483647 + 1;   // compile error: integer overflow in a constant expression
+```
+
+The same rules apply to enum member values (`B = A * 2`, `C = sizeof(int64)` are both fine).
+
+## Global variables
+
+A global variable is declared at the top level, with any type, with or without an initializer:
+
+```csharp
+int RequestCount;                          // starts at 0 (the zero value)
+List<string> Log = List<string>.Create();   // an arbitrary initializer expression
+
+void RecordRequest()
+{
+    RequestCount += 1;
+    Log.Add("request " + RequestCount.ToString());
+}
+```
+
+Initializers run before `Main`, in declaration order (and, across files, in the order the files are given to the
+compiler). **The compiler checks that order:** an initializer must not read a global that's initialized later, or
+itself — including indirectly, through a function it calls:
+
+```csharp
+int First = Second + 1;   // compile error: uses Second before it is initialized
+int Second = 5;
+```
+
+A global with no initializer can be read at any time, since its zero value is already well-defined. Globals are
+ordinary lvalues — assign to them, pass with `ref`, take their address in `unsafe`, call methods on them, modify
+their fields — and name resolution follows the same rules as for constants (the file's namespace, `using`, or
+qualified as `Ns.Counter`). Values that own heap memory (strings, arrays, lists, …) are released once `Main`
+returns. There's no `var` for a global (the type has to be written out), and reference counts aren't atomic, so
+globals aren't safe to share across threads.
+
+Next: [C interop (FFI)](ffi-and-interop.md).
