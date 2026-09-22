@@ -26,9 +26,13 @@ fi
 # the IR that both stages generate for the sources of cshc
 "$STAGE1" --emit-llvm $FILES -o "$TMP/stage1.ll" > "$TMP/e1.log" 2>&1 || { cat "$TMP/e1.log"; exit 1; }
 "$TMP/stage2$EXE" --emit-llvm $FILES -o "$TMP/stage2.ll" > "$TMP/e2.log" 2>&1 || { cat "$TMP/e2.log"; exit 1; }
-if ! cmp -s "$TMP/stage1.ll" "$TMP/stage2.ll"; then
+# 'cmp'/'diff' are not guaranteed to be installed (e.g. a minimal MSYS2 CLANG64 environment), so this compares in
+# plain bash; the two files are a few MB of text, which bash handles without trouble.
+if [ "$(cat "$TMP/stage1.ll")" != "$(cat "$TMP/stage2.ll")" ]; then
     echo "stage 1 and stage 2 generate different IR"
-    diff "$TMP/stage1.ll" "$TMP/stage2.ll" | head -n 20
+    if command -v diff > /dev/null 2>&1; then
+        diff "$TMP/stage1.ll" "$TMP/stage2.ll" | head -n 20
+    fi
     exit 1
 fi
 echo "bootstrap ok: stage 1 and stage 2 generate identical IR ($(wc -c < "$TMP/stage1.ll" | tr -d ' ') bytes)"

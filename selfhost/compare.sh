@@ -10,6 +10,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# 'diff' and 'cmp' are not guaranteed to be installed (e.g. a minimal MSYS2 CLANG64 environment), so comparisons use
+# plain bash; the diagnostic output falls back to printing both files if 'diff' is missing.
+have_diff=0
+command -v diff > /dev/null 2>&1 && have_diff=1
+same_content() { [ "$(cat "$1")" = "$(cat "$2")" ]; }
+show_diff() {
+    if [ "$have_diff" -eq 1 ]; then
+        diff "$1" "$2" | head -n 6
+    else
+        echo "--- $1"; head -n 6 "$1"
+        echo "--- $2"; head -n 6 "$2"
+    fi
+}
+
 compare() {
     local name="$1" flagCpp="$2" flagCs="$3"
     local same=0 different=0
@@ -20,13 +34,13 @@ compare() {
         "$CSHC" $flagCs "$f" > "$TMP/b.txt" 2> "$TMP/b.err"
         tr -d '\r' < "$TMP/a.txt" > "$TMP/a1.txt"; tr -d '\r' < "$TMP/b.txt" > "$TMP/b1.txt"
         tr -d '\r' < "$TMP/a.err" > "$TMP/a1.err"; tr -d '\r' < "$TMP/b.err" > "$TMP/b1.err"
-        if cmp -s "$TMP/a1.txt" "$TMP/b1.txt" && cmp -s "$TMP/a1.err" "$TMP/b1.err"; then
+        if same_content "$TMP/a1.txt" "$TMP/b1.txt" && same_content "$TMP/a1.err" "$TMP/b1.err"; then
             same=$((same + 1))
         else
             different=$((different + 1))
             echo "DIFFERENT ($name): ${f#$ROOT/}"
-            diff "$TMP/a1.txt" "$TMP/b1.txt" | head -6
-            diff "$TMP/a1.err" "$TMP/b1.err" | head -6
+            show_diff "$TMP/a1.txt" "$TMP/b1.txt"
+            show_diff "$TMP/a1.err" "$TMP/b1.err"
         fi
     done
     echo "$name: $same identical, $different different"
