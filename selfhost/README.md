@@ -39,6 +39,7 @@ selfhost/
 │       ├── Pointers.csh     Zeiger: *, &, Arithmetik, Casts
 │       ├── FuncPtrs.csh     Funktionszeiger: Action/Func, Method Groups, indirekter Aufruf
 │       ├── Layout.csh       Größen/Ausrichtung, Layout von C-Structs (FFI)
+│       ├── ConstEval.csh    Compile-Zeit-Auswerter für Konstanten, Enum-Werte, sizeof(T)
 │       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
 │       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
 │       └── Module.csh       Programm übersetzen, Einstiegspunkt

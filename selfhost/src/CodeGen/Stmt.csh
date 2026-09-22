@@ -240,10 +240,19 @@ void EmitVarDecl(Compiler cg, Stmt s)
         Fail(cg, s.Loc, "variable '" + d.Name + "' cannot have type 'void'");
     if (d.IsConst)
     {
+        // a local constant has no storage: its value is computed now and inlined at every use
         if (!IsConstantType(cg, t))
             Fail(cg, s.Loc, "constants can only be numbers, bool, char, string or enum values");
-        if (!IsConstExpr(cg, d.Init, cg.Fn[0].File))
-            Fail(cg, s.Loc, "the initializer of constant '" + d.Name + "' must be a constant expression (literals, operators, other constants)");
+        var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
+        ConstVal cv = ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
+        DeclareVar(cg, d.Name, t, "");
+        var constVars = cg.Fn[0].Vars;
+        var constVar = constVars.Get(constVars.Count() - 1);
+        constVar.OwnsArc = false;
+        constVar.IsConstant = true;
+        constVar.ConstValue = cv;
+        constVars.Set(constVars.Count() - 1, constVar);
+        return;
     }
 
     Value init = Value { };
@@ -282,14 +291,6 @@ void EmitVarDecl(Compiler cg, Stmt s)
     }
     FlushTemps(cg, 0, true);
     DeclareVar(cg, d.Name, t, slot);
-    if (d.IsConst)
-    {
-        var constVars = cg.Fn[0].Vars;
-        var constVar = constVars.Get(constVars.Count() - 1);
-        constVar.IsConst = true; // read-only
-        constVar.IsConstant = true;
-        constVars.Set(constVars.Count() - 1, constVar);
-    }
     if (d.IsUsing)
     {
         if (!ImplementsDisposable(cg, t))

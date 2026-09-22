@@ -74,9 +74,9 @@ int GetEnumType(Compiler cg, int entry)
     foreach (var m in decl.Members)
     {
         // members may refer to the members before them
-        var known = EnumInfo { Names = names.ToArray(), Values = values.ToArray() };
-        int64 v = m.Value.IsNull() ? next : ConstEvalInt(cg, m.Value, known, m.Loc);
-        if (!FitsInt(v, types.Bits(b), types.IsSigned(b)))
+        var known = EnumInfo { Names = names.ToArray(), Values = values.ToArray(), Base = b };
+        int64 v = m.Value.IsNull() ? next : ConstEvalEnumMember(cg, m.Value, known, ee.File, m.Name, m.Loc);
+        if (m.Value.IsNull() && !FitsInt(v, types.Bits(b), types.IsSigned(b)))
             Fail(cg, m.Loc, "enum value " + v.ToString() + " does not fit into " + types.Name(b));
         if (FindEnumMember(known, m.Name) >= 0)
             Fail(cg, m.Loc, "enum member '" + m.Name + "' is declared twice");
@@ -88,66 +88,4 @@ int GetEnumType(Compiler cg, int entry)
     info.Values = values.ToArray();
     cg.EnumInfos.Set(index, info);
     return t;
-}
-
-// The value of a constant integer expression: literals, operators and the members of the enum that is being declared.
-int64 ConstEvalInt(Compiler cg, Expr e, EnumInfo current, SourceLoc loc)
-{
-    var tree = cg.Tree;
-    switch (e.Kind)
-    {
-    case ExprKind.IntLit:
-        return (int64)tree.GetIntLit(e).Value;
-    case ExprKind.CharLit:
-        return (int64)tree.GetCharLit(e).Value;
-    case ExprKind.Unary:
-    {
-        var u = tree.GetUnary(e);
-        int64 v = ConstEvalInt(cg, u.Operand, current, loc);
-        if (u.Op == UnOp.Neg)
-            return -v;
-        if (u.Op == UnOp.Plus)
-            return v;
-        if (u.Op == UnOp.BitNot)
-            return ~v;
-        break;
-    }
-    case ExprKind.Binary:
-    {
-        var b = tree.GetBinary(e);
-        int64 l = ConstEvalInt(cg, b.Lhs, current, loc);
-        int64 r = ConstEvalInt(cg, b.Rhs, current, loc);
-        switch (b.Op)
-        {
-        case BinOp.Add: return l + r;
-        case BinOp.Sub: return l - r;
-        case BinOp.Mul: return l * r;
-        case BinOp.Div:
-            if (r == 0)
-                Fail(cg, e.Loc, "division by zero in constant expression");
-            return l / r;
-        case BinOp.Rem:
-            if (r == 0)
-                Fail(cg, e.Loc, "division by zero in constant expression");
-            return l % r;
-        case BinOp.BitAnd: return l & r;
-        case BinOp.BitOr: return l | r;
-        case BinOp.BitXor: return l ^ r;
-        case BinOp.Shl: return l << (int)r;
-        case BinOp.Shr: return l >> (int)r;
-        default: break;
-        }
-        break;
-    }
-    case ExprKind.Name:
-    {
-        int i = FindEnumMember(current, tree.GetName(e).Name);
-        if (i >= 0)
-            return current.Values[i];
-        break;
-    }
-    default: break;
-    }
-    Fail(cg, e.Loc.Line > 0 ? e.Loc : loc, "expected a constant integer expression");
-    return 0;
 }

@@ -143,14 +143,14 @@ Value EmitLiteral(Compiler cg, Expr e)
 // A local variable or parameter; the value has no type if there is none with that name.
 Value LookupVariable(Compiler cg, string name)
 {
-    if (cg.St[0].ConstDepth > 0)
-        return Value { }; // a top-level constant is being evaluated: the locals of the current function are not visible
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
     {
         var v = vars.Get(i - 1);
         if (v.Name != name)
             continue;
+        if (v.IsConstant)
+            return ConstToValue(cg, v.ConstValue); // a local constant is inlined
         if (v.IsRef)
             return Lvalue(v.Type, cg.Ir.Load("ptr", v.Slot), v.IsConst);
         return Lvalue(v.Type, v.Slot, v.IsConst);
@@ -161,8 +161,6 @@ Value LookupVariable(Compiler cg, string name)
 // The innermost local variable or constant with the name: its index in the variables, or -1.
 int FindLocal(Compiler cg, string name)
 {
-    if (cg.St[0].ConstDepth > 0)
-        return -1;
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
         if (vars.Get(i - 1).Name == name)
@@ -172,8 +170,6 @@ int FindLocal(Compiler cg, string name)
 
 bool IsLocalName(Compiler cg, string name)
 {
-    if (cg.St[0].ConstDepth > 0)
-        return false;
     var vars = cg.Fn[0].Vars;
     for (var i = 0; i < vars.Count(); i += 1)
         if (vars.Get(i).Name == name)
@@ -190,7 +186,7 @@ Value EmitName(Compiler cg, Expr e)
 
     // A field of the current struct (in a method).
     int owner = CurrentOwner(cg);
-    if (owner != 0 && cg.St[0].ConstDepth == 0 && FindField(cg, owner, n.Name).Found)
+    if (owner != 0 && FindField(cg, owner, n.Name).Found)
         return FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
 
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
@@ -214,116 +210,10 @@ Value EmitName(Compiler cg, Expr e)
     return Value { };
 }
 
-// Constant expressions: literals, operators and other constants.
-bool IsConstExpr(Compiler cg, Expr e, int file)
-{
-    switch (e.Kind)
-    {
-    case ExprKind.IntLit:
-    case ExprKind.FloatLit:
-    case ExprKind.CharLit:
-    case ExprKind.StringLit:
-    case ExprKind.BoolLit:
-        return true;
-    case ExprKind.Name:
-    {
-        string name = cg.Tree.GetName(e).Name;
-        int local = FindLocal(cg, name);
-        if (local >= 0)
-            return cg.Fn[0].Vars.Get(local).IsConstant; // a local constant (other locals are not constant)
-        return LookupConst(cg, file, name) >= 0;
-    }
-    case ExprKind.Member:
-    {
-        // Ns.Constant or Enum.Member
-        var m = cg.Tree.GetMember(e);
-        string dotted = DottedName(cg, m.Object);
-        if (dotted.Length == 0)
-            return false;
-        if (LookupConst(cg, file, dotted + "." + m.Name) >= 0)
-            return true;
-        var entry = TypeDeclEntry { };
-        if (LookupTypeDecl(cg, file, dotted, ref entry) && entry.Kind == DeclKind.Enum)
-            return FindEnumMember(GetEnumInfo(cg, GetEnumType(cg, entry.Index)), m.Name) >= 0;
-        return false;
-    }
-    case ExprKind.Cast:
-        return IsConstExpr(cg, cg.Tree.GetCast(e).Operand, file);
-    case ExprKind.Unary:
-    {
-        var u = cg.Tree.GetUnary(e);
-        return u.Op != UnOp.Deref && u.Op != UnOp.AddrOf && IsConstExpr(cg, u.Operand, file);
-    }
-    case ExprKind.Binary:
-    {
-        var b = cg.Tree.GetBinary(e);
-        return IsConstExpr(cg, b.Lhs, file) && IsConstExpr(cg, b.Rhs, file);
-    }
-    default:
-        return false;
-    }
-}
-
-// A constant is inlined at every use. Its initializer only consists of literals and other constants, so evaluating
-// it has no side effects. It is evaluated in the file context of the declaration.
+// A constant is inlined at every use: its value was computed by the compile-time evaluator (ConstEval.csh).
 Value EmitConst(Compiler cg, int index, SourceLoc loc)
 {
-    var entry = cg.Consts.Get(index);
-    var c = entry.Decl;
-    if (cg.St[0].ConstDepth > 32)
-        Fail(cg, c.Loc, "constant '" + c.Name + "' depends on itself");
-    int t = ResolveValueType(cg, c.Type.Id, entry.File, NoEnv());
-    var types = cg.Types;
-    if (!IsConstantType(cg, t))
-        Fail(cg, c.Loc, "constants can only be numbers, bool, char, string or enum values");
-    cg.St[0].ConstDepth += 1; // hides the locals of the function that is being written while the constant is evaluated
-    bool constantOk = IsConstExpr(cg, c.Init, entry.File);
-    cg.St[0].ConstDepth -= 1;
-    if (!constantOk)
-        Fail(cg, c.Loc, "the initializer of constant '" + c.Name + "' must be a constant expression (literals, operators, other constants)");
-    int savedFile = cg.Fn[0].File;
-    cg.Fn[0].File = entry.File;
-    cg.St[0].ConstDepth += 1;
-    Value v;
-    if (types.IsEnum(t) && IsIntegerLiteralExpr(cg, c.Init))
-    {
-        // enumerators of imported C enums are integers
-        var noMembers = EnumInfo { Names = new string[0], Values = new int64[0] };
-        v = ConstInt(cg, t, ConstEvalInt(cg, c.Init, noMembers, c.Loc));
-    }
-    else
-    {
-        v = ConvertValue(cg, EmitExpr(cg, c.Init), t, c.Init.Loc); // Color.Green, (Color)1, Color.A | Color.B, ...
-    }
-    cg.St[0].ConstDepth -= 1;
-    cg.Fn[0].File = savedFile;
-    return v;
-}
-
-bool IsConstantType(Compiler cg, int t)
-{
-    var types = cg.Types;
-    return types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
-}
-
-// Integer literals combined with operators (no names).
-bool IsIntegerLiteralExpr(Compiler cg, Expr e)
-{
-    switch (e.Kind)
-    {
-    case ExprKind.IntLit:
-    case ExprKind.CharLit:
-        return true;
-    case ExprKind.Unary:
-        return IsIntegerLiteralExpr(cg, cg.Tree.GetUnary(e).Operand);
-    case ExprKind.Binary:
-    {
-        var b = cg.Tree.GetBinary(e);
-        return IsIntegerLiteralExpr(cg, b.Lhs) && IsIntegerLiteralExpr(cg, b.Rhs);
-    }
-    default:
-        return false;
-    }
+    return ConstToValue(cg, ConstEvalDecl(cg, index));
 }
 
 // ---------------------------------------------------------------------------
@@ -759,7 +649,18 @@ Value EmitAssign(Compiler cg, Expr e)
     var a = cg.Tree.GetAssign(e);
     Value target = EmitExpr(cg, a.Target);
     if (!target.IsLValue)
+    {
+        // a constant (local or top level) is a value, not a variable
+        if (a.Target.Kind == ExprKind.Name)
+        {
+            string constName = cg.Tree.GetName(a.Target).Name;
+            int local = FindLocal(cg, constName);
+            bool isConstantName = local >= 0 ? cg.Fn[0].Vars.Get(local).IsConstant : LookupConst(cg, cg.Fn[0].File, constName) >= 0;
+            if (isConstantName)
+                Fail(cg, e.Loc, "cannot assign to a read-only value: '" + constName + "' is a constant");
+        }
         Fail(cg, e.Loc, "the left side of an assignment must be a variable, field or element");
+    }
     if (target.IsConst)
         Fail(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
 

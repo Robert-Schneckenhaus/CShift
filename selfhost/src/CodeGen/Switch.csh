@@ -94,6 +94,10 @@ void EmitSwitch(Compiler cg, Stmt s)
             EmitStmt(cg, stmt);
         if (ir.Reachable())
             Fail(cg, sec.Loc, "control cannot fall through from one case label to another (missing 'break')");
+        // The section's block may still be open here (e.g. a nested switch/try where every branch returns leaves its
+        // own end label open but unreachable). It must be terminated before the next SetBlock call.
+        if (ir.BlockOpen())
+            ir.Unreachable();
         PopScope(cg, true);
     }
     cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);

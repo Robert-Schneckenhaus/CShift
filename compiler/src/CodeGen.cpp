@@ -534,66 +534,6 @@ Type* CodeGen::getInterfaceType(InterfaceDecl* decl, const std::vector<Type*>& a
     return t;
 }
 
-int64_t CodeGen::constEvalInt(Expr* e, EnumInfo* current, SourceLoc loc)
-{
-    switch (e->kind)
-    {
-    case ExprKind::IntLit: return (int64_t) static_cast<IntLitExpr*>(e)->value;
-    case ExprKind::CharLit: return static_cast<CharLitExpr*>(e)->value;
-    case ExprKind::Unary:
-    {
-        auto* u = static_cast<UnaryExpr*>(e);
-        int64_t v = constEvalInt(u->operand.get(), current, loc);
-        switch (u->op)
-        {
-        case UnOp::Neg: return -v;
-        case UnOp::Plus: return v;
-        case UnOp::BitNot: return ~v;
-        default: break;
-        }
-        break;
-    }
-    case ExprKind::Binary:
-    {
-        auto* b = static_cast<BinaryExpr*>(e);
-        int64_t l = constEvalInt(b->lhs.get(), current, loc);
-        int64_t r = constEvalInt(b->rhs.get(), current, loc);
-        switch (b->op)
-        {
-        case BinOp::Add: return l + r;
-        case BinOp::Sub: return l - r;
-        case BinOp::Mul: return l * r;
-        case BinOp::Div:
-            if (r == 0)
-                err(e->loc, "division by zero in constant expression");
-            return l / r;
-        case BinOp::Rem:
-            if (r == 0)
-                err(e->loc, "division by zero in constant expression");
-            return l % r;
-        case BinOp::BitAnd: return l & r;
-        case BinOp::BitOr: return l | r;
-        case BinOp::BitXor: return l ^ r;
-        case BinOp::Shl: return l << r;
-        case BinOp::Shr: return l >> r;
-        default: break;
-        }
-        break;
-    }
-    case ExprKind::Name:
-    {
-        auto* n = static_cast<NameExpr*>(e);
-        if (current)
-            for (const auto& m : current->members)
-                if (m.first == n->name)
-                    return m.second;
-        break;
-    }
-    default: break;
-    }
-    err(e->loc.line ? e->loc : loc, "expected a constant integer expression");
-}
-
 static bool fitsInt(int64_t v, Type* t)
 {
     if (t->bits >= 64)
@@ -631,8 +571,8 @@ Type* CodeGen::getEnumType(EnumDecl* decl)
     int64_t next = 0;
     for (auto& m : decl->members)
     {
-        int64_t v = m.value ? constEvalInt(m.value.get(), &ei, m.loc) : next;
-        if (!fitsInt(v, base))
+        int64_t v = m.value ? constEvalEnumMember(m.value.get(), ei, decl->file, m.name, m.loc) : next;
+        if (!m.value && !fitsInt(v, base))
             err(m.loc, "enum value " + std::to_string(v) + " does not fit into " + base->name);
         for (const auto& other : ei.members)
             if (other.first == m.name)

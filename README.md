@@ -208,7 +208,12 @@ Das Konzept lässt einiges offen; folgende Entscheidungen wurden getroffen:
   Konstante muss immer initialisiert werden, und der Initialisierer besteht nur aus Literalen, Operatoren, Casts, Enum-Werten und anderen Konstanten
   (`const Color Fav = Color.Green;`, `const Flags Rw = Flags.Read | Flags.Write;`, `const int Sum = A * 2 + 1;`). Konstanten von oberster Ebene dürfen vor
   ihrer Deklaration benutzt werden und werden immer geprüft, auch wenn sie niemand benutzt; Zugriff auch qualifiziert (`Math.PI`). Lokale
-  Konstanten sind schreibgeschützte Variablen (Zuweisen ist ein Fehler) und dürfen einen Namen in einem inneren Block verdecken.
+  Konstanten haben keinen Speicher (Zuweisen ist ein Fehler) und dürfen einen Namen in einem inneren Block verdecken.
+  **Der Compiler berechnet Konstanten beim Übersetzen** (`compiler/src/ConstEval.cpp`, in `cshc`: `ConstEval.csh`) nach denselben Regeln wie der
+  Code, der zur Laufzeit für den Ausdruck entstünde (Typ der Literale, Promotion kleiner Ganzzahlen, Shifts, Vergleiche, Casts mit Sättigung von
+  Fließkommawerten, Stringverkettung mit Zahlen, `sizeof(T)`), meldet aber Überlauf (`2147483647 + 1`), Division durch 0 und `MIN / -1` als
+  Übersetzungsfehler. Dieselben Ausdrücke gelten für die Werte von Enum-Mitgliedern (`B = A * 2`, `C = sizeof(int64)`); `&&`/`||` werten die rechte
+  Seite nur aus, wenn sie das Ergebnis ändern kann.
 * **Globale Variablen:** `int Counter;`, `string Name = "x";`, `List<string> Names = List<string>.Create();` auf oberster Ebene, beliebiger Typ.
   Ohne Initialisierer startet die Variable mit dem Nullwert. Initialisierer sind beliebige Ausdrücke; sie laufen vor `Main` in der Reihenfolge der
   Deklarationen (Dateien in der Reihenfolge, in der sie dem Compiler übergeben werden). **Die Reihenfolge wird geprüft:** ein Initialisierer darf kein

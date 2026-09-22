@@ -528,31 +528,22 @@ void CodeGen::endSyntheticFunction(llvm::Function* f, bool keep)
 // The constants of the program are checked even if nothing uses them: type, initializer and value.
 void CodeGen::checkConstants()
 {
-    bool any = false;
-    for (auto& u : units)
-        any = any || (!u->file.isPrelude && !u->consts.empty());
-    if (!any)
-        return;
-    llvm::Function* f = beginSyntheticFunction("__cs_check_constants");
     for (auto& u : units)
     {
         if (u->file.isPrelude)
             continue;
         for (auto& c : u->consts)
         {
-            initInfo->file = &u->file;
             try
             {
-                emitConst(c.get(), c->loc);
+                constEvalDecl(c.get());
             }
             catch (const CompileError& e)
             {
                 diag.error(e);
             }
-            ensureInsertPoint();
         }
     }
-    endSyntheticFunction(f, false);
 }
 
 // An initializer must not use a global that is initialized later (or itself): the value would still be zero. The code the
@@ -604,16 +595,10 @@ void CodeGen::checkGlobalInitOrder()
     }
 }
 
-bool CodeGen::isConstantType(Type* t) const
-{
-    return t->isNumeric() || t->isBool() || t->isString() || t->isEnum();
-}
-
-// A local variable or constant of the current function by name (the innermost one); null if there is none. While the
-// initializer of a top-level constant is evaluated, the locals of the function that happens to be written are hidden.
+// A local variable or constant of the current function by name (the innermost one); null if there is none.
 ScopeVar* CodeGen::findLocal(const std::string& name)
 {
-    if (!fs || constDepth > 0)
+    if (!fs)
         return nullptr;
     for (size_t s = fs->scopes.size(); s > 0; s -= 1)
     {
@@ -643,133 +628,15 @@ llvm::Function* CodeGen::emitGlobalsRelease()
     return f;
 }
 
-// Constant expressions: literals, operators and other constants.
-bool CodeGen::isConstExpr(Expr* e, FileContext* file) const
-{
-    switch (e->kind)
-    {
-    case ExprKind::IntLit:
-    case ExprKind::FloatLit:
-    case ExprKind::CharLit:
-    case ExprKind::StringLit:
-    case ExprKind::BoolLit:
-        return true;
-    case ExprKind::Name:
-    {
-        const std::string& name = static_cast<NameExpr*>(e)->name;
-        if (ScopeVar* local = const_cast<CodeGen*>(this)->findLocal(name))
-            return local->isConstant; // a local constant (other locals are not constant)
-        return lookupConst(file, name) != nullptr;
-    }
-    case ExprKind::Member:
-    {
-        // Ns.Constant or Enum.Member
-        auto* m = static_cast<MemberExpr*>(e);
-        std::string dotted;
-        for (Expr* o = m->object.get();;)
-        {
-            if (o->kind == ExprKind::Name)
-            {
-                std::string n = static_cast<NameExpr*>(o)->name;
-                dotted = dotted.empty() ? n : n + "." + dotted;
-                break;
-            }
-            if (o->kind != ExprKind::Member || static_cast<MemberExpr*>(o)->viaArrow)
-                return false;
-            dotted = dotted.empty() ? static_cast<MemberExpr*>(o)->name : static_cast<MemberExpr*>(o)->name + "." + dotted;
-            o = static_cast<MemberExpr*>(o)->object.get();
-        }
-        if (lookupConst(file, dotted + "." + m->name))
-            return true;
-        const TypeDeclEntry* entry = lookupTypeDecl(file, dotted);
-        if (entry && entry->kind == TypeDeclEntry::Enum)
-        {
-            Type* et = const_cast<CodeGen*>(this)->getEnumType(entry->enumDecl);
-            for (const auto& member : et->en->members)
-                if (member.first == m->name)
-                    return true;
-        }
-        return false;
-    }
-    case ExprKind::Cast:
-        return isConstExpr(static_cast<CastExpr*>(e)->operand.get(), file);
-    case ExprKind::Unary:
-    {
-        auto* u = static_cast<UnaryExpr*>(e);
-        return u->op != UnOp::Deref && u->op != UnOp::AddrOf && isConstExpr(u->operand.get(), file);
-    }
-    case ExprKind::Binary:
-    {
-        auto* b = static_cast<BinaryExpr*>(e);
-        return isConstExpr(b->lhs.get(), file) && isConstExpr(b->rhs.get(), file);
-    }
-    default:
-        return false;
-    }
-}
-
-// A constant is inlined at every use. Its initializer only consists of literals and other constants, so
-// evaluating it has no side effects. It is evaluated in the file context of the declaration.
+// A constant is inlined at every use: its value was computed by the compile-time evaluator.
 Value CodeGen::emitConst(ConstDecl* c, SourceLoc loc)
 {
     (void)loc;
-    if (constDepth > 32)
-        err(c->loc, "constant '" + c->name + "' depends on itself");
-    Type* t = resolveValueType(*c->type, c->file, nullptr);
-    if (!isConstantType(t))
-        err(c->loc, "constants can only be numbers, bool, char, string or enum values");
-    constDepth += 1; // hides the locals of the function that is being written while the constant is evaluated
-    bool constantOk = false;
-    try
-    {
-        constantOk = isConstExpr(c->init.get(), c->file);
-    }
-    catch (...)
-    {
-        constDepth -= 1;
-        throw;
-    }
-    constDepth -= 1;
-    if (!constantOk)
-        err(c->loc, "the initializer of constant '" + c->name + "' must be a constant expression (literals, operators, other constants)");
-
-    FileContext* savedFile = fs->func->file;
-    fs->func->file = c->file;
-    constDepth += 1;
-    try
-    {
-        Value v;
-        auto integerLiteral = [](Expr* x, auto&& self) -> bool {
-            switch (x->kind)
-            {
-            case ExprKind::IntLit:
-            case ExprKind::CharLit: return true;
-            case ExprKind::Unary: return self(static_cast<UnaryExpr*>(x)->operand.get(), self);
-            case ExprKind::Binary:
-                return self(static_cast<BinaryExpr*>(x)->lhs.get(), self) && self(static_cast<BinaryExpr*>(x)->rhs.get(), self);
-            default: return false;
-            }
-        };
-        if (t->isEnum() && integerLiteral(c->init.get(), integerLiteral))
-            v = constInt(t, constEvalInt(c->init.get(), nullptr, c->loc)); // enumerators of imported C enums are integers
-        else
-            v = convertValue(emitExpr(c->init.get()), t, c->init->loc); // Color.Green, (Color)1, Color.A | Color.B, ...
-        constDepth -= 1;
-        fs->func->file = savedFile;
-        return v;
-    }
-    catch (...)
-    {
-        constDepth -= 1;
-        fs->func->file = savedFile;
-        throw;
-    }
+    return constToValue(constEvalDecl(c));
 }
 
 Value CodeGen::lookupVariable(const std::string& name)
 {
-    if (constDepth > 0)
-        return Value{}; // a top-level constant is being evaluated: the locals of the current function are not visible
     for (size_t s = fs->scopes.size(); s > 0; s -= 1)
     {
         auto& vars = fs->scopes[s - 1].vars;
@@ -778,6 +645,8 @@ Value CodeGen::lookupVariable(const std::string& name)
             ScopeVar& v = vars[i - 1];
             if (v.name != name)
                 continue;
+            if (v.isConstant)
+                return constToValue(v.constValue); // a local constant is inlined
             if (v.isRef)
                 return Value::lvalue(v.type, builder.CreateLoad(llvm::PointerType::getUnqual(ctx), v.slot), v.isConst);
             return Value::lvalue(v.type, v.slot, v.isConst);
@@ -809,7 +678,7 @@ Value CodeGen::emitName(NameExpr* e)
     if (v.type)
         return v;
 
-    if (fs->func->owner && constDepth == 0)
+    if (fs->func->owner)
     {
         FieldPath p;
         if (findField(fs->func->owner, e->name, p))
@@ -1506,7 +1375,17 @@ Value CodeGen::emitAssign(AssignExpr* e)
 {
     Value target = emitExpr(e->target.get());
     if (!target.isLValue)
+    {
+        // a constant (local or top level) is a value, not a variable
+        if (e->target->kind == ExprKind::Name)
+        {
+            const std::string& name = static_cast<NameExpr*>(e->target.get())->name;
+            ScopeVar* local = findLocal(name);
+            if (local ? local->isConstant : lookupConst(fs->func->file, name) != nullptr)
+                err(e->loc, "cannot assign to a read-only value: '" + name + "' is a constant");
+        }
         err(e->loc, "the left side of an assignment must be a variable, field or element");
+    }
     if (target.isConst)
         err(e->loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
 

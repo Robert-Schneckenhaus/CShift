@@ -282,10 +282,21 @@ void CodeGen::emitVarDecl(VarDeclStmt* s)
         err(s->loc, "variable '" + s->name + "' cannot have type 'void'");
     if (s->isConst)
     {
+        // a local constant has no storage: its value is computed now and inlined at every use
         if (!isConstantType(t))
             err(s->loc, "constants can only be numbers, bool, char, string or enum values");
-        if (!isConstExpr(s->init.get(), fs->func->file))
-            err(s->loc, "the initializer of constant '" + s->name + "' must be a constant expression (literals, operators, other constants)");
+        ConstScope sc;
+        sc.file = fs->func->file;
+        sc.locals = true;
+        sc.what = "constant '" + s->name + "'";
+        sc.declLoc = s->loc;
+        sc.env = &fs->func->env;
+        ConstVal cv = constConvert(constEval(s->init.get(), sc), t, s->init->loc);
+        ScopeVar& cvar = declareVar(s->name, t, nullptr);
+        cvar.ownsArc = false;
+        cvar.isConstant = true;
+        cvar.constValue = cv;
+        return;
     }
 
     Value init;
@@ -323,11 +334,6 @@ void CodeGen::emitVarDecl(VarDeclStmt* s)
     flushTemps(0);
 
     ScopeVar& var = declareVar(s->name, t, slot);
-    if (s->isConst)
-    {
-        var.isConst = true; // read-only
-        var.isConstant = true;
-    }
     if (s->isUsing)
     {
         if (!implementsDisposable(t))

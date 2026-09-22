@@ -255,22 +255,11 @@ void EmitGlobalsInit(Compiler cg)
 // The constants of the program are checked even if nothing uses them: type, initializer and value.
 void CheckConstants(Compiler cg)
 {
-    bool any = false;
-    for (var i = 0; i < cg.Consts.Count(); i += 1)
-        any = any || !cg.Files.Get(cg.Consts.Get(i).File).IsPrelude;
-    if (!any)
-        return;
-    int mark = BeginSyntheticFunction(cg, "__cs_check_constants");
     for (var i = 0; i < cg.Consts.Count(); i += 1)
     {
-        var entry = cg.Consts.Get(i);
-        if (cg.Files.Get(entry.File).IsPrelude)
-            continue;
-        cg.Fn[0].File = entry.File;
-        EmitConst(cg, i, entry.Decl.Loc);
-        FlushTemps(cg, 0, true);
+        if (!cg.Files.Get(cg.Consts.Get(i).File).IsPrelude)
+            ConstEvalDecl(cg, i);
     }
-    EndSyntheticFunction(cg, mark, false);
 }
 
 // The function that releases the values of the globals at the end of the program, so that no heap block is left over.

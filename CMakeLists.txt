@@ -50,6 +50,7 @@ add_executable(cshiftc
     compiler/src/Types.cpp
     compiler/src/Lexer.cpp
     compiler/src/Parser.cpp
+    compiler/src/ConstEval.cpp
     compiler/src/CodeGen.cpp
     compiler/src/CodeGenRuntime.cpp
     compiler/src/CodeGenExpr.cpp

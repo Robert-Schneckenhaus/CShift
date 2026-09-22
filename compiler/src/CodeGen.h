@@ -150,6 +150,30 @@ struct StaticTarget
     std::string name;
 };
 
+// The value of a constant expression, computed at compile time (ConstEval.cpp).
+struct ConstVal
+{
+    enum Kind { Int, Float, Bool, String } kind = Int;
+    Type* type = nullptr;
+    bool neg = false;      // Int (also char and enum): sign and magnitude
+    uint64_t mag = 0;
+    double f = 0;          // Float (a float32 holds a value that is exactly representable as float)
+    bool b = false;        // Bool
+    std::string s;         // String
+    bool hasLit = false;   // an unsuffixed literal: adapts to the type of the value it is combined with
+};
+
+// What a constant expression may refer to.
+struct ConstScope
+{
+    FileContext* file = nullptr;        // names are looked up from this file
+    bool locals = false;                // the local constants of the function that is being written are visible
+    EnumInfo* enumInfo = nullptr;       // the enum whose members are being declared (earlier members are visible)
+    std::string what;                   // for error messages: "constant 'X'" or "enum member 'X'"
+    SourceLoc declLoc;
+    const TypeEnv* env = nullptr;       // type parameters (for casts and sizeof in generic functions)
+};
+
 struct ScopeVar
 {
     std::string name;
@@ -160,7 +184,8 @@ struct ScopeVar
     bool ownsArc = false;   // release on scope exit
     bool disposable = false; // call Dispose() on scope exit
     bool resetOnCleanup = false; // zero the slot after releasing (pattern variables)
-    bool isConstant = false;    // declared with 'const' (its initializer is a constant expression)
+    bool isConstant = false;    // a local constant: no variable, its value is constValue
+    ConstVal constValue;
 };
 
 struct Scope
@@ -236,7 +261,18 @@ private:
                           SourceLoc loc);
     bool satisfiesInterface(Type* t, Type* iface);
     bool structImplements(Type* structType, Type* iface);
-    int64_t constEvalInt(Expr* e, EnumInfo* current, SourceLoc loc);
+    // The compile-time evaluator (ConstEval.cpp)
+    ConstVal constEval(Expr* e, const ConstScope& sc);
+    ConstVal constEvalDecl(ConstDecl* c);
+    int64_t constEvalEnumMember(Expr* init, EnumInfo& ei, FileContext* file, const std::string& memberName, SourceLoc loc);
+    ConstVal constConvert(const ConstVal& v, Type* to, SourceLoc loc, bool allowEnumInt = false);
+    ConstVal constNumericConvert(const ConstVal& v, Type* to);
+    ConstVal constAdaptLiteral(const ConstVal& v, Type* to);
+    ConstVal constIntOp(BinOp op, const ConstVal& l, const ConstVal& r, Type* t, SourceLoc loc);
+    ConstVal constArith(BinOp op, ConstVal l, ConstVal r, SourceLoc loc);
+    ConstVal constCompare(BinOp op, ConstVal l, ConstVal r, SourceLoc loc);
+    std::string constToText(const ConstVal& v);
+    Value constToValue(const ConstVal& v);
 
     llvm::Type* llvmTypeOf(Type* t);
     bool needsArc(Type* t);
@@ -350,7 +386,6 @@ private:
     void emitGlobalsInit();
     llvm::Function* emitGlobalsRelease();
     Value emitConst(ConstDecl* c, SourceLoc loc);
-    bool isConstExpr(Expr* e, FileContext* file) const;
 
     Value convertValue(const Value& v, Type* to, SourceLoc loc);
     int conversionCost(const Value& v, Type* to);
@@ -466,7 +501,12 @@ private:
     FuncInfo* mainFunc = nullptr;
     FuncInfo* mainArgsHelper = nullptr; // System.Native.MakeArgs, when Main takes string[] args
     bool arcStats = false;
-    int constDepth = 0;
+    struct ConstState
+    {
+        int state = 0; // 0 = not evaluated, 1 = being evaluated, 2 = done
+        ConstVal value;
+    };
+    std::unordered_map<ConstDecl*, ConstState> constCache;
 
     std::unique_ptr<FnState> fs;
 };

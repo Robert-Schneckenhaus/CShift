@@ -57,6 +57,8 @@ struct ConstEntry
 {
     ConstDecl Decl;
     int File;
+    int State;         // 0 = not evaluated, 1 = being evaluated, 2 = done
+    ConstVal Value;    // the value of the constant (compile-time evaluator)
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +131,8 @@ struct ScopeVar
     bool OwnsArc;      // release at the end of the scope
     bool Disposable;   // call Dispose() at the end of the scope
     bool ResetOnCleanup; // zero the slot after releasing (pattern variables)
-    bool IsConstant;     // declared with 'const' (its initializer is a constant expression)
+    bool IsConstant;     // a local constant: no variable, its value is ConstValue
+    ConstVal ConstValue;
 }
 
 struct TempRelease
@@ -173,7 +176,6 @@ struct CgState
     int InitInstance;     // the pseudo function instance of synthetic code (+1, 0 = none)
     int CurrentInit;      // the global whose initializer is being written
     bool InitActive;
-    int ConstDepth;       // > 0 while the initializer of a top-level constant is evaluated
     int Imports;          // number of "using X from header" declarations in the program
 }
 

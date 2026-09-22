@@ -2,6 +2,7 @@ arc_stress.csh
 builtins.csh
 console_stderr.csh
 const_default.csh
+const_eval.csh
 consts.csh
 embed.csh
 env_exit.csh
@@ -9,11 +10,18 @@ err_break_outside.csh
 err_condition_not_bool.csh
 err_const_assign.csh
 err_const_cycle.csh
+err_const_div_zero.csh
 err_const_init.csh
 err_const_local_not_constant.csh
+err_const_local_overflow.csh
 err_const_local_type.csh
 err_const_local_uninitialized.csh
+err_const_min_div.csh
 err_const_not_constant.csh
+err_const_overflow_add.csh
+err_const_overflow_mul.csh
+err_const_overflow_neg.csh
+err_const_overflow_unsigned.csh
 err_const_ref_assign.csh
 err_const_type.csh
 err_const_uninitialized.csh
@@ -24,7 +32,9 @@ err_constructor.csh
 err_deref_safe.csh
 err_dictionary_key.csh
 err_duplicate_function.csh
+err_enum_next_overflow.csh
 err_enum_no_base.csh
+err_enum_value_overflow.csh
 err_extern_struct.csh
 err_fallthrough.csh
 err_foreach_struct.csh
