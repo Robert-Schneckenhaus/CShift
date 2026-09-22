@@ -1,118 +1,106 @@
-# selfhost: der CShift-Compiler in CShift
+# selfhost: the CShift compiler in CShift
 
-Ziel: den Compiler (`compiler/`, C++ mit LLVM) in CShift selbst zu schreiben, sodass er sich am Ende selbst übersetzt.
+Goal: write the compiler (`compiler/`, C++ with LLVM) in CShift itself, so that it eventually compiles itself.
 
-**Stand:** Lexer und Parser sind vollständig und gegen den C++-Compiler abgesichert. Der Codegenerator deckt fast die ganze Sprache ab
-(Structs, Arrays, `Error<T>`/`Optional<T>`, Generics, Interfaces, Enums, `switch`, Zeiger/`unsafe`, Funktionszeiger, Standardbibliothek als Prelude); alle 80
-Testfälle in `tests/cases` bestehen mit `cshc`. `tests/test.csh` läuft mit `cshc` identisch zum C++-Compiler,
-und **`cshc` übersetzt sich selbst** (`selfhost/bootstrap.sh`: Stufe 1 und Stufe 2 erzeugen identisches LLVM-IR). Der Rest der Liste steht in
-[../Todo.md](../Todo.md).
+**Status:** the lexer and parser are complete and verified against the C++ compiler. The code generator covers almost
+the whole language (structs, arrays, `Error<T>`/`Optional<T>`, generics, interfaces, enums, `switch`, pointers/`unsafe`,
+function pointers, global variables and constants with a compile-time evaluator, the standard library as a prelude,
+FFI); all 80 test cases in `tests/cases` pass with `cshc`. `tests/test.csh` behaves identically with `cshc` and with
+the C++ compiler, and **`cshc` compiles itself** (`selfhost/bootstrap.sh`: stage 1 and stage 2 produce identical
+LLVM IR). What's still open is tracked in [../Todo.md](../Todo.md) (in short: generating `.ffi` files from a C header
+still needs the C++ compiler's libclang, and `cshc` doesn't yet find a bundled `toolchain/` next to itself).
 
 ```
 selfhost/
-├── cshift.json              Projekt "cshc" (baut mit: cshiftc build selfhost)
+├── cshift.json              project "cshc" (build with: cshiftc build selfhost)
 ├── src/
-│   ├── Driver/              Kommandozeile: Build.csh (Optionen, build/run/new, clang), Project.csh (cshift.json), Json.csh,
-│   │                        Ffi.csh (.ffi laden), EmbeddedStdlib.csh (die Stdlib per EmbedTexts eingebettet)
-│   ├── Main.csh             Kommandozeile: cshc [Optionen] datei.csh ... | --tokens | --ast
+│   ├── Driver/              command line: Build.csh (options, build/run/new, clang), Project.csh (cshift.json), Json.csh,
+│   │                        Ffi.csh (loading .ffi files), EmbeddedStdlib.csh (the stdlib embedded via EmbedTexts)
+│   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
-│   │   ├── Token.csh, Lexer.csh      Lexer (Portierung von compiler/src/Lexer.cpp)
-│   │   ├── Ast.csh          Syntaxbaum: Knotentypen und die Arenen (struct Ast)
-│   │   ├── Parser.csh       Parser (Portierung von compiler/src/Parser.cpp)
-│   │   └── TokenDump.csh, AstDump.csh    Textausgaben für den Vergleich mit dem C++-Compiler
+│   │   ├── Token.csh, Lexer.csh      the lexer (a port of compiler/src/Lexer.cpp)
+│   │   ├── Ast.csh          the syntax tree: node types and the arenas (struct Ast)
+│   │   ├── Parser.csh       the parser (a port of compiler/src/Parser.cpp)
+│   │   └── TokenDump.csh, AstDump.csh    text dumps for comparing against the C++ compiler
 │   ├── Sema/                namespace CShift.Sema
-│   │   └── Types.csh        Typtabelle: Typen sind Ganzzahlen (Ids), internierte Typen vergleicht man mit ==
+│   │   └── Types.csh        the type table: types are integers (ids), interned types compare with ==
 │   ├── Emit/                namespace CShift.Emit
-│   │   └── IrWriter.csh     schreibt LLVM-IR als Text (Blöcke, Instruktionen, Konstanten, Deklarationen)
+│   │   └── IrWriter.csh     writes LLVM IR as text (blocks, instructions, constants, declarations)
 │   └── CodeGen/             namespace CShift.CodeGen
-│       ├── Compiler.csh     Zustand des Compilers, Deklarationen, Typauflösung, Funktionsinstanzen (CodeGen.cpp)
-│       ├── Values.csh       Werte, Referenzzählung, Konvertierungen (erste Hälfte von CodeGenExpr.cpp)
-│       ├── Expr.csh         Ausdrücke (CodeGenExpr.cpp)
-│       ├── Call.csh         Aufrufe, Überladungsauflösung, Console/Environment (CodeGenCall.cpp)
-│       ├── Structs.csh      Structs: Layout, Felder, Methoden, Initialisierer, Vererbung, Retain/Release je Struct
-│       ├── Arrays.csh       Arrays: new T[], Indexer, foreach, Array.Copy, Clone, Release je Array-Typ
-│       ├── Errors.csh       Error<T>/Optional<T>: error(...), is-Muster, try, Retain/Release der Ergebnistypen
-│       ├── Switch.csh       switch mit Konstanten- und Musterlabels
-│       ├── Enums.csh        Enums und konstante Ganzzahlausdrücke
-│       ├── Generics.csh     Typargumente, Inferenz, Interfaces, Constraints, using/IDisposable
-│       ├── Pointers.csh     Zeiger: *, &, Arithmetik, Casts
-│       ├── FuncPtrs.csh     Funktionszeiger: Action/Func, Method Groups, indirekter Aufruf
-│       ├── Layout.csh       Größen/Ausrichtung, Layout von C-Structs (FFI)
-│       ├── ConstEval.csh    Compile-Zeit-Auswerter für Konstanten, Enum-Werte, sizeof(T)
-│       ├── Stmt.csh         Anweisungen, Scopes, Funktionskörper (CodeGenStmt.cpp)
-│       ├── Runtime.csh      die Laufzeit als IR-Text: Strings, ARC, Panic (CodeGenRuntime.cpp)
-│       └── Module.csh       Programm übersetzen, Einstiegspunkt
-├── compare.sh               Frontend: vergleicht cshc mit dem C++-Compiler (Tokens und Syntaxbaum)
-├── status.sh, passing.txt   Codegenerator: welche Fälle aus tests/cases bestehen
-├── bootstrap.sh             cshc baut sich selbst; Stufe 1 und 2 müssen dasselbe IR erzeugen
-├── projects.sh              tests/projects mit cshc bauen (cshc build/run/new)
-└── DEPENDENCIES.md          Analyse: was der neue Compiler zur Laufzeit braucht und was sich sparen lässt
+│       ├── Compiler.csh     compiler state, declarations, type resolution, function instances (CodeGen.cpp)
+│       ├── Values.csh       values, reference counting, conversions (the first half of CodeGenExpr.cpp)
+│       ├── Expr.csh         expressions (CodeGenExpr.cpp)
+│       ├── Call.csh         calls, overload resolution, Console/Environment (CodeGenCall.cpp)
+│       ├── Structs.csh      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
+│       ├── Arrays.csh       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
+│       ├── Errors.csh       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
+│       ├── Switch.csh       switch with constant and pattern labels
+│       ├── Enums.csh        enums and constant integer expressions
+│       ├── Generics.csh     type arguments, inference, interfaces, constraints, using/IDisposable
+│       ├── Pointers.csh     pointers: *, &, arithmetic, casts
+│       ├── FuncPtrs.csh     function pointers: Action/Func, method groups, indirect calls
+│       ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
+│       ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
+│       ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
+│       ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
+│       └── Module.csh       compiling the whole program, the entry point
+├── compare.sh               front end: compares cshc against the C++ compiler (tokens and syntax tree)
+├── status.sh, passing.txt   code generator: which cases in tests/cases pass
+├── bootstrap.sh             cshc builds itself; stage 1 and 2 must produce the same IR
+├── projects.sh              build tests/projects with cshc (cshc build/run/new)
+└── DEPENDENCIES.md          analysis: what the new compiler needs at runtime and what can be dropped
 ```
 
-## Bauen und benutzen
+## Building and using it
 
 ```
 cshiftc build selfhost                                  # -> selfhost/bin/cshc
-selfhost/bin/cshc hallo.csh -o hallo                    # .ll schreiben, clang optimiert/übersetzt/linkt
-selfhost/bin/cshc --emit-llvm hallo.csh -o hallo.ll     # nur das IR
-selfhost/bin/cshc --tokens datei.csh | --ast datei.csh  # Dumps (Vergleich mit cshiftc --dump-tokens / --dump-ast)
+selfhost/bin/cshc hello.csh -o hello                    # write .ll, clang optimizes/compiles/links it
+selfhost/bin/cshc --emit-llvm hello.csh -o hello.ll     # just the IR
+selfhost/bin/cshc --tokens file.csh | --ast file.csh    # dumps (compare with cshiftc --dump-tokens / --dump-ast)
 ```
 
-`cshc` schreibt **LLVM-IR als Text** (`.ll`) und ruft `clang` (aus dem `PATH` oder `--cc`) auf, das optimiert, Maschinencode erzeugt
-und linkt. So braucht `cshc` selbst kein LLVM (kein 100-MB-Link, keine `unsafe`-Hülle um die LLVM-C-API); wie der C++-Compiler
-erzeugt er dieselbe Art IR (Vorlage: `cshiftc --emit-llvm`).
+`cshc` writes **LLVM IR as text** (`.ll`) and calls `clang` (from `PATH` or `--cc`), which optimizes it, generates
+machine code and links it. That way `cshc` itself needs no LLVM (no 100 MB link, no `unsafe` wrapper around the
+LLVM-C API); like the C++ compiler, it produces the same kind of IR (as a reference: `cshiftc --emit-llvm`).
 
-## Prüfen
+## Verifying it
 
-* **Frontend:** `bash selfhost/compare.sh <cshiftc> selfhost/bin/cshc` – Token- und Syntaxbaum-Dump samt Fehlermeldungen für
-  alle 110 `.csh`-Dateien des Repositorys (auch die Quellen von `selfhost/`) müssen mit denen des C++-Compilers übereinstimmen.
-* **Codegenerator:** `bash selfhost/status.sh selfhost/bin/cshc -v` übersetzt `tests/cases/*.csh` mit `cshc` und sortiert:
-  *pass*, *unsupported* (`cshc does not support …`, ein noch nicht portiertes Feature) und *FAIL* (echter Unterschied).
-  Die bestehenden Fälle stehen in `passing.txt`; `status.sh --check` (Teil von `tests/run_tests.sh`) schlägt fehl, wenn einer
-  davon nicht mehr besteht. Neue bestandene Fälle trägt man dort ein (`status.sh -v` liefert die Liste).
+* **Front end:** `bash selfhost/compare.sh <cshiftc> selfhost/bin/cshc` — the token and syntax-tree dumps, including
+  error messages, must match the C++ compiler's for all 110 `.csh` files of the repository (including `selfhost/`'s
+  own sources).
+* **Code generator:** `bash selfhost/status.sh selfhost/bin/cshc -v` compiles `tests/cases/*.csh` with `cshc` and
+  sorts the results into *pass*, *unsupported* (`cshc does not support …`, a feature not ported yet) and *FAIL* (an
+  actual difference). The passing cases are listed in `passing.txt`; `status.sh --check` (part of
+  `tests/run_tests.sh`) fails if one of them no longer passes. Newly-passing cases are added there (`status.sh -v`
+  prints the list).
 
-## Entwurfsentscheidungen
+## Design decisions
 
-* **Syntaxbaum in Arenen.** CShift hat keine Klassen mit Referenzsemantik, und ein Struct kann sich nicht selbst enthalten.
-  Jede Knotenart hat deshalb eine `List<...>` in `struct Ast`; Knoten verweisen über kleine Handles (`Expr`, `Stmt`, `TypeRef`)
-  aufeinander. Der Nullwert (alles 0) bedeutet "kein Knoten". `ast.GetCall(e)` liefert den `CallExpr`.
-* **Typen als Ganzzahlen.** Ein Typ ist eine Id in `TypeContext`; wie in C++ ist jeder Typ genau einmal vorhanden (interniert),
-  Typgleichheit ist `==`. Deklarationen (Funktionen, Structs, …) sind Indizes in Listen des `Compiler`.
-* **Der Compiler ist ein Handle.** Structs lassen sich nicht auf Dateien verteilen; die C++-Memberfunktionen von `CodeGen` werden zu
-  freien Funktionen `Emit…(Compiler cg, …)` in mehreren Dateien. Der ganze veränderliche Zustand steckt in Listen, Dictionaries und
-  kleinen Arrays (`cg.St[0]`, `cg.Fn[0]`), sodass Kopien des `Compiler` denselben Zustand sehen (ein Feld einer Kopie neu
-  zuzuweisen wirkt nicht auf die anderen).
-* **Nur ein Fehler.** `Fail(...)` gibt den ersten Fehler aus und beendet. Im Parser gibt es `Error<T>` und `try` statt
-  Exceptions (Backtracking stellt die Position wieder her).
-* **Code, der später ergänzt werden muss.** `IrWriter.Mark()/TakeSince()/AppendCode()` schneiden erzeugten Code aus und fügen ihn
-  später wieder ein (für `?:`, dessen Zweige die gemeinsame Typkonvertierung erst kennen, wenn beide fertig sind).
+* **The syntax tree lives in arenas.** CShift has no classes with reference semantics, and a struct cannot contain
+  itself. So every kind of node has its own `List<...>` in `struct Ast`; nodes refer to each other through small
+  handles (`Expr`, `Stmt`, `TypeRef`). The zero value (everything 0) means "no node". `ast.GetCall(e)` returns the
+  `CallExpr`.
+* **Types are integers.** A type is an id in `TypeContext`; as in C++, every type exists exactly once (interned), and
+  type equality is `==`. Declarations (functions, structs, …) are indices into lists on `Compiler`.
+* **The compiler is a handle.** Structs can't be split across files, so the C++ member functions of `CodeGen` become
+  free functions `Emit…(Compiler cg, …)` spread across several files. All mutable state lives in lists, dictionaries
+  and small arrays (`cg.St[0]`, `cg.Fn[0]`), so copies of `Compiler` see the same state (reassigning a field on a
+  copy has no effect on the others).
+* **Only one error.** `Fail(...)` prints the first error and stops. The parser uses `Error<T>` and `try` instead of
+  exceptions (backtracking restores the position).
+* **Code that has to be filled in later.** `IrWriter.Mark()/TakeSince()/AppendCode()` cut generated code out and
+  reinsert it later (for `?:`, whose branches only know the common conversion type once both are finished).
 
-## Gefundene Lücken (behoben)
+## Gaps found along the way (fixed)
 
-Beim Portieren fehlten diese Dinge in der Sprache bzw. der Standardbibliothek; sie sind jetzt vorhanden:
+While porting, these things turned out to be missing from the language or the standard library; they now exist:
 
 * `int Main(string[] args)`, `string.FromCStr(char*)`, `Console.WriteError(Line)`
-* `Char.*`, `StringBuilder` (mit `Substring`/`Truncate`), `HashSet<T>`, `Process.Run`
-* FFI: `ffiApi` in der Projektdatei (Umbrella-Header), `char*` für `const char*`-Parameter
+* `Char.*`, `StringBuilder` (with `Substring`/`Truncate`), `HashSet<T>`, `Process.Run`
+* FFI: `ffiApi` in the project file (umbrella header), `char*` accepting a `const char*` parameter
 
-Bekannte Unbequemlichkeiten (bisher ohne Blocker): ein Pattern-Variablenbereich endet mit dem `if`; Listenelemente lassen sich nur
-als Kopie holen (`Get`/`Set`); ein großer Struct lässt sich nicht auf mehrere Dateien verteilen; `Dictionary` und `List` sind Structs
-(kein `null`, "keine Umgebung" ist ein leeres Dictionary).
-
-## Was noch fehlt
-
-Die C++-Dateien geben den Umfang vor; als CShift dürften es ähnlich viele Zeilen werden. Reihenfolge nach Nutzen für die Tests:
-
-| Schritt | Inhalt | C++-Vorlage |
-|---|---|---|
-| 1 | Structs: Layout, Felder, Methoden, `this`, Initialisierer, Vererbung (fertig); Interfaces, Constraints, Generics, `sizeof` offen | `CodeGen.cpp`, `CodeGenExpr/Call.cpp` |
-| 2 | Arrays und Strings-Methoden (`Length`, Indexer, `Substring`, `CStr`), `new T[]`, `foreach`, Grenzenprüfung (fertig bis auf `foreach` über Structs und Zeiger-Methoden) | `CodeGenExpr.cpp`, `CodeGenRuntime.cpp` |
-| 3 | `Error<T>`, `Optional<T>`, `try`, `is`-Pattern, `switch` (fertig); `using`/`IDisposable` offen | `CodeGenExpr.cpp`, `CodeGenStmt.cpp` |
-| 4 | Enums, Generics (Instanziierung, Typinferenz), Funktionszeiger, `nint`, Zeiger/`unsafe` | `CodeGen*.cpp` |
-| 5 | Standardbibliothek laden (`stdlib/*.csh` neben `cshc` oder eingebettet), `Main(string[] args)`, `--arc-stats` | `main.cpp`, `StdlibData` |
-| 6 | Treiber: Projektdatei (`cshift.json`, JSON-Parser in CShift), Optionen wie `cshiftc`, clang finden (`toolchain/`) | `main.cpp`, `Project.cpp` |
-| 7 | FFI: `.ffi` lesen, Header über libclang, Struct-Wrapper | `FfiImport.cpp`, `FfiGenerator.cpp` |
-
-Danach `tests/test.csh` und `tests/projects/` mit `cshc` und schließlich der Bootstrap (`cshc` baut `selfhost/` und das Ergebnis
-baut es noch einmal; die beiden Ergebnisse müssen gleich sein).
+Known inconveniences (no blockers so far): a pattern variable's scope ends with the `if`; list elements can only be
+retrieved as a copy (`Get`/`Set`); a large struct can't be split across several files; `Dictionary` and `List` are
+structs (no `null`, "no environment" is an empty dictionary).

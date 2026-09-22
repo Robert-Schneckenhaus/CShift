@@ -1,7 +1,7 @@
-# C-Header importieren (FFI)
+# Importing C headers (FFI)
 
-Mit `using Name from "header.h";` importiert CShift die Deklarationen eines C-Headers als Namensraum. Funktionen, Structs, Enums
-und Konstanten müssen nicht mehr von Hand als `extern "C"` nachgebaut werden.
+With `using Name from "header.h";`, CShift imports the declarations of a C header as a namespace. Functions, structs,
+enums and constants no longer have to be hand-written as `extern "C"`.
 
 ```csharp
 using Zlib from "zlib.h";
@@ -9,38 +9,42 @@ using Zlib from "zlib.h";
 int Main()
 {
     Console.WriteLine(Zlib.zlibVersion());          // const char* -> string
-    Console.WriteLine(Zlib.Z_BEST_COMPRESSION);     // Makro -> Konstante
-    Zlib.z_stream stream = default(Zlib.z_stream);  // C-Struct mit exaktem Layout
+    Console.WriteLine(Zlib.Z_BEST_COMPRESSION);     // macro -> constant
+    Zlib.z_stream stream = default(Zlib.z_stream);  // C struct with the exact layout
     return 0;
 }
 ```
 
 ```
 cshiftc build          # cshift.json: "links": ["z"]
-cshiftc prog.csh -lz   # Einzeldatei
+cshiftc prog.csh -lz   # single file
 ```
 
-## Ablauf
+## How it works
 
-1. Der Compiler parst den Header mit **libclang** und schreibt eine **`.ffi`-Datei** (JSON, leicht lesbar) nach `obj/ffi/<Name>.ffi`
-   (relativ zum Projektordner bzw. zur Quelldatei). Darin stehen Funktionen, Structs, Enums und Konstanten mit CShift-Typen.
-2. Aus der `.ffi`-Datei entstehen die Deklarationen des Namensraums. Der Header wird **nur neu geparst, wenn sich etwas geändert hat**
-   (Inhalt – xxh3-Hash – des Headers und aller Header, die zur API gehören, Target, `-I`/`-D`, Format-Version). Sonst wird die
-   Datei einfach gelesen; das kostet Millisekunden.
-3. Die Bibliothek (`.a`, `.o`, `.lib`, `.so`) muss weiterhin gelinkt werden – über `links` in der `cshift.json` oder auf der Kommandozeile.
+1. The compiler parses the header with **libclang** and writes a **`.ffi` file** (JSON, easy to read) to
+   `obj/ffi/<Name>.ffi` (relative to the project folder or the source file). It lists functions, structs, enums and
+   constants with their CShift types.
+2. The namespace's declarations are built from the `.ffi` file. The header is **only reparsed when something
+   changed** (the content — an xxh3 hash — of the header and of every header that belongs to the API, the target,
+   `-I`/`-D`, the format version). Otherwise the file is simply read, which costs milliseconds.
+3. The library (`.a`, `.o`, `.lib`, `.so`) still has to be linked — via `links` in `cshift.json` or on the command
+   line.
 
-`using Name from "datei.ffi";` verwendet eine vorhandene `.ffi`-Datei direkt. Dafür ist libclang nicht nötig
-(z. B. wenn Bindings mit ausgeliefert werden); nur die Wrapper-Datei für Struct-Werte (siehe unten) bindet den Header ein. Der Header wird gesucht relativ zur Quelldatei, dann in den `includePaths`
-(`-I`) und schließlich in den System-Include-Verzeichnissen des `clang`.
+`using Name from "file.ffi";` uses an existing `.ffi` file directly. That doesn't need libclang (e.g. when bindings
+are shipped with the project); only the wrapper file for struct values (see below) pulls in the header. The header is
+looked up relative to the source file, then in the `includePaths` (`-I`), and finally in `clang`'s system include
+directories.
 
-### Voraussetzungen
+### Requirements
 
-* `clang` (Linker/Shims) und **libclang** (`libclang.dll` / `libclang.so` neben bzw. unter dem Verzeichnis von `clang`). `cshiftc`
-  lädt libclang erst, wenn ein Header tatsächlich geparst werden muss; Umgebungsvariable `CSHIFT_LIBCLANG` überschreibt den Pfad.
-* Fehler im Header (nicht gefundene Includes, unbekannte Typen) brechen den Import mit der Meldung von clang ab – sonst würden
-  Typen still zu `int`. Fehlende Makros oder Pfade gibt man über `includePaths` und `defines` an.
+* `clang` (linker/shims) and **libclang** (`libclang.dll` / `libclang.so` next to or under clang's directory).
+  `cshiftc` only loads libclang once a header actually needs to be parsed; the `CSHIFT_LIBCLANG` environment variable
+  overrides the path.
+* Errors in the header (includes not found, unknown types) abort the import with clang's message — otherwise types
+  would silently become `int`. Missing macros or paths are given via `includePaths` and `defines`.
 
-## Projektdatei
+## Project file
 
 ```json
 {
@@ -52,79 +56,81 @@ cshiftc prog.csh -lz   # Einzeldatei
 }
 ```
 
-| Schlüssel | Bedeutung | Kommandozeile |
+| Key | Meaning | Command line |
 |---|---|---|
-| `includePaths` | Suchpfade für C-Header (relativ zur `cshift.json`) | `-I<dir>` |
-| `defines` | Makros beim Parsen der Header | `-D<name>[=wert]` |
-| `libraryPaths` | Suchpfade des Linkers | `-L<dir>` |
-| `ffiApi` | Pfadteile von Headern, die auch aus System-Include-Pfaden zur importierten API gehören (Umbrella-Header) | `--ffi-api=<text>` |
-| `links` | Eintrag ohne Pfad/Endung: Bibliotheksname (`-l<name>`); Eintrag mit Pfad oder Endung `.a .o .obj .lib .so .dylib .dll`: Datei, die direkt gelinkt wird | `-l<name>`, `datei.a` |
+| `includePaths` | search paths for C headers (relative to `cshift.json`) | `-I<dir>` |
+| `defines` | macros used when parsing the headers | `-D<name>[=value]` |
+| `libraryPaths` | linker search paths | `-L<dir>` |
+| `ffiApi` | path fragments of headers that belong to the imported API even from system include paths (umbrella headers) | `--ffi-api=<text>` |
+| `links` | an entry with no path/extension: a library name (`-l<name>`); an entry with a path or the extension `.a .o .obj .lib .so .dylib .dll`: a file that's linked directly | `-l<name>`, `file.a` |
 
-## Abbildung der C-Typen
+## Mapping of C types
 
 | C | CShift |
 |---|---|
 | `char` / `signed char` / `unsigned char` | `char` / `int8` / `uint8` |
 | `short`, `unsigned short` | `int16`, `uint16` |
-| `int`, `unsigned int` | `int32`, `uint32` (bleibt `int`!) |
-| `long`, `unsigned long` | je nach Ziel `int32`/`int64` (Windows: 32 Bit, Linux/macOS 64 Bit) |
+| `int`, `unsigned int` | `int32`, `uint32` (stays `int`!) |
+| `long`, `unsigned long` | `int32`/`int64` depending on the target (Windows: 32-bit, Linux/macOS: 64-bit) |
 | `long long` | `int64`, `uint64` |
 | `size_t`, `uintptr_t` / `ssize_t`, `ptrdiff_t`, `intptr_t` | **`nuint`** / **`nint`** |
 | `float`, `double` | `float32`, `double` |
 | `_Bool`, `bool` | `bool` |
-| `enum E` | `enum E` (Basistyp aus C) |
-| `struct S` | `struct S` mit exakt dem C-Layout |
-| `struct S` ohne Definition (opaque Handle) | nur als Zeiger `S*` verwendbar |
+| `enum E` | `enum E` (base type taken from C) |
+| `struct S` | `struct S` with exactly the C layout |
+| `struct S` without a definition (an opaque handle) | usable only as a pointer, `S*` |
 | `void*` | `void*` |
-| Funktionszeiger `R (*)(A, B)` | `Func<A, B, R>` / `Action<A, B>` (siehe unten) |
+| function pointer `R (*)(A, B)` | `Func<A, B, R>` / `Action<A, B>` (see below) |
 | `const char*` | `string` |
-| `union`, Bitfelder, Arrays in Structs | als Füllbytes im Layout (Größe stimmt, kein Feldzugriff) |
-| `long double` | Funktion wird übersprungen |
+| `union`, bit fields, arrays inside structs | filler bytes in the layout (the size is right, but there's no field access) |
+| `long double` | the function is skipped |
 
-Der Name eines Struct-/Enum-Typs ist der **typedef-Name**, sofern es einen gibt (`z_stream`, nicht `z_stream_s`).
+The name of a struct/enum type is its **typedef name**, if it has one (`z_stream`, not `z_stream_s`).
 
-**`nint` / `nuint`** sind Ganzzahlen in Zeigergröße (wie `IntPtr`/`UIntPtr` in C#): 64 Bit auf 64-Bit-Zielen. `int`-Werte und alles
-Kleinere konvertieren implizit nach `nint`/`nuint`; `nint`/`nuint` konvertiert implizit nach `int64`/`uint64`, die Gegenrichtung
-verlangt einen Cast (auf 32-Bit-Zielen ginge Information verloren). `int` und `uint` behalten ihre feste Größe von 32 Bit –
-deshalb wird C-`int` bewusst auf `int32` abgebildet und nicht auf `nint`.
+**`nint` / `nuint`** are integers the size of a pointer (like `IntPtr`/`UIntPtr` in C#): 64 bits on 64-bit targets.
+`int` values and anything smaller convert to `nint`/`nuint` implicitly; `nint`/`nuint` convert to `int64`/`uint64`
+implicitly, but the other direction needs a cast (on 32-bit targets that would lose information). `int` and `uint`
+keep their fixed 32-bit size — which is why C's `int` is deliberately mapped to `int32` and not to `nint`.
 
-### Zeiger
+### Pointers
 
-| C-Parameter | CShift | Aufruf |
+| C parameter | CShift | Call |
 |---|---|---|
-| `T* p` (Zeiger auf einen Wert) | `ref T` | `f(ref x)`; auch `null` oder ein `T*` sind erlaubt (Zeiger dürfen `NULL` sein) |
-| `const T* p` | `const ref T` | `f(x)`; auch `null` oder `T*` |
-| `const char* s` | `string` | `f("text")`; `null` wird zu `NULL` |
-| `char* buffer` | `char*` | unsicherer Zeiger (`unsafe`) |
+| `T* p` (a pointer to a value) | `ref T` | `f(ref x)`; `null` or a `T*` are also accepted (the pointer may be `NULL`) |
+| `const T* p` | `const ref T` | `f(x)`; `null` or `T*` are also accepted |
+| `const char* s` | `string` | `f("text")`; `null` becomes `NULL` |
+| `char* buffer` | `char*` | an unsafe pointer (`unsafe`) |
 | `void*` | `void*` | |
-| Funktionszeiger | `Action<...>` / `Func<..., R>` | eine Funktion oder `null` |
-| `Handle*` (opaker Typ) | `Handle*` | unsicherer Zeiger, nur weiterreichen |
-| `T**` | `ref T*` | Ausgabeparameter: `f(ref handle)` |
+| function pointer | `Action<...>` / `Func<..., R>` | a function, or `null` |
+| `Handle*` (an opaque type) | `Handle*` | an unsafe pointer, only passed along |
+| `T**` | `ref T*` | an output parameter: `f(ref handle)` |
 
-Rückgabewerte bleiben rohe Zeiger; nur `const char*` wird als **Kopie** zu einem `string` (`NULL` → `null`). Der Zeiger gehört weiterhin
-der Bibliothek, der String ist eine eigene Kopie.
+Return values stay raw pointers; only `const char*` is **copied** into a `string` (`NULL` → `null`). The pointer
+still belongs to the library; the string is an independent copy.
 
-Das Feld `ref`/`constref`/`nullable` in der `.ffi`-Datei steuert dieses Verhalten pro Parameter. Ein Zeiger auf ein Array (`int* values`,
-`size_t count`) wird als `ref int` abgebildet; einen Zeiger auf mehrere Elemente übergibt man als rohen `int*` (`unsafe`).
+The `ref`/`constref`/`nullable` field in the `.ffi` file controls this behavior per parameter. A pointer to an array
+(`int* values`, `size_t count`) is mapped to `ref int`; a pointer to several elements is passed as a raw `int*`
+(`unsafe`).
 
 ### Structs *by value*
 
-C-Funktionen, die ein Struct als Wert nehmen oder liefern (`GeoPoint geo_add(GeoPoint a, GeoPoint b)`), sind ABI-abhängig (Register
-oder Speicher, je nach Plattform und Größe). Der Compiler erzeugt dafür neben der `.ffi`-Datei ein kleines **C-Wrapper-File**
-(`obj/ffi/<Name>.shim.c`), das mit `clang` übersetzt und automatisch gelinkt wird. Damit übernimmt clang die plattformspezifische
-Übergabe; in CShift sieht man nur normale Funktionen mit Struct-Werten:
+C functions that take or return a struct by value (`GeoPoint geo_add(GeoPoint a, GeoPoint b)`) are ABI-dependent
+(registers or memory, depending on the platform and size). For these, the compiler generates a small **C wrapper
+file** (`obj/ffi/<Name>.shim.c`) alongside the `.ffi` file, which is compiled with `clang` and linked automatically.
+That way clang handles the platform-specific argument passing; in CShift you just see ordinary functions with struct
+values:
 
 ```csharp
 Geo.GeoPoint p = Geo.geo_point_add(Geo.geo_point_make(1, 2), Geo.geo_point_make(10, 20));
 ```
 
-Die Wrapper referenzieren jede solche Funktion der Bibliothek, daher muss die Bibliothek gelinkt werden, sobald der Header
-solche Funktionen enthält – auch wenn man sie nicht aufruft.
+The wrappers reference every such function in the library, so the library has to be linked as soon as the header
+contains such functions — even if you never call them.
 
-### Callbacks (Funktionszeiger)
+### Callbacks (function pointers)
 
-C-Funktionszeiger werden zu den eingebauten Typen `Action<...>` (ohne Ergebnis) und `Func<..., R>` (mit Ergebnis, der letzte
-Typ ist das Ergebnis) – bis zu 8 Parameter, ohne Closures. Man übergibt den Namen einer CShift-Funktion oder `null`:
+C function pointers become the built-in types `Action<...>` (no result) and `Func<..., R>` (with a result, the last
+type argument being the result) — up to 8 parameters, no closures. You pass the name of a CShift function, or `null`:
 
 ```csharp
 using Mfb from "MiniFB.h";
@@ -140,34 +146,37 @@ void OnKey(Mfb.mfb_window* window, Mfb.mfb_key key, Mfb.mfb_key_mod mod, bool pr
 Mfb.mfb_set_keyboard_callback(window, OnKey);
 ```
 
-Ein Callback bekommt die C-Werte unverändert: Zeiger sind rohe Zeiger (`const char*` → `char*`, `const S*` → `S*`; Zugriff nur in
-`unsafe`), es gibt keine `string`-/`ref`-Umwandlung. Ein Zeiger auf `void*`-Nutzerdaten (`void* user`) wird mit einem Cast
-zurückgewandelt (`(int*)user`). Eine C-Funktion, die einen Funktionszeiger *liefert*, ergibt einen `Func<...>`, den man direkt
-aufruft. Funktionszeiger in Structs (`GeoOps.fn`) sind ebenfalls `Action`/`Func`. Genaueres steht im README (Abschnitt Funktionszeiger).
+A callback receives the C values unchanged: pointers are raw pointers (`const char*` → `char*`, `const S*` → `S*`;
+accessing them needs `unsafe`), and there's no `string`/`ref` conversion. A pointer to `void*` user data (`void*
+user`) is cast back (`(int*)user`). A C function that *returns* a function pointer gives you a `Func<...>` that you
+call directly. Function pointers inside structs (`GeoOps.fn`) are `Action`/`Func` as well. More detail is in the
+README (the function pointers section).
 
-### Konstanten und Enums
+### Constants and enums
 
-Ganzzahl-, Fließkomma- und String-Makros (`#define VERSION 3`, `(FLAG_A << 1)`) werden zu Konstanten des Namensraums; Aufzählungswerte
-sind Konstanten vom Enum-Typ und über den Enum-Namen erreichbar: `Geo.GEO_GREEN`, `Geo.GeoColor.GEO_GREEN`. Funktionsartige Makros
-gibt es nicht.
+Integer, floating-point and string macros (`#define VERSION 3`, `(FLAG_A << 1)`) become constants of the namespace;
+enum values are constants of the enum type, reachable through the enum's name too: `Geo.GEO_GREEN`,
+`Geo.GeoColor.GEO_GREEN`. Function-like macros are not supported.
 
-## Grenzen
+## Limits
 
-Nicht übernommen (steht im Feld `skipped` der `.ffi`-Datei mit Begründung, die Verwendung meldet "undefined name"):
+Not carried over (listed in the `skipped` field of the `.ffi` file with a reason; using one reports "undefined
+name"):
 
-* globale Variablen des Headers, `long double`, `__int128`
-* Zugriff auf Union-Felder, Bitfelder und Arrays in Structs (das Layout stimmt trotzdem)
-* gepackte Structs (`#pragma pack`): der Import bricht mit einer Layout-Meldung ab
-* Callbacks mit Struct-Werten als Parameter oder Ergebnis, variadische Funktionszeiger, mehr als 8 Parameter: bleiben `void*`
-* Variadische Funktionen mit Struct-Werten (Variadische mit einfachen Werten wie `printf` funktionieren)
-* Nur C, kein C++ (Namespaces, Klassen, Templates)
+* global variables of the header, `long double`, `__int128`
+* accessing union fields, bit fields and arrays inside structs (the layout is still correct)
+* packed structs (`#pragma pack`): the import aborts with a layout error
+* callbacks with struct values as a parameter or result, variadic function pointers, more than 8 parameters: these
+  stay `void*`
+* variadic functions with struct values (variadic functions with plain values, like `printf`, work)
+* C only, no C++ (namespaces, classes, templates)
 
-## Umbrella-Header und Bibliotheken in Systempfaden
+## Umbrella headers and libraries in system paths
 
-Ein Header aus einem System-Include-Pfad (`llvm-c/Core.h`, `zlib.h`) bringt nur seine eigenen Deklarationen mit; Header, die er
-einbindet, gelten als Systemheader und werden nicht übernommen. Um mehrere Header einer Bibliothek in **einen** Namensraum zu
-holen, schreibt man einen eigenen Header, der sie einbindet (ein *Umbrella-Header*), und nennt in der Projektdatei die Pfadteile, die
-zur API gehören sollen:
+A header from a system include path (`llvm-c/Core.h`, `zlib.h`) only brings in its own declarations; headers it
+includes are treated as system headers and are not imported. To pull several headers of a library into **one**
+namespace, write your own header that includes them (an *umbrella header*), and list in the project file which path
+fragments belong to the API:
 
 ```json
 {
@@ -186,5 +195,5 @@ zur API gehören sollen:
 using Llvm from "native/llvm.h";
 ```
 
-Auf der Kommandozeile: `--ffi-api=<text>`. Ein `const char*`-Parameter (`string` in CShift) nimmt auch ein rohes `char*` an,
-etwa einen Zeiger, den eine andere C-Funktion geliefert hat (`string.FromCStr(char*)` kopiert einen C-String in einen `string`).
+On the command line: `--ffi-api=<text>`. A `const char*` parameter (`string` in CShift) also accepts a raw `char*`,
+such as a pointer returned by another C function (`string.FromCStr(char*)` copies a C string into a `string`).

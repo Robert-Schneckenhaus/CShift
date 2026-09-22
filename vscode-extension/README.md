@@ -1,14 +1,16 @@
-# CShift für VS Code
+# CShift for VS Code
 
-Syntax-Highlighting, Snippets und Spracheinstellungen für **CShift** (`.csh`), die native C#-artige Systemsprache dieses Repos.
+Syntax highlighting, snippets and language settings for **CShift** (`.csh`), this repo's native, C#-like systems
+language.
 
-## Funktionen
+## Features
 
-* Färbung von Schlüsselwörtern, Typen (`struct`/`interface`/`enum`-Namen, Generics, Constraints, Basislisten), Funktionen,
-  Zahlen (Hex, Binär, `1_000`, Suffixe `u L f d`), Strings/Chars mit Escapes, Kommentaren, `link "lib"`, `namespace`/`using`
-* Eingebaute Typen und Bibliotheksklassen: `Error<T>`, `Optional<T>`, `Console`, `Math`, `File`, `List`, `Dictionary`, …
-* Private Felder (`_name`) bekommen einen eigenen Scope (`variable.other.private`)
-* Klammer-Paare, Auto-Einrückung, `//`- und `/* */`-Kommentare umschalten, `// region`-Faltung
+* Highlighting for keywords, types (`struct`/`interface`/`enum` names, generics, constraints, base lists), functions,
+  numbers (hex, binary, `1_000`, suffixes `u L f d`), strings/chars with escapes, comments, `link "lib"`,
+  `namespace`/`using`
+* Built-in types and library classes: `Error<T>`, `Optional<T>`, `Console`, `Math`, `File`, `List`, `Dictionary`, …
+* Private fields (`_name`) get their own scope (`variable.other.private`)
+* Bracket pairs, auto-indent, toggling `//` and `/* */` comments, `// region` folding
 * Snippets (`main`, `struct`, `fn`, `foreach`, `switch`, `try`, `ifis`, `dict`, …)
 
 ## Installation
@@ -19,9 +21,9 @@ npx @vscode/vsce package --allow-missing-repository --skip-license
 code --install-extension cshift-0.3.0.vsix
 ```
 
-Oder den Ordner nach `%USERPROFILE%\.vscode\extensions\pyrdacor.cshift-0.3.0` kopieren und VS Code neu starten.
+Or copy the folder to `%USERPROFILE%\.vscode\extensions\pyrdacor.cshift-0.3.0` and restart VS Code.
 
-## Grammatik testen
+## Testing the grammar
 
-Die Grammatik ist eine TextMate-Grammatik (`syntaxes/cshift.tmLanguage.json`). In VS Code zeigt
-*Developer: Inspect Editor Tokens and Scopes* die Scopes unter dem Cursor.
+The grammar is a TextMate grammar (`syntaxes/cshift.tmLanguage.json`). In VS Code, *Developer: Inspect Editor Tokens
+and Scopes* shows the scopes under the cursor.

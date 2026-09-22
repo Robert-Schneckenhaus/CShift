@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-// A CShift project is described by a cshift.json file (see Buildkonzept.md):
+// A CShift project is described by a cshift.json file (see BuildDesign.md):
 //
 //   {
 //     "name": "demo",

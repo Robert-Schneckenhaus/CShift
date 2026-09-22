@@ -22,7 +22,7 @@ mkdir -p "$dist/toolchain/bin" "$dist/toolchain/lib"
 
 # ---- the compiler and the documentation ----
 cp "$build/cshiftc" "$dist/"
-cp "$root/README.md" "$root/FFI.md" "$root/Buildkonzept.md" "$root/Sprachkonzept.md" "$dist/"
+cp "$root/README.md" "$root/FFI.md" "$root/BuildDesign.md" "$root/LanguageDesign.md" "$dist/"
 cp "$root/packaging/README-release-linux.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"
 echo "$version" > "$dist/VERSION"
