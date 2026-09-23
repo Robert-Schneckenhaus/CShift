@@ -244,6 +244,15 @@ Type* CodeGen::resolveType(const TypeRef& ref, FileContext* file, const TypeEnv*
     }
 
     const TypeDeclEntry* entry = lookupTypeDecl(file, dotted);
+    if (ref.path.size() == 1 && dotted == "Thread" && ref.args.empty() && entry && entry->kind == TypeDeclEntry::Struct &&
+        !entry->structDecl->typeParams.empty())
+    {
+        // Bare 'Thread' (no type argument) is the non-generic handle, kept as a separate struct ('_ThreadVoid')
+        // because a struct name cannot be overloaded by type-argument count in this codebase; see
+        // stdlib/thread.csh. 'Thread<T>' above is the real, registered generic struct named "Thread".
+        if (const TypeDeclEntry* voidEntry = lookupTypeDecl(file, "System._ThreadVoid"))
+            return getStructType(voidEntry->structDecl, {}, ref.loc);
+    }
     if (!entry && ref.path.size() == 1 && (dotted == "Error" || dotted == "Optional"))
     {
         if (ref.args.size() != 1)
@@ -258,6 +267,12 @@ Type* CodeGen::resolveType(const TypeRef& ref, FileContext* file, const TypeEnv*
     }
     if (!entry && ref.path.size() == 1 && (dotted == "Action" || dotted == "Func"))
         return resolveFunctionType(ref, dotted, file, env);
+    if (!entry && ref.path.size() == 1 && dotted == "SharedPtr")
+    {
+        if (ref.args.size() != 1)
+            err(ref.loc, "'SharedPtr' expects exactly one type argument");
+        return types.sharedPtrOf(resolveValueType(*ref.args[0], file, env));
+    }
     if (!entry)
         err(ref.loc, "unknown type '" + ref.toString() + "'");
 
@@ -702,6 +717,7 @@ llvm::Type* CodeGen::llvmTypeOf(Type* t)
     case TypeKind::Array:
     case TypeKind::Function:
     case TypeKind::MethodGroup:
+    case TypeKind::SharedPtr:
     case TypeKind::Null: r = llvm::PointerType::getUnqual(ctx); break;
     case TypeKind::Enum: r = llvm::Type::getIntNTy(ctx, t->bits); break;
     case TypeKind::Struct:
@@ -733,7 +749,8 @@ bool CodeGen::needsArc(Type* t)
     case TypeKind::String:
     case TypeKind::Array:
     case TypeKind::Error:
-    case TypeKind::ErrorLit: r = true; break;
+    case TypeKind::ErrorLit:
+    case TypeKind::SharedPtr: r = true; break;
     case TypeKind::Optional: r = needsArc(t->elem); break;
     case TypeKind::Struct:
         if (t->st->layoutInProgress)
@@ -895,6 +912,8 @@ void CodeGen::ensureSignature(FuncInfo& fi)
             err(p.loc, "internal error: a C string parameter must be a string");
     }
     fi.ret = resolveValueType(*d->ret, fi.file, &fi.env);
+    if (d->isThread)
+        checkThreadSignature(fi);
     fi.signatureResolved = true;
 }
 
@@ -1155,6 +1174,7 @@ bool CodeGen::compile()
     }
 
     checkGlobalInitOrder();
+    checkThreadPurity();
 
     if (diag.hasErrors())
         return false;

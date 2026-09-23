@@ -13,12 +13,13 @@ what's implemented). If something here and the main README disagree, the main RE
 4. [Enums](enums.md) — enums with an explicit base type
 5. [Memory model](memory-model.md) — value vs. reference semantics, ARC, `ref`/`const ref`, `unsafe`
 6. [Error handling](error-handling.md) — `Error<T>`, `Optional<T>`, `try`, `is`/`switch` patterns
-7. [Resources and `using`](resources.md) — `IDisposable`, deterministic cleanup
-8. [Functions and function pointers](functions-and-delegates.md) — overloading, parameters, `Action`/`Func`
-9. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings, `List`, `Dictionary`, and more
-10. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
-11. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
-12. [Projects](projects.md) — `cshift.json`, building programs with more than one file
+7. [Threads](threading.md) — `thread`, `Thread`/`Thread<T>`, `SharedPtr<T>`
+8. [Resources and `using`](resources.md) — `IDisposable`, deterministic cleanup
+9. [Functions and function pointers](functions-and-delegates.md) — overloading, parameters, `Action`/`Func`
+10. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings, `List`, `Dictionary`, and more
+11. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
+12. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
+13. [Projects](projects.md) — `cshift.json`, building programs with more than one file
 
 ## A first program
 

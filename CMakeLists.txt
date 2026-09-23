@@ -56,6 +56,7 @@ add_executable(cshiftc
     compiler/src/CodeGenExpr.cpp
     compiler/src/CodeGenCall.cpp
     compiler/src/CodeGenStmt.cpp
+    compiler/src/CodeGenThread.cpp
 )
 
 target_include_directories(cshiftc PRIVATE compiler/src)

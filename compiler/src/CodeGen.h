@@ -222,6 +222,16 @@ struct FnState
     bool isIntMain = false;
 };
 
+// The stdlib types involved in spawning one 'thread' function (CodeGenThread.cpp).
+struct ThreadTypes
+{
+    Type* coreType = nullptr;    // System._ThreadCore
+    Type* payloadType = nullptr; // what is stored at offset 16 of the control block: _ThreadCore (void) or
+                                  // _ThreadControl<T> (T result), whose first field is a _ThreadCore
+    Type* handleType = nullptr;  // System._ThreadVoid ('Thread' in source) or System.Thread<T>
+    bool hasResult = false;
+};
+
 class CodeGen
 {
 public:
@@ -318,6 +328,7 @@ private:
     llvm::Function* allocFn();
     llvm::Function* retainFn();
     llvm::Function* releaseFlatFn();
+    llvm::Function* retainSharedFn(); // SharedPtr<T>: atomic increment (shared by every instantiation)
     llvm::Function* lenFn();
     llvm::Function* dataFn();
     llvm::Function* concatFn();
@@ -379,6 +390,17 @@ private:
     void noteCall(FuncInfo& fi);
     void checkGlobalInitOrder();
     void checkConstants();
+
+    // ---- 'thread' functions and Thread / Thread<T> / SharedPtr<T> (CodeGenThread.cpp) ----
+    bool isThreadSafeType(Type* t);
+    void checkThreadSignature(FuncInfo& fi);
+    void checkThreadPurity();
+    FuncInfo* threadMethod(Type* owner, const std::string& name, SourceLoc loc);
+    ThreadTypes resolveThreadTypes(FileContext* file, Type* resultType, SourceLoc loc);
+    Value emitThreadSpawn(FuncInfo& fi, std::vector<Arg>& args, SourceLoc loc);
+    llvm::Function* threadTrampolineFor(FuncInfo& fi, llvm::StructType* argsStructTy, const ThreadTypes& tt);
+    llvm::GlobalVariable* currentThreadCoreGlobal();
+    Value emitThreadCancelled(SourceLoc loc);
     llvm::Function* beginSyntheticFunction(const std::string& name);
     void endSyntheticFunction(llvm::Function* f, bool keep);
     bool isConstantType(Type* t) const;
@@ -498,6 +520,7 @@ private:
     std::unordered_map<std::string, llvm::Function*> helpers;
     std::unordered_map<std::string, llvm::Constant*> stringLiterals;
     std::unordered_map<std::string, llvm::Constant*> cStrings;
+    std::unordered_map<FuncInfo*, llvm::Function*> threadTrampolines; // one per 'thread' function instance
     FuncInfo* mainFunc = nullptr;
     FuncInfo* mainArgsHelper = nullptr; // System.Native.MakeArgs, when Main takes string[] args
     bool arcStats = false;

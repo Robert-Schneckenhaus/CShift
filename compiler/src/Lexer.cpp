@@ -20,6 +20,7 @@ const std::unordered_map<std::string, Tok>& keywords()
         {"where", Tok::KwWhere},         {"const", Tok::KwConst},       {"ref", Tok::KwRef},
         {"static", Tok::KwStatic},       {"true", Tok::KwTrue},         {"false", Tok::KwFalse},
         {"null", Tok::KwNull},           {"this", Tok::KwThis},         {"sizeof", Tok::KwSizeof},
+        {"thread", Tok::KwThread},
     };
     return map;
 }

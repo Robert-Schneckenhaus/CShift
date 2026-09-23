@@ -189,6 +189,7 @@ Implemented from the design:
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
 | Standard library: `List<T>`, `Dictionary<K,V>`, `File`, `Directory`, `Encoding`, `Math`, string helpers | ✔ (see below) |
+| Real OS threads: `thread` functions, `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>` | ✔ (extension, see [threading.md](docs/language/threading.md)) |
 
 ### Interpretation and extensions beyond the design
 
@@ -237,8 +238,8 @@ The design document leaves a number of things open; these are the decisions that
   value) can be read at any time. Name resolution works like for constants (the file's namespace, `using`,
   qualified as `Ns.Counter`). Globals are ordinary lvalues (assign to them, `ref`, `&` in `unsafe`, modify
   fields/elements, call methods; a function-pointer global calls like a function). Values that own heap blocks
-  (strings, arrays, lists, …) are released once `Main` returns. No `var` (the type must be written out), no
-  multithreading.
+  (strings, arrays, lists, …) are released once `Main` returns. No `var` (the type must be written out). A
+  `thread` function may never read or write a global, even through a function it calls (checked at compile time).
 * **`foreach` over structs:** works for any struct with `int Count()` and `T Get(int index)` (e.g. `List<T>`).
 * **Name resolution** works like in C#: the current file's namespaces and the global namespace win over `using`
   namespaces.
@@ -267,7 +268,8 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
 | `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
 | `String` | `string.csh` | string helpers, visible as methods on `string` |
-| `System.Native` | `native.csh` | C imports (`fopen`, `sin`, …), also usable by your own programs (`using System.Native;`) |
+| `System.Native` | `native.csh` | C imports (`fopen`, `sin`, `pthread_mutex/cond_*`, …), also usable by your own programs (`using System.Native;`) |
+| `System` | `thread.csh` | `Thread`/`Thread<T>`, `SharedPtr<T>` (`using System;`, see [threading.md](docs/language/threading.md)) |
 
 **`List<T>`** — a growable array. Create it with `List<int>.Create()` (or `new List<int>()`).
 `Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)`, `Set(i, v)`, `Count()`,
@@ -331,6 +333,13 @@ like in C#), `Lerp`, `IsNaN`, `IsInfinity`. Integer arguments are widened to `do
 `string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written as a function in
 `namespace String` (the first parameter is the string).
 
+**`Thread`/`Thread<T>`** — the handle returned by calling a `thread` function: `Join()`, `Cancel()`,
+`CancelAndWait()`, `IsCompleted()`, `IsCancelled()`, and (`Thread<T>` only) the non-blocking `t is T value` pattern.
+Real OS threads (pthreads on every supported platform), isolated from global state and restricted to plain-value
+(or `SharedPtr<T>`) parameters — see [threading.md](docs/language/threading.md) for the full story, including
+`Thread.Cancelled`. **`SharedPtr<T>`** — `Create(value)`, `Get()`, `Ptr()` (`unsafe`), `IsNull()`: a box with an
+atomically reference-counted handle, safe to share between threads (unlike strings/arrays/containers).
+
 ## Compiler structure
 
 | File | Contents |
@@ -383,7 +392,10 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]      # or .\build.ps1 -Test
   formatting (`Format`, interpolation). There's no indexer (`list[i]`); it's `Get`/`Set` instead.
 * Interfaces as a value type (dynamic dispatch), lambdas/closures, and passing structs *by value* in a hand-written
   `extern "C"` (it works via `using X from "header.h"`) are still missing. Limits of header imports: [FFI.md](FFI.md).
-* Reference counts are not atomic (no multithreading).
+* Reference counts of strings, arrays and the built-in containers are not atomic. Threads (`thread`,
+  `Thread`/`Thread<T>`, see [threading.md](docs/language/threading.md)) are isolated from global state and their
+  parameters are restricted to plain values and `SharedPtr<T>` (which *is* atomically reference-counted) exactly
+  because of this; sharing a string/array/container between threads yourself is still unsafe.
 * Generic bodies are only checked upon instantiation (like C++ templates); unused generic functions are not analyzed.
 * No debug information (DWARF/PDB).
 * Error messages: after a syntax error, semantic analysis no longer runs.

@@ -466,6 +466,11 @@ FuncInfo* CodeGen::resolveGroup(const Value& g, Type* to, std::string* why)
             reason = "'" + g.groupName + "' is an instance method; only static methods and free functions can be function values";
             continue;
         }
+        if (d->isThread)
+        {
+            reason = "'" + g.groupName + "' is a 'thread' function and cannot be used as a function pointer (call it directly to start it)";
+            continue;
+        }
         bool plain = !d->isVariadic && !d->retOut && !d->retCString;
         for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
             plain = plain && fi->paramRefs[i] == RefKind::None && !fi->paramCString[i];
@@ -503,7 +508,7 @@ Type* CodeGen::groupFunctionType(const Value& g)
     {
         return nullptr;
     }
-    if (fi->hasThis || c.decl->isVariadic || c.decl->retOut || c.decl->retCString)
+    if (fi->hasThis || c.decl->isVariadic || c.decl->retOut || c.decl->retCString || c.decl->isThread)
         return nullptr;
     for (size_t i = 0; i < fi->paramTypes.size(); i += 1)
         if (fi->paramRefs[i] != RefKind::None || fi->paramCString[i])
@@ -686,6 +691,8 @@ Value CodeGen::emitCall(CallExpr* e)
 
         std::vector<Arg> args = emitArgs(e->args);
         FuncInfo* fi = resolveOverload(cands, args, targs, e->loc, n->name);
+        if (fi->decl->isThread)
+            return emitThreadSpawn(*fi, args, e->loc);
         llvm::Value* thisPtr = nullptr;
         if (fi->hasThis)
         {
@@ -717,12 +724,28 @@ Value CodeGen::emitCall(CallExpr* e)
                 err(e->loc, "namespace '" + st.name + "' has no function '" + m->name + "'");
             std::vector<Arg> args = emitArgs(e->args);
             FuncInfo* fi = resolveOverload(cands, args, targs, e->loc, m->name);
+            if (fi->decl->isThread)
+                return emitThreadSpawn(*fi, args, e->loc);
             return emitDirectCall(*fi, nullptr, args, e->loc);
         }
 
         if (st.kind == StaticTarget::TypeName)
         {
             Type* t = st.type;
+            if (t->kind == TypeKind::SharedPtr)
+            {
+                if (m->name != "Create")
+                    err(e->loc, "type '" + t->name + "' has no static method '" + m->name + "'");
+                std::vector<Arg> args = emitArgs(e->args);
+                if (args.size() != 1)
+                    err(e->loc, "SharedPtr<T>.Create takes one argument (the value)");
+                Value v = convertValue(args[0].v, t->elem, e->loc);
+                llvm::Value* owned = consume(v);
+                llvm::Value* block = builder.CreateCall(allocFn(), {builder.getInt64(sizeOf(t->elem)), builder.getInt64(0)});
+                llvm::Value* slot = builder.CreateConstGEP1_64(builder.getInt8Ty(), block, 16);
+                builder.CreateStore(owned, slot);
+                return Value::rvalue(t, block, true);
+            }
             if (t->isString())
             {
                 // string.FromBytes(uint8[] bytes [, start, count]) builds a string from raw (UTF-8) bytes.
@@ -776,6 +799,8 @@ Value CodeGen::emitCall(CallExpr* e)
                 err(e->loc, "'" + t->name + "." + m->name + "' is an instance method and needs an object");
             if (!m->name.empty() && m->name[0] == '_' && fs->func->owner != fi->owner)
                 err(e->loc, "method '" + m->name + "' is private to '" + fi->owner->name + "'");
+            if (fi->decl->isThread)
+                return emitThreadSpawn(*fi, args, e->loc);
             return emitDirectCall(*fi, nullptr, args, e->loc);
         }
 
@@ -1047,6 +1072,40 @@ Value CodeGen::emitBuiltinMethod(Value obj, const std::string& method, std::vect
             Value a = toRValue(obj);
             holdTemp(a);
             return Value::rvalue(t, builder.CreateCall(cloneFn(t), {a.v}), true);
+        }
+    }
+    else if (t->isSharedPtr())
+    {
+        if (method == "IsNull")
+        {
+            expectArgs(0);
+            Value p = toRValue(obj);
+            holdTemp(p);
+            return boolValue(builder.CreateIsNull(p.v));
+        }
+        if (method == "Get")
+        {
+            // A copy of the shared value (retained if it needs ARC itself).
+            expectArgs(0);
+            Value p = toRValue(obj);
+            holdTemp(p);
+            emitPanicIf(builder.CreateIsNull(p.v), "SharedPtr.Get(): the pointer is null");
+            llvm::Value* slot = builder.CreateConstGEP1_64(builder.getInt8Ty(), p.v, 16);
+            llvm::Value* payload = builder.CreateLoad(llvmTypeOf(t->elem), slot);
+            emitRetainValue(t->elem, payload);
+            return Value::rvalue(t->elem, payload, true);
+        }
+        if (method == "Ptr")
+        {
+            // A raw pointer to the shared value, for in-place (mutable) access. Concurrent access through it is
+            // not synchronized by SharedPtr itself, the same as std::shared_ptr in C++: only the reference count
+            // is thread-safe, the pointee is not.
+            expectArgs(0);
+            requireUnsafe(loc, "SharedPtr.Ptr()");
+            Value p = toRValue(obj);
+            holdTemp(p);
+            emitPanicIf(builder.CreateIsNull(p.v), "SharedPtr.Ptr(): the pointer is null");
+            return Value::rvalue(types.pointerTo(t->elem), builder.CreateConstGEP1_64(builder.getInt8Ty(), p.v, 16));
         }
     }
     else if (t->isNumeric() || t->isBool() || t->isEnum())

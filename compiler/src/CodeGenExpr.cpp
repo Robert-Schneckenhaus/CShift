@@ -213,7 +213,7 @@ int CodeGen::conversionCost(const Value& v, Type* to)
             return (v.litIsFloat || to->bits == 64) ? 1 : 2;
     }
     if (from->kind == TypeKind::Null)
-        return (to->isPointer() || to->isString() || to->isArray() || to->isOptional() || to->isFunction()) ? 1 : -1;
+        return (to->isPointer() || to->isString() || to->isArray() || to->isOptional() || to->isFunction() || to->isSharedPtr()) ? 1 : -1;
     if (from->kind == TypeKind::MethodGroup)
         return to->isFunction() && resolveGroup(v, to, nullptr) ? 1 : -1;
     if (from->kind == TypeKind::ErrorLit)
@@ -769,8 +769,19 @@ StaticTarget CodeGen::resolveStaticTarget(Expr* e)
     st.name = dotted;
     if (const TypeDeclEntry* entry = lookupTypeDecl(file, dotted))
     {
-        st.kind = StaticTarget::TypeName;
         std::vector<Type*> args = lastArgs ? resolveTypeArgs(*lastArgs) : std::vector<Type*>{};
+        if (parts.size() == 1 && dotted == "Thread" && args.empty() && entry->kind == TypeDeclEntry::Struct &&
+            !entry->structDecl->typeParams.empty())
+        {
+            // Bare 'Thread' (no type argument): see the matching comment in CodeGen::resolveType.
+            if (const TypeDeclEntry* voidEntry = lookupTypeDecl(file, "System._ThreadVoid"))
+            {
+                st.kind = StaticTarget::TypeName;
+                st.type = getStructType(voidEntry->structDecl, {}, e->loc);
+                return st;
+            }
+        }
+        st.kind = StaticTarget::TypeName;
         switch (entry->kind)
         {
         case TypeDeclEntry::Struct: st.type = getStructType(entry->structDecl, args, e->loc); break;
@@ -790,6 +801,15 @@ StaticTarget CodeGen::resolveStaticTarget(Expr* e)
         if (dotted == "Console" || dotted == "Memory" || dotted == "Environment" || dotted == "Array")
         {
             st.kind = StaticTarget::Builtin;
+            return st;
+        }
+        if (dotted == "SharedPtr")
+        {
+            std::vector<Type*> args = lastArgs ? resolveTypeArgs(*lastArgs) : std::vector<Type*>{};
+            if (args.size() != 1)
+                err(e->loc, "'SharedPtr' expects exactly one type argument");
+            st.kind = StaticTarget::TypeName;
+            st.type = types.sharedPtrOf(args[0]);
             return st;
         }
     }
@@ -825,6 +845,8 @@ Value CodeGen::emitMember(MemberExpr* e)
                     return constInt(t, m.second);
             err(e->loc, "enum '" + t->name + "' has no member '" + e->name + "'");
         }
+        if (t->isStruct() && t->st->decl->name == "_ThreadVoid" && e->name == "Cancelled")
+            return emitThreadCancelled(e->loc);
         bool found = false;
         Value v = emitBuiltinStaticMember(t, e->name, e->loc, found);
         if (found)
@@ -1606,7 +1628,27 @@ Value CodeGen::emitIs(IsExpr* e)
 {
     Value subj = emitRValue(e->operand.get());
     if (!subj.type->isResultLike())
-        err(e->loc, "'is' can only be used with Error<T> and Optional<T> values, not '" + subj.type->name + "'");
+    {
+        // 'thread is T result' (Thread<T> only, not the non-generic 'Thread'): non-blocking sugar for
+        // pattern-matching the Optional<T> that _TryGetResult() (stdlib/thread.csh) returns - a value only once
+        // the thread has completed without being cancelled.
+        if (subj.type->isStruct() && subj.type->st->decl->name == "Thread" && !subj.type->st->decl->typeParams.empty())
+        {
+            std::vector<Candidate> cands = methodCandidates(subj.type, "_TryGetResult");
+            if (cands.empty())
+                err(e->loc, "internal error: '_TryGetResult' is missing on '" + subj.type->name + "'");
+            FuncInfo* fi = getFuncInstance(cands[0].decl, cands[0].owner, cands[0].ownerEnv, cands[0].file, {}, e->loc);
+            holdTemp(subj);
+            llvm::Value* thisPtr = materialize(subj.type, subj.v);
+            std::vector<Arg> noArgs;
+            subj = emitDirectCall(*fi, thisPtr, noArgs, e->loc);
+        }
+        else
+        {
+            std::string shown = (subj.type->isStruct() && subj.type->st->decl->name == "_ThreadVoid") ? "Thread" : subj.type->name;
+            err(e->loc, "'is' can only be used with Error<T>, Optional<T> and Thread<T> values, not '" + shown + "'");
+        }
+    }
     Type* pattern = declTypeOf(*e->type);
     // "x is T v" tests for a value of the payload type, "x is Error<T> r" always matches and binds the whole result.
     bool whole = pattern == subj.type;

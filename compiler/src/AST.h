@@ -427,6 +427,7 @@ struct FuncDecl
     bool isExtern = false;
     bool isStatic = false;
     bool isVariadic = false;
+    bool isThread = false; // 'thread' function: calling it spawns an OS thread (see Types.h / CodeGenThread.cpp)
     // FFI (imported C functions):
     std::string symbol;         // C symbol to call if it differs from the name (e.g. a generated shim)
     bool retCString = false;    // returns a const char* that is copied into a string

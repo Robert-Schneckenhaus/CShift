@@ -479,10 +479,34 @@ static std::vector<MemberVisit> arcMembers(Type* t)
     return out;
 }
 
+// SharedPtr<T>: an atomically reference-counted box {atomic i64 refcount, T value}, safe to share between OS
+// threads. Retaining is the same for every T (bumping the count), so it reuses one flat helper.
+llvm::Function* CodeGen::retainSharedFn()
+{
+    auto it = helpers.find("__cs_retain_shared");
+    if (it != helpers.end())
+        return it->second;
+
+    auto* ptrTy = llvm::PointerType::getUnqual(ctx);
+    llvm::Function* f = makeHelper("__cs_retain_shared", llvm::Type::getVoidTy(ctx), {ptrTy});
+    llvm::IRBuilder<> b(llvm::BasicBlock::Create(ctx, "entry", f));
+    auto* doBB = llvm::BasicBlock::Create(ctx, "inc", f);
+    auto* doneBB = llvm::BasicBlock::Create(ctx, "done", f);
+    b.CreateCondBr(b.CreateIsNull(f->getArg(0)), doneBB, doBB);
+    b.SetInsertPoint(doBB);
+    b.CreateAtomicRMW(llvm::AtomicRMWInst::Add, f->getArg(0), b.getInt64(1), llvm::MaybeAlign(), llvm::AtomicOrdering::Monotonic);
+    b.CreateBr(doneBB);
+    b.SetInsertPoint(doneBB);
+    b.CreateRetVoid();
+    return f;
+}
+
 llvm::Function* CodeGen::retainFor(Type* t)
 {
     if (t->isString() || t->isArray())
         return retainFn();
+    if (t->isSharedPtr())
+        return retainSharedFn();
 
     std::string name = "__retain." + t->name;
     auto it = helpers.find(name);
@@ -521,6 +545,35 @@ llvm::Function* CodeGen::releaseFor(Type* t)
         return it->second;
 
     auto* ptrTy = llvm::PointerType::getUnqual(ctx);
+    if (t->isSharedPtr())
+    {
+        // Atomic decrement; the last owner releases the payload (if it needs ARC) and frees the block. The
+        // fetch_sub uses acquire-release ordering so that the freeing thread sees every write the other owners
+        // made to the payload before they released their reference.
+        llvm::Function* f = makeHelper(name, llvm::Type::getVoidTy(ctx), {ptrTy});
+        llvm::IRBuilder<> b(llvm::BasicBlock::Create(ctx, "entry", f));
+        auto* decBB = llvm::BasicBlock::Create(ctx, "dec", f);
+        auto* freeBB = llvm::BasicBlock::Create(ctx, "free", f);
+        auto* doneBB = llvm::BasicBlock::Create(ctx, "done", f);
+        llvm::Value* p = f->getArg(0);
+        b.CreateCondBr(b.CreateIsNull(p), doneBB, decBB);
+        b.SetInsertPoint(decBB);
+        llvm::Value* old = b.CreateAtomicRMW(llvm::AtomicRMWInst::Sub, p, b.getInt64(1), llvm::MaybeAlign(),
+                                             llvm::AtomicOrdering::AcquireRelease);
+        b.CreateCondBr(b.CreateICmpEQ(old, b.getInt64(1)), freeBB, doneBB);
+        b.SetInsertPoint(freeBB);
+        if (needsArc(t->elem))
+        {
+            llvm::Value* elemPtr = b.CreateConstGEP1_64(b.getInt8Ty(), p, 16);
+            b.CreateCall(releaseFor(t->elem), {b.CreateLoad(llvmTypeOf(t->elem), elemPtr)});
+        }
+        b.CreateCall(cFunction("free", b.getVoidTy(), {ptrTy}), {p});
+        bumpCounter(b, "__cs_frees");
+        b.CreateBr(doneBB);
+        b.SetInsertPoint(doneBB);
+        b.CreateRetVoid();
+        return f;
+    }
     if (t->isArray())
     {
         // Array of ARC elements: release every element when the count drops to zero.

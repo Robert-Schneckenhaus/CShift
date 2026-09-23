@@ -138,7 +138,7 @@ private:
     void func(int indent, const std::string& role, const FuncDecl& f)
     {
         line(indent, role, "Func" + at(f.loc) + " name=" + f.name + typeAttr("ret", f.ret.get()) + flag(f.isStatic, "static") +
-                               flag(f.isExtern, "extern") + flag(f.isVariadic, "variadic") +
+                               flag(f.isExtern, "extern") + flag(f.isVariadic, "variadic") + flag(f.isThread, "thread") +
                                (f.typeParams.empty() ? "" : " typeParams=" + names(f.typeParams)));
         for (const auto& p : f.params)
             line(indent + 1, "", "Param" + at(p.loc) + " name=" + p.name + typeAttr("type", p.type.get()) +

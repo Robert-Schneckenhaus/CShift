@@ -103,4 +103,4 @@ switch (result)
 `Error<Error<T>>`, `Error<Optional<T>>`, `Optional<Error<T>>` and `Optional<Optional<T>>` are all disallowed, so a
 result is always unambiguous.
 
-Next: [Resources and `using`](resources.md).
+Next: [Threads](threading.md).

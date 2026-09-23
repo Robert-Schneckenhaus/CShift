@@ -200,6 +200,11 @@ void Parser::parseTopLevel(CompilationUnit& u)
             fail(abi.loc, "only extern \"C\" is supported");
         u.funcs.push_back(parseFunction(u, true, false));
     }
+    else if (check(Tok::KwThread))
+    {
+        advance();
+        u.funcs.push_back(parseFunction(u, false, false, true));
+    }
     else if (check(Tok::Ident))
     {
         // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
@@ -282,7 +287,16 @@ std::unique_ptr<StructDecl> Parser::parseStruct(CompilationUnit& u)
 
     while (!check(Tok::RBrace) && !check(Tok::Eof))
     {
-        bool isStatic = match(Tok::KwStatic);
+        bool isStatic = false, isThread = false;
+        while (true)
+        {
+            if (match(Tok::KwStatic))
+                isStatic = true;
+            else if (match(Tok::KwThread))
+                isThread = true;
+            else
+                break;
+        }
         SourceLoc memberLoc = cur().loc;
         TypeRefPtr type = parseType();
         std::string name = expectIdent("member name");
@@ -294,6 +308,7 @@ std::unique_ptr<StructDecl> Parser::parseStruct(CompilationUnit& u)
             fn->name = name;
             fn->ret = std::move(type);
             fn->isStatic = isStatic;
+            fn->isThread = isThread;
             fn->owner = decl.get();
             fn->file = &u.file;
             parseFunctionRest(*fn, u);
@@ -303,6 +318,8 @@ std::unique_ptr<StructDecl> Parser::parseStruct(CompilationUnit& u)
         {
             if (isStatic)
                 fail(memberLoc, "static fields are not supported");
+            if (isThread)
+                fail(memberLoc, "'thread' can only be used on a method");
             FieldDecl f;
             f.loc = memberLoc;
             f.type = std::move(type);
@@ -365,12 +382,13 @@ std::unique_ptr<EnumDecl> Parser::parseEnum(CompilationUnit& u)
     return decl;
 }
 
-std::unique_ptr<FuncDecl> Parser::parseFunction(CompilationUnit& u, bool isExtern, bool isStatic)
+std::unique_ptr<FuncDecl> Parser::parseFunction(CompilationUnit& u, bool isExtern, bool isStatic, bool isThread)
 {
     auto fn = std::make_unique<FuncDecl>();
     fn->file = &u.file;
     fn->isExtern = isExtern;
     fn->isStatic = isStatic;
+    fn->isThread = isThread;
     fn->ret = parseType();
     fn->loc = cur().loc;
     fn->name = expectIdent("function name");

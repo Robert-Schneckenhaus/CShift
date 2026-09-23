@@ -151,7 +151,7 @@
 				},
 				{
 					"name": "storage.modifier.cshift",
-					"match": "\\b(extern|static|unsafe|unchecked|const|ref)\\b"
+					"match": "\\b(extern|static|unsafe|unchecked|const|ref|thread)\\b"
 				},
 				{
 					"name": "storage.type.cshift",
@@ -202,7 +202,7 @@
 			"patterns": [
 				{
 					"name": "support.type.cshift",
-					"match": "\\b(Error|Optional|Action|Func|IDisposable|IComparable|IEquatable|IHashable|KeyValuePair)\\b"
+					"match": "\\b(Error|Optional|Action|Func|SharedPtr|Thread|IDisposable|IComparable|IEquatable|IHashable|KeyValuePair)\\b"
 				},
 				{
 					"name": "support.class.cshift",

@@ -29,7 +29,7 @@ private:
     std::unique_ptr<StructDecl> parseStruct(CompilationUnit& unit);
     std::unique_ptr<InterfaceDecl> parseInterface(CompilationUnit& unit);
     std::unique_ptr<EnumDecl> parseEnum(CompilationUnit& unit);
-    std::unique_ptr<FuncDecl> parseFunction(CompilationUnit& unit, bool isExtern, bool isStatic);
+    std::unique_ptr<FuncDecl> parseFunction(CompilationUnit& unit, bool isExtern, bool isStatic, bool isThread = false);
     void parseFunctionRest(FuncDecl& fn, CompilationUnit& unit);
     void parseTypeParams(std::vector<std::string>& out);
     void parseConstraints(std::vector<Constraint>& out);

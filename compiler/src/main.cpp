@@ -689,6 +689,7 @@ int main(int argc, char** argv)
         linkArgs.push_back("-l" + l);
     if (!isWindows)
         linkArgs.push_back("-lm"); // the math functions of the standard library
+    linkArgs.push_back("-lpthread"); // 'thread' functions and Thread/Thread<T> (stdlib/thread.csh)
     for (const auto& l : opt.libs)
         linkArgs.push_back("-l" + l);
     std::vector<llvm::StringRef> refs(linkArgs.begin(), linkArgs.end());

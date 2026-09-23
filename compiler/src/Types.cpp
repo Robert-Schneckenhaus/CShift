@@ -103,6 +103,17 @@ Type* TypeContext::optionalOf(Type* elem)
     return t;
 }
 
+Type* TypeContext::sharedPtrOf(Type* elem)
+{
+    auto it = sharedPtrs.find(elem);
+    if (it != sharedPtrs.end())
+        return it->second;
+    Type* t = create(TypeKind::SharedPtr, "SharedPtr<" + elem->name + ">");
+    t->elem = elem;
+    sharedPtrs[elem] = t;
+    return t;
+}
+
 Type* TypeContext::functionOf(const std::vector<Type*>& params, Type* ret)
 {
     std::string name = ret->isVoid() ? "Action" : "Func";

@@ -36,3 +36,14 @@ extern "C" double ceil(double x);
 extern "C" double trunc(double x);
 extern "C" double nearbyint(double x);
 extern "C" double fabs(double x);
+
+// Threads (System.Threading). pthread_mutex_t/pthread_cond_t are treated as opaque blobs of memory that the
+// caller owns (see System.Threading._ThreadCore, which reserves inline storage for them); pthread_create,
+// pthread_detach and pthread_self are only ever used by the code generator itself when a 'thread' function is
+// spawned (CodeGenThread.cpp), not from CShift code, so they are not declared here.
+extern "C" int pthread_mutex_init(void* mutex, void* attr);
+extern "C" int pthread_mutex_lock(void* mutex);
+extern "C" int pthread_mutex_unlock(void* mutex);
+extern "C" int pthread_cond_init(void* cond, void* attr);
+extern "C" int pthread_cond_wait(void* cond, void* mutex);
+extern "C" int pthread_cond_broadcast(void* cond);
