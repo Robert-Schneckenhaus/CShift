@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compares the front end of the C++ compiler with the one written in CShift for all .csh files of the repository:
-# token dump and syntax tree dump (including the error messages) must be identical.
+# token dump and syntax tree dump (including the error messages) must be identical. Files listed in
+# selfhost/frontend-skip.txt (syntax cshc does not support yet, e.g. a cshiftc-only language feature) are left out.
 #   selfhost/compare.sh <cshiftc> <cshc> [tokens|ast]
 set -u
 CSHIFTC="${1:?path of cshiftc}"
@@ -24,12 +25,29 @@ show_diff() {
     fi
 }
 
+# Files that use syntax the CShift front end does not know yet (see selfhost/frontend-skip.txt) - an expected
+# difference, not a regression, so they are left out of the comparison entirely rather than reported as FAILing.
+SKIP_LIST="$ROOT/selfhost/frontend-skip.txt"
+skip_paths=""
+if [ -f "$SKIP_LIST" ]; then
+    while IFS= read -r line; do
+        line="${line%%#*}"                  # strip comments
+        line="$(echo "$line" | xargs)"       # trim whitespace; also drops now-empty lines
+        [ -n "$line" ] && skip_paths="$skip_paths|$line|"
+    done < "$SKIP_LIST"
+fi
+is_skipped() { [ -n "$skip_paths" ] && [ "${skip_paths#*|$1|}" != "$skip_paths" ]; }
+
 compare() {
     local name="$1" flagCpp="$2" flagCs="$3"
-    local same=0 different=0
+    local same=0 different=0 skipped=0
     for f in "$ROOT"/tests/cases/*.csh "$ROOT"/tests/*.csh "$ROOT"/tests/projects/*/src/*.csh "$ROOT"/tests/projects/*/extra/*.csh \
              "$ROOT"/stdlib/*.csh "$ROOT"/selfhost/src/*.csh "$ROOT"/selfhost/src/*/*.csh "$ROOT"/demo/src/*.csh; do
         [ -f "$f" ] || continue
+        if is_skipped "${f#$ROOT/}"; then
+            skipped=$((skipped + 1))
+            continue
+        fi
         "$CSHIFTC" $flagCpp "$f" > "$TMP/a.txt" 2> "$TMP/a.err"
         "$CSHC" $flagCs "$f" > "$TMP/b.txt" 2> "$TMP/b.err"
         tr -d '\r' < "$TMP/a.txt" > "$TMP/a1.txt"; tr -d '\r' < "$TMP/b.txt" > "$TMP/b1.txt"
@@ -43,7 +61,7 @@ compare() {
             show_diff "$TMP/a1.err" "$TMP/b1.err"
         fi
     done
-    echo "$name: $same identical, $different different"
+    echo "$name: $same identical, $different different, $skipped skipped (frontend-skip.txt)"
     [ "$different" -eq 0 ]
 }
 

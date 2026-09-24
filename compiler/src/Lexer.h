@@ -15,7 +15,7 @@ enum class Tok
     KwNamespace, KwUsing, KwStruct, KwInterface, KwEnum, KwExtern, KwUnsafe, KwUnchecked,
     KwIf, KwElse, KwWhile, KwDo, KwFor, KwForeach, KwIn, KwSwitch, KwCase, KwDefault,
     KwBreak, KwContinue, KwReturn, KwNew, KwTry, KwIs, KwWhere, KwConst, KwRef, KwStatic,
-    KwTrue, KwFalse, KwNull, KwThis, KwSizeof, KwThread,
+    KwTrue, KwFalse, KwNull, KwThis, KwSizeof,
 
     // Punctuation
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
@@ -26,6 +26,13 @@ enum class Tok
     AmpAssign, PipeAssign, CaretAssign, ShlAssign,
     // Note: '>>' and '>>=' are not lexed as single tokens (generics use '>').
     // The parser joins adjacent '>' tokens.
+
+    // 'thread' (cshiftc only, see Todo.md) is appended here, after every other value, rather than grouped with
+    // the other keywords above: selfhost/src/Syntax/Token.csh's TokenKind enum is the same list without it, and
+    // selfhost/compare.sh diffs token dumps by this enum's raw ordinal, so inserting a new value anywhere but the
+    // end would shift every later token's number and desync the two compilers' dumps for every file, not just
+    // ones using 'thread'.
+    KwThread,
 };
 
 struct Token
