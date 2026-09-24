@@ -1048,6 +1048,17 @@ ExprPtr Parser::parseUnary()
     }
     default: break;
     }
+    // 'start' is a contextual keyword (see Lexer.cpp): only when an identifier spelled 'start' is immediately
+    // followed by another identifier - the callee's name - is it the 'start' of a thread spawn, e.g.
+    // 'start Foo(...)' or 'start Obj.Method(...)'. Two bare identifiers can never be adjacent in any other valid
+    // expression, so this cannot misfire on a variable/parameter/field actually named 'start'.
+    if (checkIdent("start") && peekTok().kind == Tok::Ident)
+    {
+        auto s = std::make_unique<StartExpr>(loc);
+        advance();
+        s->operand = parseUnary();
+        return s;
+    }
     return parsePostfix(parsePrimary());
 }
 

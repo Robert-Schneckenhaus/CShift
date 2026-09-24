@@ -426,7 +426,8 @@ private:
     Value fieldAccess(Value obj, const std::string& name, SourceLoc loc);
 
     // ---- Calls (CodeGenCall.cpp) ----
-    Value emitCall(CallExpr* e);
+    Value emitCall(CallExpr* e, bool viaStart = false);
+    Value emitStart(StartExpr* e);
     Value emitEmbed(CallExpr* e, const std::string& name);
     Value emitBuiltinStatic(const std::string& type, const std::string& method, std::vector<Arg>& args, SourceLoc loc);
     Value emitBuiltinMethod(Value obj, const std::string& method, std::vector<Arg>& args, SourceLoc loc);

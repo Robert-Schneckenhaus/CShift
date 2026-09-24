@@ -2,9 +2,9 @@
 
 # Threads
 
-A `thread` function runs on its own OS thread. Calling it does not run it there and then - it starts the thread
-and immediately returns a handle: `Thread` for a function that returns `void`, `Thread<T>` for a function that
-returns `T`.
+A `thread` function runs on its own OS thread. It cannot be called directly - only `start`ed. `start f(args)`
+does not run `f` there and then: it starts the thread and immediately returns a handle, `Thread` for a function
+that returns `void`, `Thread<T>` for a function that returns `T`.
 
 ```csharp
 thread int Square(int x)
@@ -14,11 +14,20 @@ thread int Square(int x)
 
 void Main()
 {
-    Thread<int> t = Square(6);
+    Thread<int> t = start Square(6);
     // ... the main thread can keep doing other work here ...
     Console.WriteLine(t.Join());   // waits for the thread and prints 36
+
+    start Square(10);             // fire and forget - the handle is simply not kept
+
+    int result = (start Square(5)).Join();   // parenthesize to chain a method right off 'start ...'
+
+    Square(6);   // compile-time error: a 'thread' function can only be called through 'start'
 }
 ```
+
+`start` is only recognized directly in front of a call (`start Foo(...)`, `start Obj.Method(...)`) - it is a
+*contextual* keyword, not a reserved word, so a variable, parameter or field can still be named `start`.
 
 ## Isolation
 
@@ -108,7 +117,7 @@ thread int ReadIt(SharedPtr<int> shared)
 
 void Main()
 {
-    Thread<int> t = ReadIt(box);
+    Thread<int> t = start ReadIt(box);
     Console.WriteLine(t.Join());   // 42
 }
 ```

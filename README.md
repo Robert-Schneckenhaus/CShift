@@ -189,7 +189,7 @@ Implemented from the design:
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
 | Standard library: `List<T>`, `Dictionary<K,V>`, `File`, `Directory`, `Encoding`, `Math`, string helpers | ✔ (see below) |
-| Real OS threads: `thread` functions, `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>` | ✔ (extension, see [threading.md](docs/language/threading.md)) |
+| Real OS threads: `thread` functions (only callable via `start`), `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>` | ✔ (extension, see [threading.md](docs/language/threading.md)) |
 
 ### Interpretation and extensions beyond the design
 
@@ -333,12 +333,13 @@ like in C#), `Lerp`, `IsNaN`, `IsInfinity`. Integer arguments are widened to `do
 `string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written as a function in
 `namespace String` (the first parameter is the string).
 
-**`Thread`/`Thread<T>`** — the handle returned by calling a `thread` function: `Join()`, `Cancel()`,
-`CancelAndWait()`, `IsCompleted()`, `IsCancelled()`, and (`Thread<T>` only) the non-blocking `t is T value` pattern.
-Real OS threads (pthreads on every supported platform), isolated from global state and restricted to plain-value
-(or `SharedPtr<T>`) parameters — see [threading.md](docs/language/threading.md) for the full story, including
-`Thread.Cancelled`. **`SharedPtr<T>`** — `Create(value)`, `Get()`, `Ptr()` (`unsafe`), `IsNull()`: a box with an
-atomically reference-counted handle, safe to share between threads (unlike strings/arrays/containers).
+**`Thread`/`Thread<T>`** — the handle returned by `start`ing a `thread` function (`start Foo(args)`; calling one
+directly, without `start`, is a compile-time error): `Join()`, `Cancel()`, `CancelAndWait()`, `IsCompleted()`,
+`IsCancelled()`, and (`Thread<T>` only) the non-blocking `t is T value` pattern. Real OS threads (pthreads on
+every supported platform), isolated from global state and restricted to plain-value (or `SharedPtr<T>`)
+parameters — see [threading.md](docs/language/threading.md) for the full story, including `Thread.Cancelled`.
+**`SharedPtr<T>`** — `Create(value)`, `Get()`, `Ptr()` (`unsafe`), `IsNull()`: a box with an atomically
+reference-counted handle, safe to share between threads (unlike strings/arrays/containers).
 
 ## Compiler structure
 

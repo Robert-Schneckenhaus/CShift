@@ -170,6 +170,11 @@
 					"match": "\\bsizeof\\b"
 				},
 				{
+					"comment": "'start' (start Foo(...)) is a contextual keyword, not reserved: only highlighted when it looks like the start of a call, so a variable/parameter actually named 'start' (e.g. Substring(int start, ...)) is unaffected",
+					"name": "keyword.operator.expression.cshift",
+					"match": "\\bstart\\b(?=\\s+[A-Za-z_])"
+				},
+				{
 					"name": "constant.language.cshift",
 					"match": "\\b(true|false|null)\\b"
 				},

@@ -1745,6 +1745,7 @@ Value CodeGen::emitExpr(Expr* e)
     case ExprKind::Name: return emitName(static_cast<NameExpr*>(e));
     case ExprKind::Member: return emitMember(static_cast<MemberExpr*>(e));
     case ExprKind::Call: return emitCall(static_cast<CallExpr*>(e));
+    case ExprKind::Start: return emitStart(static_cast<StartExpr*>(e));
     case ExprKind::Index: return emitIndex(static_cast<IndexExpr*>(e));
     case ExprKind::Unary: return emitUnary(static_cast<UnaryExpr*>(e));
     case ExprKind::Binary: return emitBinary(static_cast<BinaryExpr*>(e));

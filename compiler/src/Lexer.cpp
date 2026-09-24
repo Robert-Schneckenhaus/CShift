@@ -21,6 +21,9 @@ const std::unordered_map<std::string, Tok>& keywords()
         {"static", Tok::KwStatic},       {"true", Tok::KwTrue},         {"false", Tok::KwFalse},
         {"null", Tok::KwNull},           {"this", Tok::KwThis},         {"sizeof", Tok::KwSizeof},
         {"thread", Tok::KwThread},
+        // 'start' (as in 'start Foo(...)') is deliberately NOT a reserved word here: it is a very natural
+        // identifier (parameter/variable names like 'start' are common, e.g. Substring(int start, ...)) and is
+        // recognized as the 'start' keyword contextually instead, see Parser::parseUnary.
     };
     return map;
 }

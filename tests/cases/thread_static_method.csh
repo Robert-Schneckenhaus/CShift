@@ -14,6 +14,6 @@ struct Calculator
 
 void Main()
 {
-    Thread<int> t = Calculator.AddOne(98);
+    Thread<int> t = start Calculator.AddOne(98);
     Console.WriteLine(t.Join());
 }

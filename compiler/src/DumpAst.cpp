@@ -304,6 +304,10 @@ private:
             line(indent, role, "RefArg" + loc);
             expr(indent + 1, "operand", static_cast<const RefArgExpr*>(e)->operand.get());
             break;
+        case ExprKind::Start:
+            line(indent, role, "Start" + loc);
+            expr(indent + 1, "operand", static_cast<const StartExpr*>(e)->operand.get());
+            break;
         }
     }
 

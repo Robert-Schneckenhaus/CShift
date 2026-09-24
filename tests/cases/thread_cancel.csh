@@ -1,4 +1,5 @@
-// Cancel / CancelAndWait / IsCancelled / IsCompleted / Thread.Cancelled, and SharedPtr<T> as a thread parameter.
+// 'start', Cancel / CancelAndWait / IsCancelled / IsCompleted / Thread.Cancelled, and SharedPtr<T> as a
+// thread parameter.
 // expect-exit: 0
 // expect-stdout: cancelled=true
 // expect-stdout: completed=true
@@ -31,7 +32,7 @@ thread int Double(int x)
 
 void Main()
 {
-    Thread<int> counting = CountUp();
+    Thread<int> counting = start CountUp();
     counting.Cancel();
     counting.CancelAndWait();
     Console.WriteLine("cancelled=" + counting.IsCancelled().ToString());
@@ -43,9 +44,9 @@ void Main()
         Console.WriteLine("is did not match (expected)");
 
     var box = SharedPtr<int>.Create(41);
-    Thread<int> shared = AddOne(box);
+    Thread<int> shared = start AddOne(box);
     Console.WriteLine("shared=" + shared.Join().ToString());
 
-    Thread<int> plain = Double(10);
+    Thread<int> plain = start Double(10);
     Console.WriteLine("plain=" + plain.Join().ToString());
 }

@@ -468,7 +468,7 @@ FuncInfo* CodeGen::resolveGroup(const Value& g, Type* to, std::string* why)
         }
         if (d->isThread)
         {
-            reason = "'" + g.groupName + "' is a 'thread' function and cannot be used as a function pointer (call it directly to start it)";
+            reason = "'" + g.groupName + "' is a 'thread' function and cannot be used as a function pointer (use 'start " + g.groupName + "(...)' to start it)";
             continue;
         }
         bool plain = !d->isVariadic && !d->retOut && !d->retCString;
@@ -638,9 +638,26 @@ Value CodeGen::emitEmbed(CallExpr* e, const std::string& name)
     return Value::rvalue(arrT, arr, true);
 }
 
-Value CodeGen::emitCall(CallExpr* e)
+// 'start f(...)': the only way to call a 'thread' function (see emitCall's viaStart handling - a plain call to
+// one is a compile-time error, and 'start' on anything else is too).
+Value CodeGen::emitStart(StartExpr* e)
+{
+    if (e->operand->kind != ExprKind::Call)
+        err(e->loc, "'start' must be followed directly by a call, e.g. 'start Foo(...)'");
+    return emitCall(static_cast<CallExpr*>(e->operand.get()), true);
+}
+
+// A call is normally 'e', but 'start f(...)' (emitStart) re-enters this with viaStart=true and 'e' being the
+// call inside 'start'. A 'thread' function can only be called via 'start'; conversely 'start' only ever makes
+// sense directly in front of a call to one (never an indirect call through a function pointer/value - a
+// 'thread' function can never become one, see resolveGroup/groupFunctionType).
+Value CodeGen::emitCall(CallExpr* e, bool viaStart)
 {
     Expr* callee = e->callee.get();
+    auto rejectIndirectStart = [&] {
+        if (viaStart)
+            err(e->loc, "'start' can only be used with a direct call to a 'thread' function");
+    };
 
     if (callee->kind == ExprKind::Name)
     {
@@ -650,6 +667,7 @@ Value CodeGen::emitCall(CallExpr* e)
         {
             if (!var.type->isFunction())
                 err(e->loc, "'" + n->name + "' is a variable, not a function");
+            rejectIndirectStart();
             std::vector<Arg> args = emitArgs(e->args);
             return emitIndirectCall(var, args, e->loc);
         }
@@ -659,6 +677,7 @@ Value CodeGen::emitCall(CallExpr* e)
             FieldPath p;
             if (findField(fs->func->owner, n->name, p) && p.type->isFunction())
             {
+                rejectIndirectStart();
                 Value field = emitName(n);
                 std::vector<Arg> args = emitArgs(e->args);
                 return emitIndirectCall(field, args, e->loc);
@@ -670,6 +689,7 @@ Value CodeGen::emitCall(CallExpr* e)
             Value global = globalValue(*g);
             if (global.type->isFunction() && !(fs->func->owner && methodCandidates(fs->func->owner, n->name).size()))
             {
+                rejectIndirectStart();
                 std::vector<Arg> args = emitArgs(e->args);
                 return emitIndirectCall(global, args, e->loc);
             }
@@ -685,14 +705,24 @@ Value CodeGen::emitCall(CallExpr* e)
                 cands.push_back(Candidate{d, nullptr, nullptr, d->file});
         }
         if (cands.empty() && (n->name == "EmbedText" || n->name == "EmbedTexts" || n->name == "EmbedNames"))
+        {
+            rejectIndirectStart();
             return emitEmbed(e, n->name);
+        }
         if (cands.empty())
             err(e->loc, "undefined function '" + n->name + "'");
 
         std::vector<Arg> args = emitArgs(e->args);
         FuncInfo* fi = resolveOverload(cands, args, targs, e->loc, n->name);
         if (fi->decl->isThread)
+        {
+            if (!viaStart)
+                err(e->loc, "call to the 'thread' function '" + n->name + "' must be prefixed with 'start': 'start " +
+                                n->name + "(...)'");
             return emitThreadSpawn(*fi, args, e->loc);
+        }
+        if (viaStart)
+            err(e->loc, "'start' can only be used with a 'thread' function, not '" + n->name + "'");
         llvm::Value* thisPtr = nullptr;
         if (fi->hasThis)
         {
@@ -711,6 +741,7 @@ Value CodeGen::emitCall(CallExpr* e)
 
         if (st.kind == StaticTarget::Builtin)
         {
+            rejectIndirectStart();
             std::vector<Arg> args = emitArgs(e->args);
             return emitBuiltinStatic(st.name, m->name, args, e->loc);
         }
@@ -725,7 +756,13 @@ Value CodeGen::emitCall(CallExpr* e)
             std::vector<Arg> args = emitArgs(e->args);
             FuncInfo* fi = resolveOverload(cands, args, targs, e->loc, m->name);
             if (fi->decl->isThread)
+            {
+                if (!viaStart)
+                    err(e->loc, "call to the 'thread' function '" + m->name + "' must be prefixed with 'start'");
                 return emitThreadSpawn(*fi, args, e->loc);
+            }
+            if (viaStart)
+                err(e->loc, "'start' can only be used with a 'thread' function, not '" + m->name + "'");
             return emitDirectCall(*fi, nullptr, args, e->loc);
         }
 
@@ -734,6 +771,7 @@ Value CodeGen::emitCall(CallExpr* e)
             Type* t = st.type;
             if (t->kind == TypeKind::SharedPtr)
             {
+                rejectIndirectStart();
                 if (m->name != "Create")
                     err(e->loc, "type '" + t->name + "' has no static method '" + m->name + "'");
                 std::vector<Arg> args = emitArgs(e->args);
@@ -748,6 +786,7 @@ Value CodeGen::emitCall(CallExpr* e)
             }
             if (t->isString())
             {
+                rejectIndirectStart();
                 // string.FromBytes(uint8[] bytes [, start, count]) builds a string from raw (UTF-8) bytes.
                 std::vector<Arg> args = emitArgs(e->args);
                 if (m->name == "FromBytes")
@@ -800,11 +839,18 @@ Value CodeGen::emitCall(CallExpr* e)
             if (!m->name.empty() && m->name[0] == '_' && fs->func->owner != fi->owner)
                 err(e->loc, "method '" + m->name + "' is private to '" + fi->owner->name + "'");
             if (fi->decl->isThread)
+            {
+                if (!viaStart)
+                    err(e->loc, "call to the 'thread' method '" + t->name + "." + m->name + "' must be prefixed with 'start'");
                 return emitThreadSpawn(*fi, args, e->loc);
+            }
+            if (viaStart)
+                err(e->loc, "'start' can only be used with a 'thread' function, not '" + t->name + "." + m->name + "'");
             return emitDirectCall(*fi, nullptr, args, e->loc);
         }
 
-        // Instance call.
+        // Instance call: never a 'thread' function (thread functions can't be instance methods).
+        rejectIndirectStart();
         Value obj = emitExpr(m->object.get());
         if (m->viaArrow)
             obj = derefPointer(obj, e->loc);
@@ -858,6 +904,7 @@ Value CodeGen::emitCall(CallExpr* e)
     }
 
     // Any other expression that yields a function: handlers[i](x), MakeCallback()(x)
+    rejectIndirectStart();
     Value fv = emitExpr(callee);
     if (!fv.type->isFunction())
         err(e->loc, "this expression cannot be called (type '" + fv.type->name + "')");

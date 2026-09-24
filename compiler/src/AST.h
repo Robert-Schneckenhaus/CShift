@@ -40,7 +40,7 @@ enum class ExprKind
 {
     IntLit, FloatLit, CharLit, StringLit, BoolLit, NullLit,
     Name, Member, Call, Index, Unary, Binary, Assign, Conditional, Cast,
-    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg
+    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start
 };
 
 enum class BinOp
@@ -245,6 +245,14 @@ struct UncheckedExpr : Expr
 struct RefArgExpr : Expr
 {
     RefArgExpr(SourceLoc l) : Expr(ExprKind::RefArg, l) {}
+    ExprPtr operand;
+};
+
+// 'start f(args)': the only way to call a 'thread' function (a plain call to one is a compile-time error).
+// 'operand' must be a Call whose callee resolves to a 'thread' function.
+struct StartExpr : Expr
+{
+    StartExpr(SourceLoc l) : Expr(ExprKind::Start, l) {}
     ExprPtr operand;
 };
 

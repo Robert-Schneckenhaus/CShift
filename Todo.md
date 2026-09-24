@@ -65,8 +65,9 @@ names the feature):
 
 ## 4. Threads (`thread`, `Thread`/`Thread<T>`, `SharedPtr<T>`)
 
-Task: real OS threads. Calling a `thread`-marked function spawns it on its own OS thread and returns a handle
-(`Thread` for `void`, `Thread<T>` otherwise) instead of running it directly; see
+Task: real OS threads. A `thread`-marked function can only be called through `start` (`start Foo(args)`); a plain
+call is a compile-time error. `start` spawns it on its own OS thread and returns a handle (`Thread` for `void`,
+`Thread<T>` otherwise) instead of running it directly; see
 [docs/language/threading.md](docs/language/threading.md) for the full language-level description.
 
 **Status:** done in `cshiftc` (the C++ compiler) only, by deliberate choice — this is by far the largest feature
@@ -79,6 +80,11 @@ build and bootstrap exactly as before.
 Done (`cshiftc`):
 - [x] `thread` keyword: a modifier on a free function or a `static` struct method (not an instance method, not
       generic, not variadic, not `extern`). Lexer/AST/Parser/`DumpAst`.
+- [x] `start f(args)`: the only way to call a `thread` function — a plain call is a compile-time error
+      (`CodeGen::emitCall`'s `viaStart` parameter). `start` is a *contextual* keyword (recognized only directly in
+      front of a call, i.e. an identifier spelled `start` immediately followed by another identifier —
+      `Parser::parseUnary`), not a reserved word, since `start` is already a common parameter/variable name in the
+      existing stdlib (`Substring(int start, ...)` and similar).
 - [x] `SharedPtr<T>`: a new built-in generic type (like `Error<T>`/`Optional<T>`), a heap block
       `{atomic i64 refcount, T value}`, atomic retain/release (`CodeGenRuntime.cpp`: `retainSharedFn`, the
       `isSharedPtr()` branch of `releaseFor`). `SharedPtr<T>.Create(value)`, `.Get()`, `.Ptr()` (`unsafe`),
@@ -111,9 +117,10 @@ Done (`cshiftc`):
       `_TryGetResult()` (returns `Optional<T>`) and reusing the existing `Optional<T>` pattern-match code path.
       No `if (thread)`/`if (!thread)` conversion (simply not implemented, as requested).
 - [x] Tests: `tests/cases/thread_basic.csh`, `thread_cancel.csh` (`Cancel`/`CancelAndWait`/`Thread.Cancelled`/
-      `SharedPtr<T>` parameter), `thread_static_method.csh`, `shared_ptr.csh`, and the rejections
-      (`err_thread_global.csh`, `err_thread_ref_param.csh`, `err_thread_unsafe_param.csh`,
-      `err_thread_instance_method.csh`, `err_thread_function_pointer.csh`).
+      `SharedPtr<T>` parameter), `thread_static_method.csh`, `thread_start_contextual.csh` (`start` still works as
+      an ordinary identifier), `shared_ptr.csh`, and the rejections (`err_thread_global.csh`,
+      `err_thread_ref_param.csh`, `err_thread_unsafe_param.csh`, `err_thread_instance_method.csh`,
+      `err_thread_function_pointer.csh`, `err_thread_bare_call.csh`, `err_start_non_thread.csh`).
 
 Open:
 - [ ] Port to `cshc`/`selfhost/` (a separate follow-up; the user chose `cshiftc`-only for this pass — see above).

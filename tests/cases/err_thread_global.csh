@@ -17,5 +17,5 @@ thread void Bad()
 
 void Main()
 {
-    Bad().Join();
+    start Bad();
 }
