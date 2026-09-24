@@ -130,6 +130,69 @@ Open:
 - [ ] No general-purpose synchronization primitives (a standalone `Mutex`/condition variable, channels) — only
       what `Thread`/`Thread<T>` need internally exists so far.
 
+## 5. Distribution: a standalone single-file executable, and (documented only) a lighter libclang-free variant
+
+Prompted by: "clang is big" for something that is only used to extract FFI declarations from C headers - see
+whether libclang is worth it, and whether a single, self-contained executable is possible.
+
+**libclang alternatives (Tree-sitter's C grammar, "CppParser"-style heuristic parsers): investigated, not enough.**
+`FfiGenerator.cpp` needs real preprocessing (macros, `#include`, `-D`), constant-expression evaluation (enum
+values), and ABI-aware struct layout (`sizeof`/`alignof`/`offsetof`, bitfields, `#pragma pack`) - genuine semantic
+analysis, not parsing. Tree-sitter's C grammar is syntax-only and explicitly does not expand macros in general
+([tree-sitter/tree-sitter-c#7](https://github.com/tree-sitter/tree-sitter-c/issues/7),
+[#108](https://github.com/tree-sitter/tree-sitter-c/issues/108)); "CppParser" turned out to be an ambiguous name
+for several unrelated, syntax-only C/C++ header parsers, same gap. Real precedent for what a from-scratch
+alternative actually costs: Zig wrote **Aro**, a genuine C compiler frontend (own preprocessor, own Sema, C23),
+specifically to move `translate-c` off Clang - a years-long, dedicated project
+([ziglang/zig#16268](https://github.com/ziglang/zig/issues/16268)), not a lightweight parser swap.
+
+**Standalone single-file executable: done**, as a release artifact *alongside* the existing
+`toolchain/`-folder archives (kept as they are).
+- [x] `packaging/make-standalone.sh`: appends the same `toolchain/` folder `package-windows.sh`/`package-linux.sh`
+      already produce, gzip-compressed, after the compiler's own executable image, with a 16-byte footer
+      (magic `CSFTTC01` + little-endian archive size). Both the PE and the ELF loader only read what their own
+      headers declare, so trailing bytes are simply ignored - the same trick self-extracting installers (NSIS,
+      7z SFX, makeself) and AppImage use.
+- [x] `compiler/src/main.cpp` (`findEmbeddedToolchain`, `extractEmbeddedToolchain`, `toolchainCacheDir`,
+      `bundledClang`): on first use that actually needs the toolchain (linking, or `using X from "header.h";`),
+      reads its own footer, extracts the embedded archive with the system `tar` (present on Windows since 10
+      1803, and on every Linux/macOS install - far simpler and more robust than hand-rolling a gzip/tar reader
+      for a one-time, best-effort setup step) into a per-user, per-version cache directory
+      (`%LOCALAPPDATA%\cshift\toolchain-<version>` / `$XDG_CACHE_HOME/cshift/toolchain-<version>` or
+      `~/.cache/...`), then uses it exactly like the regular `toolchain/`-next-to-the-exe folder. Every run after
+      the first just finds it already there.
+- [x] Verified end to end on Windows (real clang/lld/DLLs, `clang.exe`/`ld.lld.exe` hidden from `PATH`): the
+      self-extracted toolchain is genuinely found and invoked, not silently falling back to something else.
+      (linking itself failed in that specific manual test only because of an incomplete hand-copied toolchain
+      subset for the test, not the extraction mechanism - the exact same failure was reproduced through the
+      existing, unmodified `toolchain/`-next-to-exe path with the same incomplete files, confirming the new code
+      is not the cause; `make-standalone.sh` itself packages the *real*, already-correct `package-windows.sh`
+      output, so a real release build is unaffected.)
+- [x] Wired into `.github/workflows/release.yml`: both the `windows` and `linux` jobs now also build the
+      standalone executable and test it in a clean environment (no PATH toolchain, no pre-existing cache - it has
+      to self-extract), uploaded as `windows-x64-standalone`/`linux-x64-standalone`; `publish` lists them
+      alongside the regular archives. **Not yet validated by an actual CI run** (this workflow already has a
+      standing item below about Linux not having fully run yet).
+- [ ] Linux is "standalone" in the same sense as its regular archive already is, not more: `package-linux.sh`'s
+      toolchain relies on the host's glibc and binutils (`build-essential`), so the single file still is not
+      fully hermetic there. Only Windows becomes genuinely zero-dependency.
+- [ ] The cache directory is never cleaned up automatically (each version gets its own, so upgrades do not reuse
+      a stale one, but old versions' extracted copies just accumulate). Fine for now; a `cshiftc --clear-cache` or
+      similar could be added later if it becomes a real nuisance.
+
+**Lighter, libclang-free `cshiftc` variant + a downloadable `.ffi` file repository: documented here, not started
+(as requested).** The idea: a build of `cshiftc` without libclang support at all (smaller download, no clang
+dependency for anything other than linking), which for `using Name from "header.h";` would fetch a pre-generated
+`.ffi` file from a community/official repository (keyed by header name + content hash + target) instead of
+parsing the header itself - falling back to an error ("get libclang, or a full build of cshiftc") only for a
+header nobody has published a `.ffi` for yet. This composes naturally with the existing `.ffi` mechanism
+(`using Name from "file.ffi";` already needs no libclang, see FFI.md) and with `cshc`'s own existing plan of
+shipping/consuming `.ffi` files instead of parsing headers (section 1, "FFI (generating)"). Open questions for
+when this is picked up: where such a repository would live and who curates/signs entries (a wrong `.ffi` file
+silently produces a wrong ABI - the "errors in the header abort the import" safety net FFI.md describes does not
+exist for a downloaded file); the `cshiftc build --offline`-style story when nothing is cached yet; and whether it
+piggybacks on the existing `obj/ffi/` cache convention or introduces a separate one.
+
 ## Other open items (from earlier sessions)
 
 - [ ] The release workflow (`.github/workflows/release.yml`) has not fully run on Linux yet (Build and Tests passed, "Assemble"

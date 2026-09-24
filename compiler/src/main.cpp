@@ -11,6 +11,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CodeGen.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/TargetSelect.h>
@@ -26,6 +27,10 @@
 #include "Parser.h"
 #include "Project.h"
 #include "StdlibData.h"
+
+#ifndef CSHIFT_VERSION
+#define CSHIFT_VERSION "dev"
+#endif
 
 namespace
 {
@@ -251,17 +256,138 @@ void optimize(llvm::Module& module, llvm::TargetMachine* tm, int level)
     mpm.run(module, mam);
 }
 
+// ---------------------------------------------------------------------------
+// The standalone build: a toolchain (clang, lld, libclang, C libraries) appended, gzip-compressed, after this
+// executable's own image by packaging/make-standalone.sh, with a small footer identifying it. This works because
+// both the PE and the ELF loader only read what their own headers declare and simply ignore trailing bytes, the
+// same trick self-extracting installers (NSIS, 7z SFX) and AppImage use. It is extracted once, into a per-user,
+// per-version cache directory, the first time it is actually needed; every run after that just finds it there.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+constexpr char kToolchainFooterMagic[8] = {'C', 'S', 'F', 'T', 'T', 'C', '0', '1'};
+constexpr size_t kToolchainFooterSize = 16; // 8 bytes magic + 8 bytes little-endian archive size
+
+struct EmbeddedToolchain
+{
+    uint64_t offset; // where the gzip-compressed tar begins in this executable's own file
+    uint64_t size;
+};
+
+// Reads the footer of 'selfPath' (this program's own executable file) and, if it carries one, returns the
+// embedded archive's location within it. False for an ordinary (non-standalone) build.
+bool findEmbeddedToolchain(const std::string& selfPath, EmbeddedToolchain& out)
+{
+    uint64_t fileSize = 0;
+    if (llvm::sys::fs::file_size(selfPath, fileSize) || fileSize < kToolchainFooterSize)
+        return false;
+    // Only the footer is needed here, not the whole (multi-hundred-megabyte) file.
+    auto footer = llvm::MemoryBuffer::getFileSlice(selfPath, kToolchainFooterSize, fileSize - kToolchainFooterSize);
+    if (!footer)
+        return false;
+    llvm::StringRef bytes = (*footer)->getBuffer();
+    if (bytes.substr(0, 8) != llvm::StringRef(kToolchainFooterMagic, 8))
+        return false;
+    uint64_t size = 0;
+    memcpy(&size, bytes.data() + 8, 8); // written little-endian by make-standalone.sh; this compiler targets LE hosts
+    if (size + kToolchainFooterSize > fileSize)
+        return false; // corrupt or foreign trailer - ignore rather than misbehave
+    out.size = size;
+    out.offset = fileSize - kToolchainFooterSize - size;
+    return true;
+}
+
+// A per-user, per-version cache directory to extract the embedded toolchain into (so an upgrade of cshiftc does
+// not reuse a stale one). Not cleaned up automatically; that is a reasonable manual step (it is just a cache).
+std::string toolchainCacheDir(bool isWindows)
+{
+    std::string base;
+    if (isWindows)
+    {
+        if (const char* dir = std::getenv("LOCALAPPDATA"))
+            base = dir;
+    }
+    else
+    {
+        if (const char* dir = std::getenv("XDG_CACHE_HOME"))
+            base = dir;
+        else if (const char* home = std::getenv("HOME"))
+            base = std::string(home) + "/.cache";
+    }
+    if (base.empty())
+        return "";
+    llvm::SmallString<256> dir(base);
+    llvm::sys::path::append(dir, "cshift", std::string("toolchain-") + CSHIFT_VERSION);
+    return std::string(dir.str());
+}
+
+// Extracts the embedded archive directly into 'cacheDir' (the archive's own top-level entry is 'toolchain/', so
+// this produces 'cacheDir/toolchain/...'), using the system 'tar' (part of Windows since 10 1803, and of every
+// Linux/macOS install) - far simpler and more robust than hand-rolling a gzip/tar reader for a one-time,
+// best-effort setup step. Two processes extracting into the same cache directory at the same first time (rather
+// than one finding the other's already-complete extraction, the common case) can in principle race; 'tar x'
+// overwrites rather than erroring on files that already exist, so a second attempt after a partial/interrupted
+// one simply completes it, which is enough robustness for what is ultimately a cache.
+bool extractEmbeddedToolchain(const std::string& selfPath, const EmbeddedToolchain& embedded, const std::string& cacheDir)
+{
+    auto tar = llvm::sys::findProgramByName("tar");
+    if (!tar)
+        return false;
+    auto archive = llvm::MemoryBuffer::getFileSlice(selfPath, embedded.size, embedded.offset);
+    if (!archive)
+        return false;
+    if (llvm::sys::fs::create_directories(cacheDir))
+        return false;
+
+    llvm::SmallString<256> tempFile;
+    if (llvm::sys::fs::createTemporaryFile("cshift-toolchain", "tar.gz", tempFile))
+        return false;
+    {
+        std::error_code ec;
+        llvm::raw_fd_ostream os(tempFile, ec, llvm::sys::fs::OF_None);
+        if (ec)
+        {
+            llvm::sys::fs::remove(tempFile);
+            return false;
+        }
+        os << (*archive)->getBuffer();
+    }
+
+    std::vector<llvm::StringRef> args = {*tar, "xzf", tempFile, "-C", cacheDir};
+    int rc = llvm::sys::ExecuteAndWait(*tar, args);
+    llvm::sys::fs::remove(tempFile);
+    return rc == 0;
+}
+} // namespace
+
 // Finds the C compiler that is used as linker driver, to compile generated C code and to locate libclang.
 // The release archives contain a toolchain (clang, lld, libclang, C libraries) in the folder 'toolchain' next to
-// cshiftc; it is used before anything in PATH so that the versions match.
+// cshiftc; it is used before anything in PATH so that the versions match. A standalone build has no such folder
+// but carries the same toolchain embedded in itself (see above) and extracts it into a cache directory on first
+// use.
 std::string bundledClang(const char* argv0, bool isWindows)
 {
     std::string self = llvm::sys::fs::getMainExecutable(argv0, reinterpret_cast<void*>(&bundledClang));
     if (self.empty())
         return "";
+
     llvm::SmallString<256> candidate(llvm::sys::path::parent_path(self));
     llvm::sys::path::append(candidate, "toolchain", "bin", isWindows ? "clang.exe" : "clang");
-    return llvm::sys::fs::can_execute(candidate) ? std::string(candidate.str()) : std::string();
+    if (llvm::sys::fs::can_execute(candidate))
+        return std::string(candidate.str());
+
+    EmbeddedToolchain embedded;
+    if (!findEmbeddedToolchain(self, embedded))
+        return "";
+    std::string cacheDir = toolchainCacheDir(isWindows);
+    if (cacheDir.empty())
+        return "";
+    llvm::SmallString<256> cached(cacheDir);
+    llvm::sys::path::append(cached, "toolchain", "bin", isWindows ? "clang.exe" : "clang");
+    if (!llvm::sys::fs::can_execute(cached) && !extractEmbeddedToolchain(self, embedded, cacheDir))
+        return "";
+    return llvm::sys::fs::can_execute(cached) ? std::string(cached.str()) : std::string();
 }
 
 std::string locateClang(const std::string& cc, bool isWindows, const std::string& bundled)
@@ -308,10 +434,6 @@ std::string stem(const std::string& path)
     return dot == std::string::npos ? name : name.substr(0, dot);
 }
 } // namespace
-
-#ifndef CSHIFT_VERSION
-#define CSHIFT_VERSION "dev"
-#endif
 
 int main(int argc, char** argv)
 {

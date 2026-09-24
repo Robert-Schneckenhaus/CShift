@@ -4,8 +4,14 @@
 # Every push to such a branch rebuilds the release and replaces it (the tag then points to the pushed commit).
 #
 # The archives contain everything needed to work with the compiler: extract, add the folder to PATH, done.
-#   cshift-<version>-windows-x64.zip       cshiftc.exe + toolchain\ (clang, lld, libclang, MinGW-w64 headers/libraries)
-#   cshift-<version>-linux-x64.tar.xz      cshiftc + toolchain/ (clang, libclang); needs build-essential on the system
+#   cshift-<version>-windows-x64.zip                cshiftc.exe + toolchain\ (clang, lld, libclang, MinGW-w64 headers/libraries)
+#   cshift-<version>-linux-x64.tar.xz               cshiftc + toolchain/ (clang, libclang); needs build-essential on the system
+#
+# Each platform also gets a standalone executable: the same toolchain embedded in one file (see
+# packaging/make-standalone.sh), nothing to extract or add to PATH. It self-extracts into a per-user cache
+# directory the first time it actually needs the toolchain (linking, or a C header import).
+#   cshift-<version>-windows-x64-standalone.exe
+#   cshift-<version>-linux-x64-standalone
 
 name: release
 
@@ -112,6 +118,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Create the standalone executable
+        shell: bash
+        run: bash packaging/make-standalone.sh "dist/cshift-$VERSION-windows-x64" "dist/cshift-$VERSION-windows-x64-standalone.exe"
+
+      # A clean environment (no MSYS2, no clang, no PATH toolchain, no pre-existing cache): the very first run has
+      # to self-extract its embedded toolchain and then work exactly like the regular archive.
+      - name: Test the standalone executable
+        shell: bash
+        run: |
+          export PATH="/usr/bin:/c/Windows/System32:/c/Windows"
+          export LOCALAPPDATA="$RUNNER_TEMP/standalone-cache"
+          exe="$PWD/dist/cshift-$VERSION-windows-x64-standalone.exe"
+          "$exe" --version
+          bash tests/run_tests.sh "$exe"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64-standalone
+          path: dist/cshift-${{ needs.version.outputs.version }}-windows-x64-standalone.exe
+          if-no-files-found: error
+          retention-days: 7
+
   linux:
     name: Linux x64 (Ubuntu)
     needs: version
@@ -171,6 +199,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Create the standalone executable
+        run: bash packaging/make-standalone.sh "dist/cshift-$VERSION-linux-x64" "dist/cshift-$VERSION-linux-x64-standalone"
+
+      # A clean environment (no LLVM in PATH, no pre-existing cache): the very first run has to self-extract its
+      # embedded toolchain and then work exactly like the regular archive (still needs build-essential, like it).
+      - name: Test the standalone executable
+        run: |
+          export PATH="/usr/bin:/bin"
+          export XDG_CACHE_HOME="$RUNNER_TEMP/standalone-cache"
+          exe="$PWD/dist/cshift-$VERSION-linux-x64-standalone"
+          "$exe" --version
+          bash tests/run_tests.sh "$exe"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux-x64-standalone
+          path: dist/cshift-${{ needs.version.outputs.version }}-linux-x64-standalone
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish release
     needs: [version, windows, linux]
@@ -202,6 +250,15 @@ jobs:
           Extract, add the folder to \`PATH\`, then \`cshiftc --version\` and \`cshiftc new hello\`.
           The archives contain the compiler and a matching clang/libclang toolchain (see README.txt in the archive).
           On Linux \`build-essential\` (gcc, libc6-dev, binutils) has to be installed.
+
+          **Standalone, single-file alternative** (the same toolchain embedded in one executable - nothing to
+          extract or add to \`PATH\`; it unpacks itself into a per-user cache directory the first time it is
+          actually needed):
+
+          | Platform | Executable |
+          |---|---|
+          | Windows 10/11, x64 | \`cshift-$VERSION-windows-x64-standalone.exe\` |
+          | Linux (Ubuntu 22.04+ and other glibc distributions), x64 | \`cshift-$VERSION-linux-x64-standalone\` |
 
           Built from commit ${GITHUB_SHA} on branch \`${GITHUB_REF_NAME}\`.
           EOF
