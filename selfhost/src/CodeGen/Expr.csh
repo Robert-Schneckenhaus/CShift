@@ -892,6 +892,22 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
         }
         return ir.Call("ptr", "@__cs_fmt_f64", "double " + v.V);
     }
+    if (types.IsStruct(t))
+    {
+        // a struct with 'string ToString()' (like C#'s override of ToString)
+        foreach (var c in MethodCandidates(cg, t, "ToString"))
+        {
+            var d = cg.Funcs.Get(c.Entry).Decl;
+            if (!d.IsStatic && d.Params.Length == 0)
+            {
+                Value text = EmitMethodCallOn(cg, v, "ToString", new Arg[0], new int[0], loc);
+                if (!types.IsString(text.Type))
+                    Fail(cg, loc, "'" + types.Name(t) + ".ToString()' must return a string to be used as text");
+                return Consume(cg, text);
+            }
+        }
+        Fail(cg, loc, "cannot convert '" + types.Name(t) + "' to a string (give it a method 'string ToString()')");
+    }
     Fail(cg, loc, "cannot convert '" + types.Name(t) + "' to a string");
     return v.V;
 }

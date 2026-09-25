@@ -5,3 +5,9 @@
 
 # 'thread' and 'where' used as names (contextual keywords)
 tests/cases/lang_additions.csh
+
+# interpolated strings ($"...{x}...")
+tests/cases/string_interpolation.csh
+tests/cases/err_interp_brace.csh
+tests/cases/err_interp_empty.csh
+tests/cases/err_interp_struct.csh

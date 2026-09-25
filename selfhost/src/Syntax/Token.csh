@@ -27,7 +27,13 @@ enum TokenKind : int32
     // '>>' and '>>=' are not single tokens (generics use '>'); the parser joins adjacent '>' tokens.
 
     // 'thread' comes last, like in the C++ lexer (the token dumps compare the numbers of the kinds).
-    KwThread
+    KwThread,
+
+    // Only in the self-hosted compiler (after the C++ compiler was frozen):
+    InterpStart,  // $"text{   the text up to the first hole of an interpolated string
+    InterpMid,    // }text{    the text between two holes
+    InterpEnd,    // }text"    the text after the last hole
+    FatArrow      // =>        lambdas
 }
 
 struct Token
@@ -53,6 +59,10 @@ string TokenName(TokenKind kind)
     case TokenKind.FloatLit: return "float literal";
     case TokenKind.CharLit: return "char literal";
     case TokenKind.StringLit: return "string literal";
+    case TokenKind.InterpStart: return "interpolated string";
+    case TokenKind.InterpMid: return "'}' of an interpolation hole";
+    case TokenKind.InterpEnd: return "end of an interpolated string";
+    case TokenKind.FatArrow: return "'=>'";
     case TokenKind.LBrace: return "'{'";
     case TokenKind.RBrace: return "'}'";
     case TokenKind.LParen: return "'('";

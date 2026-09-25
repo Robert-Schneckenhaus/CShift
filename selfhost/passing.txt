@@ -53,6 +53,9 @@ err_global_void.csh
 err_increment.csh
 err_interface_not_implemented.csh
 err_interface_variable.csh
+err_interp_brace.csh
+err_interp_empty.csh
+err_interp_struct.csh
 err_missing_return.csh
 err_multiple_inheritance.csh
 err_narrowing.csh
@@ -121,6 +124,7 @@ stdlib_math.csh
 stdlib_process.csh
 stdlib_string.csh
 stdlib_text.csh
+string_interpolation.csh
 struct_method_outer_type.csh
 thread_basic.csh
 thread_cancel.csh

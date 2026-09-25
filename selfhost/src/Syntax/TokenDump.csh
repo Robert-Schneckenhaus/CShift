@@ -60,6 +60,9 @@ string DumpToken(Token t)
             return t.Loc.Line.ToString() + ":" + t.Loc.Col.ToString() + " " + ((int)TokenKind.KwThread).ToString();
         return line + " " + t.Text;
     case TokenKind.StringLit:
+    case TokenKind.InterpStart:
+    case TokenKind.InterpMid:
+    case TokenKind.InterpEnd:
         return line + " \"" + EscapeText(t.Text) + "\"";
     case TokenKind.IntLit:
         return line + " " + t.IntValue.ToString() + (t.IsUnsigned ? " u" : "") + (t.IsLong ? " l" : "");

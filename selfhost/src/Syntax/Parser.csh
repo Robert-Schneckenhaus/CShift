@@ -1341,6 +1341,30 @@ struct Parser
         return expr;
     }
 
+    // $"a{x}b{y}c" is "a" + x + "b" + y + "c": string concatenation (which also turns the values into text), built from
+    // the left so that it starts with a string.
+    Error<Expr> ParseInterpolated()
+    {
+        Token first = Advance();
+        Expr result = Tree.AddStringLit(first.Loc, StringLitExpr { Value = first.Text });
+        while (true)
+        {
+            Expr hole = try ParseExpr();
+            result = Tree.AddBinary(hole.Loc, BinaryExpr { Op = BinOp.Add, Lhs = result, Rhs = hole });
+            if (Check(TokenKind.InterpMid) || Check(TokenKind.InterpEnd))
+            {
+                Token part = Advance();
+                if (part.Text.Length > 0)
+                    result = Tree.AddBinary(part.Loc, BinaryExpr { Op = BinOp.Add, Lhs = result, Rhs = Tree.AddStringLit(part.Loc, StringLitExpr { Value = part.Text }) });
+                if (part.Kind == TokenKind.InterpEnd)
+                    return result;
+            }
+            else
+                return error("expected '}' after the expression in an interpolated string, found " + TokenName(Kind()), Cur().Loc.Pack());
+        }
+        return result;
+    }
+
     bool CastFollows(TypeRef type)
     {
         switch (Kind())
@@ -1350,6 +1374,7 @@ struct Parser
         case TokenKind.FloatLit:
         case TokenKind.CharLit:
         case TokenKind.StringLit:
+        case TokenKind.InterpStart:
         case TokenKind.LParen:
         case TokenKind.Bang:
         case TokenKind.Tilde:
@@ -1476,6 +1501,8 @@ struct Parser
             Advance();
             return Tree.AddStringLit(loc, StringLitExpr { Value = t.Text });
         }
+        case TokenKind.InterpStart:
+            return ParseInterpolated();
         case TokenKind.KwTrue:
         case TokenKind.KwFalse:
         {
