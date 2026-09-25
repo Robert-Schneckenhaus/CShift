@@ -84,10 +84,7 @@ jobs:
           cmake --build build
           build/cshiftc.exe --version
 
-      # TEMPORARILY disabled (both already pass; kept off deliberately for now to keep Windows release runs fast -
-      # re-enable when we're ready to gate releases on them again).
       - name: Run tests
-        if: false
         shell: msys2 {0}
         run: bash tests/run_tests.sh build/cshiftc.exe
 
@@ -98,7 +95,6 @@ jobs:
       # The tests run again against the assembled folder with a PATH that contains neither MSYS2 nor clang, so a file
       # that is missing from the toolchain folder fails here and not on the user's machine.
       - name: Test the assembled folder
-        if: false
         shell: bash
         run: |
           dist="$PWD/dist/cshift-$VERSION-windows-x64"
