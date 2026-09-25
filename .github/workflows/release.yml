@@ -84,8 +84,8 @@ jobs:
           cmake --build build
           build/cshiftc.exe --version
 
-      # TEMPORARILY disabled (both already pass; re-enable once the standalone-executable step below is settled -
-      # this made release runs much slower to iterate on while that was still being debugged).
+      # TEMPORARILY disabled (both already pass; kept off deliberately for now to keep Windows release runs fast -
+      # re-enable when we're ready to gate releases on them again).
       - name: Run tests
         if: false
         shell: msys2 {0}
@@ -168,9 +168,6 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       LLVM_PREFIX: /usr/lib/llvm-22 # keep in sync with LLVM_VERSION above
-      # The selfhost/ front end (written in CShift) is not part of the release gate on Linux until it has run there
-      # once (see Todo.md). Remove this line to enable it.
-      CSHIFT_SKIP_SELFHOST: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -191,10 +188,7 @@ jobs:
           cmake --build build
           build/cshiftc --version
 
-      # TEMPORARILY disabled (both already pass; re-enable once the standalone-executable step below is settled -
-      # this made release runs much slower to iterate on while that was still being debugged).
       - name: Run tests
-        if: false
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/cshiftc
 
       - name: Assemble the release folder
@@ -202,7 +196,6 @@ jobs:
 
       # Again with the assembled folder only (no LLVM in PATH): cshiftc must find its own clang and libclang.
       - name: Test the assembled folder
-        if: false
         run: |
           dist="$PWD/dist/cshift-$VERSION-linux-x64"
           export PATH="/usr/bin:/bin"
