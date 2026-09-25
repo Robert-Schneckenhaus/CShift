@@ -266,6 +266,7 @@ private:
     Type* getInterfaceType(InterfaceDecl* decl, const std::vector<Type*>& args, SourceLoc loc);
     Type* getEnumType(EnumDecl* decl);
     void layoutStruct(StructInfo& info);
+    void instantiateStructMethods();
     void verifyStruct(StructInfo& info);
     void checkConstraints(const std::vector<Constraint>& constraints, const TypeEnv& env, FileContext* file,
                           SourceLoc loc);
@@ -514,6 +515,10 @@ private:
     std::vector<std::unique_ptr<InterfaceInfo>> interfaceInfos;
     std::vector<std::unique_ptr<EnumInfo>> enumInfos;
     std::vector<StructInfo*> pendingVerify;
+    // Structs whose methods are instantiated once no struct layout is running (see getStructType).
+    std::vector<StructInfo*> pendingMethods;
+    int layoutDepth = 0;
+    bool instantiatingMethods = false;
 
     std::unordered_map<std::string, std::unique_ptr<FuncInfo>> funcInstances;
     std::deque<FuncInfo*> workQueue;

@@ -63,6 +63,7 @@ err_no_overload.csh
 err_private_field.csh
 err_ref_missing.csh
 err_struct_recursive.csh
+err_struct_recursive_indirect.csh
 err_syntax.csh
 err_try_on_optional.csh
 err_try_outside_error.csh
@@ -107,3 +108,4 @@ stdlib_math.csh
 stdlib_process.csh
 stdlib_string.csh
 stdlib_text.csh
+struct_method_outer_type.csh

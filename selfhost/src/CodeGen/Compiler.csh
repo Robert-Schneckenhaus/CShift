@@ -177,6 +177,8 @@ struct CgState
     int CurrentInit;      // the global whose initializer is being written
     bool InitActive;
     int Imports;          // number of "using X from header" declarations in the program
+    int LayoutDepth;      // struct layouts that are running (the methods of new structs wait until it is 0)
+    bool InstantiatingMethods;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +203,7 @@ struct Compiler
     List<InterfaceInfo> InterfaceInfos;
     Dictionary<string, int> InterfaceTypes;
     List<int> PendingVerify;   // struct types whose interfaces still have to be checked
+    List<int> PendingMethods;  // struct types whose methods are generated once no layout is running
     Dictionary<string, int> EnumTypes;
     List<ConstEntry> Consts;
     List<GlobalEntry> Globals;
@@ -238,6 +241,7 @@ struct Compiler
         cg.InterfaceInfos = List<InterfaceInfo>.Create();
         cg.InterfaceTypes = Dictionary<string, int>.Create();
         cg.PendingVerify = List<int>.Create();
+        cg.PendingMethods = List<int>.Create();
         cg.EnumTypes = Dictionary<string, int>.Create();
         cg.Consts = List<ConstEntry>.Create();
         cg.Globals = List<GlobalEntry>.Create();
