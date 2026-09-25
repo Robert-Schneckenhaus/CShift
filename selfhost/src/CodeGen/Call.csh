@@ -384,13 +384,16 @@ Candidate[] FreeCandidates(Compiler cg, int file, string name)
 }
 
 // A call of a free function or of a method of the current struct by its simple name.
-Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
+// 'viaStart': the call is the operand of 'start' (see EmitStart). A 'thread' function can only be called that way, and
+// 'start' only works with a direct call to one.
+Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
 {
     Value variable = LookupVariable(cg, n.Name);
     if (!variable.IsNone())
     {
         if (!cg.Types.IsFunction(variable.Type))
             Fail(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
+        RejectIndirectStart(cg, viaStart, e.Loc);
         return EmitIndirectCall(cg, variable, EmitArgs(cg, call.Args), e.Loc);
     }
     int currentOwner = CurrentOwner(cg);
@@ -400,6 +403,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
         var fieldPath = FindField(cg, currentOwner, n.Name);
         if (fieldPath.Found && cg.Types.IsFunction(fieldPath.Type))
         {
+            RejectIndirectStart(cg, viaStart, e.Loc);
             Value field = FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
             return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
         }
@@ -409,7 +413,10 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
     {
         Value global = GlobalUse(cg, globalIndex);
         if (cg.Types.IsFunction(global.Type))
+        {
+            RejectIndirectStart(cg, viaStart, e.Loc);
             return EmitIndirectCall(cg, global, EmitArgs(cg, call.Args), e.Loc);
+        }
     }
 
     var cands = new Candidate[0];
@@ -419,12 +426,24 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
     if (cands.Length == 0)
         cands = FreeCandidates(cg, cg.Fn[0].File, n.Name);
     if (cands.Length == 0 && IsEmbedName(n.Name))
+    {
+        RejectIndirectStart(cg, viaStart, e.Loc);
         return EmitEmbed(cg, e, call, n.Name);
+    }
     if (cands.Length == 0)
         Fail(cg, e.Loc, "undefined function '" + n.Name + "'");
 
     var args = EmitArgs(cg, call.Args);
     int instance = ResolveOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name);
+    if (IsThreadInstance(cg, instance))
+    {
+        if (!viaStart)
+            Fail(cg, e.Loc, "call to the 'thread' function '" + n.Name + "' must be prefixed with 'start': 'start " + n.Name +
+                                "(...)'");
+        return EmitThreadSpawn(cg, instance, args, e.Loc);
+    }
+    if (viaStart)
+        Fail(cg, e.Loc, "'start' can only be used with a 'thread' function, not '" + n.Name + "'");
     string thisPtr = "";
     if (cg.Instances.Get(instance).HasThis)
     {
@@ -436,7 +455,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n)
 }
 
 // obj.Method(args), Type.Method(args), Namespace.Function(args), Console.WriteLine(...)
-Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
+Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
 {
     var types = cg.Types;
     int file = cg.Fn[0].File;
@@ -447,18 +466,21 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
     {
         if (dotted == "Console" || dotted == "Environment" || dotted == "Memory")
         {
+            RejectIndirectStart(cg, viaStart, e.Loc);
             var builtinArgs = EmitArgs(cg, call.Args);
             return EmitBuiltinStatic(cg, dotted, m.Name, builtinArgs, e.Loc);
         }
         var entry = TypeDeclEntry { };
         if (dotted == "Array")
         {
+            RejectIndirectStart(cg, viaStart, e.Loc);
             if (m.Name != "Copy")
                 Fail(cg, e.Loc, "Array has no function '" + m.Name + "'");
             return EmitArrayCopy(cg, EmitArgs(cg, call.Args), e.Loc);
         }
         if (dotted == "string")
         {
+            RejectIndirectStart(cg, viaStart, e.Loc);
             var stringArgs = EmitArgs(cg, call.Args);
             if (m.Name == "FromCStr")
                 return EmitStringFromCStr(cg, stringArgs, e.Loc);
@@ -469,6 +491,20 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
             if (foundStatic)
                 return sr;
             Fail(cg, e.Loc, "type 'string' has no static method '" + m.Name + "'");
+        }
+        if (dotted == "SharedPtr" && !LookupTypeDecl(cg, file, dotted, ref entry))
+        {
+            RejectIndirectStart(cg, viaStart, e.Loc);
+            var spArgs = ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object));
+            if (spArgs.Length != 1)
+                Fail(cg, e.Loc, "'SharedPtr' expects exactly one type argument");
+            int sp = types.SharedPtrOf(spArgs[0]);
+            if (m.Name != "Create")
+                Fail(cg, e.Loc, "type '" + types.Name(sp) + "' has no static method '" + m.Name + "'");
+            var createArgs = EmitArgs(cg, call.Args);
+            if (createArgs.Length != 1)
+                Fail(cg, e.Loc, "SharedPtr<T>.Create takes one argument (the value)");
+            return EmitSharedPtrCreate(cg, sp, createArgs[0].V, e.Loc);
         }
         if (PrimitiveType(cg, dotted) != 0)
             Fail(cg, e.Loc, "cshc does not support '" + dotted + "." + m.Name + "' yet");
@@ -488,6 +524,14 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
                 Fail(cg, e.Loc, "'" + types.Name(st) + "." + m.Name + "' is an instance method and needs an object");
             if (m.Name.Length > 0 && m.Name[0] == '_' && CurrentOwner(cg) != sfi.Owner)
                 Fail(cg, e.Loc, "method '" + m.Name + "' is private to '" + types.Name(sfi.Owner) + "'");
+            if (IsThreadInstance(cg, sinstance))
+            {
+                if (!viaStart)
+                    Fail(cg, e.Loc, "call to the 'thread' method '" + types.Name(st) + "." + m.Name + "' must be prefixed with 'start'");
+                return EmitThreadSpawn(cg, sinstance, sargs, e.Loc);
+            }
+            if (viaStart)
+                Fail(cg, e.Loc, "'start' can only be used with a 'thread' function, not '" + types.Name(st) + "." + m.Name + "'");
             return EmitDirectCall(cg, sinstance, "", sargs, e.Loc);
         }
         if (IsNamespace(cg, file, dotted))
@@ -497,11 +541,20 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
                 Fail(cg, e.Loc, "namespace '" + dotted + "' has no function '" + m.Name + "'");
             var nargs = EmitArgs(cg, call.Args);
             int ninstance = ResolveOverload(cg, ncands, nargs, methodTypeArgs, e.Loc, m.Name);
+            if (IsThreadInstance(cg, ninstance))
+            {
+                if (!viaStart)
+                    Fail(cg, e.Loc, "call to the 'thread' function '" + dotted + "." + m.Name + "' must be prefixed with 'start'");
+                return EmitThreadSpawn(cg, ninstance, nargs, e.Loc);
+            }
+            if (viaStart)
+                Fail(cg, e.Loc, "'start' can only be used with a 'thread' function, not '" + dotted + "." + m.Name + "'");
             return EmitDirectCall(cg, ninstance, "", nargs, e.Loc);
         }
     }
 
-    // An instance call.
+    // An instance call: never a 'thread' function (a thread function cannot be an instance method).
+    RejectIndirectStart(cg, viaStart, e.Loc);
     Value obj = EmitExpr(cg, m.Object);
     if (m.ViaArrow)
         obj = DerefPointer(cg, obj, e.Loc);
@@ -556,13 +609,39 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m)
 
 Value EmitCall(Compiler cg, Expr e)
 {
+    return EmitCallVia(cg, e, false);
+}
+
+// 'start f(...)': the only way to call a 'thread' function.
+Value EmitStart(Compiler cg, Expr e)
+{
+    var s = cg.Tree.GetStart(e);
+    if (s.Operand.Kind != ExprKind.Call)
+        Fail(cg, e.Loc, "'start' must be followed directly by a call, e.g. 'start Foo(...)'");
+    return EmitCallVia(cg, s.Operand, true);
+}
+
+void RejectIndirectStart(Compiler cg, bool viaStart, SourceLoc loc)
+{
+    if (viaStart)
+        Fail(cg, loc, "'start' can only be used with a direct call to a 'thread' function");
+}
+
+bool IsThreadInstance(Compiler cg, int instance)
+{
+    return cg.Funcs.Get(cg.Instances.Get(instance).Entry).Decl.IsThread;
+}
+
+Value EmitCallVia(Compiler cg, Expr e, bool viaStart)
+{
     var call = cg.Tree.GetCall(e);
     var callee = call.Callee;
     if (callee.Kind == ExprKind.Name)
-        return EmitNameCall(cg, e, call, cg.Tree.GetName(callee));
+        return EmitNameCall(cg, e, call, cg.Tree.GetName(callee), viaStart);
     if (callee.Kind == ExprKind.Member)
-        return EmitMemberCall(cg, e, call, cg.Tree.GetMember(callee));
+        return EmitMemberCall(cg, e, call, cg.Tree.GetMember(callee), viaStart);
     // Any other expression that yields a function: handlers[i](x), MakeCallback()(x)
+    RejectIndirectStart(cg, viaStart, e.Loc);
     Value fv = EmitExpr(cg, callee);
     if (!cg.Types.IsFunction(fv.Type))
         Fail(cg, e.Loc, "this expression cannot be called (type '" + cg.Types.Name(fv.Type) + "')");
@@ -700,12 +779,53 @@ void ExpectArgs(Compiler cg, Arg[] args, int n, string type, string method, Sour
         Fail(cg, loc, "'" + type + "." + method + "' takes " + n.ToString() + " argument(s)");
 }
 
+// SharedPtr<T>.Create(value): moves the value into a new block {i64 count = 1, i64 unused, T value}.
+Value EmitSharedPtrCreate(Compiler cg, int sp, Value value, SourceLoc loc)
+{
+    int elem = cg.Types.Elem(sp);
+    Value v = ConvertValue(cg, value, elem, loc);
+    string owned = Consume(cg, v);
+    string block = cg.Ir.Call("ptr", "@__cs_alloc", "i64 " + SizeOfType(cg, elem) + ", i64 0");
+    cg.Ir.Store(LlvmType(cg, elem), owned, DataPtr(cg, block));
+    return Rvalue(sp, block, true);
+}
+
 Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
     int t = obj.Type;
     string tname = types.Name(t);
+
+    if (types.IsSharedPtr(t))
+    {
+        Value p = ToRValue(cg, obj);
+        HoldTemp(cg, p);
+        int elem = types.Elem(t);
+        if (method == "IsNull")
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            return MakeBool(cg, ir.ICmp("eq", "ptr", p.V, "null"));
+        }
+        if (method == "Get")
+        {
+            // A copy of the shared value (retained if it needs ARC itself).
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            EmitPanicIf(cg, ir.ICmp("eq", "ptr", p.V, "null"), "SharedPtr.Get(): the pointer is null");
+            string value = ir.Load(LlvmType(cg, elem), DataPtr(cg, p.V));
+            EmitRetain(cg, elem, value);
+            return Rvalue(elem, value, true);
+        }
+        if (method == "Ptr")
+        {
+            // A raw pointer to the shared value for in-place access; only the reference count is thread-safe.
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            RequireUnsafe(cg, loc, "SharedPtr.Ptr()");
+            EmitPanicIf(cg, ir.ICmp("eq", "ptr", p.V, "null"), "SharedPtr.Ptr(): the pointer is null");
+            return Rvalue(types.PointerTo(elem), DataPtr(cg, p.V), false);
+        }
+        Fail(cg, loc, "type '" + tname + "' has no method '" + method + "'");
+    }
 
     if (types.IsString(t))
     {

@@ -248,7 +248,7 @@ int ConversionCost(Compiler cg, Value v, int to)
     {
         var toKind = types.Kind(to);
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
-                toKind == TypeKind.Optional || toKind == TypeKind.Function) ? 1 : -1;
+                toKind == TypeKind.Optional || toKind == TypeKind.Function || toKind == TypeKind.SharedPtr) ? 1 : -1;
     }
     if (fromKind == TypeKind.MethodGroup)
     {

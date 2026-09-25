@@ -269,6 +269,13 @@ struct AstDumper
             DumpExpr(indent + 1, "operand", n.Operand);
             break;
         }
+        case ExprKind.Start:
+        {
+            var n = Tree.GetStart(e);
+            Line(indent, role, head);
+            DumpExpr(indent + 1, "operand", n.Operand);
+            break;
+        }
         default:
             Line(indent, role, head);
             break;
@@ -305,6 +312,7 @@ struct AstDumper
         case ExprKind.This: return "This";
         case ExprKind.Unchecked: return "Unchecked";
         case ExprKind.RefArg: return "RefArg";
+        case ExprKind.Start: return "Start";
         default: return "?";
         }
     }
@@ -446,7 +454,7 @@ struct AstDumper
     void DumpFunc(int indent, string role, FuncDecl f)
     {
         Line(indent, role, "Func" + At(f.Loc) + " name=" + f.Name + TypeAttr("ret", f.Ret) + Flag(f.IsStatic, "static") +
-                           Flag(f.IsExtern, "extern") + Flag(f.IsVariadic, "variadic") +
+                           Flag(f.IsExtern, "extern") + Flag(f.IsVariadic, "variadic") + Flag(f.IsThread, "thread") +
                            (f.TypeParams.Length > 0 ? " typeParams=" + NameList(f.TypeParams) : ""));
         for (var i = 0; i < f.Params.Length; i += 1)
         {

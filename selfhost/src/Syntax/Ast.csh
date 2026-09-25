@@ -33,7 +33,7 @@ enum ExprKind : int32
     None, // the default value: no expression
     IntLit, FloatLit, CharLit, StringLit, BoolLit, NullLit,
     Name, Member, Call, Index, Unary, Binary, Assign, Conditional, Cast,
-    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg
+    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start
 }
 
 struct Expr
@@ -250,6 +250,12 @@ struct RefArgExpr
     Expr Operand;
 }
 
+// 'start f(...)': spawns the 'thread' function f on its own OS thread.
+struct StartExpr
+{
+    Expr Operand;
+}
+
 // ---------------------------------------------------------------------------
 // Statements
 // ---------------------------------------------------------------------------
@@ -384,6 +390,7 @@ struct FuncDecl
     bool IsExtern;
     bool IsStatic;
     bool IsVariadic;
+    bool IsThread;        // 'thread' function: only callable through 'start', runs on its own OS thread
     // FFI (imported C functions)
     string Symbol;
     bool RetCString;
@@ -522,6 +529,7 @@ struct Ast
     List<DefaultExpr> Defaults;
     List<UncheckedExpr> Uncheckeds;
     List<RefArgExpr> RefArgs;
+    List<StartExpr> Starts;
 
     List<BlockStmt> Blocks;
     List<VarDeclStmt> VarDecls;
@@ -563,6 +571,7 @@ struct Ast
         a.Defaults = List<DefaultExpr>.Create();
         a.Uncheckeds = List<UncheckedExpr>.Create();
         a.RefArgs = List<RefArgExpr>.Create();
+        a.Starts = List<StartExpr>.Create();
         a.Blocks = List<BlockStmt>.Create();
         a.VarDecls = List<VarDeclStmt>.Create();
         a.ExprStmts = List<ExprStmt>.Create();
@@ -784,6 +793,12 @@ struct Ast
         return Expr { Kind = ExprKind.RefArg, Index = RefArgs.Count() - 1, Loc = loc };
     }
 
+    Expr AddStart(SourceLoc loc, StartExpr n)
+    {
+        Starts.Add(n);
+        return Expr { Kind = ExprKind.Start, Index = Starts.Count() - 1, Loc = loc };
+    }
+
     IntLitExpr GetIntLit(Expr e) { return IntLits.Get(e.Index); }
     FloatLitExpr GetFloatLit(Expr e) { return FloatLits.Get(e.Index); }
     CharLitExpr GetCharLit(Expr e) { return CharLits.Get(e.Index); }
@@ -808,6 +823,7 @@ struct Ast
     DefaultExpr GetDefault(Expr e) { return Defaults.Get(e.Index); }
     UncheckedExpr GetUnchecked(Expr e) { return Uncheckeds.Get(e.Index); }
     RefArgExpr GetRefArg(Expr e) { return RefArgs.Get(e.Index); }
+    StartExpr GetStart(Expr e) { return Starts.Get(e.Index); }
 
     // ---- statements ----
 

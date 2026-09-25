@@ -2,15 +2,3 @@
 # yet, so it cannot tokenize/parse them the same way the C++ front end does - that is an expected difference, not
 # a regression. One path per line, relative to the repository root; '#' starts a comment.
 
-# 'thread'/'start' (see Todo.md, section "Threads"): cshiftc only, by deliberate choice; not yet ported to cshc.
-tests/cases/err_start_non_thread.csh
-tests/cases/err_thread_bare_call.csh
-tests/cases/err_thread_function_pointer.csh
-tests/cases/err_thread_global.csh
-tests/cases/err_thread_instance_method.csh
-tests/cases/err_thread_ref_param.csh
-tests/cases/err_thread_unsafe_param.csh
-tests/cases/thread_basic.csh
-tests/cases/thread_cancel.csh
-tests/cases/thread_start_contextual.csh
-tests/cases/thread_static_method.csh

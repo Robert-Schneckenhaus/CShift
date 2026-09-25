@@ -25,7 +25,8 @@ enum TypeKind : int32
     Null,        // type of the 'null' literal
     ErrorLit,    // type of error("...") before it is converted to Error<T>
     Function,    // Action<...> / Func<..., R>
-    MethodGroup  // a function name used as a value
+    MethodGroup, // a function name used as a value
+    SharedPtr    // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
 }
 
 struct TypeInfo
@@ -35,7 +36,7 @@ struct TypeInfo
     int Bits;          // Int, Char, Float, Enum
     bool IsSigned;     // Int, Enum
     bool IsNative;     // nint / nuint
-    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result)
+    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result), SharedPtr
     int[] Params;      // Function: parameter types
     int Decl;          // Struct / Enum / Interface: index of its info in the compiler
     int Arc;           // cache for NeedsArc: -1 unknown, 0 no, 1 yes
@@ -146,6 +147,7 @@ struct TypeContext
     bool IsOptional(int t) { return Kind(t) == TypeKind.Optional; }
     bool IsResultLike(int t) { var k = Kind(t); return k == TypeKind.Error || k == TypeKind.Optional; }
     bool IsFunction(int t) { return Kind(t) == TypeKind.Function; }
+    bool IsSharedPtr(int t) { return Kind(t) == TypeKind.SharedPtr; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
     // The integer type with the given width.
@@ -177,6 +179,7 @@ struct TypeContext
     int ArrayOf(int elem) { return Derived(TypeKind.Array, Name(elem) + "[]", elem); }
     int ErrorOf(int elem) { return Derived(TypeKind.Error, "Error<" + Name(elem) + ">", elem); }
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
+    int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
 
     // Action<params> for a void result, Func<params, ret> otherwise.
     int FunctionOf(int[] parameters, int ret)

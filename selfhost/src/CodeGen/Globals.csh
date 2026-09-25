@@ -188,6 +188,12 @@ void CheckGlobalInitOrder(Compiler cg)
 // the output, to be able to drop it again.
 int BeginSyntheticFunction(Compiler cg, string name)
 {
+    return BeginSyntheticFunctionWith(cg, "define internal void @" + name + "()");
+}
+
+// The same with any function header (the thread trampolines).
+int BeginSyntheticFunctionWith(Compiler cg, string header)
+{
     var types = cg.Types;
     if (cg.St[0].InitInstance == 0)
     {
@@ -207,7 +213,7 @@ int BeginSyntheticFunction(Compiler cg, string name)
     f.Loops = List<LoopCtx>.Create();
     cg.Fn[0] = f;
     int mark = cg.Ir.Functions.Length();
-    cg.Ir.BeginFunction("define internal void @" + name + "()");
+    cg.Ir.BeginFunction(header);
     PushScope(cg);
     return mark;
 }

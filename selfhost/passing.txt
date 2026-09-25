@@ -62,9 +62,16 @@ err_no_main.csh
 err_no_overload.csh
 err_private_field.csh
 err_ref_missing.csh
+err_start_non_thread.csh
 err_struct_recursive.csh
 err_struct_recursive_indirect.csh
 err_syntax.csh
+err_thread_bare_call.csh
+err_thread_function_pointer.csh
+err_thread_global.csh
+err_thread_instance_method.csh
+err_thread_ref_param.csh
+err_thread_unsafe_param.csh
 err_try_on_optional.csh
 err_try_outside_error.csh
 err_type_mismatch.csh
@@ -101,6 +108,7 @@ panic_string_index.csh
 panic_substring.csh
 panic_underflow.csh
 panic_user.csh
+shared_ptr.csh
 stdlib_dictionary.csh
 stdlib_file.csh
 stdlib_list.csh
@@ -109,3 +117,7 @@ stdlib_process.csh
 stdlib_string.csh
 stdlib_text.csh
 struct_method_outer_type.csh
+thread_basic.csh
+thread_cancel.csh
+thread_start_contextual.csh
+thread_static_method.csh

@@ -237,6 +237,8 @@ string ReleaseFunction(Compiler cg, int t)
         return StructHelper(cg, t, false);
     if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
         return ResultHelper(cg, t, false);
+    if (types.IsSharedPtr(t))
+        return SharedReleaseHelper(cg, t);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -250,8 +252,51 @@ string RetainFunction(Compiler cg, int t)
         return StructHelper(cg, t, true);
     if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
         return ResultHelper(cg, t, true);
+    if (types.IsSharedPtr(t))
+        return SharedRetainHelper(cg);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
+}
+
+// SharedPtr<T>: an atomically reference-counted box {i64 count, i64 unused, T value}, safe to share between OS threads.
+// Retaining is the same for every T, so one helper serves all of them.
+string SharedRetainHelper(Compiler cg)
+{
+    string name = "@__cs_retain_shared";
+    if (!cg.Ir.Declared.Add(name))
+        return name;
+    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+                       "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %inc\n" +
+                       "inc:\n  %old = atomicrmw add ptr %p, i64 1 monotonic\n  br label %done\n" +
+                       "done:\n  ret void\n}\n\n");
+    return name;
+}
+
+// Atomic decrement; the last owner releases the value (if it needs ARC) and frees the block. acq_rel so that the freeing
+// thread sees every write the other owners made to the value before they let go of it.
+string SharedReleaseHelper(Compiler cg, int t)
+{
+    string name = "@\"__release." + cg.Types.Name(t) + "\"";
+    if (!cg.Ir.Declared.Add(name))
+        return name;
+    int elem = cg.Types.Elem(t);
+    string releaseValue = "";
+    if (NeedsArc(cg, elem))
+    {
+        string ty = LlvmType(cg, elem);
+        releaseValue = "  %vp = getelementptr i8, ptr %p, i64 16\n  %v = load " + ty + ", ptr %vp\n" +
+                       "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %v)\n";
+    }
+    string counter = cg.St[0].ArcStats
+        ? "  %f = load i64, ptr @__cs_frees\n  %f1 = add i64 %f, 1\n  store i64 %f1, ptr @__cs_frees\n"
+        : "";
+    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+                       "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
+                       "dec:\n  %old = atomicrmw sub ptr %p, i64 1 acq_rel\n" +
+                       "  %last = icmp eq i64 %old, 1\n  br i1 %last, label %free, label %done\n" +
+                       "free:\n" + releaseValue + "  call void @free(ptr %p)\n" + counter + "  br label %done\n" +
+                       "done:\n  ret void\n}\n\n");
+    return name;
 }
 
 // "@"__release.T[]"", "@"__clone.T[]"", "@"__copy.T[]"": written the first time they are needed.

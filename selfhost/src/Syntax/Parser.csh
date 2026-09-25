@@ -252,6 +252,13 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
+        else if (Check(TokenKind.KwThread))
+        {
+            Advance();
+            FuncDecl f = try ParseFunction(false, false);
+            f.IsThread = true;
+            Unit.Funcs.Add(f);
+        }
         else if (Check(TokenKind.Ident))
         {
             // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
@@ -341,14 +348,24 @@ struct Parser
         var methods = List<FuncDecl>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
-            bool isStatic = Match(TokenKind.KwStatic);
+            bool isStatic = false;
+            bool isThread = false;
+            while (true)
+            {
+                if (Match(TokenKind.KwStatic))
+                    isStatic = true;
+                else if (Match(TokenKind.KwThread))
+                    isThread = true;
+                else
+                    break;
+            }
             SourceLoc memberLoc = Cur().Loc;
             TypeRef type = try ParseType();
             string name = try ExpectIdent("member name");
 
             if (Check(TokenKind.LParen) || Check(TokenKind.Lt))
             {
-                var fn = FuncDecl { Loc = memberLoc, Name = name, Ret = type, IsStatic = isStatic, Owner = Unit.Structs.Count() };
+                var fn = FuncDecl { Loc = memberLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
                 try ParseFunctionRest(ref fn);
                 methods.Add(fn);
             }
@@ -356,6 +373,8 @@ struct Parser
             {
                 if (isStatic)
                     return error("static fields are not supported", memberLoc.Pack());
+                if (isThread)
+                    return error("'thread' can only be used on a method", memberLoc.Pack());
                 fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1 });
                 try Expect(TokenKind.Semi, "';' after field");
             }
@@ -1146,6 +1165,15 @@ struct Parser
         }
         default:
             break;
+        }
+        // 'start' is a contextual keyword: only an identifier 'start' directly followed by another identifier (the
+        // callee) starts a thread, e.g. 'start Foo(...)'. Two adjacent identifiers never form any other expression.
+        if (CheckIdent("start") && PeekKind(1) == TokenKind.Ident)
+        {
+            Advance();
+            var s = StartExpr { };
+            s.Operand = try ParseUnary();
+            return Tree.AddStart(loc, s);
         }
         Expr primary = try ParsePrimary();
         return ParsePostfix(primary);

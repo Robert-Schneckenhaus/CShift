@@ -467,6 +467,9 @@ int Build(BuildOptions o)
             command.Append(" -l" + lib);
         if (!windows)
             command.Append(" -lm"); // the math functions of the standard library
+        // 'thread' functions (stdlib/thread.csh). On Windows the static archive: the import library would make every
+        // program depend on libwinpthread-1.dll, which is not part of the toolchain.
+        command.Append(windows ? " -Wl,-Bstatic -lpthread -Wl,-Bdynamic" : " -lpthread");
         foreach (var lib in o.Libs)
             command.Append(" -l" + lib);
     }

@@ -393,6 +393,8 @@ Value EmitMember(Compiler cg, Expr e)
         if (CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found == false)
         {
             bool isTypeName = LookupTypeDecl(cg, cg.Fn[0].File, dotted, ref entry);
+            if (isTypeName && dotted == "Thread" && m.Name == "Cancelled" && entry.Kind == DeclKind.Struct)
+                return EmitThreadCancelled(cg, e.Loc);
             if (isTypeName && entry.Kind == DeclKind.Enum)
             {
                 int et = GetEnumType(cg, entry.Index);

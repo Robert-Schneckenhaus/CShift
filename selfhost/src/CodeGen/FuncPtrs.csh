@@ -78,6 +78,12 @@ int ResolveGroup(Compiler cg, Value g, int to, ref string why)
             reason = "'" + g.GroupName + "' is an instance method; only static methods and free functions can be function values";
             continue;
         }
+        if (d.IsThread)
+        {
+            reason = "'" + g.GroupName + "' is a 'thread' function and cannot be used as a function pointer (use 'start " + g.GroupName +
+                     "(...)' to start it)";
+            continue;
+        }
         bool plain = !d.IsVariadic && !d.RetOut && !d.RetCString;
         for (var i = 0; i < fi.ParamTypes.Length; i += 1)
             plain = plain && fi.ParamRefs[i] == 0 && !d.Params[i].CString;
@@ -112,7 +118,7 @@ int GroupFunctionType(Compiler cg, Value g)
     var ownerEnv = c.Owner != 0 ? GetStructInfo(cg, c.Owner).Env : NoEnv();
     int instance = GetFuncInstance(cg, c.Entry, c.Owner, ownerEnv, g.GroupTypeArgs, d.Loc);
     var fi = cg.Instances.Get(instance);
-    if (fi.HasThis || d.IsVariadic || d.RetOut || d.RetCString)
+    if (fi.HasThis || d.IsVariadic || d.RetOut || d.RetCString || d.IsThread)
         return 0;
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
         if (fi.ParamRefs[i] != 0 || d.Params[i].CString)

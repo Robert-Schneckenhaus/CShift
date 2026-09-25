@@ -60,6 +60,7 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Assign: return EmitAssign(cg, e);
     case ExprKind.Conditional: return EmitConditional(cg, e);
     case ExprKind.Cast: return EmitCast(cg, e);
+    case ExprKind.Start: return EmitStart(cg, e);
     case ExprKind.RefArg:
     {
         // 'ref x': the address of x is passed
@@ -424,6 +425,11 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         var k = types.Kind(other.Type);
         if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.Function)
             isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        else if (k == TypeKind.SharedPtr)
+        {
+            HoldTemp(cg, other);
+            isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        }
         else if (k == TypeKind.Optional)
         {
             HoldTemp(cg, other);

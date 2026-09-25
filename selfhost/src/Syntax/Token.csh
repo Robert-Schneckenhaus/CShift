@@ -23,8 +23,11 @@ enum TokenKind : int32
     Plus, Minus, Star, Slash, Percent, Amp, Pipe, Caret, Tilde, Bang,
     Assign, Lt, Gt, EqEq, NotEq, LtEq, GtEq, AmpAmp, PipePipe, Shl,
     PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign,
-    AmpAssign, PipeAssign, CaretAssign, ShlAssign
+    AmpAssign, PipeAssign, CaretAssign, ShlAssign,
     // '>>' and '>>=' are not single tokens (generics use '>'); the parser joins adjacent '>' tokens.
+
+    // 'thread' comes last, like in the C++ lexer (the token dumps compare the numbers of the kinds).
+    KwThread
 }
 
 struct Token

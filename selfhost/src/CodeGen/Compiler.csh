@@ -223,6 +223,8 @@ struct Compiler
     List<FuncInfo> Instances;
     Dictionary<string, int> InstanceKeys;
     List<int> WorkQueue;
+    List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
+    HashSet<int> TrampolinesQueued;
 
     static Compiler Create(Ast tree, Diagnostics diag, bool windows)
     {
@@ -261,6 +263,8 @@ struct Compiler
         cg.Instances = List<FuncInfo>.Create();
         cg.InstanceKeys = Dictionary<string, int>.Create();
         cg.WorkQueue = List<int>.Create();
+        cg.PendingTrampolines = List<int>.Create();
+        cg.TrampolinesQueued = HashSet<int>.Create();
         return cg;
     }
 }
@@ -530,6 +534,21 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 
     var entry = TypeDeclEntry { };
     bool found = LookupTypeDecl(cg, file, dotted, ref entry);
+    if (found && node.Path.Length == 1 && dotted == "Thread" && node.Args.Length == 0 && entry.Kind == DeclKind.Struct &&
+        cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0)
+    {
+        // Bare 'Thread' (no type argument) is the non-generic handle, a separate struct ('_ThreadVoid') because a
+        // struct name cannot be overloaded by the number of type arguments; see stdlib/thread.csh.
+        var voidEntry = TypeDeclEntry { };
+        if (LookupTypeDecl(cg, file, "System._ThreadVoid", ref voidEntry))
+            return GetStructType(cg, voidEntry.Index, new int[0], node.Loc);
+    }
+    if (!found && node.Path.Length == 1 && dotted == "SharedPtr")
+    {
+        if (node.Args.Length != 1)
+            Fail(cg, node.Loc, "'SharedPtr' expects exactly one type argument");
+        return types.SharedPtrOf(ResolveValueType(cg, node.Args[0].Id, file, env));
+    }
     if (!found && node.Path.Length == 1 && (dotted == "Error" || dotted == "Optional"))
     {
         if (node.Args.Length != 1)
@@ -638,6 +657,7 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.Array:
     case TypeKind.Error:
     case TypeKind.ErrorLit:
+    case TypeKind.SharedPtr:
         r = true;
         break;
     case TypeKind.Optional:
@@ -730,6 +750,8 @@ void EnsureSignature(Compiler cg, int instance)
         if (!d.RetOut && (cg.Types.IsStruct(fi.Ret) || cg.Types.IsResultLike(fi.Ret)))
             Fail(cg, d.Loc, "extern function '" + d.Name + "': returning '" + cg.Types.Name(fi.Ret) + "' by value from C is not supported, use a pointer instead");
     }
+    if (d.IsThread)
+        CheckThreadSignature(cg, fi);
     fi.SignatureResolved = true;
     fi.LlvmName = FunctionSymbol(cg, fi);
     if (!d.IsExtern && !cg.Symbols.Add(fi.LlvmName))

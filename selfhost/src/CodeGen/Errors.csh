@@ -67,7 +67,23 @@ Value EmitIs(Compiler cg, Expr e)
     var n = cg.Tree.GetIs(e);
     Value subj = EmitRValue(cg, n.Operand);
     if (!types.IsResultLike(subj.Type))
-        Fail(cg, e.Loc, "'is' can only be used with Error<T> and Optional<T> values, not '" + types.Name(subj.Type) + "'");
+    {
+        // 'thread is T result' (Thread<T> only): matches the Optional<T> of _TryGetResult() (stdlib/thread.csh), a value
+        // only once the thread has completed without being cancelled.
+        var sd = types.IsStruct(subj.Type) ? cg.Structs.Get(GetStructInfo(cg, subj.Type).Entry).Decl : StructDecl { };
+        if (types.IsStruct(subj.Type) && sd.Name == "Thread" && sd.TypeParams.Length > 0)
+        {
+            HoldTemp(cg, subj);
+            string thisPtr = ir.Alloca(LlvmType(cg, subj.Type), "tmp");
+            ir.Store(LlvmType(cg, subj.Type), subj.V, thisPtr);
+            subj = EmitDirectCall(cg, ThreadMethod(cg, subj.Type, "_TryGetResult", e.Loc), thisPtr, new Arg[0], e.Loc);
+        }
+        else
+        {
+            string shown = types.IsStruct(subj.Type) && sd.Name == "_ThreadVoid" ? "Thread" : types.Name(subj.Type);
+            Fail(cg, e.Loc, "'is' can only be used with Error<T>, Optional<T> and Thread<T> values, not '" + shown + "'");
+        }
+    }
     int pattern = DeclTypeOf(cg, n.Type);
     bool whole = pattern == subj.Type;
     if (!whole && pattern != types.Elem(subj.Type))
