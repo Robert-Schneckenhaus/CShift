@@ -811,7 +811,23 @@ int main(int argc, char** argv)
         linkArgs.push_back("-l" + l);
     if (!isWindows)
         linkArgs.push_back("-lm"); // the math functions of the standard library
-    linkArgs.push_back("-lpthread"); // 'thread' functions and Thread/Thread<T> (stdlib/thread.csh)
+    // 'thread' functions and Thread/Thread<T> (stdlib/thread.csh). On Windows, a plain '-lpthread' picks the
+    // *import* library (libpthread.dll.a/libwinpthread.dll.a) over the static one when both exist next to each
+    // other, which makes every compiled program depend on libwinpthread-1.dll at run time - a DLL that is not
+    // part of the bundled toolchain (it is only ever a build-time dependency of clang itself, never shipped for
+    // programs clang compiles), so a program built this way fails to start anywhere outside an MSYS2 shell.
+    // '-Wl,-Bstatic ... -Wl,-Bdynamic' forces the static archive instead, so the compiled program needs nothing
+    // beyond what Windows itself and the bundled toolchain already provide.
+    if (isWindows)
+    {
+        linkArgs.push_back("-Wl,-Bstatic");
+        linkArgs.push_back("-lpthread");
+        linkArgs.push_back("-Wl,-Bdynamic");
+    }
+    else
+    {
+        linkArgs.push_back("-lpthread");
+    }
     for (const auto& l : opt.libs)
         linkArgs.push_back("-l" + l);
     std::vector<llvm::StringRef> refs(linkArgs.begin(), linkArgs.end());
