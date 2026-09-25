@@ -288,7 +288,7 @@ string SharedReleaseHelper(Compiler cg, int t)
                        "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %v)\n";
     }
     string counter = cg.St[0].ArcStats
-        ? "  %f = load i64, ptr @__cs_frees\n  %f1 = add i64 %f, 1\n  store i64 %f1, ptr @__cs_frees\n"
+        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
         : "";
     cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
                        "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
@@ -322,7 +322,7 @@ string ArrayReleaseText(Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string counter = cg.St[0].ArcStats
-        ? "  %f = load i64, ptr @__cs_frees\n  %f1 = add i64 %f, 1\n  store i64 %f1, ptr @__cs_frees\n"
+        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
         : "";
     return "define internal void " + name + "(ptr %p) {\nentry:\n" +
            "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +

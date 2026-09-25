@@ -78,7 +78,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  br i1 %isnull, label %oom, label %ok\n" +
             "oom:\n  call void @__cs_panic(ptr @.cs.oom)\n  unreachable\n" +
             "ok:\n  store i64 1, ptr %p\n" +
-            (arcStats ? "  %n = load i64, ptr @__cs_allocs\n  %n1 = add i64 %n, 1\n  store i64 %n1, ptr @__cs_allocs\n" : "") +
+            (arcStats ? "  %n = atomicrmw add ptr @__cs_allocs, i64 1 monotonic\n" : "") +
             "  %lenp = getelementptr i8, ptr %p, i64 8\n  store i64 %len, ptr %lenp\n  ret ptr %p\n}\n\n";
 
     text += "define internal i64 @__cs_len(ptr %s) {\nentry:\n" +
@@ -102,7 +102,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "dec:\n  %rc = load i64, ptr %p\n  %rc1 = sub i64 %rc, 1\n  store i64 %rc1, ptr %p\n" +
             "  %zero = icmp eq i64 %rc1, 0\n  br i1 %zero, label %free, label %done\n" +
             "free:\n  call void @free(ptr %p)\n" +
-            (arcStats ? "  %f = load i64, ptr @__cs_frees\n  %f1 = add i64 %f, 1\n  store i64 %f1, ptr @__cs_frees\n" : "") +
+            (arcStats ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n" : "") +
             "  br label %done\n" +
             "done:\n  ret void\n}\n\n";
 

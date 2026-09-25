@@ -21,17 +21,17 @@ using CShift.Emit;
 // Signature checks
 // ---------------------------------------------------------------------------
 
-// Plain values (no reference counting at all) and SharedPtr<T> (atomic count). Strings, arrays, containers, Error<T>,
-// pointers and Action/Func are not allowed: copying them into another thread would race on a non-atomic count or alias
-// data the other thread does not expect.
+// Values that two threads may hold at the same time: plain values (no reference counting at all) and SharedPtr<T>
+// of such values (its count is atomic). Strings, arrays, containers, Error<T>, pointers and Action/Func are not: their
+// reference counts are not atomic (and pointers or function values would alias data the other thread does not
+// expect). This is the rule for what a SharedPtr<T> passed to a thread may contain, and so for Thread<T> handles.
 bool IsThreadSafeType(Compiler cg, int t)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
-    if (kind == TypeKind.Bool || kind == TypeKind.Int || kind == TypeKind.Char || kind == TypeKind.Float || kind == TypeKind.Enum ||
-        kind == TypeKind.SharedPtr)
+    if (kind == TypeKind.Bool || kind == TypeKind.Int || kind == TypeKind.Char || kind == TypeKind.Float || kind == TypeKind.Enum)
         return true;
-    if (kind == TypeKind.Optional)
+    if (kind == TypeKind.SharedPtr || kind == TypeKind.Optional)
         return IsThreadSafeType(cg, types.Elem(t));
     if (kind != TypeKind.Struct)
         return false;
@@ -48,6 +48,66 @@ bool IsThreadSafeType(Compiler cg, int t)
     return true;
 }
 
+// Values that can be handed to a new thread as parameters: thread-safe values, and strings, which are copied for the
+// thread (a new block that only the thread owns; strings cannot be changed, so the copy behaves exactly like the
+// original). The same goes for Optional<T>, Error<T> and structs made of such values.
+bool IsThreadTransferable(Compiler cg, int t)
+{
+    var types = cg.Types;
+    var kind = types.Kind(t);
+    if (kind == TypeKind.String)
+        return true;
+    if (kind == TypeKind.Optional)
+        return IsThreadTransferable(cg, types.Elem(t));
+    if (kind == TypeKind.Error)
+        return types.IsVoid(types.Elem(t)) || IsThreadTransferable(cg, types.Elem(t));
+    if (kind == TypeKind.Struct)
+    {
+        var si = GetStructInfo(cg, t);
+        if (si.LayoutInProgress)
+            return false;
+        if (si.Base != 0 && !IsThreadTransferable(cg, si.Base))
+            return false;
+        foreach (var f in si.Fields)
+        {
+            if (!IsThreadTransferable(cg, f.Type))
+                return false;
+        }
+        return true;
+    }
+    return IsThreadSafeType(cg, t);
+}
+
+// Why a type cannot be passed to a thread (for the error message): the innermost part that is the problem ("" if it is
+// the type itself). 'shared': the value would be shared with the thread (inside a SharedPtr<T>), not copied.
+string ThreadUnsafePart(Compiler cg, int t, bool shared)
+{
+    var types = cg.Types;
+    var kind = types.Kind(t);
+    if (kind == TypeKind.SharedPtr)
+        return ThreadUnsafeLeaf(cg, types.Elem(t), true);
+    if (kind == TypeKind.Optional || kind == TypeKind.Error)
+        return ThreadUnsafeLeaf(cg, types.Elem(t), shared);
+    if (kind == TypeKind.Struct)
+    {
+        var si = GetStructInfo(cg, t);
+        if (si.Base != 0 && !(shared ? IsThreadSafeType(cg, si.Base) : IsThreadTransferable(cg, si.Base)))
+            return ThreadUnsafeLeaf(cg, si.Base, shared);
+        foreach (var f in si.Fields)
+        {
+            if (!(shared ? IsThreadSafeType(cg, f.Type) : IsThreadTransferable(cg, f.Type)))
+                return ThreadUnsafeLeaf(cg, f.Type, shared);
+        }
+    }
+    return "";
+}
+
+string ThreadUnsafeLeaf(Compiler cg, int t, bool shared)
+{
+    string inner = ThreadUnsafePart(cg, t, shared);
+    return inner.Length > 0 ? inner : cg.Types.Name(t);
+}
+
 // Called by EnsureSignature once the parameter types of a 'thread' function are known.
 void CheckThreadSignature(Compiler cg, FuncInfo fi)
 {
@@ -61,11 +121,17 @@ void CheckThreadSignature(Compiler cg, FuncInfo fi)
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {
         var p = d.Params[i];
+        int t = fi.ParamTypes[i];
         if (fi.ParamRefs[i] != 0)
             Fail(cg, p.Loc, "a 'thread' function parameter cannot be 'ref' or 'const ref' ('" + p.Name + "')");
-        if (!IsThreadSafeType(cg, fi.ParamTypes[i]))
-            Fail(cg, p.Loc, "a 'thread' function parameter must be a plain value type or SharedPtr<T>, not '" + cg.Types.Name(fi.ParamTypes[i]) +
-                                "' (parameter '" + p.Name + "')");
+        if (!IsThreadTransferable(cg, t))
+        {
+            // the reason is only named when it is a string that would be shared (containers show their internals)
+            string part = ThreadUnsafePart(cg, t, false);
+            string why = part == "string" ? " ('string' is reference-counted without atomics and cannot be shared with another thread)" : "";
+            Fail(cg, p.Loc, "a 'thread' function parameter must be a value type, a string or a SharedPtr<T> of a thread-safe type, not '" +
+                                cg.Types.Name(t) + "' (parameter '" + p.Name + "')" + why);
+        }
     }
 }
 
@@ -233,8 +299,9 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
     string payload = DataPtr(cg, block);
     EmitDirectCall(cg, ThreadMethod(cg, tt.Core, "Init", loc), payload, new Arg[0], loc);
 
-    // 2. The argument block: the payload and the converted arguments (only plain values and SharedPtr<T>, whose count
-    //    is atomic; 'consume' hands the worker a reference of its own). The trampoline frees it.
+    // 2. The argument block: the payload and the converted arguments. The worker gets a reference of its own: strings
+    //    (also inside structs, Optional<T> and Error<T>) are copied into new blocks that only the worker owns, a
+    //    SharedPtr<T> is retained (its count is atomic). The trampoline frees the block.
     string argsType = ThreadArgsType(cg, fi);
     string argsBlock = ir.Call("ptr", "@malloc", "i64 ptrtoint (ptr getelementptr (" + argsType + ", ptr null, i32 1) to i64)");
     EmitPanicIf(cg, ir.ICmp("eq", "ptr", argsBlock, "null"), "out of memory");
@@ -243,7 +310,9 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
     {
         int pt = fi.ParamTypes[i];
         SourceLoc aloc = args[i].Source.IsNull() ? loc : args[i].Source.Loc;
-        string value = Consume(cg, ConvertValue(cg, args[i].V, pt, aloc));
+        Value cv = ToRValue(cg, ConvertValue(cg, args[i].V, pt, aloc));
+        HoldTemp(cg, cv);
+        string value = ThreadCopy(cg, pt, cv.V);
         ir.Store(LlvmType(cg, pt), value, ir.Gep(argsType, argsBlock, "i32 0, i32 " + (i + 1).ToString()));
     }
 
@@ -261,6 +330,66 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
     var wrapArgs = new Arg[1];
     wrapArgs[0].V = Rvalue(cg.Types.SharedPtrOf(tt.Payload), block, true);
     return EmitDirectCall(cg, ThreadMethod(cg, tt.Handle, "_Wrap", loc), "", wrapArgs, loc);
+}
+
+// A copy of the value for another thread, with a reference count of its own (+1): new blocks for its strings, a
+// retained SharedPtr<T>, everything else as it is.
+string ThreadCopy(Compiler cg, int t, string v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    if (!NeedsArc(cg, t))
+        return v;
+    if (types.IsString(t))
+        return ir.Call("ptr", StringCloneHelper(cg), "ptr " + v);
+    if (types.IsSharedPtr(t))
+    {
+        EmitRetain(cg, t, v);
+        return v;
+    }
+    string ty = LlvmType(cg, t);
+    var kind = types.Kind(t);
+    if (kind == TypeKind.Optional)
+    {
+        int elem = types.Elem(t);
+        string payload = ThreadCopy(cg, elem, ir.ExtractValue(ty, v, "1"));
+        return ir.InsertValue(ty, v, LlvmType(cg, elem), payload, "1");
+    }
+    if (kind == TypeKind.Error)
+    {
+        int elem = types.Elem(t);
+        string agg = v;
+        if (!types.IsVoid(elem))
+            agg = ir.InsertValue(ty, agg, LlvmType(cg, elem), ThreadCopy(cg, elem, ir.ExtractValue(ty, v, "1")), "1");
+        string message = ir.Call("ptr", StringCloneHelper(cg), "ptr " + ir.ExtractValue(ty, v, "2"));
+        return ir.InsertValue(ty, agg, "ptr", message, "2");
+    }
+    // a struct: field by field (the base struct is field 0)
+    var si = GetStructInfo(cg, t);
+    string result = v;
+    if (si.Base != 0)
+        result = ir.InsertValue(ty, result, LlvmType(cg, si.Base), ThreadCopy(cg, si.Base, ir.ExtractValue(ty, v, "0")), "0");
+    foreach (var f in si.Fields)
+    {
+        if (!NeedsArc(cg, f.Type))
+            continue;
+        string index = f.Index.ToString();
+        result = ir.InsertValue(ty, result, LlvmType(cg, f.Type), ThreadCopy(cg, f.Type, ir.ExtractValue(ty, v, index)), index);
+    }
+    return result;
+}
+
+// A copy of a string in a new block (null stays null).
+string StringCloneHelper(Compiler cg)
+{
+    string name = "@__cs_string_clone";
+    if (cg.Ir.Declared.Add(name))
+        cg.Ir.AppendHelper("define internal ptr @__cs_string_clone(ptr %s) {\nentry:\n" +
+                           "  %isnull = icmp eq ptr %s, null\n  br i1 %isnull, label %null, label %copy\n" +
+                           "null:\n  ret ptr null\n" +
+                           "copy:\n  %len = call i64 @__cs_len(ptr %s)\n  %n = trunc i64 %len to i32\n" +
+                           "  %r = call ptr @__cs_substring(ptr %s, i32 0, i32 %n)\n  ret ptr %r\n}\n");
+    return name;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,8 +415,8 @@ void EmitThreadTrampoline(Compiler cg, int instance)
     string payload = ir.Load("ptr", ir.Gep(argsType, "%args", "i32 0, i32 0"));
     ir.Store("ptr", payload, CurrentThreadCore(cg));
 
-    // The arguments in the block carry a reference of their own: they are passed as owned temporaries and released
-    // after the call (the callee retains its own copy).
+    // The arguments in the block belong to this thread: they are passed as owned temporaries and released after the
+    // call (the callee retains its own copy), here, on the worker thread.
     var callArgs = new Arg[fi.ParamTypes.Length];
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {

@@ -69,8 +69,10 @@ err_syntax.csh
 err_thread_bare_call.csh
 err_thread_function_pointer.csh
 err_thread_global.csh
+err_thread_handle_param.csh
 err_thread_instance_method.csh
 err_thread_ref_param.csh
+err_thread_shared_string.csh
 err_thread_unsafe_param.csh
 err_try_on_optional.csh
 err_try_outside_error.csh
@@ -122,3 +124,4 @@ thread_basic.csh
 thread_cancel.csh
 thread_start_contextual.csh
 thread_static_method.csh
+thread_strings.csh
