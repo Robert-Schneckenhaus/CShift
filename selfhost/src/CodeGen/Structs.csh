@@ -89,22 +89,41 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     types.SetInfo(t, ti);
     cg.StructTypes.Set(key, t);
 
+    cg.St[0].LayoutDepth += 1;
     LayoutStruct(cg, index);
+    cg.St[0].LayoutDepth -= 1;
     CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
     cg.PendingVerify.Add(t);
 
     // The methods of a struct of the program are always generated.
     if (!cg.Files.Get(se.File).IsPrelude)
+        cg.PendingMethods.Add(t);
+    InstantiateStructMethods(cg);
+    return t;
+}
+
+// Declaring a method needs the types of its parameters and result, so the methods wait until no struct layout is
+// running: while the layout of 'Session' runs (it has a field of type 'Stack', whose method takes a 'Session'), the
+// method's signature must not ask for the unfinished 'Session' - that is not a cycle, only the fields decide that.
+void InstantiateStructMethods(Compiler cg)
+{
+    if (cg.St[0].LayoutDepth > 0 || cg.St[0].InstantiatingMethods)
+        return;
+    cg.St[0].InstantiatingMethods = true;
+    // the list grows while this runs (a signature can bring in new struct types)
+    for (var i = 0; i < cg.PendingMethods.Count(); i += 1)
     {
-        var si = cg.StructInfos.Get(index);
-        foreach (var m in se.Methods)
+        int t = cg.PendingMethods.Get(i);
+        var si = cg.StructInfos.Get(cg.Types.Info(t).Decl);
+        foreach (var m in cg.Structs.Get(si.Entry).Methods)
         {
             if (cg.Funcs.Get(m).Decl.TypeParams.Length > 0)
                 continue;
             UseFunction(cg, GetFuncInstance(cg, m, t, si.Env, new int[0], cg.Funcs.Get(m).Decl.Loc));
         }
     }
-    return t;
+    cg.PendingMethods.Clear();
+    cg.St[0].InstantiatingMethods = false;
 }
 
 void LayoutStruct(Compiler cg, int index)

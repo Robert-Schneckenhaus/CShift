@@ -361,19 +361,46 @@ Type* CodeGen::getStructType(StructDecl* decl, const std::vector<Type*>& args, S
     structInfos.push_back(std::move(info));
     structTypes[key] = t;
 
-    layoutStruct(si);
+    layoutDepth += 1;
+    try
+    {
+        layoutStruct(si);
+    }
+    catch (...)
+    {
+        layoutDepth -= 1;
+        throw;
+    }
+    layoutDepth -= 1;
     checkConstraints(decl->constraints, si.env, decl->file, decl->loc);
     pendingVerify.push_back(&si);
 
     if (!decl->file->isPrelude)
+        pendingMethods.push_back(&si);
+    instantiateStructMethods();
+    return t;
+}
+
+// Every method of a (non-generic) struct is compiled, even if nothing calls it. Declaring a method needs the LLVM
+// types of its parameters and result, so this waits until no struct layout is running: while the layout of 'Session'
+// runs (it has a field of type 'Stack', whose method takes a 'Session'), the method's signature must not ask for the
+// unfinished 'Session' - that is not a cycle, only the fields decide that.
+void CodeGen::instantiateStructMethods()
+{
+    if (layoutDepth > 0 || instantiatingMethods)
+        return;
+    instantiatingMethods = true;
+    // the list grows while this runs (a signature can bring in new struct types)
+    for (size_t i = 0; i < pendingMethods.size(); i += 1)
     {
-        for (auto& m : decl->methods)
+        StructInfo& si = *pendingMethods[i];
+        for (auto& m : si.decl->methods)
         {
             if (!m->typeParams.empty())
                 continue;
             try
             {
-                useFunction(*getFuncInstance(m.get(), t, &si.env, decl->file, {}, m->loc));
+                useFunction(*getFuncInstance(m.get(), si.type, &si.env, si.decl->file, {}, m->loc));
             }
             catch (const CompileError& e)
             {
@@ -381,7 +408,8 @@ Type* CodeGen::getStructType(StructDecl* decl, const std::vector<Type*>& args, S
             }
         }
     }
-    return t;
+    pendingMethods.clear();
+    instantiatingMethods = false;
 }
 
 void CodeGen::layoutStruct(StructInfo& si)
