@@ -235,8 +235,8 @@ else
         else
             report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
         fi
-        # Projects (cshift.json, build/run/new) built by cshc. C headers are imported through the C++ compiler (libclang).
-        if CSHIFT_FFI_TOOL="$COMPILER" bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+        # Projects (cshift.json, build/run/new, C headers through libclang) built by cshc.
+        if bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
             report_ok "selfhost projects"
             head -n 1 "$TMP/selfhost.proj"
         else

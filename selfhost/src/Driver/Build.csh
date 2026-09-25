@@ -20,7 +20,6 @@ struct BuildOptions
     string Target;
     string Cc;
     string Stdlib;
-    string FfiTool;
     string ProjectDir;
     List<FfiImport> Imports;    // "using X from header" declarations found in the sources
     int Optimize;
@@ -41,7 +40,7 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", FfiTool = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
+        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
         o.Libs = List<string>.Create();
@@ -108,11 +107,6 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             i += 1;
             o.Target = args[i];
         }
-        else if (a == "--ffi-tool" && i + 1 < args.Length)
-        {
-            i += 1;
-            o.FfiTool = args[i];
-        }
         else if (a == "--no-stdlib")
             o.Stdlib = "-";
         else if (a == "-c")
@@ -163,7 +157,7 @@ int Cshc(string[] args)
     }
     if (args[0] == "--version")
     {
-        Console.WriteLine("cshc dev");
+        Console.WriteLine("cshc " + CshcVersion());
         return 0;
     }
 
@@ -244,20 +238,41 @@ int Cshc(string[] args)
     return Build(o);
 }
 
-// A cc that works: --cc, then CSHIFT_CC, then clang from PATH, then the usual MSYS2 folders on Windows.
+// The version: selfhost/version/version.txt, read when cshc is compiled (the release workflow writes it).
+string CshcVersion()
+{
+    var texts = EmbedTexts("../../version", ".txt");
+    return texts.Length > 0 ? texts[0].Trim() : "dev";
+}
+
+// The C compiler that is used as linker driver, to compile generated C code and to find libclang: --cc, then
+// CSHIFT_CC, then the toolchain that comes with cshc (the folder 'toolchain' next to it, or the one a standalone
+// build carries inside itself), then clang, cc or gcc from PATH, then the usual MSYS2 folders on Windows.
 string LocateClang(string cc, bool windows)
 {
     if (cc.Length > 0)
-        return cc;
+    {
+        string found = FindProgram(cc, windows);
+        return found.Length > 0 ? found : cc;
+    }
     var fromEnv = Process.GetEnv("CSHIFT_CC");
     if (fromEnv is string configured)
     {
         if (configured.Length > 0)
-            return configured;
+        {
+            string found = FindProgram(configured, windows);
+            return found.Length > 0 ? found : configured;
+        }
     }
-    string quiet = windows ? " > nul 2>&1" : " > /dev/null 2>&1";
-    if (Process.Run("clang --version" + quiet) == 0)
-        return "clang";
+    string bundled = BundledClang(windows);
+    if (bundled.Length > 0)
+        return bundled;
+    foreach (var name in new string[] { "clang", "cc", "gcc" })
+    {
+        string found = FindProgram(name, windows);
+        if (found.Length > 0)
+            return found;
+    }
     if (windows)
     {
         var root = Process.GetEnv("MSYS2_ROOT");
@@ -269,14 +284,87 @@ string LocateClang(string cc, bool windows)
         if (File.Exists("C:/msys64/clang64/bin/clang.exe"))
             return "C:/msys64/clang64/bin/clang.exe";
     }
-    else
+    return "";
+}
+
+// The path of a program: as it is if it contains a directory, otherwise searched in PATH ("" if not found).
+string FindProgram(string name, bool windows)
+{
+    string exe = windows && !name.ToLower().EndsWith(".exe") ? name + ".exe" : name;
+    if (name.Contains('/') || name.Contains('\\'))
+        return File.Exists(exe) ? exe : (File.Exists(name) ? name : "");
+    var path = Process.GetEnv("PATH");
+    if (path is string dirs)
     {
-        if (Process.Run("cc --version" + quiet) == 0)
-            return "cc";
-        if (Process.Run("gcc --version" + quiet) == 0)
-            return "gcc";
+        foreach (var dir in dirs.Split(windows ? ';' : ':'))
+        {
+            if (dir.Length == 0)
+                continue;
+            string candidate = Path.Combine(dir, exe);
+            if (File.Exists(candidate))
+                return Path.Normalize(candidate);
+        }
     }
     return "";
+}
+
+// The release archives contain a toolchain (clang, lld, libclang, C libraries) in the folder 'toolchain' next to the
+// compiler; it is used before anything in PATH so that the versions match. A standalone build carries the same
+// toolchain appended to its own file (packaging/make-standalone.sh) and extracts it into a cache directory the first
+// time it is needed.
+string BundledClang(bool windows)
+{
+    string self = Host.ExecutablePath();
+    if (self.Length == 0)
+        return "";
+    string clangName = windows ? "clang.exe" : "clang";
+    string candidate = Path.Combine(Path.Combine(Path.Combine(Path.GetDirectory(Path.Normalize(self)), "toolchain"), "bin"), clangName);
+    if (File.Exists(candidate))
+        return candidate;
+
+    int64 offset = 0;
+    int64 size = 0;
+    if (Host.EmbeddedToolchain(self, ref offset, ref size) == 0)
+        return "";
+    string cacheDir = ToolchainCacheDir(windows);
+    if (cacheDir.Length == 0)
+        return "";
+    string cached = Path.Combine(Path.Combine(Path.Combine(cacheDir, "toolchain"), "bin"), clangName);
+    if (File.Exists(cached))
+        return cached;
+    // extracted with the system 'tar' (part of Windows since 10 1803 and of every Linux/macOS)
+    if (!Directory.Create(cacheDir))
+        return "";
+    string archive = Path.Combine(cacheDir, "toolchain.tar.gz");
+    if (Host.CopyFilePart(self, offset, size, archive) == 0)
+        return "";
+    Process.Run("tar xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
+    File.Delete(archive);
+    return File.Exists(cached) ? cached : "";
+}
+
+// A per-user, per-version cache directory for the extracted toolchain.
+string ToolchainCacheDir(bool windows)
+{
+    string baseDir = "";
+    if (windows)
+    {
+        var local = Process.GetEnv("LOCALAPPDATA");
+        if (local is string l)
+            baseDir = l;
+    }
+    else
+    {
+        var xdg = Process.GetEnv("XDG_CACHE_HOME");
+        var home = Process.GetEnv("HOME");
+        if (xdg is string x && x.Length > 0)
+            baseDir = x;
+        else if (home is string h && h.Length > 0)
+            baseDir = h + "/.cache";
+    }
+    if (baseDir.Length == 0)
+        return "";
+    return Path.Combine(Path.Combine(Path.Normalize(baseDir), "cshift"), "toolchain-" + CshcVersion());
 }
 
 void EnsureParentDirectory(string file)
