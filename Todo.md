@@ -38,7 +38,7 @@ names the feature):
       is still missing; for now: `--cc`, `CSHIFT_CC`, PATH, MSYS2 folders).
 - [x] **FFI (reading)**: `using X from "h.h"` and `from "x.ffi"` with `cshc`: loading `.ffi` files (`Driver/Ffi.csh`), C structs with
       explicit layout (`CodeGen/Layout.csh`), marshalling (`cstring`, `nullable`, `retCString`, `retOut`), ABI attributes for small
-      integers, compiling and linking shims with clang. `tests/projects` (8 of 8) and `demo/` build with `cshc`.
+      integers, compiling and linking shims with clang. `tests/projects` (8 of 8) and `demo-minifb/` build with `cshc`.
 - [ ] **FFI (generating)**: the `.ffi` file is currently generated from a header by the C++ compiler as a helper program
       (`cshiftc --ffi-prepare`, found via `--ffi-tool`, `CSHIFT_FFI_TOOL` or PATH). For a C++-free `cshc`, `FfiGenerator.cpp`
       (1600 lines, libclang) would have to be ported to CShift (calling libclang via FFI from CShift), or the `.ffi` files
@@ -50,7 +50,7 @@ names the feature):
 - [x] `tests/cases/` (80 of 80), `tests/test.csh` (identical output, no leaks) and the bootstrap run with `cshc`
       (`tests/run_tests.sh`, selfhost section; `selfhost/bootstrap.sh`: stage 1 = built with `cshiftc`, stage 2 = built by
       `cshc`, same IR for the sources of `cshc`).
-- [x] `tests/projects/` (8 of 8, `selfhost/projects.sh`) and `demo/` build with `cshc` (header import goes through the C++
+- [x] `tests/projects/` (8 of 8, `selfhost/projects.sh`) and `demo-minifb/` build with `cshc` (header import goes through the C++
       helper program, see section 1).
 
 ## 3. Dependencies of the new compiler (analysis)
@@ -201,6 +201,6 @@ piggybacks on the existing `obj/ffi/` cache convention or introduces a separate 
 - [x] The Windows job's "Run tests" and "Test the assembled folder" steps, temporarily disabled while
       release.yml itself was being fixed, are back on (release/v0.02 confirmed both green before they were
       turned off).
-- [ ] `demo/`: `libminifb.a` is not checked in (`demo/build-minifb.ps1` builds it); callbacks work, there are no lambdas yet.
+- [ ] `demo-minifb/`: `libminifb.a` is not checked in (`demo-minifb/build-minifb.ps1` builds it); callbacks work, there are no lambdas yet.
 - [ ] Language: lambdas/closures, interfaces as a value type, and a `List<T>` indexer are still open (see the README, "Known
       limitations").

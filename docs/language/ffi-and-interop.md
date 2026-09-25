@@ -53,6 +53,7 @@ Mfb.mfb_set_keyboard_callback(window, OnKey);
 
 This is a large enough topic to have [its own document](../../FFI.md): the full type mapping table, how pointers and
 `nint`/`nuint` map, `ffiApi` for umbrella headers, and the current limitations (no C++, no unions/bit fields, no
-`long double`, …). The `demo/` project is a complete, runnable example that imports a real C library this way.
+`long double`, …). The `demo-minifb/` and `demo-opengl/` projects are complete, runnable examples that import real C libraries this
+way.
 
 Next: [Projects](projects.md).

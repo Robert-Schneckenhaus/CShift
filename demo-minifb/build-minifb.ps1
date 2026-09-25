@@ -4,7 +4,7 @@
 #
 # -Source is a checkout of https://github.com/emoon/minifb (the headers in include/ come from there).
 # The C++ wrapper (MiniFB_cpp.cpp) is left out and replaced by an empty C function, so that the library does not
-# depend on a C++ runtime. The result is demo\libminifb.a.
+# depend on a C++ runtime. The result is demo-minifb\libminifb.a.
 param(
     [Parameter(Mandatory = $true)][string]$Source,
     [string]$Output = (Join-Path $PSScriptRoot "libminifb.a")
