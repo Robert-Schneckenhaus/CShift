@@ -150,4 +150,36 @@ void Main()
 Only the reference count itself is thread-safe - concurrent access to the value through `.Ptr()` from more than
 one thread needs its own synchronization, exactly like `std::shared_ptr` in C++.
 
+## `Mutex<T>`
+
+A `Mutex<T>` is a value that several threads share, guarded by a lock. Like `SharedPtr<T>` it is a handle (copies
+share the value and the lock) and can be passed to `thread` functions:
+
+```csharp
+thread void Count(Mutex<int> counter, int times)
+{
+    for (var i = 0; i < times; i += 1)
+    {
+        using (var guard = counter.Lock())   // released when the block is left
+            guard.Set(guard.Get() + 1);
+    }
+}
+
+var counter = Mutex<int>.Create(0);
+var a = start Count(counter, 1000);
+var b = start Count(counter, 1000);
+a.Join();
+b.Join();
+Console.WriteLine(counter.Get());   // 2000
+```
+
+* `Mutex<T>.Create(value)`, `.Lock()` returns a `MutexGuard<T>` that holds the lock until `Dispose()` (`using`).
+* `guard.Get()` / `guard.Set(value)` read and write the value while the lock is held; `mutex.Get()` /
+  `mutex.Set(value)` lock just for that one call.
+* The value only goes in and out as a copy that shares no reference count with anything else (strings are copied
+  into new blocks, `Memory.CopyForThread`). So `T` must be copyable between threads: numbers, `bool`, `char`, enums,
+  strings, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs of them - not arrays or
+  containers (`Mutex<List<int>>` is an error).
+* A `MutexGuard<T>` cannot be passed to another thread: the thread that locked a mutex has to unlock it.
+
 Next: [Resources and `using`](resources.md).

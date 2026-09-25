@@ -38,6 +38,15 @@ bool IsThreadSafeType(Compiler cg, int t)
     var si = GetStructInfo(cg, t);
     if (si.LayoutInProgress)
         return false;
+    // Mutex<T> (stdlib/mutex.csh) copies its value in and out under its lock, so T only has to be copyable between
+    // threads. A MutexGuard holds the lock, which only the locking thread may release.
+    if (si.Name.StartsWith("System.MutexGuard<"))
+        return false;
+    if (si.Name.StartsWith("System.Mutex<"))
+    {
+        var arg = si.Env.TryGet("T");
+        return arg is int valueType && IsThreadTransferable(cg, valueType);
+    }
     if (si.Base != 0 && !IsThreadSafeType(cg, si.Base))
         return false;
     foreach (var f in si.Fields)
@@ -64,8 +73,10 @@ bool IsThreadTransferable(Compiler cg, int t)
     if (kind == TypeKind.Struct)
     {
         var si = GetStructInfo(cg, t);
-        if (si.LayoutInProgress)
+        if (si.LayoutInProgress || si.Name.StartsWith("System.MutexGuard<"))
             return false;
+        if (si.Name.StartsWith("System.Mutex<"))
+            return IsThreadSafeType(cg, t);
         if (si.Base != 0 && !IsThreadTransferable(cg, si.Base))
             return false;
         foreach (var f in si.Fields)

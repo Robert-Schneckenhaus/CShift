@@ -93,6 +93,10 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     LayoutStruct(cg, index);
     cg.St[0].LayoutDepth -= 1;
     CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
+    if ((key.StartsWith("System.Mutex<") || key.StartsWith("System.MutexGuard<")) && cg.Files.Get(se.File).IsPrelude &&
+        !IsThreadTransferable(cg, args[0]))
+        Fail(cg, loc, "Mutex<T> needs a value that can be copied between threads (numbers, strings, SharedPtr<T> of thread-safe " +
+                          "values, and Optional<T>/Error<T>/structs of them), not '" + types.Name(args[0]) + "'");
     cg.PendingVerify.Add(t);
 
     // The methods of a struct of the program are always generated.

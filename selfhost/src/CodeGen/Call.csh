@@ -704,6 +704,18 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
         return none;
     }
 
+    if (type == "Memory" && method == "CopyForThread")
+    {
+        // A copy that shares no reference count with the original: new blocks for its strings (Mutex<T>, threads).
+        if (args.Length != 1)
+            Fail(cg, loc, "Memory.CopyForThread takes one argument");
+        Value original = ToRValue(cg, args[0].V);
+        if (!IsThreadTransferable(cg, original.Type))
+            Fail(cg, loc, "'" + types.Name(original.Type) + "' cannot be copied for another thread (only values, strings, SharedPtr<T> of " +
+                              "thread-safe values, and Optional<T>/Error<T>/structs of them)");
+        HoldTemp(cg, original);
+        return Rvalue(original.Type, ThreadCopy(cg, original.Type, original.V), NeedsArc(cg, original.Type));
+    }
     if (type == "Memory")
     {
         RequireUnsafe(cg, loc, "Memory." + method);

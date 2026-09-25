@@ -58,6 +58,8 @@ err_interp_empty.csh
 err_interp_struct.csh
 err_missing_return.csh
 err_multiple_inheritance.csh
+err_mutex_guard_thread.csh
+err_mutex_list.csh
 err_narrowing.csh
 err_native_int_narrowing.csh
 err_nested_error.csh
@@ -128,6 +130,7 @@ string_interpolation.csh
 struct_method_outer_type.csh
 thread_basic.csh
 thread_cancel.csh
+thread_mutex.csh
 thread_start_contextual.csh
 thread_static_method.csh
 thread_strings.csh
