@@ -201,7 +201,7 @@ int Cshc(string[] args)
     if (command == "build" || command == "run")
     {
         string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : "";
-        var loaded = LoadProject(location);
+        var loaded = LoadProject(location, o.Target);
         if (loaded is Project project)
         {
             o.FromProject = true;

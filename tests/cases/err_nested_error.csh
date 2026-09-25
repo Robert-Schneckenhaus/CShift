@@ -1,6 +1,7 @@
-// Error<Optional<T>>, Optional<Error<T>>, ... are not allowed.
+// Optional<Error<T>>, Error<Error<T>>, Optional<Optional<T>> are not allowed (only Error<Optional<T>> is).
 // expect-error: cannot be nested
-Error<Optional<int>> Broken()
+
+Optional<Error<int>> Broken()
 {
     return null;
 }

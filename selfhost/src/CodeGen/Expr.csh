@@ -653,7 +653,48 @@ Value EmitAssign(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var a = cg.Tree.GetAssign(e);
-    Value target = EmitExpr(cg, a.Target);
+    Value target;
+    if (a.Target.Kind == ExprKind.Index)
+    {
+        // x[k] = v on a struct: x.Set(k, v); x[k] op= v: x.Set(k, x.Get(k) op v)
+        var ix = cg.Tree.GetIndex(a.Target);
+        Value holder = EmitExpr(cg, ix.Object);
+        if (types.IsStruct(holder.Type))
+        {
+            if (holder.IsConst)
+                Fail(cg, e.Loc, "cannot assign to an element of a read-only value (a constant or a 'const ref' parameter)");
+            // the key is used twice (Get and Set) and the values are passed on: each owned temporary is held once
+            // here and passed on borrowed
+            Value keyValue = EmitRValue(cg, ix.Index);
+            HoldTemp(cg, keyValue);
+            keyValue.Owned = false;
+            var key = Arg { V = keyValue, Source = ix.Index };
+            Value newValue;
+            if (a.HasOp)
+            {
+                var getArgs = new Arg[1];
+                getArgs[0] = key;
+                Value cur = EmitMethodCallOn(cg, holder, "Get", getArgs, new int[0], e.Loc);
+                HoldTemp(cg, cur);
+                cur.Owned = false;
+                Value rhs = EmitRValue(cg, a.Value);
+                Value res = EmitArithmetic(cg, a.Op, cur, rhs, e.Loc);
+                if (res.Type != cur.Type && types.IsNumeric(res.Type) && types.IsNumeric(cur.Type))
+                    res = Rvalue(cur.Type, NumericConvert(cg, res.V, res.Type, cur.Type), false);
+                newValue = res;
+            }
+            else
+                newValue = EmitRValue(cg, a.Value);
+            HoldTemp(cg, newValue);
+            newValue.Owned = false;
+            EmitIndexerSet(cg, holder, key, newValue, e.Loc);
+            return Rvalue(newValue.Type, newValue.V, false);
+        }
+        // arrays, strings and pointers: the element itself is the target
+        target = EmitElement(cg, holder, ix.Index, a.Target.Loc);
+    }
+    else
+        target = EmitExpr(cg, a.Target);
     if (!target.IsLValue)
     {
         // a constant (local or top level) is a value, not a variable

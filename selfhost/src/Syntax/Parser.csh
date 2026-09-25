@@ -252,7 +252,7 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
-        else if (Check(TokenKind.KwThread))
+        else if (IsThreadModifier())
         {
             Advance();
             FuncDecl f = try ParseFunction(false, false);
@@ -291,6 +291,22 @@ struct Parser
         }
     }
 
+    // 'thread' is a contextual keyword: a modifier when a function declaration follows ("thread int F(" or
+    // "thread void F<"), otherwise an ordinary name.
+    bool IsThreadModifier()
+    {
+        if (!CheckIdent("thread"))
+            return false;
+        int start = Pos;
+        Advance();
+        var probe = ParseType();
+        bool result = false;
+        if (probe)
+            result = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.LParen || PeekKind(1) == TokenKind.Lt);
+        Pos = start;
+        return result;
+    }
+
     Error<string[]> ParseTypeParams()
     {
         try Expect(TokenKind.Lt, "'<'");
@@ -306,8 +322,10 @@ struct Parser
     Error<Constraint[]> ParseConstraints()
     {
         var list = List<Constraint>.Create();
-        while (Match(TokenKind.KwWhere))
+        // 'where' is a contextual keyword: "where T : ..." (else it is an ordinary name)
+        while (CheckIdent("where") && PeekKind(1) == TokenKind.Ident && PeekKind(2) == TokenKind.Colon)
         {
+            Advance();
             var c = Constraint { };
             c.Param = try ExpectIdent("type parameter name");
             try Expect(TokenKind.Colon, "':'");
@@ -354,8 +372,11 @@ struct Parser
             {
                 if (Match(TokenKind.KwStatic))
                     isStatic = true;
-                else if (Match(TokenKind.KwThread))
+                else if (IsThreadModifier())
+                {
+                    Advance();
                     isThread = true;
+                }
                 else
                     break;
             }

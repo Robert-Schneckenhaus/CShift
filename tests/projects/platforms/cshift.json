@@ -1,0 +1,12 @@
+{
+	"name": "platforms",
+	"sources": ["src"],
+	"output": "bin/platforms",
+	"optimize": 1,
+	"links": [],
+	"platforms": {
+		"windows": { "defines": ["PLATFORM_ID=1"], "links": ["user32"] },
+		"linux": { "defines": ["PLATFORM_ID=2"], "links": ["m"] },
+		"macos": { "defines": ["PLATFORM_ID=3"] }
+	}
+}

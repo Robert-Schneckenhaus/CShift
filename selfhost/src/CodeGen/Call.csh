@@ -461,8 +461,9 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
     int file = cg.Fn[0].File;
     var methodTypeArgs = ResolveTypeArgs(cg, m.TypeArgs);
     string dotted = DottedName(cg, m.Object);
-    if (dotted.Length > 0 && !IsLocalName(cg, dotted.Split('.')[0]) &&
-        (CurrentOwner(cg) == 0 || !FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found))
+    bool colorColor = dotted.Length > 0 && ColorColorMeansType(cg, dotted, m.Name, e.Loc);
+    if (dotted.Length > 0 && (colorColor || (!IsLocalName(cg, dotted.Split('.')[0]) &&
+        (CurrentOwner(cg) == 0 || !FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found))))
     {
         if (dotted == "Console" || dotted == "Environment" || dotted == "Memory")
         {
@@ -575,15 +576,23 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
         return EmitIndirectCall(cg, obj, args, e.Loc);
     if (!types.IsStruct(obj.Type))
         return EmitBuiltinMethod(cg, obj, m.Name, args, e.Loc);
-    var cands = MethodCandidates(cg, obj.Type, m.Name);
+    return EmitMethodCallOn(cg, obj, m.Name, args, methodTypeArgs, e.Loc);
+}
+
+// obj.Name(args) for a struct value: resolves the instance method and calls it on the object (in place if it is a
+// variable, else on a temporary copy). Also used by the indexer (obj[i] is obj.Get(i), obj[i] = v is obj.Set(i, v)).
+Value EmitMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, int[] methodTypeArgs, SourceLoc loc)
+{
+    var types = cg.Types;
+    var cands = MethodCandidates(cg, obj.Type, name);
     if (cands.Length == 0)
-        Fail(cg, e.Loc, "struct '" + types.Name(obj.Type) + "' has no method '" + m.Name + "'");
-    int instance = ResolveOverload(cg, cands, args, methodTypeArgs, e.Loc, m.Name);
+        Fail(cg, loc, "struct '" + types.Name(obj.Type) + "' has no method '" + name + "'");
+    int instance = ResolveOverload(cg, cands, args, methodTypeArgs, loc, name);
     var fi = cg.Instances.Get(instance);
     if (!fi.HasThis)
-        Fail(cg, e.Loc, "'" + m.Name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + m.Name + "(...)'");
-    if (m.Name.Length > 0 && m.Name[0] == '_' && CurrentOwner(cg) != fi.Owner)
-        Fail(cg, e.Loc, "method '" + m.Name + "' is private to '" + types.Name(fi.Owner) + "'");
+        Fail(cg, loc, "'" + name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + name + "(...)'");
+    if (name.Length > 0 && name[0] == '_' && CurrentOwner(cg) != fi.Owner)
+        Fail(cg, loc, "method '" + name + "' is private to '" + types.Name(fi.Owner) + "'");
 
     string thisPtr;
     if (obj.IsLValue && !obj.IsConst)
@@ -604,7 +613,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
         thisPtr = cg.Ir.Alloca(LlvmType(cg, obj.Type), "tmp");
         cg.Ir.Store(LlvmType(cg, obj.Type), obj.V, thisPtr);
     }
-    return EmitDirectCall(cg, instance, thisPtr, args, e.Loc);
+    return EmitDirectCall(cg, instance, thisPtr, args, loc);
 }
 
 Value EmitCall(Compiler cg, Expr e)

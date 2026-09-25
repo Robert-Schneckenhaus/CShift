@@ -42,7 +42,6 @@ struct Lexer
         lexer.Keywords.Set("new", TokenKind.KwNew);
         lexer.Keywords.Set("try", TokenKind.KwTry);
         lexer.Keywords.Set("is", TokenKind.KwIs);
-        lexer.Keywords.Set("where", TokenKind.KwWhere);
         lexer.Keywords.Set("const", TokenKind.KwConst);
         lexer.Keywords.Set("ref", TokenKind.KwRef);
         lexer.Keywords.Set("static", TokenKind.KwStatic);
@@ -52,7 +51,6 @@ struct Lexer
         lexer.Keywords.Set("this", TokenKind.KwThis);
         lexer.Keywords.Set("sizeof", TokenKind.KwSizeof);
         // 'start' (as in 'start Foo(...)') is not a keyword: the parser recognizes it by its position (ParseUnary).
-        lexer.Keywords.Set("thread", TokenKind.KwThread);
         return lexer;
     }
 

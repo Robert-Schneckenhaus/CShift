@@ -86,6 +86,7 @@ error_void.csh
 exit_code.csh
 function_pointers.csh
 globals.csh
+lang_additions.csh
 link_extern.csh
 main_args.csh
 main_error.csh
@@ -96,6 +97,7 @@ misc_features.csh
 native_int.csh
 panic_array_copy.csh
 panic_bounds.csh
+panic_dictionary_key.csh
 panic_divzero.csh
 panic_list_index.csh
 panic_min_div.csh

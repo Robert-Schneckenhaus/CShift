@@ -554,8 +554,10 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         if (node.Args.Length != 1)
             Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument");
         int inner = ResolveValueType(cg, node.Args[0].Id, file, env);
-        if (types.IsResultLike(inner))
-            Fail(cg, node.Loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + types.Name(inner) + ">)");
+        // Error<Optional<T>> is allowed (a lookup that can fail or find nothing); other nestings are ambiguous ('null',
+        // 'is' and 'try' would not know which level they mean).
+        if (types.IsResultLike(inner) && !(dotted == "Error" && types.IsOptional(inner)))
+            Fail(cg, node.Loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + types.Name(inner) + ">); only Error<Optional<T>> is allowed");
         // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
         if (types.IsVoid(inner) && dotted != "Error")
             Fail(cg, node.Loc, dotted + "<void> is not supported");

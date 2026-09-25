@@ -27,8 +27,7 @@ string RuntimeGlobals(bool windows, bool arcStats)
         "@.cs.text = private constant [5 x i8] c\"%.*s\\00\"\n" +
         "@.cs.fmt.i64 = private constant [5 x i8] c\"%lld\\00\"\n" +
         "@.cs.fmt.u64 = private constant [5 x i8] c\"%llu\\00\"\n" +
-        "@.cs.fmt.f64 = private constant [6 x i8] c\"%.15g\\00\"\n" +
-        "@.cs.fmt.f32 = private constant [5 x i8] c\"%.7g\\00\"\n" +
+        "@.cs.fmt.g = private constant [5 x i8] c\"%.*g\\00\"\n" +
         "@.cs.true = private global { i64, i64, [5 x i8] } { i64 1152921504606846976, i64 4, [5 x i8] c\"true\\00\" }\n" +
         "@.cs.false = private global { i64, i64, [6 x i8] } { i64 1152921504606846976, i64 5, [6 x i8] c\"false\\00\" }\n";
     if (!windows)
@@ -59,6 +58,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
         CDeclare(ir, "printf", "declare i32 @printf(ptr, ...)") +
         CDeclare(ir, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)") +
         CDeclare(ir, "snprintf", "declare i32 @snprintf(ptr, i64, ptr, ...)") +
+        CDeclare(ir, "strtod", "declare double @strtod(ptr, ptr)") +
         "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)\n" +
         "declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)\n";
     if (windows)
@@ -178,8 +178,39 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     // number to string
     text += FormatHelper("i64", "i64", "@.cs.fmt.i64");
     text += FormatHelper("u64", "i64", "@.cs.fmt.u64");
-    text += FormatHelper("f64", "double", "@.cs.fmt.f64");
-    text += FormatHelper("f32", "double", "@.cs.fmt.f32");
+    text += RoundTripHelper("f64", 15, 17, false);
+    text += RoundTripHelper("f32", 6, 9, true);
+    return text;
+}
+
+// __cs_fmt_<name>(double): the shortest text that reads back as the same number ("%.<p>g" with the smallest precision p
+// from 'first' to 'last' for which strtod gives the value again; like C#'s "R"): 0.1 stays "0.1", 1.0 / 3.0 becomes
+// "0.3333333333333333". For float, the value is compared after rounding to float.
+string RoundTripHelper(string name, int first, int last, bool single)
+{
+    string text = "define internal ptr @__cs_fmt_" + name + "(double %v) {\nentry:\n  %buf = alloca [48 x i8]\n  br label %p" +
+                  first.ToString() + "\n";
+    for (var p = first; p <= last; p += 1)
+    {
+        string ps = p.ToString();
+        text += "p" + ps + ":\n" +
+                "  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 48, ptr @.cs.fmt.g, i32 " + ps + ", double %v)\n";
+        if (p == last)
+        {
+            text += "  br label %done\n";
+            continue;
+        }
+        text += "  %back" + ps + " = call double @strtod(ptr %buf, ptr null)\n";
+        if (single)
+            text += "  %bf" + ps + " = fptrunc double %back" + ps + " to float\n  %vf" + ps + " = fptrunc double %v to float\n" +
+                    "  %same" + ps + " = fcmp oeq float %bf" + ps + ", %vf" + ps + "\n";
+        else
+            text += "  %same" + ps + " = fcmp oeq double %back" + ps + ", %v\n";
+        text += "  br i1 %same" + ps + ", label %done, label %p" + (p + 1).ToString() + "\n";
+    }
+    text += "done:\n  %n = call i64 @strlen(ptr %buf)\n  %size = add i64 %n, 1\n" +
+            "  %r = call ptr @__cs_alloc(i64 %size, i64 %n)\n  %dst = getelementptr i8, ptr %r, i64 16\n" +
+            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %buf, i64 %n, i1 false)\n  ret ptr %r\n}\n\n";
     return text;
 }
 

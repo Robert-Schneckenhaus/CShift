@@ -52,6 +52,12 @@ string DumpToken(Token t)
     switch (t.Kind)
     {
     case TokenKind.Ident:
+        // 'where' and 'thread' are contextual keywords (identifiers for the lexer); the frozen C++ lexer still has
+        // them as keywords, so the dump shows them like it does (selfhost/compare.sh).
+        if (t.Text == "where")
+            return t.Loc.Line.ToString() + ":" + t.Loc.Col.ToString() + " " + ((int)TokenKind.KwWhere).ToString() + " where";
+        if (t.Text == "thread")
+            return t.Loc.Line.ToString() + ":" + t.Loc.Col.ToString() + " " + ((int)TokenKind.KwThread).ToString();
         return line + " " + t.Text;
     case TokenKind.StringLit:
         return line + " \"" + EscapeText(t.Text) + "\"";

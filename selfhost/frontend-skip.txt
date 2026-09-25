@@ -1,4 +1,7 @@
-# Files skipped by selfhost/compare.sh: they use syntax the CShift front end (selfhost/src/Syntax) does not know
-# yet, so it cannot tokenize/parse them the same way the C++ front end does - that is an expected difference, not
-# a regression. One path per line, relative to the repository root; '#' starts a comment.
+# Files skipped by selfhost/compare.sh: they use syntax that only the self-hosted front end (selfhost/src/Syntax)
+# knows - features added after the C++ compiler was frozen - so the frozen C++ front end cannot parse them the same
+# way. That is an expected difference, not a regression. One path per line, relative to the repository root; '#'
+# starts a comment.
 
+# 'thread' and 'where' used as names (contextual keywords)
+tests/cases/lang_additions.csh

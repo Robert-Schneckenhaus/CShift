@@ -87,9 +87,19 @@ Value EmitIndex(Compiler cg, Expr e)
     var ir = cg.Ir;
     var n = cg.Tree.GetIndex(e);
     Value obj = EmitExpr(cg, n.Object);
-    Value idx = EmitRValue(cg, n.Index);
+    if (types.IsStruct(obj.Type))
+        return EmitIndexerGet(cg, obj, n.Index, e.Loc);
+    return EmitElement(cg, obj, n.Index, e.Loc);
+}
+
+// The element of an array, a string or a pointer (the object is already evaluated).
+Value EmitElement(Compiler cg, Value obj, Expr index, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    Value idx = EmitRValue(cg, index);
     if (!types.IsIntegral(idx.Type))
-        Fail(cg, n.Index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
+        Fail(cg, index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
     bool signedIndex = types.IsInt(idx.Type) && types.IsSigned(idx.Type);
     string i64v = NumericConvert(cg, idx.V, idx.Type, signedIndex ? types.I64 : types.U64);
 
@@ -107,14 +117,35 @@ Value EmitIndex(Compiler cg, Expr e)
     }
     if (types.IsPointer(t))
     {
-        RequireUnsafe(cg, e.Loc, "pointer indexing");
+        RequireUnsafe(cg, loc, "pointer indexing");
         if (types.IsVoid(types.Elem(t)))
-            Fail(cg, e.Loc, "cannot index 'void*'");
+            Fail(cg, loc, "cannot index 'void*'");
         Value p = ToRValue(cg, obj);
         return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), p.V, "i64 " + i64v), false);
     }
-    Fail(cg, e.Loc, "cannot index a value of type '" + types.Name(t) + "'");
+    Fail(cg, loc, "cannot index a value of type '" + types.Name(t) + "'");
     return obj;
+}
+
+// The indexer of a struct: x[k] is x.Get(k), x[k] = v is x.Set(k, v) (List<T>, Dictionary<K, V> and any struct with
+// such methods).
+Value EmitIndexerGet(Compiler cg, Value obj, Expr index, SourceLoc loc)
+{
+    if (MethodCandidates(cg, obj.Type, "Get").Length == 0)
+        Fail(cg, loc, "cannot index a value of type '" + cg.Types.Name(obj.Type) + "' (it has no method 'Get')");
+    var args = new Arg[1];
+    args[0] = Arg { V = EmitRValue(cg, index), Source = index };
+    return EmitMethodCallOn(cg, obj, "Get", args, new int[0], loc);
+}
+
+Value EmitIndexerSet(Compiler cg, Value obj, Arg key, Value value, SourceLoc loc)
+{
+    if (MethodCandidates(cg, obj.Type, "Set").Length == 0)
+        Fail(cg, loc, "cannot assign to an element of '" + cg.Types.Name(obj.Type) + "' (it has no method 'Set')");
+    var args = new Arg[2];
+    args[0] = key;
+    args[1] = Arg { V = value };
+    return EmitMethodCallOn(cg, obj, "Set", args, new int[0], loc);
 }
 
 // ---------------------------------------------------------------------------

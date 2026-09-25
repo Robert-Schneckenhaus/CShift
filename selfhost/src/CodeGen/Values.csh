@@ -247,6 +247,8 @@ int ConversionCost(Compiler cg, Value v, int to)
     if (fromKind == TypeKind.Null)
     {
         var toKind = types.Kind(to);
+        if (types.IsError(to) && types.IsOptional(types.Elem(to)))
+            return 4; // Error<Optional<T>>: an empty Optional<T>
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
                 toKind == TypeKind.Optional || toKind == TypeKind.Function || toKind == TypeKind.SharedPtr) ? 1 : -1;
     }
@@ -273,7 +275,7 @@ int ConversionCost(Compiler cg, Value v, int to)
         if (StructIsAncestor(cg, to, from, ref path))
             return 2;
     }
-    if (types.IsResultLike(to) && !types.IsResultLike(from))
+    if (types.IsResultLike(to) && (!types.IsResultLike(from) || (types.IsError(to) && types.IsOptional(from))))
     {
         int inner = ConversionCost(cg, v, types.Elem(to));
         if (inner >= 0)
@@ -319,7 +321,7 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     }
 
     var fromKind = types.Kind(from);
-    if (fromKind == TypeKind.Null)
+    if (fromKind == TypeKind.Null && !types.IsError(to))
     {
         if (types.IsOptional(to))
             return Rvalue(to, "zeroinitializer", false);
