@@ -4,7 +4,8 @@
 #
 #   packaging/package-windows.sh <version> <build-dir> <output-dir>
 #
-# Run it in an MSYS2 CLANG64 shell after building cshiftc (cmake -DCSHIFT_STATIC=ON). Result:
+# <build-dir> contains the released cshiftc.exe: the self-hosted compiler (selfhost/build-release.sh). Run it in an
+# MSYS2 CLANG64 shell. Result:
 #   <output-dir>/cshift-<version>-windows-x64/
 set -euo pipefail
 
@@ -21,6 +22,10 @@ mkdir -p "$dist/toolchain/bin" "$dist/toolchain/lib" "$dist/toolchain/include"
 
 # ---- the compiler and the documentation ----
 cp "$build/cshiftc.exe" "$dist/"
+# DLLs of the MSYS2 prefix the compiler itself needs (normally none: it is plain C code linked by clang)
+ldd "$build/cshiftc.exe" | awk '/=> .*\/(clang64|mingw64|ucrt64)\/bin\// { print $3 }' | while read -r dll; do
+    cp -n "$dll" "$dist/"
+done
 cp "$root/README.md" "$root/FFI.md" "$root/BuildDesign.md" "$root/LanguageDesign.md" "$dist/"
 cp "$root/packaging/README-release.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"

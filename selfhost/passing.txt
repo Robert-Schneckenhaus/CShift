@@ -109,6 +109,7 @@ panic_substring.csh
 panic_underflow.csh
 panic_user.csh
 shared_ptr.csh
+stdlib_additions.csh
 stdlib_dictionary.csh
 stdlib_file.csh
 stdlib_list.csh

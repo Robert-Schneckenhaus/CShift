@@ -55,24 +55,32 @@ struct BuildOptions
 
 void PrintUsage()
 {
-    Console.WriteErrorLine("cshc - the CShift compiler written in CShift\n\n" +
-        "usage: cshc [options] file.csh [file2.csh ...]     compile single files\n" +
-        "       cshc build [project] [options]              build a project (cshift.json)\n" +
-        "       cshc run   [project] [options]              build and run a project\n" +
-        "       cshc new   <directory>                      create a new project\n\n" +
+    Console.WriteErrorLine("cshiftc - CShift compiler\n\n" +
+        "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n" +
+        "       cshiftc build [project] [options]              build a project (cshift.json)\n" +
+        "       cshiftc run   [project] [options]              build and run a project\n" +
+        "       cshiftc new   <directory>                      create a new project\n\n" +
+        "'project' is a directory containing cshift.json or the path of a project file;\n" +
+        "without it cshift.json is searched in the current directory and its parents.\n\n" +
         "options:\n" +
-        "  -o <file>          output file\n" +
-        "  -c                 compile to an object file only (no linking)\n" +
-        "  --emit-llvm        write LLVM IR (.ll) instead of an executable\n" +
-        "  -O0 .. -O3         optimization level (default -O2)\n" +
-        "  --target <triple>  target triple (default: host)\n" +
-        "  --cc <program>     clang program (default: CSHIFT_CC, then clang)\n" +
-        "  --stdlib <dir>     use this standard library instead of the embedded one\n" +
-        "  -l<name>, -L<dir>  link a library / library search path\n" +
-        "  file.a, file.o     libraries and object files are passed to the linker\n" +
-        "  --run              run the program after building\n" +
-        "  --arc-stats        debug: print heap allocations/frees when the program exits\n" +
-        "  -v                 verbose output");
+        "  -o <file>        output file\n" +
+        "  -c               compile to an object file only (no linking)\n" +
+        "  --emit-llvm      write LLVM IR (.ll) instead of an executable\n" +
+        "  -O0 .. -O3       optimization level (default -O2)\n" +
+        "  --target <triple> target triple (default: host)\n" +
+        "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
+        "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
+        "  -l<name>         link an additional library\n" +
+        "  -L<dir>          library search path for the linker\n" +
+        "  -I<dir>          include path for C headers (using X from \"header.h\")\n" +
+        "  -D<name>[=value] define a macro when parsing C headers\n" +
+        "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n" +
+        "  file.a, file.o   libraries and object files are passed to the linker\n" +
+        "  --run            run the program after building\n" +
+        "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
+        "  -v               verbose output\n" +
+        "  --version        print the version\n" +
+        "  -h, --help       show this help");
 }
 
 bool IsLinkerInput(string a)
@@ -157,7 +165,7 @@ int Cshc(string[] args)
     }
     if (args[0] == "--version")
     {
-        Console.WriteLine("cshc " + CshcVersion());
+        Console.WriteLine("cshiftc " + CshcVersion() + " (self-hosted)");
         return 0;
     }
 

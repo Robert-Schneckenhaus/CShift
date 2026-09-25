@@ -3,11 +3,16 @@
 CShift is a native, C#-like systems language (see [LanguageDesign.md](LanguageDesign.md)):
 structs instead of classes, no GC (ARC), no headers, generics via monomorphization, direct C FFI.
 
-This repository contains the first compiler, `cshiftc`, written in C++17 with LLVM as its back end.
+The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/README.md)). It writes LLVM IR as text;
+clang optimizes it, generates machine code and links:
 
 ```
-source (.csh) ─▶ lexer ─▶ parser ─▶ AST ─▶ type checking + codegen ─▶ LLVM IR ─▶ optimization ─▶ .obj ─▶ clang (linker) ─▶ .exe
+source (.csh) ─▶ lexer ─▶ parser ─▶ AST ─▶ type checking + codegen ─▶ LLVM IR (text) ─▶ clang (optimize, compile, link) ─▶ .exe
 ```
+
+The first compiler, written in C++17 against the LLVM API ([compiler/](compiler/README.md)), is **frozen**: it is only
+the stage 0 that builds the self-hosted compiler from source. New language features exist only in the self-hosted
+compiler.
 
 ```csharp
 using System;
@@ -66,12 +71,20 @@ after this one. The archives themselves are built by [packaging/](packaging/).
 
 ## Building it
 
-Requirements: a C++17 compiler, CMake ≥ 3.20, the **LLVM development packages** (headers + libraries; tested with
-LLVM 22.1.8), and `clang` to link the generated programs.
+The compiler is built in three stages ([selfhost/build-release.sh](selfhost/build-release.sh)):
+
+| Stage | What | Built by |
+|---|---|---|
+| 0 | the frozen C++ compiler (`build/cshiftc`) | CMake, a C++17 compiler and the LLVM development packages |
+| 1 | the self-hosted compiler (`cshc`) | stage 0 |
+| 2 | the self-hosted compiler again: **the released `cshiftc`** (`build/stage2/cshiftc`) | stage 1 |
+
+Stage 1 and stage 2 must generate identical LLVM IR for the compiler's own sources (the bootstrap check). If you
+already have a `cshiftc` release, it can take the place of stage 0: `cshiftc build selfhost` is all it takes.
 
 ### Windows (recommended: MSYS2)
 
-Visual Studio doesn't come with the LLVM libraries needed to program against the LLVM API; MSYS2 does:
+Visual Studio doesn't come with the LLVM libraries needed for stage 0; MSYS2 does:
 
 ```powershell
 winget install MSYS2.MSYS2
@@ -79,22 +92,20 @@ winget install MSYS2.MSYS2
 pacman -S --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm `
                    mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-ninja
 
-.\build.ps1          # builds into .\build\cshiftc.exe
-.\build.ps1 -Test    # builds and runs the tests
+.\build.ps1          # stage 0 into .\build\cshiftc.exe
+.\build.ps1 -Test    # also stages 1 and 2 (build\stage2\cshiftc.exe) and the tests
 ```
 
-By default, `build.ps1` builds `cshiftc.exe` **statically** (`-DCSHIFT_STATIC=ON`, about 120 MB): the exe starts from
-any shell, without needing the MSYS2 DLLs on `PATH`. To compile programs it needs `clang` as the linker; if it's not
-on `PATH`, `C:\msys64\clang64\bin` (or `%MSYS2_ROOT%\clang64\bin`) is tried automatically, otherwise `--cc <path>`
-helps. `.\build.ps1 -Dynamic` produces the smaller DLL-based build, which only starts with `C:\msys64\clang64\bin` on
-`PATH` (if it doesn't find it, Windows aborts silently).
+The compiler needs `clang` to compile and link; it looks for it in a `toolchain` folder next to itself, then in
+`PATH`, then in `C:\msys64\clang64\bin` (or `%MSYS2_ROOT%\clang64\bin`); `--cc <path>` or `CSHIFT_CC` override it.
 
 ### Linux / macOS
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # add -DLLVM_DIR=<llvm>/lib/cmake/llvm if needed
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # stage 0; add -DLLVM_DIR=<llvm>/lib/cmake/llvm if needed
 cmake --build build
-tests/run_tests.sh
+bash selfhost/build-release.sh build/cshiftc dev build/stage2   # stages 1 and 2
+bash tests/run_tests.sh build/stage2/cshiftc
 ```
 
 ## VS Code

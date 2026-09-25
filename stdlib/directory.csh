@@ -5,10 +5,18 @@
 //     var sources = Directory.FindFiles("src", ".csh");
 //     string file = Path.Combine("src", "main.csh");
 //
-// Directory operations are done with the system shell (dir/mkdir on Windows, ls/test/mkdir elsewhere), so they
-// do not depend on native functions that differ between systems. Paths may use '/' or '\'.
+// Directory operations use the C library (opendir/readdir/mkdir, which MinGW-w64 provides on Windows as well). Paths
+// may use '/' or '\'.
 
 namespace System;
+
+using System.Native;
+
+extern "C" void* opendir(char* path);
+extern "C" void* readdir(void* dir);
+extern "C" int closedir(void* dir);
+extern "C" int mkdir(char* path, int mode);
+extern "C" char* getcwd(char* buffer, uint64 size);
 
 struct Path
 {
@@ -101,46 +109,142 @@ struct Path
             return baseName + "." + extension;
         return baseName + extension;
     }
+
+    // True for "/x", "\\x" and "C:/x".
+    static bool IsRooted(string path)
+    {
+        return path.Length > 0 && (path[0] == '/' || path[0] == '\\' || (path.Length > 1 && path[1] == ':'));
+    }
+
+    // The absolute path, with '/' separators and without "." and ".." parts (relative paths start at the current
+    // directory).
+    static string GetFullPath(string path)
+    {
+        string full = Normalize(IsRooted(path) ? path : Combine(Directory.GetCurrentDirectory(), path));
+        string prefix = "";
+        if (full.Length > 1 && full[1] == ':')
+        {
+            prefix = full.Substring(0, 2);
+            full = full.Substring(2);
+        }
+        var parts = List<string>.Create();
+        foreach (var part in full.Split('/'))
+        {
+            if (part.Length == 0 || part == ".")
+                continue;
+            if (part == "..")
+            {
+                if (parts.Count() > 0)
+                    parts.RemoveAt(parts.Count() - 1);
+            }
+            else
+                parts.Add(part);
+        }
+        return prefix + "/" + string.Join("/", parts.ToArray());
+    }
+
+    // The path of 'path' relative to the directory 'relativeTo' ("../lib/a.txt"); both are made absolute first. On
+    // another drive the absolute path is returned.
+    static string GetRelativePath(string relativeTo, string path)
+    {
+        string from = GetFullPath(relativeTo);
+        string to = GetFullPath(path);
+        bool windows = Process.IsWindows();
+        if (from.Length > 1 && to.Length > 1 && from[1] == ':' && (to[1] != ':' || from[0].ToString().ToLower() != to[0].ToString().ToLower()))
+            return to;
+        string[] a = from.Split('/');
+        string[] b = to.Split('/');
+        int common = 0;
+        while (common < a.Length && common < b.Length && (windows ? a[common].ToLower() == b[common].ToLower() : a[common] == b[common]))
+            common += 1;
+        var parts = List<string>.Create();
+        for (var i = common; i < a.Length; i += 1)
+        {
+            if (a[i].Length > 0)
+                parts.Add("..");
+        }
+        for (var i = common; i < b.Length; i += 1)
+        {
+            if (b[i].Length > 0)
+                parts.Add(b[i]);
+        }
+        return parts.Count() == 0 ? "." : string.Join("/", parts.ToArray());
+    }
 }
 
 struct Directory
 {
+    // The current working directory, with '/' separators.
+    static string GetCurrentDirectory()
+    {
+        unsafe
+        {
+            char* buffer = (char*)Memory.Allocate(4096);
+            string result = "";
+            if (getcwd(buffer, 4096) != null)
+                result = string.FromCStr(buffer);
+            Memory.Free(buffer);
+            return Path.Normalize(result);
+        }
+    }
+
     static bool Exists(string path)
     {
-        if (Process.IsWindows())
-            return Process.Run("dir /ad \"" + Path.ToNative(path) + "\" > nul 2>&1") == 0;
-        return Process.Run("test -d \"" + path + "\"") == 0;
+        unsafe
+        {
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return false;
+            closedir(dir);
+            return true;
+        }
     }
 
     // Creates a directory including missing parents. Returns true if it exists afterwards.
     static bool Create(string path)
     {
-        if (Exists(path))
+        if (path.Length == 0 || Exists(path))
             return true;
-        if (Process.IsWindows())
-            Process.Run("mkdir \"" + Path.ToNative(path) + "\" > nul 2>&1");
-        else
-            Process.Run("mkdir -p \"" + path + "\"");
+        string parent = Path.GetDirectory(path);
+        if (parent.Length > 0 && parent != path && !(parent.Length == 2 && parent[1] == ':'))
+            Create(parent);
+        unsafe
+        {
+            mkdir(path.CStr(), 493); // 0755 (the mode is ignored on Windows)
+        }
         return Exists(path);
     }
 
-    // The names of the files and directories in a directory (not the paths), sorted.
+    // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system.
+    static int _NameOffset()
+    {
+        if (Process.IsWindows())
+            return 8;  // MinGW-w64: long d_ino, unsigned short d_reclen, unsigned short d_namlen, char d_name[]
+        if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
+            return 21; // macOS: d_ino, d_seekoff, d_reclen, d_namlen, d_type, d_name
+        return 19;     // Linux (glibc, musl): d_ino, d_off, d_reclen, d_type, d_name
+    }
+
+    // The names of the files and directories in a directory (not the paths, without "." and ".."), sorted.
     static List<string> GetEntries(string path)
     {
         var names = List<string>.Create();
-        Optional<string> output;
-        if (Process.IsWindows())
-            output = Process.RunCapture("dir /b \"" + Path.ToNative(path) + "\" 2> nul");
-        else
-            output = Process.RunCapture("ls -1A \"" + path + "\" 2>/dev/null");
-        if (output is string text)
+        int offset = _NameOffset();
+        unsafe
         {
-            foreach (var line in text.Split('\n'))
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return names;
+            while (true)
             {
-                string name = line.Trim();
-                if (name.Length > 0)
+                void* entry = readdir(dir);
+                if (entry == null)
+                    break;
+                string name = string.FromCStr((char*)((uint8*)entry + offset));
+                if (name != "." && name != "..")
                     names.Add(name);
             }
+            closedir(dir);
         }
         names.Sort();
         return names;

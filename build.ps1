@@ -1,7 +1,7 @@
 # Builds the CShift compiler (cshiftc) on Windows using MSYS2's CLANG64 toolchain.
 #
 #   .\build.ps1                 build into .\build
-#   .\build.ps1 -Test           build and run the test suite
+#   .\build.ps1 -Test           also build stages 1 and 2 (build\stage2\cshiftc.exe, the self-hosted compiler) and run the tests
 #   .\build.ps1 -Msys2 D:\msys64
 #   .\build.ps1 -Dynamic        link LLVM as a DLL (smaller exe, but cshiftc.exe then only starts when
 #                               C:\msys64\clang64\bin is in PATH)
@@ -31,7 +31,7 @@ $env:CHERE_INVOKING = "1"
 
 $static = if ($Dynamic) { "OFF" } else { "ON" }
 $script = "cd '$root' && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$Config -DCSHIFT_STATIC=$static && cmake --build build"
-if ($Test) { $script += " && bash tests/run_tests.sh" }
+if ($Test) { $script += " && bash selfhost/build-release.sh build/cshiftc.exe dev build/stage2 && bash tests/run_tests.sh build/stage2/cshiftc.exe" }
 
 & $bash -lc $script
 exit $LASTEXITCODE

@@ -534,21 +534,3 @@ int32_t host_embedded_toolchain(const char *path, int64_t *offset, int64_t *size
     return 1;
 }
 
-/* The current working directory ('/' separators on every system), or "". */
-const char *host_current_directory(void)
-{
-    char buffer[4096];
-    char *p;
-#ifdef _WIN32
-    DWORD n = GetCurrentDirectoryA(sizeof(buffer), buffer);
-    if (n == 0 || n >= sizeof(buffer))
-        buffer[0] = 0;
-#else
-    if (!getcwd(buffer, sizeof(buffer)))
-        buffer[0] = 0;
-#endif
-    for (p = buffer; *p; p += 1)
-        if (*p == '\\')
-            *p = '/';
-    return keep(copy(buffer));
-}

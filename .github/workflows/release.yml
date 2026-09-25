@@ -3,6 +3,10 @@
 # Trigger: a push to a branch named release/vX.XX (e.g. release/v1.05 -> version 1.05, tag v1.05).
 # Every push to such a branch rebuilds the release and replaces it (the tag then points to the pushed commit).
 #
+# The released cshiftc is the self-hosted compiler (selfhost/, written in CShift). The C++ compiler (compiler/) is frozen
+# and only built as stage 0 of the bootstrap: stage 0 builds cshc (stage 1), stage 1 builds cshc again (stage 2, the
+# released cshiftc), and both stages must generate the same IR (selfhost/build-release.sh).
+#
 # The archives contain everything needed to work with the compiler: extract, add the folder to PATH, done.
 #   cshift-<version>-windows-x64.zip                cshiftc.exe + toolchain\ (clang, lld, libclang, MinGW-w64 headers/libraries)
 #   cshift-<version>-linux-x64.tar.xz               cshiftc + toolchain/ (clang, libclang); needs build-essential on the system
@@ -77,20 +81,24 @@ jobs:
             mingw-w64-clang-x86_64-cmake
             mingw-w64-clang-x86_64-ninja
 
-      - name: Build cshiftc (static)
+      - name: Build the C++ stage 0
         shell: msys2 {0}
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON -DCSHIFT_VERSION="$VERSION"
           cmake --build build
           build/cshiftc.exe --version
 
+      - name: Build cshiftc (self-hosted, stage 2)
+        shell: msys2 {0}
+        run: bash selfhost/build-release.sh build/cshiftc.exe "$VERSION" build/stage2
+
       - name: Run tests
         shell: msys2 {0}
-        run: bash tests/run_tests.sh build/cshiftc.exe
+        run: bash tests/run_tests.sh build/stage2/cshiftc.exe
 
       - name: Assemble the release folder
         shell: msys2 {0}
-        run: bash packaging/package-windows.sh "$VERSION" build dist
+        run: bash packaging/package-windows.sh "$VERSION" build/stage2 dist
 
       # The tests run again against the assembled folder with a PATH that contains neither MSYS2 nor clang, so a file
       # that is missing from the toolchain folder fails here and not on the user's machine.
@@ -124,13 +132,12 @@ jobs:
 
       # A clean environment (no MSYS2, no clang, no PATH toolchain, no pre-existing cache): the very first
       # compile has to self-extract the embedded toolchain and then work exactly like the regular archive.
-      # cshiftc.exe itself finds that extracted toolchain on its own (see main.cpp), but two other things run
-      # during the test suite do not know about it and need clang locatable some other way: tests/run_tests.sh's
-      # own compilation of tests/projects/*/native/*.c (CSHIFT_CC, or 'clang' on PATH), and cshc (built fresh by
-      # the selfhost section) - which has no embedded toolchain of its own and looks for --cc/CSHIFT_CC/PATH/the
-      # usual MSYS2 folders (selfhost/src/Driver/Build.csh), never the standalone exe's self-extraction. A trivial
-      # warm-up compile first makes cshiftc.exe self-extract (proving the real, unconfigured path works), then
-      # CSHIFT_CC is pointed at the now-extracted clang for the rest of the run.
+      # cshiftc.exe itself finds that extracted toolchain on its own (BundledClang in selfhost/src/Driver/Build.csh),
+      # but two other things run during the test suite do not know about it and need clang locatable some other way:
+      # tests/run_tests.sh's own compilation of tests/projects/*/native/*.c (CSHIFT_CC, or 'clang' on PATH), and the
+      # cshc the selfhost section builds fresh (a plain executable without an embedded toolchain). A trivial warm-up
+      # compile first makes cshiftc.exe self-extract (proving the real, unconfigured path works), then CSHIFT_CC is
+      # pointed at the now-extracted clang for the rest of the run.
       - name: Test the standalone executable
         shell: bash
         run: |
@@ -177,18 +184,21 @@ jobs:
             cmake ninja-build patchelf zlib1g-dev libzstd-dev libxml2-dev libedit-dev libffi-dev xz-utils
           test -x "$LLVM_PREFIX/bin/clang"
 
-      - name: Build cshiftc
+      - name: Build the C++ stage 0
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON \
             -DCSHIFT_VERSION="$VERSION" -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm"
           cmake --build build
           build/cshiftc --version
 
+      - name: Build cshiftc (self-hosted, stage 2)
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash selfhost/build-release.sh build/cshiftc "$VERSION" build/stage2
+
       - name: Run tests
-        run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/cshiftc
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc
 
       - name: Assemble the release folder
-        run: bash packaging/package-linux.sh "$VERSION" build dist
+        run: bash packaging/package-linux.sh "$VERSION" build/stage2 dist
 
       # Again with the assembled folder only (no LLVM in PATH): cshiftc must find its own clang and libclang.
       - name: Test the assembled folder

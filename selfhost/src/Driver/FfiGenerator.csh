@@ -428,7 +428,7 @@ struct FfiGenerator
     bool Parse()
     {
         Index = Host.ClangCreateIndex();
-        string baseDir = AbsolutePath(BaseDir.Length == 0 ? "." : BaseDir);
+        string baseDir = Path.GetFullPath(BaseDir.Length == 0 ? "." : BaseDir);
         WrapperFile = Slashes(Path.Combine(baseDir, "__cshift_ffi_wrapper.c"));
         WrapperText = "#include \"" + Header + "\"\n";
         int flags = 0x01 | 0x40 | 0x200; // DetailedPreprocessingRecord | SkipFunctionBodies | KeepGoing
@@ -1650,20 +1650,6 @@ Error<void> GenerateFfi(string name, string header, string baseDir, FfiOptions o
     try LoadLibclang(options.Clang);
     var generator = FfiGenerator.Create(name, header, baseDir, options);
     return generator.Run(ffiPath);
-}
-
-// An absolute path ('/' separators) for a path relative to the current directory.
-string AbsolutePath(string path)
-{
-    string p = Slashes(path);
-    if (p.StartsWith("/") || (p.Length > 1 && p[1] == ':'))
-        return p;
-    string cwd = Host.CurrentDirectory();
-    if (p == ".")
-        return cwd;
-    if (p.StartsWith("./"))
-        p = p.Substring(2);
-    return cwd.EndsWith("/") ? cwd + p : cwd + "/" + p;
 }
 
 // ---------------------------------------------------------------------------

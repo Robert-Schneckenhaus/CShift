@@ -833,13 +833,6 @@
         }
       ],
       "symbol": "host_embedded_toolchain"
-    },
-    {
-      "name": "CurrentDirectory",
-      "returns": "string",
-      "params": [],
-      "symbol": "host_current_directory",
-      "retCString": true
     }
   ],
   "skipped": []

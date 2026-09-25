@@ -34,16 +34,18 @@ names the feature):
       written in CShift; the stdlib is embedded in `cshc` (`selfhost/src/Driver/EmbeddedStdlib.csh` reads `stdlib/*.csh` at
       compile time with the new compiler functions `EmbedNames`/`EmbedTexts`, see below). `tests/projects` build with `cshc`
       (`selfhost/projects.sh`).
-- [ ] Find clang the way `cshiftc` does: the bundled `toolchain/` next to `cshc` (this needs the path of its own executable, which
-      is still missing; for now: `--cc`, `CSHIFT_CC`, PATH, MSYS2 folders).
+- [x] Find clang the way `cshiftc` does: `--cc`, `CSHIFT_CC`, the bundled `toolchain/` next to the executable or the one
+      embedded in a standalone build (extracted into the per-user cache), PATH, MSYS2 folders (`selfhost/native/host.c`
+      provides the executable's path).
 - [x] **FFI (reading)**: `using X from "h.h"` and `from "x.ffi"` with `cshc`: loading `.ffi` files (`Driver/Ffi.csh`), C structs with
       explicit layout (`CodeGen/Layout.csh`), marshalling (`cstring`, `nullable`, `retCString`, `retOut`), ABI attributes for small
       integers, compiling and linking shims with clang. `tests/projects` (8 of 8) and `demo-minifb/` build with `cshc`.
-- [ ] **FFI (generating)**: the `.ffi` file is currently generated from a header by the C++ compiler as a helper program
-      (`cshiftc --ffi-prepare`, found via `--ffi-tool`, `CSHIFT_FFI_TOOL` or PATH). For a C++-free `cshc`, `FfiGenerator.cpp`
-      (1600 lines, libclang) would have to be ported to CShift (calling libclang via FFI from CShift), or the `.ffi` files
-      would have to be shipped along with the project.
-- [ ] Once `cshc` can fully replace `cshiftc`: switch the release workflow and the docs over (C++ only as stage 0).
+- [x] **FFI (generating)**: `FfiGenerator.csh` is a port of `FfiGenerator.cpp`; libclang is loaded at run time through
+      `selfhost/native/host.c` (linked like an FFI shim via a hand-written `host.ffi`), which wraps the calls that pass
+      cursors and types by value.
+- [x] Threads and `SharedPtr<T>` (see section 4).
+- [x] The release workflow ships `cshc` as `cshiftc` (stage 2 of `selfhost/build-release.sh`); the C++ compiler is frozen
+      and only stage 0 (see [compiler/README.md](compiler/README.md)). The tests run against the self-hosted compiler.
 
 ## 2. Test whether the new compiler can build everything
 
