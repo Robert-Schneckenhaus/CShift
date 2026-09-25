@@ -1,9 +1,9 @@
 {
-	"name": "demo",
+	"name": "demo-minifb",
 	"version": "0.1.0",
 	"type": "executable",
 	"sources": ["src"],
-	"output": "bin/demo",
+	"output": "bin/demo-minifb",
 	"optimize": 2,
 	"includePaths": ["include"],
 	"links": ["libminifb.a", "gdi32", "opengl32", "user32", "winmm"]

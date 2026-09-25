@@ -42,7 +42,7 @@ compare() {
     local name="$1" flagCpp="$2" flagCs="$3"
     local same=0 different=0 skipped=0
     for f in "$ROOT"/tests/cases/*.csh "$ROOT"/tests/*.csh "$ROOT"/tests/projects/*/src/*.csh "$ROOT"/tests/projects/*/extra/*.csh \
-             "$ROOT"/stdlib/*.csh "$ROOT"/selfhost/src/*.csh "$ROOT"/selfhost/src/*/*.csh "$ROOT"/demo/src/*.csh; do
+             "$ROOT"/stdlib/*.csh "$ROOT"/selfhost/src/*.csh "$ROOT"/selfhost/src/*/*.csh "$ROOT"/demo-minifb/src/*.csh; do
         [ -f "$f" ] || continue
         if is_skipped "${f#$ROOT/}"; then
             skipped=$((skipped + 1))

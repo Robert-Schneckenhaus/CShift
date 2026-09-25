@@ -154,8 +154,11 @@ cshiftc build           # build only  ->  bin/<name>[.exe]
 }
 ```
 
-A finished example is in [demo/](demo/): a MiniFB window with animated plasma (C header import and callbacks, with
-VS Code tasks).
+Two finished examples (C header import and callbacks, with VS Code tasks):
+
+* [demo-minifb/](demo-minifb/): a MiniFB window with animated plasma.
+* [demo-opengl/](demo-opengl/): a rotating, rainbow colored cube with OpenGL 3.3 (GLFW, the Khronos headers, GLSL
+  shaders).
 
 C libraries are imported without hand-written declarations: `using Zlib from "zlib.h";` imports the header as a
 namespace (see [FFI.md](FFI.md)); `includePaths`, `defines`, `libraryPaths` and `links` (files like `libminifb.a`

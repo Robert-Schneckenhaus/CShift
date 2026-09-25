@@ -1,11 +1,11 @@
-# demo
+# demo-minifb
 
 A small CShift project for trying out the language: a window with animated plasma, drawn via the C library
 [MiniFB](https://github.com/emoon/minifb). It shows C header import (`using Mfb from "MiniFB.h";`) and callbacks
 (`Action<…>`/`Func<…>`): MiniFB calls `OnKey` and `OnClose` in `src/main.csh`. **Esc** closes the window.
 
 ```
-demo/
+demo-minifb/
 ├── cshift.json        project file (sources, header path, libraries)
 ├── src/
 │   └── main.csh       entry point: int Main()
@@ -30,11 +30,11 @@ Then:
 
 ```powershell
 cshiftc run          # build and run
-cshiftc build        # build only  ->  bin/demo.exe
+cshiftc build        # build only  ->  bin/demo-minifb.exe
 ```
 
 The commands look for `cshift.json` in the current folder and its parents, so they also work from `src/`. From
-outside the folder: `cshiftc run demo`.
+outside the folder: `cshiftc run demo-minifb`.
 
 In VS Code (with the CShift extension): **Ctrl+Shift+B** builds, *Tasks: Run Task → cshiftc: run* runs the program.
 Compiler errors show up in the Problems panel.

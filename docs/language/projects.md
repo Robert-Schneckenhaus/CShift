@@ -30,5 +30,5 @@ pulls in libraries, and `includePaths`/`defines`/`libraryPaths`/`ffiApi` configu
 
 For the full list of keys, and where the project format is headed next (a `build.csh` for cases a single JSON file
 can't express — conditional sources, code generation, multiple targets), see
-[../../BuildDesign.md](../../BuildDesign.md). `demo/` is a small, complete example project using a C library through
-FFI.
+[../../BuildDesign.md](../../BuildDesign.md). `demo-minifb/` and `demo-opengl/` are small, complete example projects
+using C libraries through FFI.
