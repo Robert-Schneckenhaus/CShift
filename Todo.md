@@ -22,9 +22,6 @@ the git log.
 
 ## Bootstrap and releases
 
-- [ ] The Windows paths of the self-hosted compiler (`selfhost/native/host.c`: `LoadLibraryA`, `GetModuleFileNameA`;
-      the native `Directory` functions on MinGW) are only exercised by the release workflow; run it on a release
-      branch before the first self-hosted release.
 - [ ] Linux standalone executable: still needs the host's glibc and binutils (`build-essential`), like the regular
       Linux archive; only Windows is zero-dependency.
 - [ ] The toolchain cache of the standalone executable is never cleaned up (`cshiftc --clear-cache`?).
