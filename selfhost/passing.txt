@@ -179,6 +179,7 @@ stdlib_file.csh
 stdlib_list.csh
 stdlib_math.csh
 stdlib_process.csh
+stdlib_slices.csh
 stdlib_string.csh
 stdlib_text.csh
 string_interpolation.csh

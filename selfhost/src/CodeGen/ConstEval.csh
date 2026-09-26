@@ -708,7 +708,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         string dotted = DottedName(cg, m.Object);
         if (dotted.Length == 0)
             return ConstNotConstant(cg, sc);
-        if (sc.Locals && FindLocal(cg, dotted.Split('.')[0]) >= 0)
+        if (sc.Locals && FindLocal(cg, dotted.Split('.')[0].ToString()) >= 0)
             return ConstNotConstant(cg, sc);
         int c = LookupConst(cg, sc.File, dotted + "." + m.Name);
         if (c >= 0)

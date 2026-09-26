@@ -488,8 +488,8 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
     var methodTypeArgs = ResolveTypeArgs(cg, m.TypeArgs);
     string dotted = DottedName(cg, m.Object);
     bool colorColor = dotted.Length > 0 && ColorColorMeansType(cg, dotted, m.Name, e.Loc);
-    if (dotted.Length > 0 && (colorColor || (!IsLocalName(cg, dotted.Split('.')[0]) &&
-        (CurrentOwner(cg) == 0 || !FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found))))
+    if (dotted.Length > 0 && (colorColor || (!IsLocalName(cg, dotted.Split('.')[0].ToString()) &&
+        (CurrentOwner(cg) == 0 || !FindField(cg, CurrentOwner(cg), dotted.Split('.')[0].ToString()).Found))))
     {
         if (dotted == "Console" || dotted == "Environment" || dotted == "Memory")
         {
@@ -951,6 +951,14 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             Value s = ToRValue(cg, obj);
             HoldTemp(cg, s);
             return Rvalue(types.PointerTo(SliceElemType(cg, t)), ir.ExtractValue(LlvmType(cg, t), s.V, "1"), false);
+        }
+        if (types.IsStringSlice(t))
+        {
+            // like strings: Contains, Trim, Split, ... from namespace String (they take StringSlice)
+            var sliceFound = false;
+            Value sr = EmitExtensionCall(cg, "String", true, ToRValue(cg, obj), method, args, loc, ref sliceFound);
+            if (sliceFound)
+                return sr;
         }
     }
     else if (types.IsNumeric(t) || types.IsBool(t) || types.IsEnum(t))

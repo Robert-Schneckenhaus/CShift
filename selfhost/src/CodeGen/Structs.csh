@@ -425,7 +425,7 @@ Value EmitMember(Compiler cg, Expr e)
     // A name that is not a variable may be a type or a namespace.
     string dotted = DottedName(cg, m.Object);
     bool colorColor = dotted.Length > 0 && ColorColorMeansType(cg, dotted, m.Name, e.Loc);
-    if (dotted.Length > 0 && (!IsLocalName(cg, dotted.Split('.')[0]) || colorColor))
+    if (dotted.Length > 0 && (!IsLocalName(cg, dotted.Split('.')[0].ToString()) || colorColor))
     {
         int prim = PrimitiveType(cg, dotted);
         if (prim != 0)
@@ -436,7 +436,7 @@ Value EmitMember(Compiler cg, Expr e)
             Fail(cg, e.Loc, "type '" + dotted + "' has no member '" + m.Name + "'");
         }
         var entry = TypeDeclEntry { };
-        if (colorColor || CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found == false)
+        if (colorColor || CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0].ToString()).Found == false)
         {
             bool isTypeName = LookupTypeDecl(cg, cg.Fn[0].File, dotted, ref entry);
             if (isTypeName && dotted == "Thread" && m.Name == "Cancelled" && entry.Kind == DeclKind.Struct)

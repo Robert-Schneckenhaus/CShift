@@ -127,7 +127,7 @@ Error<void> LoadLibclang(string clangExe)
         var resolved = Process.RunCapture("readlink -f \"" + clangExe + "\" 2>/dev/null");
         if (resolved is string real)
         {
-            string realDir = Path.GetDirectory(real.Trim());
+            string realDir = Path.GetDirectory(real.Trim().ToString());
             if (realDir.Length > 0 && realDir != binDir)
                 candidates.Add(Path.Combine(Path.Combine(Path.GetDirectory(realDir), "lib"), "libclang.so"));
         }
@@ -394,7 +394,7 @@ struct FfiGenerator
                     break;
                 else if (inList && line.StartsWith(" "))
                 {
-                    string dir = line.Trim();
+                    string dir = line.Trim().ToString();
                     // "(framework directory)" entries only exist on macOS and cannot be used with -isystem.
                     if (!dir.Contains(" ("))
                         SystemIncludeCache.Add(dir);
