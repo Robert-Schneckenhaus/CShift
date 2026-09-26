@@ -23,13 +23,9 @@ the git log.
 
 ## Bootstrap and releases
 
-- [ ] Use a self-hosted release as stage 0 once one exists; then `compiler/` (C++, frozen) can be retired and
-      `selfhost/` and `stdlib/` may use the newer language features (see [docs/compiler.md](docs/compiler.md)).
 - [ ] The Windows paths of the self-hosted compiler (`selfhost/native/host.c`: `LoadLibraryA`, `GetModuleFileNameA`;
       the native `Directory` functions on MinGW) are only exercised by the release workflow; run it on a release
       branch before the first self-hosted release.
-- [ ] The `.ffi` cache uses a different hash (FNV-1a) than the C++ compiler (xxh3); caches written by the other
-      compiler are simply regenerated once.
 - [ ] Linux standalone executable: still needs the host's glibc and binutils (`build-essential`), like the regular
       Linux archive; only Windows is zero-dependency.
 - [ ] The toolchain cache of the standalone executable is never cleaned up (`cshiftc --clear-cache`?).

@@ -162,9 +162,9 @@ struct Lexer
                 int mark = tokens.Count();
                 SourceLoc interpLoc = Here();
                 var interp = LexInterpolated(tokens);
-                if (interp.Message != null)
+                if (interp is error interpError)
                 {
-                    Diag.Report(FileId, interp.Message, interp.Code);
+                    Diag.Report(FileId, interpError.Message, interpError.Code);
                     // continue after the string with an empty string in its place (no follow-up errors)
                     while (tokens.Count() > mark)
                         tokens.RemoveAt(tokens.Count() - 1);

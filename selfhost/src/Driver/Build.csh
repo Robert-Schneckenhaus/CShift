@@ -189,9 +189,9 @@ int Cshc(string[] args)
         }
         string dir = o.Inputs.Get(0);
         var created = CreateProject(dir);
-        if (created.Message != null)
+        if (created is error createdError)
         {
-            Console.WriteErrorLine("error: " + created.Message);
+            Console.WriteErrorLine("error: " + createdError.Message);
             return 1;
         }
         Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  cshc run");
@@ -500,9 +500,9 @@ int Build(BuildOptions o)
         string llPath = o.Output.Length == 0 ? baseName + ".ll" : (o.FromProject ? o.Output + ".ll" : o.Output);
         EnsureParentDirectory(llPath);
         var wrote = File.WriteAllText(llPath, ir);
-        if (wrote.Message != null)
+        if (wrote is error wroteError)
         {
-            Console.WriteErrorLine("error: cannot write '" + llPath + "': " + wrote.Message);
+            Console.WriteErrorLine("error: cannot write '" + llPath + "': " + wroteError.Message);
             return 1;
         }
         return 0;
@@ -534,9 +534,9 @@ int Build(BuildOptions o)
     EnsureParentDirectory(outPath);
     string llFile = outPath + ".ll";
     var written = File.WriteAllText(llFile, ir);
-    if (written.Message != null)
+    if (written is error writtenError)
     {
-        Console.WriteErrorLine("error: cannot write '" + llFile + "': " + written.Message);
+        Console.WriteErrorLine("error: cannot write '" + llFile + "': " + writtenError.Message);
         return 1;
     }
 

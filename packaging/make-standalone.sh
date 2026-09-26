@@ -3,7 +3,7 @@
 # executable: the same 'toolchain/' folder, gzip-compressed, appended after the compiler's own image, with a
 # small footer so cshiftc can find it. On first use that actually needs it (linking, or "using X from
 # "header.h";"), cshiftc extracts it once into a per-user cache directory and uses it from there from then on;
-# every run after that just finds it already there. See CSFTTC01 in compiler/src/main.cpp for the reader.
+# every run after that just finds it already there. See CSFTTC01 in selfhost/native/host.c for the reader.
 #
 # This works because both the PE and the ELF loader only read what their own headers declare - trailing bytes
 # appended after a normal executable are simply ignored by the OS loader, the same trick self-extracting

@@ -3,8 +3,8 @@
 ← [Language guide](README.md)
 
 What is implemented, and the decisions that the [design document](../language-design.md) leaves open. Features
-marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since the C++ compiler was frozen, see
-[../compiler.md](../compiler.md)).
+marked *(self-hosted)* were added after the first compiler (C++, retired after 0.04) was frozen, see
+[../compiler.md](../compiler.md).
 
 ## Implemented
 
@@ -53,11 +53,9 @@ The design document leaves a number of things open; these are the decisions that
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
 * **Nested control statements need braces:** the body of `if`/`else`/`while`/`do`/`for`/`foreach`/`using (...)`
   may be one statement without braces, but not another control statement (`if (a) if (b) F();` is an error;
-  `else if` is fine). The frozen C++ compiler does not check this; the sources follow the rule anyway.
+  `else if` is fine).
 * **No bool semantics:** `Error<T>` and `Optional<T>` are not conditions (`if (x)`, `!x`, `&&`, `||`, `?:` are
   errors). A result is tested with `x is error e` / `x is T v`, an optional value with `x is T v` / `x == null`.
-  (The frozen C++ compiler still accepts the bool forms; `selfhost/` tests `x.Message != null`, which
-  both compilers understand.)
 * **`is`/`case` patterns:** `x is int v` binds the value; `x is error e` matches a failure and binds the whole result (a pattern of the value's own type would always match and is an error). Pattern
   variables are scoped to the `if`/`while`, or to the `case`. `x is not P` negates a pattern; its binding
   (`if (x is not T v) return;`) is usable in the `else` branch and after an `if` whose branch cannot complete.
@@ -94,7 +92,7 @@ The design document leaves a number of things open; these are the decisions that
   their declaration and are always checked, even if nothing uses them; they can also be accessed qualified
   (`Math.PI`). Local constants have no storage (assigning to one is an error) and may shadow a name from an
   enclosing block. **The compiler computes constants at compile time**
-  (`compiler/src/ConstEval.cpp`, in `cshc`: `ConstEval.csh`), following the same rules as the code that would be
+  (`selfhost/src/CodeGen/ConstEval.csh`), following the same rules as the code that would be
   generated for the expression at run time (the type of literals, promotion of small integers, shifts, comparisons,
   casts that saturate floating-point values, string concatenation with numbers, `sizeof(T)`), but it reports
   overflow (`2147483647 + 1`), division by zero, and `MIN / -1` as compile errors. The same expressions are allowed

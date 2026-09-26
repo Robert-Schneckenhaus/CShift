@@ -108,8 +108,8 @@ blocks), `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `string.Fro
 `CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`, `EmbedText`/`EmbedNames`/`EmbedTexts`
 (files embedded at compile time).
 
-**Writing library code:** the standard library is also the prelude that the frozen C++ compiler (stage 0) compiles
-while it builds the self-hosted compiler. Code in `stdlib/` therefore uses only the language that compiler knows
-(no lambdas, no string interpolation, no `x[i]` on lists); generic bodies are the exception, because they are only
-compiled when they are used (`Mutex<T>` relies on this). See [compiler.md](compiler.md).
+**Writing library code:** the standard library is also the prelude that stage 0 (the release named in
+`selfhost/stage0.txt`) compiles while it builds the compiler. Code in `stdlib/` therefore uses only the language of
+that release; generic bodies are the exception, because they are only compiled when they are used. See
+[compiler.md](compiler.md).
 

@@ -1,10 +1,9 @@
 # selfhost: the CShift compiler in CShift
 
 This is the CShift compiler: the `cshiftc` of the releases is `cshc`, built from this folder in two stages (stage 1
-by the frozen C++ compiler in `compiler/`, stage 2 by stage 1; see `build-release.sh`). It covers the whole language
-of the C++ compiler (threads, `SharedPtr<T>`, C header import through libclang, the bundled toolchain) and is where
-the language grows from now on. **`cshc` compiles itself**: `bootstrap.sh` checks that stage 1 and stage 2 produce
-identical LLVM IR. The big picture (stages, the freeze, tests, dependencies) is in [../docs/compiler.md](../docs/compiler.md);
+by an earlier release - the version in `stage0.txt`, see `fetch-stage0.sh` - and stage 2 by stage 1; see
+`build-release.sh`). **`cshc` compiles itself**: `bootstrap.sh` checks that stage 1 and stage 2 produce
+identical LLVM IR. The big picture (stages, tests, dependencies) is in [../docs/compiler.md](../docs/compiler.md);
 open work is tracked in [../Todo.md](../Todo.md). This file is the tour of the sources.
 
 ```
@@ -17,10 +16,10 @@ selfhost/
 │   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
-│   │   ├── Token.csh, Lexer.csh      the lexer (a port of compiler/src/Lexer.cpp)
+│   │   ├── Token.csh, Lexer.csh      the lexer
 │   │   ├── Ast.csh          the syntax tree: node types and the arenas (struct Ast)
-│   │   ├── Parser.csh       the parser (a port of compiler/src/Parser.cpp)
-│   │   └── TokenDump.csh, AstDump.csh    text dumps for comparing against the C++ compiler
+│   │   ├── Parser.csh       the parser
+│   │   └── TokenDump.csh, AstDump.csh    text dumps of the tokens and the syntax tree (--tokens, --ast)
 │   ├── Sema/                namespace CShift.Sema
 │   │   └── Types.csh        the type table: types are integers (ids), interned types compare with ==
 │   ├── Emit/                namespace CShift.Emit
@@ -49,8 +48,9 @@ selfhost/
 │       └── Module.csh       compiling the whole program, the entry point
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
 ├── version/version.txt      the version cshc reports (written by build-release.sh)
+├── stage0.txt               the release that is stage 0 (selfhost/ and stdlib/ may use its features)
+├── fetch-stage0.sh          downloads that release (or uses $CSHIFT_STAGE0)
 ├── build-release.sh         stage 0 -> stage 1 -> stage 2 (the released cshiftc), with the bootstrap check
-├── compare.sh               front end: compares cshc against the C++ compiler (tokens and syntax tree)
 ├── status.sh, passing.txt   code generator: which cases in tests/cases pass
 ├── bootstrap.sh             cshc builds itself; stage 1 and 2 must produce the same IR
 └── projects.sh              build tests/projects with cshc (cshc build/run/new)
@@ -62,18 +62,15 @@ selfhost/
 cshiftc build selfhost                                  # -> selfhost/bin/cshc
 selfhost/bin/cshc hello.csh -o hello                    # write .ll, clang optimizes/compiles/links it
 selfhost/bin/cshc --emit-llvm hello.csh -o hello.ll     # just the IR
-selfhost/bin/cshc --tokens file.csh | --ast file.csh    # dumps (compare with cshiftc --dump-tokens / --dump-ast)
+selfhost/bin/cshc --tokens file.csh | --ast file.csh    # dumps of the tokens / the syntax tree
 ```
 
 `cshc` writes **LLVM IR as text** (`.ll`) and calls `clang` (the bundled toolchain, `PATH` or `--cc`), which optimizes it, generates
 machine code and links it. That way `cshc` itself needs no LLVM (no 100 MB link, no `unsafe` wrapper around the
-LLVM-C API); like the C++ compiler, it produces the same kind of IR (as a reference: `cshiftc --emit-llvm`).
+LLVM-C API).
 
 ## Verifying it
 
-* **Front end:** `bash selfhost/compare.sh <cshiftc> selfhost/bin/cshc` — the token and syntax-tree dumps, including
-  error messages, must match the C++ compiler's for all 110 `.csh` files of the repository (including `selfhost/`'s
-  own sources).
 * **Code generator:** `bash selfhost/status.sh selfhost/bin/cshc -v` compiles `tests/cases/*.csh` with `cshc` and
   sorts the results into *pass*, *unsupported* (`cshc does not support …`, a feature not ported yet) and *FAIL* (an
   actual difference). The passing cases are listed in `passing.txt`; `status.sh --check` (part of
