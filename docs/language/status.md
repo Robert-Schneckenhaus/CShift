@@ -21,6 +21,7 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
+| Error enums (`error E { ... }`), `error(E.X)`, typed results `Error<T, E>` / `E<T>`, `is E code`, `case E.X:` | ✔ (self-hosted, [error handling](error-handling.md#error-enums-typed-error-codes)) |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
 | `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `is not`, `is null`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |

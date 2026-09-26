@@ -252,6 +252,12 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
+        else if (CheckIdent("error") && PeekKind(1) == TokenKind.Ident && PeekKind(2) == TokenKind.LBrace)
+        {
+            // 'error' is contextual here: error Name { A, B = 101 } declares an error enum
+            EnumDecl e = try ParseEnumBody(Advance().Loc, true);
+            Unit.Enums.Add(e);
+        }
         else if (CheckIdent("union") && PeekKind(1) == TokenKind.Ident && (PeekKind(2) == TokenKind.LBrace || PeekKind(2) == TokenKind.Colon))
         {
             // 'union' is a contextual keyword
@@ -470,13 +476,22 @@ struct Parser
 
     Error<EnumDecl> ParseEnum()
     {
-        var decl = EnumDecl { };
         Token kw = try Expect(TokenKind.KwEnum, "'enum'");
-        decl.Loc = kw.Loc;
-        decl.Name = try ExpectIdent("enum name");
-        if (!Match(TokenKind.Colon))
-            return error("enums require an explicit integer base type, e.g. 'enum " + decl.Name + " : uint8'", decl.Loc.Pack());
-        decl.Base = try ParseType();
+        return ParseEnumBody(kw.Loc, false);
+    }
+
+    // The rest of 'enum Name : Base { ... }' or 'error Name { ... }' (an error enum has no base type: int32)
+    Error<EnumDecl> ParseEnumBody(SourceLoc loc, bool isError)
+    {
+        var decl = EnumDecl { IsError = isError };
+        decl.Loc = loc;
+        decl.Name = try ExpectIdent(isError ? "error enum name" : "enum name");
+        if (!isError)
+        {
+            if (!Match(TokenKind.Colon))
+                return error("enums require an explicit integer base type, e.g. 'enum " + decl.Name + " : uint8'", decl.Loc.Pack());
+            decl.Base = try ParseType();
+        }
         try Expect(TokenKind.LBrace, "'{'");
         var members = List<EnumMember>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))

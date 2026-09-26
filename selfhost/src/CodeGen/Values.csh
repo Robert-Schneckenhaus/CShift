@@ -270,7 +270,24 @@ int ConversionCost(Compiler cg, Value v, int to)
     if (types.IsCFunction(to) && types.Elem(to) == from)
         return 1;
     if (fromKind == TypeKind.ErrorLit)
-        return types.IsError(to) ? 1 : -1;
+    {
+        // error(E.X) converts to Error<T> and Error<T, E>; error("text") (no code) to any result; error("text", int)
+        // only to a result with int codes
+        if (!types.IsError(to))
+            return -1;
+        int litCode = types.Code(from);
+        return types.Code(to) == 0 || litCode == 0 || litCode == types.Code(to) ? 1 : -1;
+    }
+    // Error<T, E> -> Error<T>: the code widens to int (same layout)
+    if (types.IsError(from) && types.IsError(to) && types.Elem(from) == types.Elem(to) && types.Code(to) == 0)
+        return 1;
+    // an error enum is an int (but never a result value: 'return E.X;' in an Error<int> function would be a success)
+    if (IsErrorEnum(cg, from))
+    {
+        if (types.IsResultLike(to))
+            return -1;
+        return to == types.I32 ? 1 : ImplicitIntCost(cg, types.I32, to);
+    }
 
     int c = ImplicitIntCost(cg, from, to);
     if (c >= 0)
@@ -339,6 +356,11 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         string hint = "";
         if (types.IsNumeric(from) && types.IsNumeric(to))
             hint = " (an explicit cast is required)";
+        if (types.IsError(to) && types.Code(to) != 0 && (types.Kind(from) == TypeKind.ErrorLit || types.IsError(from)))
+            hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
+                   ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
+        if (IsErrorEnum(cg, from) && types.IsResultLike(to))
+            hint = " (an error code is not a value: write 'return error(" + types.Name(from) + ".Member);')";
         Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
     }
 
@@ -368,6 +390,15 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     {
         Value r = ToRValue(cg, v);
         return Rvalue(to, NumericConvert(cg, r.V, from, to), false);
+    }
+    if (IsErrorEnum(cg, from) && types.IsIntegral(to))
+        return Rvalue(to, NumericConvert(cg, ToRValue(cg, v).V, types.I32, to), false);
+    if (types.IsError(from) && types.IsError(to))
+    {
+        // Error<T, E> -> Error<T>
+        Value r = ToRValue(cg, v);
+        r.Type = to;
+        return r;
     }
     if (types.IsPointer(from) && types.IsPointer(to))
         return Rvalue(to, ToRValue(cg, v).V, false);

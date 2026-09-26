@@ -129,6 +129,75 @@ if (found is User user)
 `Optional<T>` is not a condition either (`if (found)` and `!found` are compile errors): test it with `is T v` or
 compare it with `null` (`found == null`, `found != null`). `try` must not be used with `Optional<T>`.
 
+## Error enums: typed error codes
+
+An error enum declares the codes a function can fail with:
+
+```csharp
+error FileError
+{
+    NotFound,          // 1
+    Denied = 13,
+    Locked             // 14
+}
+```
+
+It is an enum with base type `int32`, but its members count from **1**: code 0 means "no specific code" (the code of
+`error("text")` and of a default result), so `= 0` is a compile error. A member converts implicitly to `int` (`int c =
+FileError.Denied;`, `e.Code == FileError.Denied`); the other way needs a cast, as for every enum.
+
+`error(...)` takes a member as the code; without a message, the message is the member's name:
+
+```csharp
+return error(FileError.NotFound);                  // Message "NotFound", Code 1
+return error("no access to " + path, FileError.Denied);
+```
+
+This works in any function returning `Error<T>` (the code is then an `int`). A result can also say which codes it
+has: **`Error<T, E>`**, or short **`E<T>`**:
+
+```csharp
+FileError<string> Read(string path)                // = Error<string, FileError>
+{
+    if (!File.Exists(path))
+        return error(FileError.NotFound);
+    if (File.ReadAllText(path) is not string text)   // a plain Error<string>: its codes are ints, so translate
+        return error("cannot read " + path, FileError.Denied);
+    return text;
+}
+```
+
+On an `Error<T, E>`, `e.Code` is an `E`, and the code can be matched directly:
+
+```csharp
+if (Read(path) is FileError code)                  // failed; 'code' is the FileError
+    Console.WriteLine("failed with " + ((int)code).ToString());
+
+switch (Read(path))
+{
+    case string text:
+        Show(text);
+        break;
+    case FileError.NotFound:                       // failed with this code
+        CreateDefault();
+        break;
+    case error e:                                  // any other failure
+        Console.WriteLine(e.Message);
+        break;
+}
+```
+
+The rules:
+
+* An `Error<T, E>` only takes codes of `E`: `error(E.X)`, `error("text", E.X)` or `error("text")` (code 0), not
+  `error("text", 5)`.
+* `Error<T, E>` converts implicitly to `Error<T>` (the code becomes an `int`), never the other way.
+* `try` passes an error on unchanged: from `Error<T, E>` into a function returning `Error<U, E>` or `Error<U>`. An
+  error with other codes must be translated: `if (r is error e) return error(e.Message, FileError.Denied);`.
+* An error enum is not a result value: `Error<FileError>` is a compile error, and so is `return FileError.NotFound;`
+  in a function returning `Error<int>` (it would be a success with the value 1).
+* `Error<void, E>` (`E<void>`) and `Error<Optional<T>, E>` work like their plain forms.
+
 ## Nesting: only `Error<Optional<T>>`
 
 `Error<Error<T>>`, `Optional<Error<T>>` and `Optional<Optional<T>>` are disallowed. `Error<Optional<T>>` is allowed,

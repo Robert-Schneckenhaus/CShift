@@ -40,3 +40,10 @@ tests/cases/err_is_not_binding.csh
 tests/cases/err_nested_if.csh
 tests/cases/err_nested_loop.csh
 tests/cases/err_nested_else.csh
+tests/cases/error_enum.csh
+tests/cases/err_error_enum_zero.csh
+tests/cases/err_error_enum_value.csh
+tests/cases/err_error_enum_int_code.csh
+tests/cases/err_error_enum_try.csh
+tests/cases/err_error_enum_pattern.csh
+tests/cases/err_error_enum_return.csh

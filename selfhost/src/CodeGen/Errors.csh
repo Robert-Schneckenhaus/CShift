@@ -42,21 +42,69 @@ string StderrHandle(Compiler cg)
     return cg.Ir.Load("ptr", "@stderr");
 }
 
-// error("message") or error("message", code)
+// error("message"), error("message", code), error(E.Member) and error("message", E.Member). The type of the literal
+// remembers what the code is (none, an int, a member of the error enum E), so that it only converts to a result with
+// a matching code type (see ConversionCost).
 Value EmitErrorLit(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetErrorLit(e);
-    Value msg = ConvertValue(cg, EmitRValue(cg, n.Message), types.String, n.Message.Loc);
+    Value first = EmitRValue(cg, n.Message);
+    Value msg;
     string code = "0";
-    if (!n.Code.IsNull())
-        code = ConvertValue(cg, EmitRValue(cg, n.Code), types.I32, n.Code.Loc).V;
+    int codeType = 0;
+    if (n.Code.IsNull() && IsErrorEnum(cg, first.Type))
+    {
+        // error(E.Member): the message is the name of the member
+        codeType = first.Type;
+        code = first.V;
+        msg = Rvalue(types.String, ErrorCodeName(cg, codeType, code), false);
+    }
+    else
+    {
+        msg = ConvertValue(cg, first, types.String, n.Message.Loc);
+        if (!n.Code.IsNull())
+        {
+            Value c = EmitRValue(cg, n.Code);
+            if (IsErrorEnum(cg, c.Type))
+            {
+                codeType = c.Type;
+                code = c.V;
+            }
+            else
+            {
+                codeType = -1;
+                code = ConvertValue(cg, c, types.I32, n.Code.Loc).V;
+            }
+        }
+    }
     string owned = Consume(cg, msg);
-    string ty = LlvmType(cg, types.ErrorLit);
+    int litType = types.ErrorLitOf(codeType);
+    string ty = LlvmType(cg, litType);
     string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", owned, "0");
     agg = ir.InsertValue(ty, agg, "i32", code, "1");
-    return Rvalue(types.ErrorLit, agg, true);
+    return Rvalue(litType, agg, true);
+}
+
+// The name of a member of an error enum as a string (a literal): known at compile time for a constant, otherwise
+// chosen at run time; a value that is no member gives the name of the enum.
+string ErrorCodeName(Compiler cg, int enumType, string code)
+{
+    var info = GetEnumInfo(cg, enumType);
+    var ir = cg.Ir;
+    for (var i = 0; i < info.Values.Length; i += 1)
+    {
+        if (info.Values[i].ToString() == code)
+            return ir.StringLiteral(info.Names[i]);
+    }
+    string name = ir.StringLiteral(cg.Types.Name(enumType));
+    for (var i = info.Values.Length; i > 0; i -= 1)
+    {
+        string hit = ir.ICmp("eq", "i32", code, info.Values[i - 1].ToString());
+        name = ir.Select(hit, "ptr", ir.StringLiteral(info.Names[i - 1]), name);
+    }
+    return name;
 }
 
 // 'error' as a pattern type: 'x is error e' matches a failed Error<T> (unless the program declares a type 'error').
@@ -82,6 +130,10 @@ int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, 
         return subject;
     }
     int pt = DeclTypeOf(cg, pattern);
+    // 'x is E code' (E the error enum of Error<T, E>): a failure, binding its code
+    if (IsErrorEnum(cg, pt) && !(types.IsError(subject) && types.Code(subject) == pt))
+        Fail(cg, loc, "'is " + types.Name(pt) + "' needs an Error<T, " + types.Name(pt) + "> value, not '" + types.Name(subject) +
+                      "'" + (types.IsError(subject) && types.Code(subject) == 0 ? " (its codes are plain ints)" : ""));
     if (pt == subject)
         Fail(cg, loc, "a pattern of the value's own type ('" + types.Name(pt) + "') would always match; test for a failure with 'is error e' " +
                           "or for a value with 'is " + types.Name(types.Elem(subject)) + " v'");
@@ -135,6 +187,21 @@ Value EmitIsPattern(Compiler cg, Expr e)
     }
     bool isErrorPattern = false;
     int pattern = ResultPatternType(cg, subj.Type, n.Type, cg.Tree.GetType(n.Type).Loc, ref isErrorPattern);
+    if (IsErrorEnum(cg, pattern))
+    {
+        // 'x is E code': failed; the code is a plain integer (no reference counting)
+        HoldTemp(cg, subj);
+        string resultIr = LlvmType(cg, subj.Type);
+        string failed = ir.Bin("xor", "i1", ir.ExtractValue(resultIr, subj.V, "0"), "true");
+        if (n.BindName.Length > 0)
+        {
+            string codeSlot = ir.Alloca("i32", n.BindName);
+            ir.Allocas.Append("  store i32 0, ptr " + codeSlot + "\n");
+            DeclareVar(cg, n.BindName, pattern, codeSlot);
+            ir.Store("i32", ir.ExtractValue(resultIr, subj.V, "3"), codeSlot);
+        }
+        return MakeBool(cg, failed);
+    }
     if (types.IsError(subj.Type) && types.IsOptional(types.Elem(subj.Type)) && pattern == types.Elem(types.Elem(subj.Type)))
     {
         // Error<Optional<T>> is T v: succeeded and has a value. The subject becomes its Optional<T> (empty on error).
@@ -194,6 +261,12 @@ Value EmitTry(Compiler cg, Expr e)
     int retType = cg.Fn[0].RetType;
     if (!types.IsError(retType) && !intMain)
         Fail(cg, e.Loc, "'try' can only be used in a function that returns Error<T>");
+    // the error is passed on unchanged, so its code must fit: any code into a plain Error<T> (int codes), but only
+    // codes of E into Error<T, E>
+    if (types.IsError(retType) && types.Code(retType) != 0 && types.Code(retType) != types.Code(subj.Type))
+        Fail(cg, e.Loc, "'try' cannot pass on the error of '" + types.Name(subj.Type) + "' from a function that returns '" +
+                            types.Name(retType) + "': its codes are not values of " + types.Name(types.Code(retType)) +
+                            "; translate it: 'if (x is error e) return error(e.Message, " + types.Name(types.Code(retType)) + ".Member);'");
 
     string subjIr = LlvmType(cg, subj.Type);
     string flag = ir.ExtractValue(subjIr, subj.V, "0");

@@ -36,6 +36,12 @@ err_enum_next_overflow.csh
 err_enum_no_base.csh
 err_enum_value_overflow.csh
 err_error_condition.csh
+err_error_enum_int_code.csh
+err_error_enum_pattern.csh
+err_error_enum_return.csh
+err_error_enum_try.csh
+err_error_enum_value.csh
+err_error_enum_zero.csh
 err_error_optional_condition.csh
 err_error_pattern_type.csh
 err_error_void_condition.csh
@@ -112,6 +118,7 @@ err_unsigned_negate.csh
 err_using_not_disposable.csh
 err_void_result_value.csh
 err_whole_result_pattern.csh
+error_enum.csh
 error_pattern.csh
 error_void.csh
 exit_code.csh
