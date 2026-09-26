@@ -929,7 +929,9 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
         ir.Store("i8", v.V, data);
         return r;
     }
-    if (types.IsEnum(t) || types.IsInt(t))
+    if (types.IsEnum(t))
+        return ir.Call("ptr", EnumTextFunction(cg, t), LlvmType(cg, t) + " " + v.V); // the member's name
+    if (types.IsInt(t))
     {
         bool isSigned = types.IsSigned(t);
         string src = LlvmType(cg, t);

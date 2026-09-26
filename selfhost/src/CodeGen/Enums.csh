@@ -101,3 +101,49 @@ int GetEnumType(Compiler cg, int entry)
     cg.EnumInfos.Set(index, info);
     return t;
 }
+
+// __cs_enum_text.<E>(value): the value as text with a +1 reference count - the name of its member, like C# ("Green");
+// a value that is no member gives its number. For values that several members share, the first member's name.
+string EnumTextFunction(Compiler cg, int enumType)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    string name = "@\"__cs_enum_text." + types.Name(enumType) + "\"";
+    if (!ir.Declared.Add(name))
+        return name;
+    var info = GetEnumInfo(cg, enumType);
+    string ty = LlvmType(cg, enumType);
+    var sb = StringBuilder.Create();
+    sb.Append("define internal ptr " + name + "(" + ty + " %v) {\nentry:\n  switch " + ty + " %v, label %number [\n");
+    var cases = List<int>.Create();
+    for (var i = 0; i < info.Values.Length; i += 1)
+    {
+        bool first = true;
+        for (var k = 0; k < i; k += 1)
+        {
+            if (info.Values[k] == info.Values[i])
+                first = false;
+        }
+        if (!first)
+            continue;
+        cases.Add(i);
+        sb.Append("    " + ty + " " + info.Values[i].ToString() + ", label %m" + i.ToString() + "\n");
+    }
+    sb.Append("  ]\n");
+    foreach (var i in cases)
+    {
+        string text = ir.StringLiteral(info.Names[i]);
+        sb.Append("m" + i.ToString() + ":\n  call void @__cs_retain(ptr " + text + ")\n  ret ptr " + text + "\n");
+    }
+    bool isSigned = types.IsSigned(enumType);
+    string wide = "%v";
+    sb.Append("number:\n");
+    if (types.Bits(enumType) < 64)
+    {
+        sb.Append("  %wide = " + (isSigned ? "sext " : "zext ") + ty + " %v to i64\n");
+        wide = "%wide";
+    }
+    sb.Append("  %s = call ptr " + (isSigned ? "@__cs_fmt_i64" : "@__cs_fmt_u64") + "(i64 " + wide + ")\n  ret ptr %s\n}\n\n");
+    ir.AppendHelper(sb.ToString());
+    return name;
+}

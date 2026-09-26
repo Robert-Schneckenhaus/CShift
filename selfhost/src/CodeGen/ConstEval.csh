@@ -348,7 +348,18 @@ string ConstToText(Compiler cg, ConstVal v)
             char c = (char)v.Mag;
             return c.ToString();
         }
-        return ConstDecimal(v);
+        string number = ConstDecimal(v);
+        if (cg.Types.IsEnum(v.Type))
+        {
+            // the member's name, like the text at run time (EnumTextFunction)
+            var info = GetEnumInfo(cg, v.Type);
+            for (var i = 0; i < info.Values.Length; i += 1)
+            {
+                if (info.Values[i].ToString() == number || unchecked((uint64)info.Values[i]).ToString() == number)
+                    return info.Names[i];
+            }
+        }
+        return number;
     }
     }
 }

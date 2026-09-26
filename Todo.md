@@ -16,7 +16,6 @@ the git log.
 - [ ] `Mutex<T>` and `SharedPtr<T>` for containers: `T` must be copyable between threads today (no `List<T>`,
       arrays). A way to share a container safely (e.g. access only inside `Update`, with a check that nothing
       escapes) is open.
-- [ ] Enums in string concatenation print their number (C# prints the member name).
 - [ ] Debug information (DWARF/PDB).
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.

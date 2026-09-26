@@ -50,4 +50,10 @@ bool has = (flags & Flags.Write) == Flags.Write;
 Enum values compare with `==`/`!=`/`<`/`>`/`<=`/`>=` and support the bitwise operators `& | ^ ~`, which is the usual
 pattern for flag enums like `Flags` above.
 
+As text - `"color " + c`, `$"{c}"`, `c.ToString()`, also in constants - an enum value is the name of its member
+(`Green`), like in C#. A value that is no member prints its number (`(Color)9` → `9`); members that share a value
+print the first name. `(int)c` gives the number.
+
+Error codes are enums as well, declared with `error Name { ... }`: see [error enums](error-handling.md#error-enums-typed-error-codes).
+
 Next: [Memory model](memory-model.md).
