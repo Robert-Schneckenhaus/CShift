@@ -33,7 +33,7 @@ string RuntimeGlobals(bool windows, bool arcStats)
     if (!windows)
         text += "@stderr = external global ptr\n";
     if (arcStats)
-        text += "@__cs_allocs = internal global i64 0\n@__cs_frees = internal global i64 0\n" +
+        text += "@__cs_allocs = internal global i64 0\n@__cs_frees = internal global i64 0\n@__cs_threads = internal global i64 0\n" +
                 "@.cs.arc = private constant [40 x i8] c\"[arc] allocs=%lld frees=%lld live=%lld\\0A\\00\"\n";
     return text + "\n";
 }
@@ -180,6 +180,19 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     text += FormatHelper("u64", "i64", "@.cs.fmt.u64");
     text += RoundTripHelper("f64", 15, 17, false);
     text += RoundTripHelper("f32", 6, 9, true);
+
+    // --arc-stats: a joined thread may still be releasing its last references (Join returns when the thread function
+    // has finished, the worker then drops its reference to the control block). Before the balance is printed, wait
+    // until every started thread has done so (@__cs_threads counts them), at most ~0.5 s for threads that still run.
+    if (arcStats)
+        text += CDeclare(ir, "usleep", "declare i32 @usleep(i32)") +
+            "define internal void @__cs_arc_wait_threads() {\nentry:\n  br label %loop\n" +
+            "loop:\n  %i = phi i32 [ 0, %entry ], [ %next, %wait ]\n" +
+            "  %running = load atomic i64, ptr @__cs_threads seq_cst, align 8\n" +
+            "  %none = icmp eq i64 %running, 0\n  br i1 %none, label %done, label %check\n" +
+            "check:\n  %more = icmp slt i32 %i, 500\n  br i1 %more, label %wait, label %done\n" +
+            "wait:\n  %slept = call i32 @usleep(i32 1000)\n  %next = add i32 %i, 1\n  br label %loop\n" +
+            "done:\n  ret void\n}\n\n";
     return text;
 }
 

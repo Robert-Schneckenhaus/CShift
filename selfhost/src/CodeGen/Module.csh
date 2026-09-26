@@ -189,7 +189,7 @@ string ArcStatsCode(Compiler cg, string suffix)
     string f = "%frees" + suffix;
     string l = "%live" + suffix;
     string e = "%err" + suffix;
-    return StderrLoad(cg.St[0].Windows).Replace("%err", e) +
+    return "  call void @__cs_arc_wait_threads()\n" + StderrLoad(cg.St[0].Windows).Replace("%err", e) +
            "  " + a + " = load i64, ptr @__cs_allocs\n  " + f + " = load i64, ptr @__cs_frees\n  " + l + " = sub i64 " + a + ", " + f + "\n" +
            "  call i32 (ptr, ptr, ...) @fprintf(ptr " + e + ", ptr @.cs.arc, i64 " + a + ", i64 " + f + ", i64 " + l + ")\n";
 }

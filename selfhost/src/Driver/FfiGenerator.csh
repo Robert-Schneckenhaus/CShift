@@ -381,7 +381,7 @@ struct FfiGenerator
         if (Options.Target.Length > 0)
             command += " -target " + Options.Target;
         command += windows ? " - < nul 2>&1" : " - < /dev/null 2>&1";
-        var output = Process.RunCapture(windows ? "\"" + command + "\"" : command);
+        var output = Process.RunCapture(command); // (on Windows, RunCapture adds the outer quotes cmd.exe strips)
         if (output is string text)
         {
             bool inList = false;
