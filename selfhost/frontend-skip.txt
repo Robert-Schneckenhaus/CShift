@@ -20,3 +20,4 @@ tests/cases/err_lambda_params.csh
 tests/cases/err_lambda_param_type.csh
 tests/projects/lambda_c/src/main.csh
 tests/cases/thread_mutex.csh
+tests/cases/list_functions.csh

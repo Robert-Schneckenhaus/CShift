@@ -99,6 +99,7 @@ globals.csh
 lambdas.csh
 lang_additions.csh
 link_extern.csh
+list_functions.csh
 main_args.csh
 main_error.csh
 main_error_ok.csh
