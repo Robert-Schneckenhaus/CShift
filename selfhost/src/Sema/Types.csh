@@ -31,7 +31,8 @@ enum TypeKind : int32
     Lambda,      // a lambda before it is converted to an Action/Func type
     Union,       // union U { A, B }: one of the member types with a tag (Decl: index in Compiler.UnionInfos)
     Slice,       // Slice<T>: a view of part of an array { owner block, data, length }
-    StringSlice  // a view of part of a string (read-only), same layout
+    StringSlice, // a view of part of a string (read-only), same layout
+    Collection   // [a, b] before it is converted to the type it is used as
 }
 
 struct TypeInfo
@@ -63,6 +64,7 @@ struct TypeContext
     int MethodGroup;
     int Lambda;
     int StringSlice;
+    int Collection;
     int I8;
     int I16;
     int I32;
@@ -104,6 +106,7 @@ struct TypeContext
         tc.Nuint = tc.Add(TypeKind.Int, "nuint", 64, false);
         tc.SetNative(tc.Nuint);
         tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
+        tc.Collection = tc.Add(TypeKind.Collection, "collection", 0, false);
         tc.StringSlice = tc.Add(TypeKind.StringSlice, "StringSlice", 0, false);
         var ss = tc.Infos.Get(tc.StringSlice - 1);
         ss.Elem = tc.Char;

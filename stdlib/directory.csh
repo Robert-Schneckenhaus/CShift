@@ -138,7 +138,7 @@ struct Path
                     parts.RemoveAt(parts.Count() - 1);
             }
             else
-                parts.Add(part);
+                parts.Add(part.ToString());
         }
         return prefix + "/" + string.Join("/", parts.ToArray());
     }
@@ -152,8 +152,8 @@ struct Path
         bool windows = Process.IsWindows();
         if (from.Length > 1 && to.Length > 1 && from[1] == ':' && (to[1] != ':' || from[0].ToString().ToLower() != to[0].ToString().ToLower()))
             return to;
-        string[] a = from.Split('/');
-        string[] b = to.Split('/');
+        var a = from.Split('/');
+        var b = to.Split('/');
         int common = 0;
         while (common < a.Length && common < b.Length && (windows ? a[common].ToLower() == b[common].ToLower() : a[common] == b[common]))
             common += 1;
@@ -166,7 +166,7 @@ struct Path
         for (var i = common; i < b.Length; i += 1)
         {
             if (b[i].Length > 0)
-                parts.Add(b[i]);
+                parts.Add(b[i].ToString());
         }
         return parts.Count() == 0 ? "." : string.Join("/", parts.ToArray());
     }

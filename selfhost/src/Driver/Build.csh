@@ -250,7 +250,7 @@ int Cshc(string[] args)
 string CshcVersion()
 {
     var texts = EmbedTexts("../../version", ".txt");
-    return texts.Length > 0 ? texts[0].Trim() : "dev";
+    return texts.Length > 0 ? texts[0].Trim().ToString() : "dev";
 }
 
 // The C compiler that is used as linker driver, to compile generated C code and to find libclang: --cc, then
@@ -308,7 +308,7 @@ string FindProgram(string name, bool windows)
         {
             if (dir.Length == 0)
                 continue;
-            string candidate = Path.Combine(dir, exe);
+            string candidate = Path.Combine(dir.ToString(), exe);
             if (File.Exists(candidate))
                 return Path.Normalize(candidate);
         }

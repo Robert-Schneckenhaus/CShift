@@ -35,7 +35,7 @@ if the key is missing), `Add(k, v)` (`Error<void>`, fails on a duplicate key), `
 > empty list from `new List<T>()` isn't yet connected to its copies before the first element is added — start with
 > `Create()` if you hand it out before adding to it.
 
-**`StringBuilder`** — builds text without copying on every `+`: `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
+**`StringBuilder`** — builds text without copying on every `+` (`Append` takes strings and string slices): `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
 sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (a handle to shared storage, like `List`).
 **`HashSet<T>`** — `Create()`, `Add(v)` (`true` if it was new), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`,
 `ToArray()`.
@@ -87,14 +87,28 @@ new `EncodingKind`.
 `Cosh`, `Tanh`, `DegreesToRadians`, `RadiansToDegrees`; `Floor`, `Ceiling`, `Truncate`, `Round` (rounds half to even,
 like in C#), `Lerp`, `IsNaN`, `IsInfinity`. Integer arguments are widened to `double` (`Math.Sqrt(2)`).
 
-**String helpers** (`s.Contains(x)` ≙ `String.Contains(s, x)`, static as `string.Join(sep, parts)`): `IsNullOrEmpty`,
-`Contains`, `IndexOf` (also `IndexOf(char, start)`), `LastIndexOf`, `StartsWith`, `EndsWith`, `Trim`,
-`TrimStart`/`TrimEnd` (white space, or a given character), `PadLeft`/`PadRight` (with spaces or a given character),
-`ToUpper`/`ToLower` (ASCII only), `Replace`,
-`Repeat`, `Split` (by character or string), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`ParseError<…>`), plus
-`Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise). Positions are byte offsets;
-`string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written as a function in
-`namespace String` (the first parameter is the string).
+**String helpers** (`s.Contains(x)` ≙ `String.Contains(s, x)`, static as `string.Join(sep, parts)`) work on
+[slices](language/arrays-strings-collections.md#slices): they take `StringSlice` (a `string` converts for free), can
+be called on a string or a slice, and the ones that return a part of the text return a **view** (nothing is copied):
+
+| Returns a view (`StringSlice`) | `Trim`, `TrimStart`/`TrimEnd` (white space, or a given character), `Substring` on a slice, `Split` (`StringSlice[]`, by character or string) |
+|---|---|
+| Queries | `IsNullOrEmpty`, `Contains`, `IndexOf` (also `IndexOf(char, start)`), `LastIndexOf`, `StartsWith`, `EndsWith` |
+| New strings | `PadLeft`/`PadRight`, `ToUpper`/`ToLower` (ASCII only), `Replace`, `Repeat`, `Join` (of `string[]` or `StringSlice[]`) |
+| Parsing | `ParseInt`/`ParseInt64`/`ParseDouble` (`ParseError<…>`) |
+
+```csharp
+string entry = "name = Ann Lee";
+int eq = entry.IndexOf('=');
+StringSlice key = entry[..eq].Trim();          // "name", a view of 'entry'
+string value = entry[eq + 1..].Trim().ToString();   // keep a copy as a string
+foreach (var part in "a, b, c".Split(','))     // StringSlice[]: no string per part
+    Console.WriteLine(part.Trim());
+```
+
+`Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise) take strings (they serve generic containers). Positions
+are byte offsets; `string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written
+as a function in `namespace String` (the first parameter is the `StringSlice`).
 
 **`Thread`/`Thread<T>`** — the handle returned by `start`ing a `thread` function (`start Foo(args)`; calling one
 directly, without `start`, is a compile-time error): `Join()`, `Cancel()`, `CancelAndWait()`, `IsCompleted()`,
@@ -119,8 +133,6 @@ blocks), `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `string.Fro
 `CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`, `EmbedText`/`EmbedNames`/`EmbedTexts`
 (files embedded at compile time).
 
-**Writing library code:** the standard library is also the prelude that stage 0 (the release named in
-`selfhost/stage0.txt`) compiles while it builds the compiler. Code in `stdlib/` therefore uses only the language of
-that release; generic bodies are the exception, because they are only compiled when they are used. See
-[compiler.md](compiler.md).
+**Writing library code:** `stdlib/` is compiled by the compiler of the same commit, so it may use every language
+feature; only the compiler's own sources are limited to the stage 0 release. See [compiler.md](compiler.md).
 

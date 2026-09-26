@@ -65,6 +65,12 @@ Value EmitExpr(Compiler cg, Expr e)
         lambda.LambdaNode = e;
         return lambda;
     }
+    case ExprKind.Collection:
+    {
+        Value collection = Rvalue(cg.Types.Collection, "", false); // built when it is converted (Collections.csh)
+        collection.CollectionNode = e;
+        return collection;
+    }
     case ExprKind.Conditional: return EmitConditional(cg, e);
     case ExprKind.Cast: return EmitCast(cg, e);
     case ExprKind.Start: return EmitStart(cg, e);

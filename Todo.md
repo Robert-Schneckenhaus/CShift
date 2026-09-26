@@ -28,9 +28,6 @@ the git log.
 
 ## Standard library
 
-- [ ] **String helpers on slices** (needs a release with slices as stage 0): `Contains`, `StartsWith`, `IndexOf`,
-      `Split`, `Trim`, `ParseInt`, ... take `StringSlice` (a `string` converts for free); `Trim()` and `Split()` return
-      slices, so parsing does not allocate per piece.
 - [ ] Streams, `Stack`/`Queue`, date and time, number formatting options (`ToString("F2")`), more encodings.
 - [ ] `Directory`: deleting, moving; `File`: moving, timestamps.
 

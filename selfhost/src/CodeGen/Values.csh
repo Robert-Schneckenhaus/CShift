@@ -261,6 +261,8 @@ int ConversionCost(Compiler cg, Value v, int to)
     }
     if (fromKind == TypeKind.Lambda)
         return LambdaConversionCost(cg, v, to);
+    if (fromKind == TypeKind.Collection)
+        return CollectionConversionCost(cg, to);
     // a member of a union as the union (stored inline, no allocation)
     if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
         return 2;
@@ -343,6 +345,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     }
     if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
         return UnionFromMember(cg, v, to, UnionMemberIndex(cg, to, from));
+    if (types.Kind(from) == TypeKind.Collection)
+        return EmitCollection(cg, v.CollectionNode, to, loc);
     if (types.Kind(from) == TypeKind.Lambda)
     {
         if (!types.IsFunction(to))
@@ -362,6 +366,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         if (types.IsError(to) && types.Code(to) != 0 && (types.Kind(from) == TypeKind.ErrorLit || types.IsError(from)))
             hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
                    ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
+        if (types.Kind(from) == TypeKind.Collection)
+            hint = " (a collection expression becomes an array, a Slice<T>, or a struct with 'static Create()' and 'Add(T)')";
         if (types.IsStringSlice(from) && types.IsString(to))
             hint = " (a slice is a view; copy it with .ToString())";
         if (types.Kind(from) == TypeKind.Slice && types.IsArray(to))

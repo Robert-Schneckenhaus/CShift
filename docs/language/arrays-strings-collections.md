@@ -23,6 +23,25 @@ Array.Copy(source, sourceIndex, destination, destinationIndex, count);
 
 Indexing is bounds-checked; an out-of-range index panics.
 
+### Collection expressions
+
+`[a, b, c]` lists the elements; it becomes the type it is used as:
+
+```csharp
+int[] a = [1, 2, 3];                   // an array of exactly this length
+Slice<int> s = [4, 5];                 // a new array, as a view
+List<string> names = ["ann", "bob"];   // Create(), then Add per element
+HashSet<int> seen = [1, 2, 2];         // any struct with 'static Create()' and 'Add(T)'
+int[] all = [..a, ..s, 6];             // ..x spreads an array, a slice or a collection with ToArray()
+int[] none = [];
+var inferred = [1.5, 2.0];             // no type to become: an array of the first element's type (double[])
+Process([1, 2, 3]);                    // as an argument, the parameter's type decides
+```
+
+An array or slice is built with one allocation of exactly the right length (spreads included). The elements convert
+to the element type like in an assignment. `new int[n]` (a zeroed array of a given length) and
+`new int[] { 1, 2, 3 }` still work.
+
 ## Strings
 
 Strings are UTF-8, immutable, and managed by ARC. Modifying one produces a new string:

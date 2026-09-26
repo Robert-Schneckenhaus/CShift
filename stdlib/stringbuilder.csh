@@ -44,7 +44,8 @@ struct StringBuilder
         return _state[0].Length;
     }
 
-    void Append(string text)
+    // A string or a part of one (StringSlice: a string converts to it for free).
+    void Append(StringSlice text)
     {
         int n = text.Length;
         if (n == 0)
@@ -53,7 +54,7 @@ struct StringBuilder
         unsafe
         {
             uint8* target = &_state[0].Data[_state[0].Length];
-            memcpy((void*)target, (void*)text.CStr(), (uint64)n);
+            memcpy((void*)target, (void*)text.Ptr(), (uint64)n);
         }
         _state[0].Length += n;
     }
@@ -65,7 +66,7 @@ struct StringBuilder
         _state[0].Length += 1;
     }
 
-    void AppendLine(string text)
+    void AppendLine(StringSlice text)
     {
         Append(text);
         Append('\n');

@@ -275,6 +275,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
     {
         if (d.Init.IsNull())
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "': 'var' needs an initializer");
+        init = SettleCollection(cg, init); // var a = [1, 2]: an int[]
         t = init.Type;
         if (types.Kind(t) == TypeKind.MethodGroup)
         {

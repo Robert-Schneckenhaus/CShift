@@ -28,11 +28,14 @@ must generate identical IR for the compiler's own sources. The CI workflow
 ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) does this for every pull request, the release workflow
 ([.github/workflows/release.yml](../.github/workflows/release.yml)) also packages and ships stage 2.
 
-One rule follows: `selfhost/` and `stdlib/` may use every language feature of the stage 0 version, and no newer one
-(stage 0 compiles both; the standard library is the prelude of every program, including `cshc` itself). To use a new
-feature in the compiler or the standard library, release it first, then raise `selfhost/stage0.txt`. Generic bodies
-are only compiled when they are used, so stdlib generics may use newer features as long as `cshc` does not
-instantiate them.
+Two rules follow:
+
+* `selfhost/` may use the language of the stage 0 version and no newer feature: stage 0 compiles it (stage 1). To
+  use a new feature in the compiler, release it first, then raise `selfhost/stage0.txt`.
+* Stage 0 builds stage 1 against **its own** (embedded) standard library, stage 1 builds stage 2 against the one in
+  `stdlib/`. So `stdlib/` may use everything the current compiler knows, and the compiler's sources must work with
+  both libraries: when a library function changes its result (e.g. `Trim()` returning a `StringSlice` instead of a
+  `string`), they use a form that fits both (`s.Trim().ToString()`).
 
 The first compiler, written in C++17 against the LLVM API, bootstrapped the self-hosted one and was retired after
 version 0.04 (it is in the git history).

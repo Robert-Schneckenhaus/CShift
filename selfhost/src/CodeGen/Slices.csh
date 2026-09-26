@@ -98,7 +98,7 @@ Value EmitSlice(Compiler cg, Expr e)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetSlice(e);
-    Value obj = ToRValue(cg, EmitRValue(cg, n.Object));
+    Value obj = ToRValue(cg, SettleCollection(cg, EmitRValue(cg, n.Object)));
     int sliceType = SliceTypeOf(cg, obj.Type);
     if (sliceType == 0)
         Fail(cg, e.Loc, "cannot slice a value of type '" + types.Name(obj.Type) + "' (only arrays, strings and slices)");

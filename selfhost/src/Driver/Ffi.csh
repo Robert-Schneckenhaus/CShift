@@ -133,7 +133,7 @@ FfiOptions FfiOptionsOf(BuildOptions o, string clang)
         // the host triple, as the clang that links the program sees it
         var printed = Process.RunCapture("\"" + (Process.IsWindows() ? clang.Replace("/", "\\") : clang) + "\" -print-target-triple");
         if (printed is string text)
-            target = text.Trim();
+            target = text.Trim().ToString();
     }
     return FfiOptions { Target = target, IncludePaths = o.IncludePaths, Defines = o.Defines, ApiPaths = o.ApiPaths, Clang = clang, Verbose = o.Verbose };
 }
