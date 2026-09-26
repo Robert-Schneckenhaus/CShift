@@ -1,6 +1,6 @@
 // Error<Optional<T>> cannot be tested as a bool ('if (x)', '!x'): it would be unclear whether that asks "did it
 // succeed?" or "was something found?". 'x is T v' and 'x is Optional<T> o' say it explicitly.
-// expect-error: cannot be used as a condition: it is unclear whether it asks for success or for a value; write 'x is int32 v'
+// expect-error: 'Error<Optional<int32>>' cannot be used as a condition; test it with 'is error e' (failed), 'is int32 v' (succeeded with a value) or 'is Optional<int32> o' (succeeded)
 
 using System;
 

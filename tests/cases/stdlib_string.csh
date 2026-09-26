@@ -68,7 +68,7 @@ int Main()
         f += Check("ParseInt min", v4 == int.MinValue);
     else
         f += 1;
-    f += Check("ParseInt errors", !"".ParseInt() && !"12x".ParseInt() && !"-".ParseInt() && !"2147483648".ParseInt());
+    f += Check("ParseInt errors", "".ParseInt() is error && "12x".ParseInt() is error && "-".ParseInt() is error && "2147483648".ParseInt() is error);
     f += Check("ParseInt message", "12x".ParseInt().Message.Contains("12x"));
     if ("9223372036854775807".ParseInt64() is int64 v5)
         f += Check("ParseInt64 max", v5 == int64.MaxValue);
@@ -78,7 +78,7 @@ int Main()
         f += Check("ParseInt64 min", v6 == int64.MinValue);
     else
         f += 1;
-    f += Check("ParseInt64 overflow", !"9223372036854775808".ParseInt64());
+    f += Check("ParseInt64 overflow", "9223372036854775808".ParseInt64() is error);
     if ("3.25".ParseDouble() is double d1)
         f += Check("ParseDouble", d1 == 3.25);
     else
@@ -87,7 +87,7 @@ int Main()
         f += Check("ParseDouble exponent", d2 == -1000);
     else
         f += 1;
-    f += Check("ParseDouble errors", !"abc".ParseDouble() && !"1.5x".ParseDouble() && !"".ParseDouble());
+    f += Check("ParseDouble errors", "abc".ParseDouble() is error && "1.5x".ParseDouble() is error && "".ParseDouble() is error);
 
     // ---- strings from bytes ----
     f += Check("FromBytes", string.FromBytes(new uint8[] { 65, 66, 67 }) == "ABC");
@@ -111,12 +111,12 @@ int Main()
     else
         f += 1;
 
-    f += Check("UTF-8 invalid byte", !utf8.GetString(new uint8[] { 0x68, 0xFF }));
-    f += Check("UTF-8 truncated", !utf8.GetString(new uint8[] { 0xE2, 0x82 }));
-    f += Check("UTF-8 overlong", !utf8.GetString(new uint8[] { 0xC0, 0x80 }));
-    f += Check("UTF-8 surrogate", !utf8.GetString(new uint8[] { 0xED, 0xA0, 0x80 }));
-    f += Check("UTF-8 bad continuation", !utf8.GetString(new uint8[] { 0xC3, 0x28 }));
-    f += Check("UTF-8 range", !utf8.GetString(bytes, 5, 100));
+    f += Check("UTF-8 invalid byte", utf8.GetString(new uint8[] { 0x68, 0xFF }) is error);
+    f += Check("UTF-8 truncated", utf8.GetString(new uint8[] { 0xE2, 0x82 }) is error);
+    f += Check("UTF-8 overlong", utf8.GetString(new uint8[] { 0xC0, 0x80 }) is error);
+    f += Check("UTF-8 surrogate", utf8.GetString(new uint8[] { 0xED, 0xA0, 0x80 }) is error);
+    f += Check("UTF-8 bad continuation", utf8.GetString(new uint8[] { 0xC3, 0x28 }) is error);
+    f += Check("UTF-8 range", utf8.GetString(bytes, 5, 100) is error);
     f += Check("UTF-8 message", utf8.GetString(new uint8[] { 0x68, 0xFF }).Message.Contains("index 1"));
 
     var asciiBytes = ascii.GetBytes("héllo");
@@ -126,7 +126,7 @@ int Main()
         f += Check("ASCII GetString", hi == "Hi");
     else
         f += 1;
-    f += Check("ASCII rejects high bytes", !ascii.GetString(new uint8[] { 72, 200 }));
+    f += Check("ASCII rejects high bytes", ascii.GetString(new uint8[] { 72, 200 }) is error);
 
     return f;
 }

@@ -538,25 +538,29 @@ Value EmitCondition(Compiler cg, Expr e)
     if (cg.Types.IsBool(v.Type))
         return v;
     RejectAmbiguousCondition(cg, v.Type, e.Loc);
-    if (cg.Types.IsResultLike(v.Type))
-    {
-        HoldTemp(cg, v);
-        return MakeBool(cg, cg.Ir.ExtractValue(LlvmType(cg, v.Type), v.V, "0"));
-    }
     Fail(cg, e.Loc, "a condition must be of type 'bool', not '" + cg.Types.Name(v.Type) + "' (there is no implicit conversion to bool)");
     return v;
 }
 
-// Error<Optional<T>> as a condition ('if (x)', '!x'): "failed" or "found nothing"? The reader could not tell, so it has
-// to be spelled out with 'is'.
+// Error<T> and Optional<T> are not conditions ('if (x)', '!x', '&&', '?:'): what they test would be hidden. The code
+// says it: 'x is error e' / 'x is T v' for a result, 'x is T v' / 'x == null' for an optional value.
 void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
 {
     var types = cg.Types;
-    if (!types.IsError(t) || !types.IsOptional(types.Elem(t)))
-        return;
-    string inner = types.Name(types.Elem(types.Elem(t)));
-    Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition: it is unclear whether it asks for success or for a value; " +
-                      "write 'x is " + inner + " v' (succeeded with a value) or 'x is Optional<" + inner + "> o' (succeeded)");
+    if (types.IsError(t))
+    {
+        int inner = types.Elem(t);
+        string succeeded = "";
+        if (types.IsOptional(inner))
+            succeeded = ", 'is " + types.Name(types.Elem(inner)) + " v' (succeeded with a value) or 'is " + types.Name(inner) +
+                        " o' (succeeded)";
+        else if (!types.IsVoid(inner))
+            succeeded = " or 'is " + types.Name(inner) + " v' (succeeded)";
+        Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition; test it with 'is error e' (failed)" + succeeded);
+    }
+    if (types.IsOptional(t))
+        Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition; test it with 'is " + types.Name(types.Elem(t)) +
+                          " v' (has a value) or '== null' / '!= null'");
 }
 
 // && and ||: the right side only runs if it can change the result.
@@ -657,11 +661,6 @@ Value EmitUnary(Compiler cg, Expr e)
         if (types.IsBool(v.Type))
             return MakeBool(cg, ir.Bin("xor", "i1", v.V, "true"));
         RejectAmbiguousCondition(cg, v.Type, e.Loc);
-        if (types.IsResultLike(v.Type))
-        {
-            HoldTemp(cg, v);
-            return MakeBool(cg, ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, v.Type), v.V, "0"), "true"));
-        }
         Fail(cg, e.Loc, "operator '!' cannot be applied to '" + types.Name(v.Type) + "'");
         return v;
     }

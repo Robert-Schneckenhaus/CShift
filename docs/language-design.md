@@ -533,16 +533,14 @@ if (result is File file)
     file.Read();
 }
 
-if (!result)
+if (result is error e)
 {
-    // error
+    // error: e.Message, e.Code
 }
 ```
 
-Its bool semantics are:
-
-* `true` → a value is present
-* `false` → an error
+`Error<T>` is not a condition (`if (result)`, `!result` are errors): `is error e` tests for a failure, `is T v` for
+a success.
 
 ---
 
@@ -588,16 +586,13 @@ if (result is User user)
     user.Login();
 }
 
-if (!result)
+if (result == null)
 {
     // absent
 }
 ```
 
-Its bool semantics match `Error<T>`:
-
-* `true` → a value is present
-* `false` → no value
+`Optional<T>` is not a condition either: it is tested with `is T v` or compared with `null`.
 
 `try` must not be used with `Optional<T>`.
 
@@ -614,8 +609,8 @@ Optional<Optional<T>>
 ```
 
 `Error<Optional<T>>` is allowed, for an operation that can fail or find nothing (a lookup in a database or a file).
-Because it has two "no" cases, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
-means (`r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
+Like every `Error<T>`, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
+means (`r is error e`, `r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
 
 ---
 
@@ -936,7 +931,7 @@ if (x)
 }
 ```
 
-There is no implicit conversion from integers, pointers or other types to `bool`.
+There is no implicit conversion from integers, pointers, `Error<T>`, `Optional<T>` or other types to `bool`.
 
 ---
 

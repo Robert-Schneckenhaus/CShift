@@ -36,9 +36,7 @@ int Check(string name, bool ok)
 
 bool Succeeded(Error<void> result)
 {
-    if (result)
-        return true;
-    return false;
+    return !(result is error);
 }
 
 int Main()
@@ -56,7 +54,7 @@ int Main()
         f += Check("TryGet", bob == 25);
     else
         f += 1;
-    f += Check("TryGet missing", !ages.TryGet("Zed") && ages.TryGet("Zed") == null);
+    f += Check("TryGet missing", ages.TryGet("Zed") == null);
     f += Check("ContainsKey", ages.ContainsKey("Ann") && !ages.ContainsKey("ann"));
     ages.Set("Bob", 26);
     f += Check("Set replaces", ages.Count() == 3 && ages.GetOrDefault("Bob", -1) == 26);
@@ -64,7 +62,7 @@ int Main()
 
     // ---- Add fails for existing keys ----
     var duplicate = ages.Add("Ann", 1);
-    f += Check("Add duplicate", !duplicate && duplicate.Message.Contains("same key") && ages.GetOrDefault("Ann", -1) == 31);
+    f += Check("Add duplicate", duplicate is error e && e.Message.Contains("same key") && ages.GetOrDefault("Ann", -1) == 31);
     f += Check("Add new", Succeeded(ages.Add("Dan", 5)) && ages.Count() == 4);
 
     // ---- Remove and slot reuse ----

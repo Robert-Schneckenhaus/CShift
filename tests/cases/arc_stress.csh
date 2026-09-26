@@ -145,7 +145,7 @@ int Main()
     else
         failures += 1;
     var badResult = Process(10);
-    if (badResult || badResult.Message != "bad 3")
+    if (!(badResult is error e) || e.Message != "bad 3")
         failures += 1;
 
     // Optional with pattern variables in loops

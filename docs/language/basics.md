@@ -85,7 +85,8 @@ Arithmetic (`+ - * / %`), comparison (`== != < > <= >=`), logic (`&& || !`), bit
 compound assignments (`+= -= *= /= %= &= |= ^= <<= >>=`) all work as in C#, with the same precedence. There is no
 `++`/`--`; write `i += 1` instead. The conditional operator `cond ? a : b` is available.
 
-Only `bool` can be used as a condition — there's no implicit conversion from `int` or a pointer to `bool`:
+Only `bool` can be used as a condition — there's no implicit conversion from `int`, a pointer, `Error<T>` or `Optional<T>` to
+`bool`:
 
 ```csharp
 if (count > 0)   // fine

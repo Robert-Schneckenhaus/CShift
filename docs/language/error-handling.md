@@ -36,18 +36,8 @@ else
 }
 ```
 
-`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present"
-(except `Error<Optional<T>>`, [see below](#nesting-only-erroroptionalt)):
-
-```csharp
-if (!result)
-{
-    // handle the error
-}
-```
-
 `is error e` matches only a failure and binds the result, so the error can be used under a name (it works for every
-`Error<T>`, and as `case error e:` in a `switch`):
+`Error<T>`, including `Error<void>`, and as `case error e:` in a `switch`; `is error` without a name just tests):
 
 ```csharp
 if (OpenFile(path) is error e)
@@ -65,6 +55,16 @@ switch (Parse(text))
 ```
 
 A pattern of the value's own type (`result is Error<File> r`) would always match, so it is a compile error.
+
+`Error<T>` is **not a condition**: `if (result)`, `!result`, `result && ...` and `result ? a : b` are compile errors,
+because they would hide what is tested. Write `is error e` (failed) or `is T v` (succeeded):
+
+```csharp
+if (Save() is error e)                    // Error<void>: 'is error' is the only test
+    Console.WriteLine("cannot save: " + e.Message);
+
+bool ok = !(Parse(text) is error);        // just the outcome
+```
 
 ## `try`
 
@@ -106,18 +106,8 @@ if (found is User user)
 }
 ```
 
-Same `is`/bool semantics as `Error<T>`, but `try` must not be used with `Optional<T>`.
-
-## Pattern matching in `switch`
-
-```csharp
-switch (result)
-{
-    case Error<int> r:
-        Console.WriteLine("code " + r.Code.ToString());
-        break;
-}
-```
+`Optional<T>` is not a condition either (`if (found)` and `!found` are compile errors): test it with `is T v` or
+compare it with `null` (`found == null`, `found != null`). `try` must not be used with `Optional<T>`.
 
 ## Nesting: only `Error<Optional<T>>`
 
@@ -135,8 +125,8 @@ Error<Optional<User>> FindUser(int id)
 }
 ```
 
-Because it has two "no" cases, it **cannot be used as a condition**: `if (r)` and `!r` are compile errors (would they
-mean "failed" or "found nothing"?). Say which one you mean with `is error e`, `is T v` or `is Optional<T> o`:
+Like every `Error<T>` it is not a condition (with two "no" cases, `!r` could not even say whether it means "failed" or
+"found nothing"). Say which one you mean with `is error e`, `is T v` or `is Optional<T> o`:
 
 ```csharp
 var r = FindUser(7);

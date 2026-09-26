@@ -23,7 +23,7 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Enums with a mandatory base type and explicit values | ✔ |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
-| `Error<T>` / `Optional<T>`, bool semantics, `is T x`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` (never a bare condition) | ✔ ([error handling](error-handling.md)) |
+| `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |
 | `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (value, read-only alias, alias) | ✔ |
 | Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |
@@ -50,8 +50,10 @@ The design document leaves a number of things open; these are the decisions that
 
 * **Creating errors:** `return error("text");` or `error("text", code)`; `Error<T>` has `.Message` and `.Code`.
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
-* **Bool semantics** of `Error`/`Optional` apply in conditions and with `!`, `&&`, `||`, but not as an argument for a
-  `bool` parameter (use `x is T` instead).
+* **No bool semantics:** `Error<T>` and `Optional<T>` are not conditions (`if (x)`, `!x`, `&&`, `||`, `?:` are
+  errors). A result is tested with `x is error e` / `x is T v`, an optional value with `x is T v` / `x == null`.
+  (The frozen C++ compiler still accepts the bool forms; `selfhost/` tests `x.Message != null`, which
+  both compilers understand.)
 * **`is`/`case` patterns:** `x is int v` binds the value; `x is error e` matches a failure and binds the whole result (a pattern of the value's own type would always match and is an error). Pattern
   variables are scoped to the `if`/`while`, or to the `case`.
 * **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
@@ -62,7 +64,7 @@ The design document leaves a number of things open; these are the decisions that
 * **Interfaces are not value types** (a value would need a hidden allocation): they are generic constraints and the
   types of `ref`/`const ref` parameters (a pointer to the struct and its method table). For `const ref` the caller
   passes a copy on its stack.
-* **`Error<Optional<T>>`** is the only allowed nesting. It cannot be used as a condition (`if (r)`, `!r`): write
+* **`Error<Optional<T>>`** is the only allowed nesting. Like the others it is not a condition: write `r is error e`,
   `r is T v` (succeeded with a value) or `r is Optional<T> o` (succeeded).
 * **Contextual keywords:** `thread` and `where` are only keywords where they start a thread function or a
   constraint; elsewhere they are ordinary names.

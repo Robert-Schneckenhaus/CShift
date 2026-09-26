@@ -150,7 +150,7 @@ struct Parser
         {
             int before = Pos;
             var r = ParseTopLevel();
-            if (!r)
+            if (r.Message != null)
             {
                 Diag.Report(FileId, r.Message, r.Code);
                 SynchronizeTopLevel();
@@ -271,7 +271,7 @@ struct Parser
             int start = Pos;
             bool isGlobal = false;
             var probe = ParseType();
-            if (probe)
+            if (probe.Message == null)
                 isGlobal = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Semi || PeekKind(1) == TokenKind.Assign);
             Pos = start;
             if (isGlobal)
@@ -337,7 +337,7 @@ struct Parser
         Advance();
         var probe = ParseType();
         bool result = false;
-        if (probe)
+        if (probe.Message == null)
             result = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.LParen || PeekKind(1) == TokenKind.Lt);
         Pos = start;
         return result;

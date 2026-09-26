@@ -733,7 +733,7 @@ void TestErrorAndOptional(ref Tester t)
     t.Check("error bool true", ok is int);
 
     var bad = Parse("12x");
-    t.Check("error bool false", !bad);
+    t.Check("error is error", bad is error);
     t.Check("error message", bad.Message == "bad char");
     t.Check("error code", bad.Code == 2);
     t.Check("error is-pattern fails", !(bad is int));
@@ -748,14 +748,14 @@ void TestErrorAndOptional(ref Tester t)
     else
         t.Check("try success", false);
     var s2 = Sum("40", "z");
-    t.Check("try propagates error", !s2 && s2.Message == "bad char" && s2.Code == 2);
+    t.Check("try propagates error", s2 is error e1 && e1.Message == "bad char" && e1.Code == 2);
 
     // Error<string> (ARC payload)
     if (Decorated("World") is string text)
         t.Check("error string payload", text == "Hello, World!");
     else
         t.Check("error string payload", false);
-    t.Check("error string failure", !Decorated("") && Decorated("").Message == "no name");
+    t.Check("error string failure", Decorated("") is error e2 && e2.Message == "no name");
 
     // switch with patterns
     var pr = Parse("9");
@@ -792,21 +792,21 @@ void TestErrorAndOptional(ref Tester t)
         t.Check("optional value", idx == 2);
     else
         t.Check("optional value", false);
-    t.Check("optional absent", !FindIndex(data, 99));
+    t.Check("optional absent", FindIndex(data, 99) == null);
     t.Check("optional == null", FindIndex(data, 99) == null && FindIndex(data, 5) != null);
 
     if (Lookup(1) is string one)
         t.Check("optional string", one == "one");
     else
         t.Check("optional string", false);
-    t.Check("optional string absent", !Lookup(2));
+    t.Check("optional string absent", Lookup(2) == null);
 
     Optional<int> assigned = 5;
     t.Check("implicit wrap", assigned is int);
     assigned = null;
-    t.Check("assign null", !assigned);
+    t.Check("assign null", assigned == null);
     Optional<int> defaulted;
-    t.Check("default is absent", !defaulted);
+    t.Check("default is absent", defaulted == null);
 }
 
 void TestGenerics(ref Tester t)
@@ -899,9 +899,9 @@ void TestUsingTry(ref Tester t)
     else
         t.Check("using+try ok", false);
     var b = UseRes(4, true);
-    t.Check("using+try error", !b && b.Message == "invalid id");
+    t.Check("using+try error", b is error e3 && e3.Message == "invalid id");
     var c = UseRes(-1, false);
-    t.Check("try before using", !c);
+    t.Check("try before using", c is error);
 }
 
 extern "C" int strlen(char* str);

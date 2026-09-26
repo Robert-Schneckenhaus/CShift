@@ -35,8 +35,10 @@ err_duplicate_function.csh
 err_enum_next_overflow.csh
 err_enum_no_base.csh
 err_enum_value_overflow.csh
+err_error_condition.csh
 err_error_optional_condition.csh
 err_error_pattern_type.csh
+err_error_void_condition.csh
 err_extern_struct.csh
 err_fallthrough.csh
 err_foreach_struct.csh
@@ -76,6 +78,8 @@ err_native_int_narrowing.csh
 err_nested_error.csh
 err_no_main.csh
 err_no_overload.csh
+err_optional_condition.csh
+err_optional_ternary.csh
 err_private_field.csh
 err_ref_missing.csh
 err_start_non_thread.csh

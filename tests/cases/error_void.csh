@@ -59,31 +59,31 @@ int Main()
     f += Check("implicit success", !(Step(1) is error));
     var ok = Step(1);
     f += Check("success is not an error", !(ok is error));
-    if (ok)
+    if (!(ok is error))
         f += 0;
     else
         f += 1;
     f += Check("explicit return", !(Explicit() is error));
 
     var failed = Step(3);
-    f += Check("error", !failed && failed.Message == "step 3 failed" && failed.Code == 3);
+    f += Check("error", failed is error e1 && e1.Message == "step 3 failed" && e1.Code == 3);
 
     f += Check("try in loop success", !(RunAll(3) is error));
     var stopped = RunAll(5);
-    f += Check("try in loop failure", !stopped && stopped.Code == 3);
+    f += Check("try in loop failure", stopped is error e2 && e2.Code == 3);
 
     if (Count(2) is int two)
         f += Check("Error<int> after try", two == 2);
     else
         f += 1;
-    f += Check("Error<int> failure", !Count(9) && Count(9).Message == "step 3 failed");
+    f += Check("Error<int> failure", Count(9) is error e3 && e3.Message == "step 3 failed");
 
     f += Check("try with value", !(Forward("abc") is error) && Forward("") is error empty && empty.Message == "empty");
 
     Error<void> assigned = error("assigned");
-    f += Check("assign error", !assigned && assigned.Message == "assigned");
+    f += Check("assign error", assigned is error e4 && e4.Message == "assigned");
     Error<void> defaulted;
-    f += Check("default is an error without message", !defaulted && defaulted.Message == null);
+    f += Check("default is an error without message", defaulted is error e5 && e5.Message == null);
 
     return f;
 }

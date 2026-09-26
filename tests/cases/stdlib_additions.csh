@@ -40,7 +40,7 @@ int Main()
     failed += Check("write", !(File.WriteAllText("d1/d2/one.txt", "hello") is error));
     failed += Check("copy", !(File.Copy("d1/d2/one.txt", "d1/two.txt") is error));
     failed += Check("copied", File.ReadAllText("d1/two.txt") is string text && text == "hello");
-    failed += Check("copy no overwrite", !File.Copy("d1/d2/one.txt", "d1/two.txt"));
+    failed += Check("copy no overwrite", File.Copy("d1/d2/one.txt", "d1/two.txt") is error);
     failed += Check("copy overwrite", !(File.Copy("d1/d2/one.txt", "d1/two.txt", true) is error));
     var entries = Directory.GetEntries("d1");
     failed += Check("entries", entries.Count() == 2 && entries.Get(0) == "d2" && entries.Get(1) == "two.txt");
