@@ -588,6 +588,18 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         if (LookupTypeDecl(cg, file, "System._ThreadVoid", ref voidEntry))
             return GetStructType(cg, voidEntry.Index, new int[0], node.Loc);
     }
+    if (!found && node.Path.Length == 1 && dotted == "Slice")
+    {
+        if (node.Args.Length != 1)
+            Fail(cg, node.Loc, "'Slice' expects exactly one type argument (Slice<T>)");
+        return types.SliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
+    }
+    if (!found && node.Path.Length == 1 && dotted == "StringSlice")
+    {
+        if (node.Args.Length != 0)
+            Fail(cg, node.Loc, "'StringSlice' is not generic");
+        return types.StringSlice;
+    }
     if (!found && node.Path.Length == 1 && dotted == "SharedPtr")
     {
         if (node.Args.Length != 1)
@@ -723,6 +735,9 @@ string LlvmType(Compiler cg, int t)
         return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
     case TypeKind.Interface:
         return "{ ptr, ptr }"; // a ref/const ref parameter: the struct and its method table (Interfaces.csh)
+    case TypeKind.Slice:
+    case TypeKind.StringSlice:
+        return "{ ptr, ptr, i64 }"; // the block that owns the elements, the first element, the length (Slices.csh)
     default:
         return "ptr"; // string, pointer, array, null
     }
@@ -740,6 +755,8 @@ bool NeedsArc(Compiler cg, int t)
     {
     case TypeKind.String:
     case TypeKind.Array:
+    case TypeKind.Slice:
+    case TypeKind.StringSlice:
     case TypeKind.Error:
     case TypeKind.ErrorLit:
     case TypeKind.SharedPtr:

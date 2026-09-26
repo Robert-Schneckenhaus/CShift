@@ -85,6 +85,8 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Function:
     case TypeKind.Interface:
     case TypeKind.Union:
+    case TypeKind.Slice:
+    case TypeKind.StringSlice:
         return "zeroinitializer";
     default: return "null";
     }

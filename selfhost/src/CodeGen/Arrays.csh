@@ -88,15 +88,35 @@ Value EmitIndex(Compiler cg, Expr e)
     var n = cg.Tree.GetIndex(e);
     Value obj = EmitExpr(cg, n.Object);
     if (types.IsStruct(obj.Type))
+    {
+        if (n.FromEnd)
+            Fail(cg, e.Loc, "'^' (from the end) needs an array, a string or a slice");
         return EmitIndexerGet(cg, obj, n.Index, e.Loc);
-    return EmitElement(cg, obj, n.Index, e.Loc);
+    }
+    return EmitElement(cg, obj, n.Index, n.FromEnd, e.Loc);
 }
 
-// The element of an array, a string or a pointer (the object is already evaluated).
-Value EmitElement(Compiler cg, Value obj, Expr index, SourceLoc loc)
+// The element of an array, a string, a slice or a pointer (the object is already evaluated); a[^i] counts from the end.
+Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
+    if (types.IsSlice(obj.Type))
+        return EmitSliceElement(cg, obj, index, fromEnd, loc);
+    if (fromEnd && (types.IsArray(obj.Type) || types.IsString(obj.Type)))
+    {
+        Value whole = ToRValue(cg, obj);
+        HoldTemp(cg, whole);
+        string length = ArrayLength(cg, whole.V);
+        string fromStart = SliceBound(cg, index, true, length);
+        EmitPanicIf(cg, ir.ICmp("uge", "i64", fromStart, length), types.IsArray(obj.Type) ? "array index out of range" : "string index out of range");
+        string first = DataPtr(cg, whole.V);
+        if (types.IsString(obj.Type))
+            return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", first, "i64 " + fromStart)), false);
+        return Lvalue(types.Elem(obj.Type), ir.Gep(LlvmType(cg, types.Elem(obj.Type)), first, "i64 " + fromStart), false);
+    }
+    if (fromEnd)
+        Fail(cg, loc, "'^' (from the end) needs an array, a string or a slice, not '" + types.Name(obj.Type) + "'");
     Value idx = EmitRValue(cg, index);
     if (!types.IsIntegral(idx.Type))
         Fail(cg, index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
@@ -164,19 +184,20 @@ void EmitForeach(Compiler cg, Stmt s)
         EmitForeachStruct(cg, s, it);
         return;
     }
-    if (!types.IsArray(collType) && !types.IsString(collType))
-        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
-    int elemType = types.IsArray(collType) ? types.Elem(collType) : types.Char;
+    if (!types.IsArray(collType) && !types.IsString(collType) && !types.IsSlice(collType))
+        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
+    int elemType = SliceElemType(cg, collType);
+    string collIr = LlvmType(cg, collType); // ptr, or { ptr, ptr, i64 } for a slice
 
     PushScope(cg); // holds the collection so that it stays alive during the loop
-    string collSlot = ir.Alloca("ptr", "foreach.coll");
-    ir.Store("ptr", Consume(cg, it), collSlot);
+    string collSlot = ir.Alloca(collIr, "foreach.coll");
+    ir.Store(collIr, Consume(cg, it), collSlot);
     DeclareVar(cg, "$foreach", collType, collSlot);
     FlushTemps(cg, 0, true);
 
     string idxSlot = ir.Alloca("i64", "foreach.idx");
     ir.Store("i64", "0", idxSlot);
-    string len = ArrayLength(cg, ir.Load("ptr", collSlot));
+    string len = PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Length;
 
     string condLabel = ir.NewLabel("foreach.cond");
     string bodyLabel = ir.NewLabel("foreach.body");
@@ -192,8 +213,8 @@ void EmitForeach(Compiler cg, Stmt s)
     int outerDepth = ScopeCount(cg);
     PushScope(cg); // per-iteration scope for the loop variable
     int varType = n.Type.IsNull() ? elemType : DeclTypeOf(cg, n.Type);
-    string coll = ir.Load("ptr", collSlot);
-    string addr = ir.Gep(LlvmType(cg, elemType), DataPtr(cg, coll), "i64 " + idx);
+    string first = PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Data;
+    string addr = ir.Gep(LlvmType(cg, elemType), first, "i64 " + idx);
     Value elem = Lvalue(elemType, addr, true);
     Value cv = ConvertValue(cg, elem, varType, s.Loc);
     string varSlot = ir.Alloca(LlvmType(cg, varType), n.Name);
@@ -274,6 +295,8 @@ string ReleaseFunction(Compiler cg, int t)
         return FunctionReleaseHelper(cg);
     if (types.Kind(t) == TypeKind.Union)
         return UnionHelper(cg, t, false);
+    if (types.IsSlice(t))
+        return SliceHelper(cg, t, false);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -293,6 +316,8 @@ string RetainFunction(Compiler cg, int t)
         return FunctionRetainHelper(cg);
     if (types.Kind(t) == TypeKind.Union)
         return UnionHelper(cg, t, true);
+    if (types.IsSlice(t))
+        return SliceHelper(cg, t, true);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
 }

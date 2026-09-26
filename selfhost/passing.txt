@@ -94,6 +94,10 @@ err_optional_condition.csh
 err_optional_ternary.csh
 err_private_field.csh
 err_ref_missing.csh
+err_slice_copy.csh
+err_slice_readonly.csh
+err_slice_thread.csh
+err_slice_type.csh
 err_start_non_thread.csh
 err_struct_recursive.csh
 err_struct_recursive_indirect.csh
@@ -155,11 +159,14 @@ panic_null_array.csh
 panic_null_function.csh
 panic_output_kept.csh
 panic_overflow.csh
+panic_slice_index.csh
+panic_slice_range.csh
 panic_string_index.csh
 panic_substring.csh
 panic_underflow.csh
 panic_user.csh
 shared_ptr.csh
+slices.csh
 stdlib_additions.csh
 stdlib_dictionary.csh
 stdlib_errors.csh

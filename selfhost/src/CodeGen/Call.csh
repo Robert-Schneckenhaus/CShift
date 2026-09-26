@@ -931,6 +931,28 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             return EmitArrayClone(cg, obj);
         }
     }
+    else if (types.IsSlice(t))
+    {
+        // copying out of a view is explicit: ToString() / ToArray()
+        if (method == "ToString" && types.IsStringSlice(t))
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            return Rvalue(types.String, StringSliceText(cg, obj), true);
+        }
+        if (method == "ToArray" && !types.IsStringSlice(t))
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            return SliceToArray(cg, obj);
+        }
+        if (method == "Ptr")
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            RequireUnsafe(cg, loc, tname + ".Ptr()");
+            Value s = ToRValue(cg, obj);
+            HoldTemp(cg, s);
+            return Rvalue(types.PointerTo(SliceElemType(cg, t)), ir.ExtractValue(LlvmType(cg, t), s.V, "1"), false);
+        }
+    }
     else if (types.IsNumeric(t) || types.IsBool(t) || types.IsEnum(t))
     {
         if (method == "ToString")

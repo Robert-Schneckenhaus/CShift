@@ -243,6 +243,13 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
             return kind == TypeKind.Null || kind == TypeKind.ErrorLit;
         }
     }
+    if (name == "Slice" && node.Args.Length == 1 && !LookupTypeDecl(cg, file, name, ref entry))
+    {
+        // Slice<T> from a slice or an array (which converts to a slice of itself)
+        if (kind == TypeKind.Slice || kind == TypeKind.Array)
+            return Unify(cg, node.Args[0], types.Elem(actual), tparams, file, bound);
+        return kind == TypeKind.Null;
+    }
     if (name == "Action" || name == "Func")
     {
         if (!LookupTypeDecl(cg, file, name, ref entry))

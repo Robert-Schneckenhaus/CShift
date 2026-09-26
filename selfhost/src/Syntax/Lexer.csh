@@ -592,6 +592,11 @@ struct Lexer
                 Advance();
                 t.Kind = TokenKind.Ellipsis;
             }
+            else if (Peek(0) == '.')
+            {
+                Advance();
+                t.Kind = TokenKind.DotDot; // a range in a slice: a[1..3]
+            }
             else
             {
                 t.Kind = TokenKind.Dot;

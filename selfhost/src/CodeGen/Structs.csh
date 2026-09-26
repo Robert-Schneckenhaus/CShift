@@ -490,6 +490,13 @@ Value EmitMember(Compiler cg, Expr e)
         string len = cg.Ir.Call("i64", "@__cs_len", "ptr " + o.V);
         return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
     }
+    if (types.IsSlice(t) && m.Name == "Length")
+    {
+        Value o = ToRValue(cg, obj);
+        HoldTemp(cg, o);
+        string len = cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2");
+        return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
+    }
     if (types.IsError(t) && (m.Name == "Message" || m.Name == "Code"))
     {
         Value o = ToRValue(cg, obj);
