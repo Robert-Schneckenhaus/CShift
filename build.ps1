@@ -1,22 +1,18 @@
 # Builds the CShift compiler (cshiftc) on Windows using MSYS2's CLANG64 toolchain.
 #
-#   .\build.ps1                 build into .\build
-#   .\build.ps1 -Test           also build stages 1 and 2 (build\stage2\cshiftc.exe, the self-hosted compiler) and run the tests
+#   .\build.ps1                 build build\stage2\cshiftc.exe (stages 1 and 2 of the bootstrap)
+#   .\build.ps1 -Test           and run the tests
 #   .\build.ps1 -Msys2 D:\msys64
-#   .\build.ps1 -Dynamic        link LLVM as a DLL (smaller exe, but cshiftc.exe then only starts when
-#                               C:\msys64\clang64\bin is in PATH)
 #
-# By default cshiftc.exe is linked statically, so it runs from any shell. Compiling a program still needs
-# 'clang' in PATH for the final link step.
+# Stage 0 is the release named in selfhost\stage0.txt: downloaded with the GitHub CLI ('gh auth login' once), or the
+# compiler that $env:CSHIFT_STAGE0 names (see selfhost/fetch-stage0.sh).
 #
 # One-time setup (see README.md): install MSYS2 and, in an MSYS2 shell, run
-#   pacman -S mingw-w64-clang-x86_64-{clang,llvm,cmake,ninja}
+#   pacman -S mingw-w64-clang-x86_64-{clang,lld}
 
 param(
     [string]$Msys2 = $(if ($env:MSYS2_ROOT) { $env:MSYS2_ROOT } else { "C:\msys64" }),
-    [switch]$Test,
-    [string]$Config = "Release",
-    [switch]$Dynamic
+    [switch]$Test
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,10 +24,10 @@ if (-not (Test-Path $bash)) {
 $root = $PSScriptRoot.Replace('\', '/')
 $env:MSYSTEM = "CLANG64"
 $env:CHERE_INVOKING = "1"
+$env:MSYS2_PATH_TYPE = "inherit" # the Windows PATH, so that gh.exe is found
 
-$static = if ($Dynamic) { "OFF" } else { "ON" }
-$script = "cd '$root' && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$Config -DCSHIFT_STATIC=$static && cmake --build build"
-if ($Test) { $script += " && bash selfhost/build-release.sh build/cshiftc.exe dev build/stage2 && bash tests/run_tests.sh build/stage2/cshiftc.exe" }
+$script = "cd '$root' && stage0=`$(bash selfhost/fetch-stage0.sh) && bash selfhost/build-release.sh `"`$stage0`" dev build/stage2"
+if ($Test) { $script += " && bash tests/run_tests.sh build/stage2/cshiftc.exe" }
 
 & $bash -lc $script
 exit $LASTEXITCODE

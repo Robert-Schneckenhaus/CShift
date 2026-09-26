@@ -93,6 +93,8 @@ switch (s)
 }
 ```
 
+* A `switch` over a union without `default:` must handle every member (compile error otherwise), so adding a
+  member shows every switch that has to handle it.
 * The members can be any value types (`union Token { int, string, bool }`), each once. A union's size is the size of
   its largest member plus the tag.
 * A union that lists interfaces (`: IShape`) requires every member to implement them, and can call their methods

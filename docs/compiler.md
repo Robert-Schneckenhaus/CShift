@@ -11,29 +11,31 @@ clang.
 source (.csh) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ program
 ```
 
-## Stages and the frozen C++ compiler
+## Stages
 
-The first compiler was written in C++17 against the LLVM API ([compiler/](../compiler/README.md)). It is **frozen**:
-its only job is to be stage 0 of the bootstrap when no `cshiftc` release is at hand.
+The compiler builds itself. Stage 0 is an earlier release: the version in
+[selfhost/stage0.txt](../selfhost/stage0.txt), downloaded by
+[selfhost/fetch-stage0.sh](../selfhost/fetch-stage0.sh) (or any `cshiftc` named by `CSHIFT_STAGE0`).
 
 | Stage | What | Built by |
 |---|---|---|
-| 0 | the C++ compiler (`build/cshiftc`) | CMake, a C++17 compiler, the LLVM development packages |
+| 0 | a released `cshiftc` (version in `selfhost/stage0.txt`) | downloaded |
 | 1 | the self-hosted compiler (`cshc`) | stage 0 |
 | 2 | the self-hosted compiler again: **the released `cshiftc`** | stage 1 |
 
 `selfhost/build-release.sh <stage0> <version> <out>` runs stages 1 and 2 and the bootstrap check: stage 1 and stage 2
-must generate identical IR for the compiler's own sources. The release workflow
-([.github/workflows/release.yml](../.github/workflows/release.yml)) does exactly this and ships stage 2.
+must generate identical IR for the compiler's own sources. The CI workflow
+([.github/workflows/ci.yml](../.github/workflows/ci.yml)) does this for every pull request, the release workflow
+([.github/workflows/release.yml](../.github/workflows/release.yml)) also packages and ships stage 2.
 
-Two rules follow from the freeze:
+One rule follows: `selfhost/` and `stdlib/` may use every language feature of the stage 0 version, and no newer one
+(stage 0 compiles both; the standard library is the prelude of every program, including `cshc` itself). To use a new
+feature in the compiler or the standard library, release it first, then raise `selfhost/stage0.txt`. Generic bodies
+are only compiled when they are used, so stdlib generics may use newer features as long as `cshc` does not
+instantiate them.
 
-* New language features exist only in the self-hosted compiler. `selfhost/` and `stdlib/` must stay within the
-  language of the C++ compiler, because stage 0 compiles both (the standard library is the prelude of every program,
-  including `cshc` itself). Generic bodies are only compiled when they are used, so stdlib generics may use newer
-  features as long as `cshc` does not instantiate them (`Mutex<T>` does this).
-* Once a self-hosted release exists, it can replace stage 0 (`cshiftc build selfhost`), and `selfhost/` may use every
-  feature that release knows. Then `compiler/` can be retired.
+The first compiler, written in C++17 against the LLVM API, bootstrapped the self-hosted one and was retired after
+version 0.04 (it is in the git history).
 
 ## Structure
 
@@ -72,8 +74,7 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshi
 * `tests/projects/*`: projects built with `cshiftc build|run`, some with C code (`native/*.c`) for the header import.
 * The selfhost section builds the compiler with the compiler under test and checks: all cases pass with it
   (`selfhost/status.sh`, `passing.txt`), the projects build (`selfhost/projects.sh`), it rebuilds itself to the same
-  IR (`selfhost/bootstrap.sh`), and - if the C++ stage 0 is present - its front end still agrees with the C++ one on
-  every file (`selfhost/compare.sh`; files with newer syntax are listed in `selfhost/frontend-skip.txt`).
+  IR (`selfhost/bootstrap.sh`).
 
 ## What the compiler needs
 
@@ -83,7 +84,7 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshi
 | lld | linking | bundled (Windows); Linux uses the system linker (`build-essential`) |
 | libclang | `using X from "header.h"` (loaded at run time, only when a header is imported) | bundled; `.ffi` files can be shipped instead |
 | C library and headers | the runtime of the programs (`malloc`, `printf`, `fopen`, pthreads) | Windows: MinGW-w64 in the release; Linux: the system |
-| C++, CMake, LLVM development packages | only stage 0 | not needed once a self-hosted release is the seed |
+| an earlier `cshiftc` release | stage 0, only to build the compiler from source | downloaded (`selfhost/fetch-stage0.sh`) |
 
 Possible reductions, none of them needed so far: calling lld directly instead of the clang driver (easy on Windows,
 distribution-dependent on Linux); implementing the C calling conventions for structs passed by value in the compiler

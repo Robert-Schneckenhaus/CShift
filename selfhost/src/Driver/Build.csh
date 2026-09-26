@@ -189,9 +189,9 @@ int Cshc(string[] args)
         }
         string dir = o.Inputs.Get(0);
         var created = CreateProject(dir);
-        if (created.Message != null)
+        if (created is error createdError)
         {
-            Console.WriteErrorLine("error: " + created.Message);
+            Console.WriteErrorLine("error: " + createdError.Message);
             return 1;
         }
         Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  cshc run");
@@ -346,9 +346,26 @@ string BundledClang(bool windows)
     string archive = Path.Combine(cacheDir, "toolchain.tar.gz");
     if (Host.CopyFilePart(self, offset, size, archive) == 0)
         return "";
-    Process.Run("tar xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
+    Process.Run(TarCommand(windows) + " xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
     File.Delete(archive);
     return File.Exists(cached) ? cached : "";
+}
+
+// The system 'tar'. On Windows that is %SystemRoot%\System32\tar.exe (bsdtar): a GNU tar found first in PATH (Git
+// for Windows, MSYS2) would read "D:\..." as a remote host.
+string TarCommand(bool windows)
+{
+    if (windows)
+    {
+        var root = Process.GetEnv("SystemRoot");
+        if (root is string r && r.Length > 0)
+        {
+            string tar = r + "\\System32\\tar.exe";
+            if (File.Exists(tar))
+                return "\"" + tar + "\"";
+        }
+    }
+    return "tar";
 }
 
 // A per-user, per-version cache directory for the extracted toolchain.
@@ -483,9 +500,9 @@ int Build(BuildOptions o)
         string llPath = o.Output.Length == 0 ? baseName + ".ll" : (o.FromProject ? o.Output + ".ll" : o.Output);
         EnsureParentDirectory(llPath);
         var wrote = File.WriteAllText(llPath, ir);
-        if (wrote.Message != null)
+        if (wrote is error wroteError)
         {
-            Console.WriteErrorLine("error: cannot write '" + llPath + "': " + wrote.Message);
+            Console.WriteErrorLine("error: cannot write '" + llPath + "': " + wroteError.Message);
             return 1;
         }
         return 0;
@@ -517,9 +534,9 @@ int Build(BuildOptions o)
     EnsureParentDirectory(outPath);
     string llFile = outPath + ".ll";
     var written = File.WriteAllText(llFile, ir);
-    if (written.Message != null)
+    if (written is error writtenError)
     {
-        Console.WriteErrorLine("error: cannot write '" + llFile + "': " + written.Message);
+        Console.WriteErrorLine("error: cannot write '" + llFile + "': " + writtenError.Message);
         return 1;
     }
 

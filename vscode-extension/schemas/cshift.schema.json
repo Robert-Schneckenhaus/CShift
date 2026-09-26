@@ -68,6 +68,43 @@
 		"target": {
 			"type": "string",
 			"description": "Target triple, e.g. x86_64-w64-windows-gnu. Default: the host."
+		},
+		"platforms": {
+			"type": "object",
+			"description": "Additions per platform, appended to the common lists when building for that platform.",
+			"properties": {
+				"windows": {
+					"type": "object",
+					"properties": {
+						"links": { "$ref": "#/properties/links" },
+						"includePaths": { "$ref": "#/properties/includePaths" },
+						"libraryPaths": { "$ref": "#/properties/libraryPaths" },
+						"defines": { "$ref": "#/properties/defines" }
+					},
+					"additionalProperties": false
+				},
+				"linux": {
+					"type": "object",
+					"properties": {
+						"links": { "$ref": "#/properties/links" },
+						"includePaths": { "$ref": "#/properties/includePaths" },
+						"libraryPaths": { "$ref": "#/properties/libraryPaths" },
+						"defines": { "$ref": "#/properties/defines" }
+					},
+					"additionalProperties": false
+				},
+				"macos": {
+					"type": "object",
+					"properties": {
+						"links": { "$ref": "#/properties/links" },
+						"includePaths": { "$ref": "#/properties/includePaths" },
+						"libraryPaths": { "$ref": "#/properties/libraryPaths" },
+						"defines": { "$ref": "#/properties/defines" }
+					},
+					"additionalProperties": false
+				}
+			},
+			"additionalProperties": false
 		}
 	}
 }

@@ -1,0 +1,85 @@
+# Checks every pull request (and every push to master) on Windows and Linux: stage 0 (the release named in
+# selfhost/stage0.txt) builds cshc, cshc rebuilds itself to the same IR (selfhost/build-release.sh), and the test suite
+# passes with it. The release workflow (release.yml) does the same and then packages and publishes.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  LLVM_VERSION: "22" # keep in sync with release.yml
+
+permissions:
+  contents: read # also: downloading the stage 0 release
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install MSYS2 CLANG64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-llvm
+            mingw-w64-clang-x86_64-lld
+            mingw-w64-clang-x86_64-crt
+            mingw-w64-clang-x86_64-headers
+            mingw-w64-clang-x86_64-winpthreads
+            mingw-w64-clang-x86_64-libc++
+            mingw-w64-clang-x86_64-libunwind
+            mingw-w64-clang-x86_64-compiler-rt
+
+      - name: Download stage 0 (an earlier release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "STAGE0=$(bash selfhost/fetch-stage0.sh build/stage0)" >> "$GITHUB_ENV"
+
+      - name: Build cshiftc (stages 1 and 2, bootstrap check)
+        shell: msys2 {0}
+        run: bash selfhost/build-release.sh "$STAGE0" dev build/stage2
+
+      - name: Run tests
+        shell: msys2 {0}
+        run: bash tests/run_tests.sh build/stage2/cshiftc.exe
+
+  linux:
+    name: Linux x64 (Ubuntu)
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_PREFIX: /usr/lib/llvm-22 # keep in sync with LLVM_VERSION above
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install clang and libclang ${{ env.LLVM_VERSION }}
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y --no-install-recommends "libclang-$LLVM_VERSION-dev" "clang-$LLVM_VERSION"
+          test -x "$LLVM_PREFIX/bin/clang"
+
+      - name: Download stage 0 (an earlier release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "STAGE0=$(bash selfhost/fetch-stage0.sh build/stage0)" >> "$GITHUB_ENV"
+
+      - name: Build cshiftc (stages 1 and 2, bootstrap check)
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash selfhost/build-release.sh "$STAGE0" dev build/stage2
+
+      - name: Run tests
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc

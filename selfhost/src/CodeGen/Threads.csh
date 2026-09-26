@@ -343,6 +343,8 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
         cg.PendingTrampolines.Add(instance);
     }
     string idSlot = ir.Alloca("ptr", "thread.id");
+    if (cg.St[0].ArcStats)
+        ir.Line(ir.NewTemp() + " = atomicrmw add ptr @__cs_threads, i64 1 seq_cst"); // see __cs_arc_wait_threads
     string rc = ir.Call("i32", "@pthread_create", "ptr " + idSlot + ", ptr null, ptr " + ThreadTrampolineName(cg, instance) + ", ptr " + argsBlock);
     EmitPanicIf(cg, ir.ICmp("ne", "i32", rc, "0"), "cannot create a thread");
 
@@ -468,6 +470,8 @@ void EmitThreadTrampoline(Compiler cg, int instance)
     // the worker's reference to the control block
     ir.Call("void", ReleaseFunction(cg, types.SharedPtrOf(tt.Payload)), "ptr " + ir.ByteGep(payload, "-16"));
     PopScope(cg, true);
+    if (cg.St[0].ArcStats)
+        ir.Line(ir.NewTemp() + " = atomicrmw sub ptr @__cs_threads, i64 1 seq_cst"); // this thread released everything
     ir.Ret("ptr", "null");
     ir.EndFunction();
 }

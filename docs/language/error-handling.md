@@ -197,6 +197,8 @@ The rules:
 * An error enum is not a result value: `Error<FileError>` is a compile error, and so is `return FileError.NotFound;`
   in a function returning `Error<int>` (it would be a success with the value 1).
 * `Error<void, E>` (`E<void>`) and `Error<Optional<T>, E>` work like their plain forms.
+* A `switch` with `case E.X:` labels and no `default:` must handle every code of `E`, unless `case error e` or
+  `case E code` takes the rest.
 
 ## Nesting: only `Error<Optional<T>>`
 

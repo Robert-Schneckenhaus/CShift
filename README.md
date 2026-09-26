@@ -11,9 +11,8 @@ clang optimizes it, generates machine code and links:
 source (.csh) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ .exe
 ```
 
-The first compiler, written in C++17 against the LLVM API ([compiler/](compiler/README.md)), is **frozen**: it is only
-the stage 0 that builds the self-hosted compiler from source. New language features exist only in the self-hosted
-compiler.
+The compiler is written in CShift itself; it is built by an earlier release of itself (the first compiler, written in
+C++ against the LLVM API, bootstrapped it and was retired after version 0.04; it is in the git history).
 
 ```csharp
 using System;
@@ -96,25 +95,24 @@ The compiler is built in three stages ([selfhost/build-release.sh](selfhost/buil
 
 | Stage | What | Built by |
 |---|---|---|
-| 0 | the frozen C++ compiler (`build/cshiftc`) | CMake, a C++17 compiler and the LLVM development packages |
+| 0 | an earlier release: the version in [selfhost/stage0.txt](selfhost/stage0.txt) | downloaded ([selfhost/fetch-stage0.sh](selfhost/fetch-stage0.sh)) |
 | 1 | the self-hosted compiler (`cshc`) | stage 0 |
 | 2 | the self-hosted compiler again: **the released `cshiftc`** (`build/stage2/cshiftc`) | stage 1 |
 
-Stage 1 and stage 2 must generate identical LLVM IR for the compiler's own sources (the bootstrap check). If you
-already have a `cshiftc` release, it can take the place of stage 0: `cshiftc build selfhost` is all it takes.
+Stage 1 and stage 2 must generate identical LLVM IR for the compiler's own sources (the bootstrap check).
+`fetch-stage0.sh` downloads stage 0 with the GitHub CLI (`gh auth login` once); `CSHIFT_STAGE0=<path>` uses a
+`cshiftc` you already have instead. With any recent `cshiftc` at hand, `cshiftc build selfhost` alone builds the compiler.
 
 ### Windows (recommended: MSYS2)
 
-Visual Studio doesn't come with the LLVM libraries needed for stage 0; MSYS2 does:
-
 ```powershell
 winget install MSYS2.MSYS2
+winget install GitHub.cli    # then: gh auth login
 # Once, in the "MSYS2 CLANG64" shell:
-pacman -S --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm `
-                   mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-ninja
+pacman -S --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
 
-.\build.ps1          # stage 0 into .\build\cshiftc.exe
-.\build.ps1 -Test    # also stages 1 and 2 (build\stage2\cshiftc.exe) and the tests
+.\build.ps1          # stages 1 and 2 into .\build\stage2\cshiftc.exe (downloads stage 0 once)
+.\build.ps1 -Test    # and the tests
 ```
 
 The compiler needs `clang` to compile and link; it looks for it in a `toolchain` folder next to itself, then in
@@ -123,11 +121,11 @@ The compiler needs `clang` to compile and link; it looks for it in a `toolchain`
 ### Linux / macOS
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # stage 0; add -DLLVM_DIR=<llvm>/lib/cmake/llvm if needed
-cmake --build build
-bash selfhost/build-release.sh build/cshiftc dev build/stage2   # stages 1 and 2
+bash selfhost/build-release.sh "$(bash selfhost/fetch-stage0.sh)" dev build/stage2   # stages 1 and 2
 bash tests/run_tests.sh build/stage2/cshiftc
 ```
+
+This needs `clang` (and `libclang` for C header imports) and, for linking, `build-essential`.
 
 ## Usage
 

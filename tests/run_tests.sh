@@ -4,8 +4,7 @@
 #   tests/run_tests.sh [path/to/cshiftc] [-O0|-O1|-O2|-O3]
 #
 # The compiler is taken from the first argument, $CSHIFTC, build/stage2/cshiftc[.exe] (the self-hosted compiler that is
-# released, see selfhost/build-release.sh) or selfhost/bin/cshc[.exe]. The C++ compiler (build/cshiftc) is only the
-# stage 0 of the bootstrap; it is frozen and not tested with this suite any more (new features exist only in cshc).
+# released, see selfhost/build-release.sh) or selfhost/bin/cshc[.exe].
 # clang (or the program given with $CSHIFT_CC) must be available for linking.
 #
 # What is tested:
@@ -195,9 +194,7 @@ fi
 
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
 #   cshc (selfhost/) is built with the compiler under test; it must pass the test cases, build the projects and
-#   rebuild itself (bootstrap). If the C++ stage 0 is there ($CSHIFT_STAGE0, else build/cshiftc[.exe]), the token and
-#   syntax tree dumps of all .csh files must still be identical to its front end (selfhost/compare.sh; files with
-#   syntax that only cshc knows are listed in selfhost/frontend-skip.txt). CSHIFT_SKIP_SELFHOST=1 skips this section.
+#   rebuild itself (bootstrap). CSHIFT_SKIP_SELFHOST=1 skips this section.
 echo "== selfhost/"
 if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
     echo "skipped"
@@ -210,20 +207,6 @@ else
     else
         cshc="$work/bin/cshc"
         [ -f "$cshc.exe" ] && cshc="$cshc.exe"
-        stage0="${CSHIFT_STAGE0:-}"
-        if [ -z "$stage0" ]; then
-            for c in "$DIR/../build/cshiftc" "$DIR/../build/cshiftc.exe"; do
-                if [ -x "$c" ]; then stage0="$c"; break; fi
-            done
-        fi
-        if [ -z "$stage0" ]; then
-            echo "      (no C++ stage 0: front end comparison skipped)"
-        elif bash "$DIR/../selfhost/compare.sh" "$stage0" "$cshc" > "$TMP/selfhost.cmp" 2>&1; then
-            report_ok "selfhost front end"
-        else
-            report_fail "selfhost front end" "different output from the C++ front end:"
-            head -n 20 "$TMP/selfhost.cmp"
-        fi
         # The code generator written in CShift: the cases that passed once (selfhost/passing.txt) must keep passing.
         if bash "$DIR/../selfhost/status.sh" "$cshc" --check > "$TMP/selfhost.status" 2>&1; then
             report_ok "selfhost code generator"
@@ -232,7 +215,7 @@ else
             report_fail "selfhost code generator" "a case that passed with cshc does not pass any more:"
             head -n 10 "$TMP/selfhost.status"
         fi
-        # The main test program built by cshc must behave exactly like the one built by the C++ compiler.
+        # The main test program built by cshc must behave exactly like the one built by the compiler under test.
         if "$cshc" "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
             "$TMP/test.cshc.exe" > "$TMP/test.cshc.out" 2> "$TMP/test.cshc.err2"
             tr -d '\r' < "$TMP/test.cshc.out" > "$TMP/test.cshc.out.n"

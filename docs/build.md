@@ -42,6 +42,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `libraryPaths` | linker search paths (`-L`) | `[]` |
 | `ffiApi` | path fragments of C headers that belong to the imported API even when they live in system paths (`--ffi-api=`, see [ffi.md](ffi.md)) | `[]` |
 | `target` | the target triple | host |
+| `platforms` | additions per platform: `{ "windows": {...}, "linux": {...}, "macos": {...} }`, each with `links`, `includePaths`, `libraryPaths` and/or `defines`, appended to the common lists when building for that platform (e.g. `"windows": { "links": ["opengl32"] }, "linux": { "links": ["GL"] }`) | none |
 
 Unknown keys produce a warning, invalid values an error naming the file. `$schema` is allowed; the VS Code extension
 ships a schema that validates and auto-completes `cshift.json`.

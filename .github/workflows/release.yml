@@ -3,9 +3,10 @@
 # Trigger: a push to a branch named release/vX.XX (e.g. release/v1.05 -> version 1.05, tag v1.05).
 # Every push to such a branch rebuilds the release and replaces it (the tag then points to the pushed commit).
 #
-# The released cshiftc is the self-hosted compiler (selfhost/, written in CShift). The C++ compiler (compiler/) is frozen
-# and only built as stage 0 of the bootstrap: stage 0 builds cshc (stage 1), stage 1 builds cshc again (stage 2, the
-# released cshiftc), and both stages must generate the same IR (selfhost/build-release.sh).
+# The released cshiftc is the self-hosted compiler (selfhost/, written in CShift). Stage 0 of the bootstrap is an earlier
+# release (the version in selfhost/stage0.txt, downloaded by selfhost/fetch-stage0.sh): it builds cshc (stage 1), stage
+# 1 builds cshc again (stage 2, the released cshiftc), and both stages must generate the same IR
+# (selfhost/build-release.sh).
 #
 # The archives contain everything needed to work with the compiler: extract, add the folder to PATH, done.
 #   cshift-<version>-windows-x64.zip                cshiftc.exe + toolchain\ (clang, lld, libclang, MinGW-w64 headers/libraries)
@@ -29,7 +30,7 @@ env:
   LLVM_VERSION: "22" # LLVM/clang used on Linux (apt.llvm.org); Windows uses the current MSYS2 CLANG64 packages
 
 permissions:
-  contents: read
+  contents: read # also: downloading the stage 0 release
 
 # A newer push to the same release branch replaces a build that is still running.
 concurrency:
@@ -78,19 +79,16 @@ jobs:
             mingw-w64-clang-x86_64-libc++
             mingw-w64-clang-x86_64-libunwind
             mingw-w64-clang-x86_64-compiler-rt
-            mingw-w64-clang-x86_64-cmake
-            mingw-w64-clang-x86_64-ninja
 
-      - name: Build the C++ stage 0
-        shell: msys2 {0}
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON -DCSHIFT_VERSION="$VERSION"
-          cmake --build build
-          build/cshiftc.exe --version
+      - name: Download stage 0 (an earlier release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "STAGE0=$(bash selfhost/fetch-stage0.sh build/stage0)" >> "$GITHUB_ENV"
 
       - name: Build cshiftc (self-hosted, stage 2)
         shell: msys2 {0}
-        run: bash selfhost/build-release.sh build/cshiftc.exe "$VERSION" build/stage2
+        run: bash selfhost/build-release.sh "$STAGE0" "$VERSION" build/stage2
 
       - name: Run tests
         shell: msys2 {0}
@@ -174,25 +172,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install LLVM ${{ env.LLVM_VERSION }}, CMake and build dependencies
+      - name: Install clang and libclang ${{ env.LLVM_VERSION }} (bundled into the release)
         run: |
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh "$LLVM_VERSION"
           sudo apt-get install -y --no-install-recommends \
-            "llvm-$LLVM_VERSION-dev" "libclang-$LLVM_VERSION-dev" "clang-$LLVM_VERSION" \
-            cmake ninja-build patchelf zlib1g-dev libzstd-dev libxml2-dev libedit-dev libffi-dev xz-utils
+            "libclang-$LLVM_VERSION-dev" "clang-$LLVM_VERSION" patchelf xz-utils
           test -x "$LLVM_PREFIX/bin/clang"
 
-      - name: Build the C++ stage 0
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCSHIFT_STATIC=ON \
-            -DCSHIFT_VERSION="$VERSION" -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm"
-          cmake --build build
-          build/cshiftc --version
+      - name: Download stage 0 (an earlier release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "STAGE0=$(bash selfhost/fetch-stage0.sh build/stage0)" >> "$GITHUB_ENV"
 
       - name: Build cshiftc (self-hosted, stage 2)
-        run: PATH="$LLVM_PREFIX/bin:$PATH" bash selfhost/build-release.sh build/cshiftc "$VERSION" build/stage2
+        run: PATH="$LLVM_PREFIX/bin:$PATH" bash selfhost/build-release.sh "$STAGE0" "$VERSION" build/stage2
 
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc

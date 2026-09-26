@@ -148,6 +148,10 @@ foreach (var item in items)
 }
 ```
 
+A `switch` over an enum (or a [union](interfaces-and-generics.md#sum-types)) without `default:` must handle every
+member; a missing one is a compile error, so adding a member shows every switch that has to handle it. Members that
+share a value count as handled together.
+
 `switch` also supports pattern matching for `Error<T>`/`Optional<T>` — see [error handling](error-handling.md).
 `break` exits the nearest loop or `switch`; `continue` starts the next iteration. Neither takes a label.
 
