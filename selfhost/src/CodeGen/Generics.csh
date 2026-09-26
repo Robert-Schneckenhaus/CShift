@@ -93,6 +93,8 @@ bool StructImplements(Compiler cg, int structType, int iface)
 
 bool SatisfiesInterface(Compiler cg, int t, int iface)
 {
+    if (t == iface)
+        return true; // an interface value satisfies its own interface (its methods are called through the table)
     var types = cg.Types;
     var ii = cg.InterfaceInfos.Get(types.Decl(iface));
     var ie = cg.Interfaces.Get(ii.Entry);

@@ -503,11 +503,8 @@ int PrimitiveType(Compiler cg, string name)
 
 int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
-    int t = ResolveType(cg, refType, file, env);
-    var node = cg.Tree.GetType(TypeRef { Id = refType });
-    if (cg.Types.Kind(t) == TypeKind.Interface)
-        Fail(cg, node.Loc, "interface '" + cg.Types.Name(t) + "' can only be used as a generic constraint or in a base list");
-    return t;
+    // interfaces are value types too: a boxed struct and its method table (Interfaces.csh)
+    return ResolveType(cg, refType, file, env);
 }
 
 // Resolves a type as written in the source. 'refType' is a TypeRef id. 'env' maps type parameters to types (may be null).
@@ -655,6 +652,8 @@ string LlvmType(Compiler cg, int t)
         return StructIrName(cg, t);
     case TypeKind.Function:
         return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
+    case TypeKind.Interface:
+        return "{ ptr, ptr }"; // the boxed struct and its method table (Interfaces.csh)
     default:
         return "ptr"; // string, pointer, array, null
     }
@@ -676,6 +675,7 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.ErrorLit:
     case TypeKind.SharedPtr:
     case TypeKind.Function:
+    case TypeKind.Interface:
         r = true;
         break;
     case TypeKind.Optional:

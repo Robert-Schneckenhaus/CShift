@@ -251,7 +251,7 @@ int ConversionCost(Compiler cg, Value v, int to)
             return 4; // Error<Optional<T>>: an empty Optional<T>
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
                 toKind == TypeKind.Optional || toKind == TypeKind.Function || toKind == TypeKind.SharedPtr ||
-                toKind == TypeKind.CFunction) ? 1 : -1;
+                toKind == TypeKind.CFunction || toKind == TypeKind.Interface) ? 1 : -1;
     }
     if (fromKind == TypeKind.MethodGroup)
     {
@@ -261,6 +261,9 @@ int ConversionCost(Compiler cg, Value v, int to)
     }
     if (fromKind == TypeKind.Lambda)
         return LambdaConversionCost(cg, v, to);
+    // a struct as an interface value (boxed)
+    if (fromKind == TypeKind.Struct && types.Kind(to) == TypeKind.Interface)
+        return StructImplements(cg, from, to) ? 3 : -1;
     // a function pointer field of a C struct and its Action/Func type
     if (fromKind == TypeKind.CFunction && types.Elem(from) == to)
         return 1;
@@ -318,6 +321,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         HoldTemp(cg, f);
         return Rvalue(to, RawFunctionPointer(cg, f.V), false);
     }
+    if (types.IsStruct(from) && types.Kind(to) == TypeKind.Interface && StructImplements(cg, from, to))
+        return BoxAsInterface(cg, v, to, loc);
     if (types.Kind(from) == TypeKind.Lambda)
     {
         if (!types.IsFunction(to))
@@ -347,7 +352,7 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     var fromKind = types.Kind(from);
     if (fromKind == TypeKind.Null && !types.IsError(to))
     {
-        if (types.IsOptional(to) || types.IsFunction(to))
+        if (types.IsOptional(to) || types.IsFunction(to) || types.Kind(to) == TypeKind.Interface)
             return Rvalue(to, "zeroinitializer", false);
         return Rvalue(to, "null", false);
     }
