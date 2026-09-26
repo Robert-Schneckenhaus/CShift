@@ -501,6 +501,11 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         return MakeBool(cg, ir.ICmp(IntPredicate(op, s), LlvmType(cg, l.Type), l.V, r.V));
     }
 
+    // an error code compared with an integer ('e.Code == MyError.NotFound' for a plain Error<T>) is an int
+    if (IsErrorEnum(cg, l.Type) && types.IsNumeric(r.Type))
+        l = ConvertValue(cg, l, types.I32, loc);
+    if (IsErrorEnum(cg, r.Type) && types.IsNumeric(l.Type))
+        r = ConvertValue(cg, r, types.I32, loc);
     if (!types.IsNumeric(l.Type) || !types.IsNumeric(r.Type))
         Fail(cg, loc, "cannot compare '" + types.Name(l.Type) + "' with '" + types.Name(r.Type) + "'");
 

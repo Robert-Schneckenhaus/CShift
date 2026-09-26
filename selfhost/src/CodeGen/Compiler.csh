@@ -596,17 +596,19 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     }
     if (!found && node.Path.Length == 1 && (dotted == "Error" || dotted == "Optional"))
     {
+        if (dotted == "Error" && node.Args.Length == 2)
+        {
+            // Error<T, E>: the error code is a value of the error enum E
+            int code = ResolveType(cg, node.Args[1].Id, file, env);
+            if (!IsErrorEnum(cg, code))
+                Fail(cg, cg.Tree.GetType(node.Args[1]).Loc, "the second type argument of 'Error' must be an error enum " +
+                                                            "('error Name { ... }'), not '" + types.Name(code) + "'");
+            return ResultType(cg, "Error", ResolveValueType(cg, node.Args[0].Id, file, env), code, node.Loc);
+        }
         if (node.Args.Length != 1)
-            Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument");
-        int inner = ResolveValueType(cg, node.Args[0].Id, file, env);
-        // Error<Optional<T>> is allowed (a lookup that can fail or find nothing); other nestings are ambiguous ('null',
-        // 'is' and 'try' would not know which level they mean).
-        if (types.IsResultLike(inner) && !(dotted == "Error" && types.IsOptional(inner)))
-            Fail(cg, node.Loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + types.Name(inner) + ">); only Error<Optional<T>> is allowed");
-        // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
-        if (types.IsVoid(inner) && dotted != "Error")
-            Fail(cg, node.Loc, dotted + "<void> is not supported");
-        return dotted == "Error" ? types.ErrorOf(inner) : types.OptionalOf(inner);
+            Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument" +
+                               (dotted == "Error" ? " (or two: Error<T, E> with an error enum E)" : ""));
+        return ResultType(cg, dotted, ResolveValueType(cg, node.Args[0].Id, file, env), 0, node.Loc);
     }
     if (!found && node.Path.Length == 1 && (dotted == "Action" || dotted == "Func"))
         return ResolveFunctionType(cg, node, dotted, file, env);
@@ -622,9 +624,14 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         return GetStructType(cg, entry.Index, typeArgs, node.Loc);
     if (entry.Kind == DeclKind.Enum)
     {
+        int enumType = GetEnumType(cg, entry.Index);
+        // E<T> is short for Error<T, E> when E is an error enum
+        if (typeArgs.Length == 1 && IsErrorEnum(cg, enumType))
+            return ResultType(cg, "Error", typeArgs[0], enumType, node.Loc);
         if (typeArgs.Length > 0)
-            Fail(cg, node.Loc, "enum '" + dotted + "' is not generic");
-        return GetEnumType(cg, entry.Index);
+            Fail(cg, node.Loc, "enum '" + dotted + "' is not generic" +
+                               (IsErrorEnum(cg, enumType) ? " (an error enum takes one type argument: " + dotted + "<T>)" : ""));
+        return enumType;
     }
     if (entry.Kind == DeclKind.Union)
     {
@@ -633,6 +640,25 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         return GetUnionType(cg, entry.Index, node.Loc);
     }
     return GetInterfaceType(cg, entry.Index, typeArgs, node.Loc);
+}
+
+// Error<inner> (with the error enum 'code', or 0) or Optional<inner>, checking what may be nested.
+int ResultType(Compiler cg, string kind, int inner, int code, SourceLoc loc)
+{
+    var types = cg.Types;
+    string shown = kind + "<" + types.Name(inner) + (code != 0 ? ", " + types.Name(code) : "") + ">";
+    // Error<Optional<T>> is allowed (a lookup that can fail or find nothing); other nestings are ambiguous ('null',
+    // 'is' and 'try' would not know which level they mean).
+    if (types.IsResultLike(inner) && !(kind == "Error" && types.IsOptional(inner)))
+        Fail(cg, loc, "Error<T> and Optional<T> cannot be nested (" + shown + "); only Error<Optional<T>> is allowed");
+    // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
+    if (types.IsVoid(inner) && kind != "Error")
+        Fail(cg, loc, kind + "<void> is not supported");
+    // an error code is not a result value: Error<E> would read like a failure
+    if (kind == "Error" && IsErrorEnum(cg, inner))
+        Fail(cg, loc, "an error enum cannot be the value of a result (" + shown + "); did you mean " +
+                      types.Name(inner) + "<T> (Error<T, " + types.Name(inner) + ">)?");
+    return kind == "Error" ? types.ErrorOf(inner, code) : types.OptionalOf(inner);
 }
 
 // Action, Action<T1, ...> (no result) and Func<R>, Func<T1, ..., R> (the last argument is the result): pointers to

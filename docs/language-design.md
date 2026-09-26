@@ -612,6 +612,15 @@ Optional<Optional<T>>
 Like every `Error<T>`, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
 means (`r is error e`, `r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
 
+### Error enums
+
+`error E { A, B = 101 }` declares error codes (an `int32` enum counting from 1; code 0 means "no specific code").
+`error(E.A)` and `error("text", E.A)` create errors with that code (the message defaults to the member name).
+`Error<T, E>` - short `E<T>` - is a result whose codes are values of `E`: `e.Code` is an `E`, `r is E code` binds the
+code of a failure, and `case E.A:` matches one code in a `switch`. `Error<T, E>` converts to `Error<T>`; `try` passes
+an error on only into a result with the same codes or plain `int` codes. An error enum cannot be the value of a
+result (`Error<E>`).
+
 ---
 
 ## 27. Generics

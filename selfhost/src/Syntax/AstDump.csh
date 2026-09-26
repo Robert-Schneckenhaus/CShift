@@ -540,7 +540,7 @@ struct AstDumper
         for (var i = 0; i < unit.Enums.Count(); i += 1)
         {
             var d = unit.Enums.Get(i);
-            Line(1, "", "Enum" + At(d.Loc) + " name=" + d.Name + TypeAttr("base", d.Base));
+            Line(1, "", (d.IsError ? "ErrorEnum" : "Enum") + At(d.Loc) + " name=" + d.Name + TypeAttr("base", d.Base));
             for (var k = 0; k < d.Members.Length; k += 1)
             {
                 var m = d.Members[k];

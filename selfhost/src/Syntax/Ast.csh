@@ -451,8 +451,9 @@ struct EnumDecl
 {
     SourceLoc Loc;
     string Name;
-    TypeRef Base;
+    TypeRef Base;       // null for an error enum (always int32)
     EnumMember[] Members;
+    bool IsError;       // 'error Name { ... }': the codes of Error<T, Name>
 }
 
 // const double PI = 3.14159;

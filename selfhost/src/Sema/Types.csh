@@ -42,6 +42,7 @@ struct TypeInfo
     int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result), SharedPtr
     int[] Params;      // Function: parameter types
     int Decl;          // Struct / Enum / Interface: index of its info in the compiler
+    int Code;          // Error: the error enum of Error<T, E> (0: plain int codes); ErrorLit: see ErrorLitOf
     int Arc;           // cache for NeedsArc: -1 unknown, 0 no, 1 yes
 }
 
@@ -135,6 +136,7 @@ struct TypeContext
     int Elem(int t) { return Infos.Get(t - 1).Elem; }
     int Decl(int t) { return Infos.Get(t - 1).Decl; }
     int[] Params(int t) { return Infos.Get(t - 1).Params; }
+    int Code(int t) { return Infos.Get(t - 1).Code; }
 
     bool IsVoid(int t) { return Kind(t) == TypeKind.Void; }
     bool IsBool(int t) { return Kind(t) == TypeKind.Bool; }
@@ -184,6 +186,40 @@ struct TypeContext
     int PointerTo(int elem) { return Derived(TypeKind.Pointer, Name(elem) + "*", elem); }
     int ArrayOf(int elem) { return Derived(TypeKind.Array, Name(elem) + "[]", elem); }
     int ErrorOf(int elem) { return Derived(TypeKind.Error, "Error<" + Name(elem) + ">", elem); }
+    // Error<T, E>: a result whose error code is a value of the error enum E (same layout as Error<T>)
+    int ErrorOf(int elem, int code)
+    {
+        if (code == 0)
+            return ErrorOf(elem);
+        string name = "Error<" + Name(elem) + ", " + Name(code) + ">";
+        var found = Interned.TryGet(name);
+        if (found is int existing)
+            return existing;
+        int t = Derived(TypeKind.Error, name, elem);
+        var info = Infos.Get(t - 1);
+        info.Code = code;
+        Infos.Set(t - 1, info);
+        return t;
+    }
+
+    // The type of an error literal: 'code' is 0 for error("text"), -1 for error("text", int), else the error enum of
+    // error(E.X) / error("text", E.X).
+    int ErrorLitOf(int code)
+    {
+        if (code == 0)
+            return ErrorLit;
+        string name = code < 0 ? "error(int)" : "error(" + Name(code) + ")";
+        var found = Interned.TryGet(name);
+        if (found is int existing)
+            return existing;
+        int t = Add(TypeKind.ErrorLit, name, 0, false);
+        var info = Infos.Get(t - 1);
+        info.Code = code;
+        Infos.Set(t - 1, info);
+        Interned.Set(name, t);
+        return t;
+    }
+
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
     int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
     int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }

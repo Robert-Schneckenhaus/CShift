@@ -496,7 +496,9 @@ Value EmitMember(Compiler cg, Expr e)
         HoldTemp(cg, o);
         if (m.Name == "Message")
             return Rvalue(types.String, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2"), false);
-        return Rvalue(types.I32, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "3"), false);
+        // Error<T, E>: the code is a value of the error enum E
+        int codeType = types.Code(t) != 0 ? types.Code(t) : types.I32;
+        return Rvalue(codeType, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "3"), false);
     }
     Fail(cg, e.Loc, "type '" + types.Name(t) + "' has no member '" + m.Name + "'");
     return obj;
