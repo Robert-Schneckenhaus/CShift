@@ -25,3 +25,4 @@ tests/cases/list_functions.csh
 # interface values
 tests/cases/interface_params.csh
 tests/cases/error_pattern.csh
+tests/cases/err_interface_capture.csh
