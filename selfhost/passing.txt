@@ -97,6 +97,9 @@ err_ref_missing.csh
 err_start_non_thread.csh
 err_struct_recursive.csh
 err_struct_recursive_indirect.csh
+err_switch_enum.csh
+err_switch_error_codes.csh
+err_switch_union.csh
 err_syntax.csh
 err_thread_bare_call.csh
 err_thread_function_pointer.csh
@@ -167,6 +170,7 @@ stdlib_string.csh
 stdlib_text.csh
 string_interpolation.csh
 struct_method_outer_type.csh
+switch_exhaustive.csh
 thread_basic.csh
 thread_cancel.csh
 thread_mutex.csh

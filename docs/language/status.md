@@ -51,6 +51,8 @@ The design document leaves a number of things open; these are the decisions that
 
 * **Creating errors:** `return error("text");` or `error("text", code)`; `Error<T>` has `.Message` and `.Code`.
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
+* **Exhaustive `switch`:** a switch without `default:` over an enum, a union or the codes of an `Error<T, E>` must
+  handle every member (compile error otherwise).
 * **Nested control statements need braces:** the body of `if`/`else`/`while`/`do`/`for`/`foreach`/`using (...)`
   may be one statement without braces, but not another control statement (`if (a) if (b) F();` is an error;
   `else if` is fine).
