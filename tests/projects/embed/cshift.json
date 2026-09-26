@@ -1,0 +1,6 @@
+{
+	"name": "embed",
+	"sources": ["src"],
+	"output": "out/embed",
+	"optimize": 1
+}

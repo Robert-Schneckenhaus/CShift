@@ -7,6 +7,7 @@ const_eval.csh
 const_slices.csh
 consts.csh
 embed.csh
+embed_file.csh
 enum_meta.csh
 enum_text.csh
 env_exit.csh
@@ -47,6 +48,11 @@ err_constructor.csh
 err_deref_safe.csh
 err_dictionary_key.csh
 err_duplicate_function.csh
+err_embed_expression.csh
+err_embed_literal.csh
+err_embed_missing.csh
+err_embed_runtime.csh
+err_embed_type.csh
 err_enum_meta_as_type.csh
 err_enum_meta_member.csh
 err_enum_meta_type.csh

@@ -719,6 +719,9 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         return ConstMakeInt(types.Char, false, (uint64)tree.GetCharLit(e).Value, false);
     case ExprKind.StringLit:
         return ConstVal { Kind = ConstKind.String, Type = types.String, S = tree.GetStringLit(e).Value };
+    case ExprKind.Embed:
+        FailEmbedPlace(cg, e.Loc);
+        break;
     case ExprKind.BoolLit:
         return ConstMakeBool(cg, tree.GetBoolLit(e).Value);
     case ExprKind.Name:
@@ -1059,6 +1062,64 @@ ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
     return ConstVal { };
 }
 
+// ---------------------------------------------------------------------------
+// embed("file")
+// ---------------------------------------------------------------------------
+
+void FailEmbedPlace(Compiler cg, SourceLoc loc)
+{
+    Fail(cg, loc, "embed(...) can only be the whole initializer of a string constant: const string Text = embed(\"file.txt\");");
+}
+
+// The file of embed("name"): an absolute path as it is, otherwise relative to the source file that uses it, then
+// relative to the project's folder.
+string EmbedPath(Compiler cg, string name, SourceLoc loc)
+{
+    if (Path.IsRooted(name))
+    {
+        if (!File.Exists(name))
+            Fail(cg, loc, "embed: the file '" + name + "' does not exist");
+        return name;
+    }
+    string source = cg.Diag.Files.Get(loc.File);
+    string besideSource = Path.Combine(Path.GetDirectory(source), name);
+    if (File.Exists(besideSource))
+        return besideSource;
+    string tried = "'" + besideSource + "'";
+    string projectDir = cg.St[0].ProjectDir;
+    if (projectDir.Length > 0)
+    {
+        string inProject = Path.Combine(projectDir, name);
+        if (File.Exists(inProject))
+            return inProject;
+        tried += " and '" + inProject + "'";
+    }
+    Fail(cg, loc, "embed: cannot find the file '" + name + "' (looked for " + tried + ")");
+    return "";
+}
+
+// const string X = embed("file"): the exact bytes of the file, read now (a byte order mark and line ends are kept).
+// The text must be UTF-8 like every string.
+ConstVal ConstEmbed(Compiler cg, Expr init, int t)
+{
+    var types = cg.Types;
+    if (!types.IsString(t))
+        Fail(cg, init.Loc, "embed(...) gives a string, so the constant must be 'const string', not '" + types.Name(t) + "'");
+    string path = EmbedPath(cg, cg.Tree.GetEmbed(init).Value, init.Loc);
+    var read = File.ReadAllBytes(path); // the bytes as they are (ReadAllText would drop a byte order mark)
+    if (read is error readError)
+        Fail(cg, init.Loc, "embed: cannot read '" + path + "': " + readError.Message);
+    if (read is uint8[] bytes)
+    {
+        var decoded = Encoding.UTF8().GetString(bytes);
+        if (decoded is string text)
+            return ConstVal { Kind = ConstKind.String, Type = types.String, S = text };
+        if (decoded is error decodeError)
+            Fail(cg, init.Loc, "embed: '" + path + "' is not UTF-8 text (" + decodeError.Message + ")");
+    }
+    return ConstVal { };
+}
+
 // The value of a top-level constant (evaluated once; a constant that needs itself is an error).
 ConstVal ConstEvalDecl(Compiler cg, int index)
 {
@@ -1074,7 +1135,7 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
     if (!IsConstantType(cg, t))
         FailConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
-    ConstVal v = ConstEval(cg, c.Init, sc);
+    ConstVal v = c.Init.Kind == ExprKind.Embed ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
     // enumerators of imported C enums are written as integers
     v = ConstConvert(cg, v, t, c.Init.Loc, cg.Files.Get(entry.File).IsPrelude);
     entry.State = 2;

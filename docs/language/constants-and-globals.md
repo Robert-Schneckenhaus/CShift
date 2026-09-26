@@ -56,6 +56,26 @@ const int Letters = "hello".Length;            // (also for constant strings)
   thread).
 * [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
 
+### Embedded files: `embed`
+
+`embed("file")` reads a file when the program is compiled and makes its content a string constant - for shaders,
+translations, version files and the like:
+
+```csharp
+const string Shader = embed("shaders/sprite.glsl");
+const string Version = embed("version.txt");
+```
+
+* **Only like this:** `embed(...)` is the whole initializer of a `const string` (top level or local). It does not exist
+  at run time, cannot be part of a larger expression, and its argument must be a string literal.
+* **Exact content:** the constant holds the file's bytes unchanged - quotes, backslashes, a byte order mark, `\r\n` and
+  `\n` stay as they are, so `File.WriteAllText(path, Shader)` writes an identical file. The file must be UTF-8 text.
+* **Where the file is searched:** an absolute path is used as it is. Otherwise the path is relative to the source file
+  that contains `embed`, and if the file is not there, relative to the project folder (the folder of `cshift.json`).
+  A missing file is a compile error that lists where it was looked for.
+* The file is read on every build, so a change to it is picked up the next time the program is compiled.
+* `embed` is a keyword, so it cannot be used as a name.
+
 ## Global variables
 
 A global variable is declared at the top level, with any type, with or without an initializer:

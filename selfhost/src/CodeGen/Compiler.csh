@@ -191,6 +191,7 @@ struct CgState
     int WorkHead;         // next entry of the work queue
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
+    string ProjectDir;    // the folder of the project file, for embed("file") ("" = not built from a project)
     bool StdlibLoaded;    // the standard library was added as prelude
     bool HasGlobalsInit;  // __cs_init_globals exists
     int InitInstance;     // the pseudo function instance of synthetic code (+1, 0 = none)
@@ -257,6 +258,7 @@ struct Compiler
         cg.Ir = IrWriter.Create();
         cg.St = new CgState[1];
         cg.St[0].Windows = windows;
+        cg.St[0].ProjectDir = "";
         cg.Fn = new FnState[1];
         cg.Files = List<FileContext>.Create();
         cg.Funcs = List<FuncEntry>.Create();

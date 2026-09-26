@@ -26,6 +26,9 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Member: return EmitMember(cg, e);
     case ExprKind.Index: return EmitIndex(cg, e);
     case ExprKind.Slice: return EmitSlice(cg, e);
+    case ExprKind.Embed:
+        FailEmbedPlace(cg, e.Loc);
+        return Value { };
     case ExprKind.NewArray: return EmitNewArray(cg, e);
     case ExprKind.Is: return EmitIs(cg, e);
     case ExprKind.Try: return EmitTry(cg, e);

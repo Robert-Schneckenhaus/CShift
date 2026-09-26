@@ -36,7 +36,8 @@ enum ExprKind : int32
     NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start,
     Lambda, // only in the self-hosted compiler
     Slice,  // a[i..j]
-    Collection // [a, b, ..c]
+    Collection, // [a, b, ..c]
+    Embed       // embed("file"): the text of a file, read when the program is compiled
 }
 
 struct Expr
@@ -831,6 +832,13 @@ struct Ast
         return Expr { Kind = ExprKind.ErrorLit, Index = ErrorLits.Count() - 1, Loc = loc };
     }
 
+    // embed("file"): the path is kept like a string literal
+    Expr AddEmbed(SourceLoc loc, StringLitExpr n)
+    {
+        StringLits.Add(n);
+        return Expr { Kind = ExprKind.Embed, Index = StringLits.Count() - 1, Loc = loc };
+    }
+
     Expr AddSizeOf(SourceLoc loc, SizeOfExpr n)
     {
         SizeOfs.Add(n);
@@ -890,6 +898,7 @@ struct Ast
     TryExpr GetTry(Expr e) { return Trys.Get(e.Index); }
     ErrorLitExpr GetErrorLit(Expr e) { return ErrorLits.Get(e.Index); }
     SizeOfExpr GetSizeOf(Expr e) { return SizeOfs.Get(e.Index); }
+    StringLitExpr GetEmbed(Expr e) { return StringLits.Get(e.Index); }
     DefaultExpr GetDefault(Expr e) { return Defaults.Get(e.Index); }
     UncheckedExpr GetUnchecked(Expr e) { return Uncheckeds.Get(e.Index); }
     RefArgExpr GetRefArg(Expr e) { return RefArgs.Get(e.Index); }
