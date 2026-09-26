@@ -261,6 +261,9 @@ int ConversionCost(Compiler cg, Value v, int to)
     }
     if (fromKind == TypeKind.Lambda)
         return LambdaConversionCost(cg, v, to);
+    // a member of a union as the union (stored inline, no allocation)
+    if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
+        return 2;
     // a function pointer field of a C struct and its Action/Func type
     if (fromKind == TypeKind.CFunction && types.Elem(from) == to)
         return 1;
@@ -318,6 +321,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         HoldTemp(cg, f);
         return Rvalue(to, RawFunctionPointer(cg, f.V), false);
     }
+    if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
+        return UnionFromMember(cg, v, to, UnionMemberIndex(cg, to, from));
     if (types.Kind(from) == TypeKind.Lambda)
     {
         if (!types.IsFunction(to))

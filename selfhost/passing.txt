@@ -94,6 +94,10 @@ err_try_on_optional.csh
 err_try_outside_error.csh
 err_type_mismatch.csh
 err_undefined_name.csh
+err_union_duplicate.csh
+err_union_interface.csh
+err_union_member.csh
+err_union_self.csh
 err_unknown_type.csh
 err_unsigned_negate.csh
 err_using_not_disposable.csh
@@ -120,6 +124,7 @@ panic_array_copy.csh
 panic_bounds.csh
 panic_dictionary_key.csh
 panic_divzero.csh
+panic_empty_union.csh
 panic_list_index.csh
 panic_min_div.csh
 panic_multiply.csh
@@ -150,3 +155,4 @@ thread_mutex.csh
 thread_start_contextual.csh
 thread_static_method.csh
 thread_strings.csh
+unions.csh

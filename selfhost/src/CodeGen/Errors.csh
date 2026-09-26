@@ -97,6 +97,8 @@ Value EmitIs(Compiler cg, Expr e)
     Value subj = EmitRValue(cg, n.Operand);
     if (types.Kind(subj.Type) == TypeKind.Interface)
         return EmitInterfaceIs(cg, subj, DeclTypeOf(cg, n.Type), n.BindName, e.Loc);
+    if (IsUnionType(cg, subj.Type))
+        return EmitUnionIs(cg, subj, DeclTypeOf(cg, n.Type), n.BindName, cg.Tree.GetType(n.Type).Loc);
     if (!types.IsResultLike(subj.Type))
     {
         // 'thread is T result' (Thread<T> only): matches the Optional<T> of _TryGetResult() (stdlib/thread.csh), a value

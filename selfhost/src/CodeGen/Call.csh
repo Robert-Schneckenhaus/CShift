@@ -600,6 +600,8 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
         return EmitIndirectCall(cg, obj, args, e.Loc);
     if (types.Kind(obj.Type) == TypeKind.Interface)
         return EmitInterfaceCall(cg, obj, m.Name, args, e.Loc);
+    if (IsUnionType(cg, obj.Type))
+        return EmitUnionCall(cg, obj, m.Name, args, e.Loc);
     if (!types.IsStruct(obj.Type))
         return EmitBuiltinMethod(cg, obj, m.Name, args, e.Loc);
     return EmitMethodCallOn(cg, obj, m.Name, args, methodTypeArgs, e.Loc);

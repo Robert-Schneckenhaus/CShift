@@ -1,7 +1,7 @@
 # CShift
 
 CShift is a native, C#-like systems language: structs instead of classes, no GC (ARC), no headers, generics via
-monomorphization, errors as values, lambdas, interface values, real OS threads, and direct C interop (C headers are
+monomorphization, errors as values, lambdas, sum types, interfaces without boxing, real OS threads, and direct C interop (C headers are
 imported as they are).
 
 The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/README.md)). It writes LLVM IR as text;
@@ -26,6 +26,14 @@ struct Circle : IShape
     double Area() { return Math.PI * R * R; }
 }
 
+struct Square : IShape
+{
+    double Side;
+    double Area() { return Side * Side; }
+}
+
+union Shape : IShape { Circle, Square }    // either one, stored inline: no allocation
+
 Error<int> Parse(string text)
 {
     if (text.ParseInt() is int value)
@@ -35,8 +43,9 @@ Error<int> Parse(string text)
 
 int Main()
 {
-    var shapes = List<IShape>.Create();
+    var shapes = List<Shape>.Create();
     shapes.Add(Circle { R = 1.0 });
+    shapes.Add(Square { Side = 2.0 });
     shapes.ForEach(s => Console.WriteLine($"area {s.Area()}"));
 
     int n = try Parse("42");        // an error ends Main with the message

@@ -252,6 +252,12 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
+        else if (CheckIdent("union") && PeekKind(1) == TokenKind.Ident && (PeekKind(2) == TokenKind.LBrace || PeekKind(2) == TokenKind.Colon))
+        {
+            // 'union' is a contextual keyword
+            UnionDecl u = try ParseUnion();
+            Unit.Unions.Add(u);
+        }
         else if (IsThreadModifier())
         {
             Advance();
@@ -289,6 +295,36 @@ struct Parser
         {
             return error("unexpected " + TokenName(Kind()) + " at top level", Cur().Loc.Pack());
         }
+    }
+
+    // union Name [: Interface, ...] { Type, Type, ... }
+    Error<UnionDecl> ParseUnion()
+    {
+        var decl = UnionDecl { Loc = Cur().Loc };
+        Advance(); // union
+        decl.Name = try ExpectIdent("union name");
+        var interfaces = List<TypeRef>.Create();
+        if (Match(TokenKind.Colon))
+        {
+            do
+            {
+                interfaces.Add(try ParseType());
+            } while (Match(TokenKind.Comma));
+        }
+        decl.Interfaces = interfaces.ToArray();
+        try Expect(TokenKind.LBrace, "'{'");
+        var members = List<TypeRef>.Create();
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            members.Add(try ParseType());
+            if (!Match(TokenKind.Comma))
+                break;
+        }
+        try Expect(TokenKind.RBrace, "'}' after the member types of the union");
+        decl.Members = members.ToArray();
+        if (decl.Members.Length == 0)
+            return error("a union needs at least one member type", decl.Loc.Pack());
+        return decl;
     }
 
     // 'thread' is a contextual keyword: a modifier when a function declaration follows ("thread int F(" or

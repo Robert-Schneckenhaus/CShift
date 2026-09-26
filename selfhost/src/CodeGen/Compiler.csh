@@ -18,7 +18,7 @@ using CShift.Emit;
 // Registered declarations. A declaration is referred to by its index in the compiler's list.
 // ---------------------------------------------------------------------------
 
-enum DeclKind : int32 { Struct, Interface, Enum }
+enum DeclKind : int32 { Struct, Interface, Enum, Union }
 
 struct TypeDeclEntry
 {
@@ -51,6 +51,13 @@ struct EnumEntry
 {
     EnumDecl Decl;
     int File;
+}
+
+struct UnionEntry
+{
+    UnionDecl Decl;
+    int File;
+    int Type;      // the union type once it was created (0 before)
 }
 
 struct ConstEntry
@@ -213,6 +220,8 @@ struct Compiler
     List<InterfaceEntry> Interfaces;
     List<EnumEntry> Enums;
     List<EnumInfo> EnumInfos;
+    List<UnionEntry> Unions;
+    List<UnionInfo> UnionInfos;
     List<InterfaceInfo> InterfaceInfos;
     Dictionary<string, int> InterfaceTypes;
     List<int> PendingVerify;   // struct types whose interfaces still have to be checked
@@ -253,6 +262,8 @@ struct Compiler
         cg.Interfaces = List<InterfaceEntry>.Create();
         cg.Enums = List<EnumEntry>.Create();
         cg.EnumInfos = List<EnumInfo>.Create();
+        cg.Unions = List<UnionEntry>.Create();
+        cg.UnionInfos = List<UnionInfo>.Create();
         cg.InterfaceInfos = List<InterfaceInfo>.Create();
         cg.InterfaceTypes = Dictionary<string, int>.Create();
         cg.PendingVerify = List<int>.Create();
@@ -344,6 +355,12 @@ void AddUnit(Compiler cg, CompilationUnit unit)
         var d = unit.Enums.Get(i);
         cg.Enums.Add(EnumEntry { Decl = d, File = file });
         AddTypeDecl(cg, file, d.Name, d.Loc, TypeDeclEntry { Kind = DeclKind.Enum, Index = cg.Enums.Count() - 1 });
+    }
+    for (var i = 0; i < unit.Unions.Count(); i += 1)
+    {
+        var d = unit.Unions.Get(i);
+        cg.Unions.Add(UnionEntry { Decl = d, File = file });
+        AddTypeDecl(cg, file, d.Name, d.Loc, TypeDeclEntry { Kind = DeclKind.Union, Index = cg.Unions.Count() - 1 });
     }
     for (var i = 0; i < unit.Funcs.Count(); i += 1)
     {
@@ -605,6 +622,12 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
             Fail(cg, node.Loc, "enum '" + dotted + "' is not generic");
         return GetEnumType(cg, entry.Index);
     }
+    if (entry.Kind == DeclKind.Union)
+    {
+        if (typeArgs.Length > 0)
+            Fail(cg, node.Loc, "union '" + dotted + "' is not generic");
+        return GetUnionType(cg, entry.Index, node.Loc);
+    }
     return GetInterfaceType(cg, entry.Index, typeArgs, node.Loc);
 }
 
@@ -664,6 +687,8 @@ string LlvmType(Compiler cg, int t)
         return "{ ptr, i32 }";
     case TypeKind.Struct:
         return StructIrName(cg, t);
+    case TypeKind.Union:
+        return GetUnionInfo(cg, t).IrName;
     case TypeKind.Function:
         return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
     case TypeKind.Interface:
@@ -696,6 +721,10 @@ bool NeedsArc(Compiler cg, int t)
         break;
     case TypeKind.Struct:
         r = StructNeedsArc(cg, t);
+        break;
+    case TypeKind.Union:
+        foreach (var m in GetUnionInfo(cg, t).Members)
+            r = r || NeedsArc(cg, m);
         break;
     default:
         break;

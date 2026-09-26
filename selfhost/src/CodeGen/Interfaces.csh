@@ -121,6 +121,8 @@ int InterfaceArgCost(Compiler cg, Value v, int iface, int refKind)
         return 0;
     if (types.IsStruct(v.Type) && StructImplements(cg, v.Type, iface))
         return 1;
+    if (IsUnionType(cg, v.Type) && UnionImplements(cg, v.Type, iface))
+        return 1;
     return -1;
 }
 
@@ -132,6 +134,20 @@ string InterfaceArgument(Compiler cg, Value v, int iface, int refKind, List<Temp
     var ir = cg.Ir;
     if (v.Type == iface)
         return ToRValue(cg, v).V; // an interface parameter passed on
+    if (IsUnionType(cg, v.Type))
+    {
+        // the member the union holds: in place for 'ref', in a copy of the union for 'const ref'
+        string unionSlot = v.V;
+        if (refKind != 1)
+        {
+            string uty = LlvmType(cg, v.Type);
+            unionSlot = ir.Alloca(uty, "iface.copy");
+            ir.Store(uty, Consume(cg, ToRValue(cg, v)), unionSlot);
+            if (NeedsArc(cg, v.Type))
+                releaseSlots.Add(TempRelease { Type = v.Type, Value = unionSlot });
+        }
+        return UnionAsInterface(cg, v.Type, unionSlot, iface);
+    }
     if (!types.IsStruct(v.Type) || !StructImplements(cg, v.Type, iface))
         Fail(cg, loc, "'" + types.Name(v.Type) + "' does not implement '" + types.Name(iface) + "'");
     string data;

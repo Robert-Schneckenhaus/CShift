@@ -26,3 +26,11 @@ tests/cases/list_functions.csh
 tests/cases/interface_params.csh
 tests/cases/error_pattern.csh
 tests/cases/err_interface_capture.csh
+
+# unions (sum types)
+tests/cases/unions.csh
+tests/cases/panic_empty_union.csh
+tests/cases/err_union_interface.csh
+tests/cases/err_union_member.csh
+tests/cases/err_union_self.csh
+tests/cases/err_union_duplicate.csh

@@ -84,6 +84,7 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Struct:
     case TypeKind.Function:
     case TypeKind.Interface:
+    case TypeKind.Union:
         return "zeroinitializer";
     default: return "null";
     }

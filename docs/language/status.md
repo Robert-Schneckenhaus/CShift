@@ -16,6 +16,7 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Visibility via a `_` prefix (private) for fields and methods | ✔ |
 | Struct inheritance (one base, the base comes first in the layout), upcasting, hiding methods | ✔ |
 | Interfaces (methods), several per struct, checking the implementation | ✔ |
+| Sum types: `union Shape : IShape { Circle, Rect }` (inline with a tag, `is`/`switch`, interface methods dispatched on the tag) | ✔ (self-hosted, [sum types](interfaces-and-generics.md#sum-types)) |
 | Interfaces as `ref`/`const ref` parameters: dynamic dispatch through a method table, no allocation, `x is S s` | ✔ (self-hosted, [interfaces](interfaces-and-generics.md#interface-parameters-dynamic-dispatch-without-allocation)) |
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |

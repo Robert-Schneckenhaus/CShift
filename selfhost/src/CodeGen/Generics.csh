@@ -93,6 +93,8 @@ bool StructImplements(Compiler cg, int structType, int iface)
 
 bool SatisfiesInterface(Compiler cg, int t, int iface)
 {
+    if (IsUnionType(cg, t))
+        return UnionImplements(cg, t, iface); // its methods are dispatched on the tag
     var types = cg.Types;
     var ii = cg.InterfaceInfos.Get(types.Decl(iface));
     var ie = cg.Interfaces.Get(ii.Entry);

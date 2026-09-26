@@ -64,6 +64,43 @@ Enlarge(ref c, 2.0);                  // ref: the callee changes c itself
 * Generics with a constraint (below) stay the zero-cost option when the struct type is known at compile time: calls
   are direct and can be inlined.
 
+### Sum types
+
+A `union` holds one value of several member types, stored inline together with a tag — no allocation. It is the way
+to keep different structs in one variable, field or list:
+
+```csharp
+union Shape : IShape { Circle, Rect }
+
+Shape s = Circle { R = 1.0 };            // a member converts to the union
+var shapes = List<Shape>.Create();       // different shapes in one list, stored in place
+shapes.Add(s);
+shapes.Add(Rect { W = 2.0, H = 3.0 });
+
+foreach (var shape in shapes)
+    Console.WriteLine(shape.Area());     // IShape's methods are dispatched on the tag
+
+if (s is Circle c) ...                   // the member again (a copy)
+
+switch (s)
+{
+    case Circle c:
+        ...
+        break;
+    case Rect r:
+        ...
+        break;
+}
+```
+
+* The members can be any value types (`union Token { int, string, bool }`), each once. A union's size is the size of
+  its largest member plus the tag.
+* A union that lists interfaces (`: IShape`) requires every member to implement them, and can call their methods
+  directly; a method that changes the member changes it inside the union. It also satisfies constraints on those
+  interfaces (`where T : IShape`) and can be passed to `ref`/`const ref IShape` parameters.
+* The default value of a union is empty: `is` never matches, and calling a method panics.
+* A union can be passed to a `thread` function if all its members are thread-safe.
+
 ## Generic structs and functions
 
 ```csharp

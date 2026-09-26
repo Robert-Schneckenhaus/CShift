@@ -272,6 +272,8 @@ string ReleaseFunction(Compiler cg, int t)
         return SharedReleaseHelper(cg, t);
     if (types.IsFunction(t))
         return FunctionReleaseHelper(cg);
+    if (types.Kind(t) == TypeKind.Union)
+        return UnionHelper(cg, t, false);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -289,6 +291,8 @@ string RetainFunction(Compiler cg, int t)
         return SharedRetainHelper(cg);
     if (types.IsFunction(t))
         return FunctionRetainHelper(cg);
+    if (types.Kind(t) == TypeKind.Union)
+        return UnionHelper(cg, t, true);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
 }
