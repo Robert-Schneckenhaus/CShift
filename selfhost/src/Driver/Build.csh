@@ -346,9 +346,26 @@ string BundledClang(bool windows)
     string archive = Path.Combine(cacheDir, "toolchain.tar.gz");
     if (Host.CopyFilePart(self, offset, size, archive) == 0)
         return "";
-    Process.Run("tar xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
+    Process.Run(TarCommand(windows) + " xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
     File.Delete(archive);
     return File.Exists(cached) ? cached : "";
+}
+
+// The system 'tar'. On Windows that is %SystemRoot%\System32\tar.exe (bsdtar): a GNU tar found first in PATH (Git
+// for Windows, MSYS2) would read "D:\..." as a remote host.
+string TarCommand(bool windows)
+{
+    if (windows)
+    {
+        var root = Process.GetEnv("SystemRoot");
+        if (root is string r && r.Length > 0)
+        {
+            string tar = r + "\\System32\\tar.exe";
+            if (File.Exists(tar))
+                return "\"" + tar + "\"";
+        }
+    }
+    return "tar";
 }
 
 // A per-user, per-version cache directory for the extracted toolchain.
