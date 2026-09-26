@@ -2,3 +2,7 @@
 *.sh text eol=lf
 tests/test.expected text eol=lf
 selfhost/passing.txt text eol=lf
+
+# Files that tests embed byte for byte (BOM, CRLF and LF mixed on purpose).
+tests/cases/embed/** -text
+tests/projects/embed/data/** -text

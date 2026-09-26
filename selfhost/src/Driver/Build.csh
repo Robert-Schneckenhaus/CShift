@@ -419,6 +419,8 @@ int Build(BuildOptions o)
     var tree = Ast.Create();
     var cg = Compiler.Create(tree, diag, windows);
     cg.St[0].ArcStats = o.ArcStats;
+    if (o.FromProject)
+        cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
 
     // The standard library (stdlib/*.csh) is parsed as a prelude: its functions are only compiled when they are used.
     // Without --stdlib the copy that is embedded in cshc is used (src/Driver/EmbeddedStdlib.csh).

@@ -1,4 +1,5 @@
-// Slices: Slice<T> (a view of part of an array) and StringSlice (a view of part of a string, read-only).
+// Slices: Slice<T> (a view of part of an array), ReadOnlySlice<T> (the same, read-only) and StringSlice (a view of part
+// of a string, read-only).
 //
 // A slice is { ptr owner, ptr data, i64 length }: the block that owns the elements (an array or a string, whose
 // reference the slice holds), the first element and the number of elements. Creating a slice copies nothing; the view
@@ -35,8 +36,8 @@ int SliceTypeOf(Compiler cg, int t)
         return types.StringSlice;
     if (types.IsArray(t))
         return types.SliceOf(types.Elem(t));
-    if (types.Kind(t) == TypeKind.Slice)
-        return t;
+    if (types.IsElemSlice(t))
+        return t; // slicing a ReadOnlySlice<T> stays read-only
     return 0;
 }
 
@@ -130,6 +131,8 @@ Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     string addr = ir.Gep(LlvmType(cg, elem), parts.Data, "i64 " + i);
     if (types.IsStringSlice(s.Type))
         return Rvalue(types.Char, ir.Load("i8", addr), false); // strings are immutable
+    if (types.IsReadOnlySlice(s.Type))
+        return Rvalue(elem, ir.Load(LlvmType(cg, elem), addr), false); // read-only: the element is not a variable
     return Lvalue(elem, addr, false);
 }
 

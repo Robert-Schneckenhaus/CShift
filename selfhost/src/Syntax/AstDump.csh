@@ -108,6 +108,7 @@ struct AstDumper
             Line(indent, role, head + " value=" + n.Value.ToString());
             break;
         }
+        case ExprKind.Embed:
         case ExprKind.StringLit:
         {
             var n = Tree.GetStringLit(e);
@@ -321,6 +322,7 @@ struct AstDumper
         case ExprKind.FloatLit: return "FloatLit";
         case ExprKind.CharLit: return "CharLit";
         case ExprKind.StringLit: return "StringLit";
+        case ExprKind.Embed: return "Embed";
         case ExprKind.BoolLit: return "BoolLit";
         case ExprKind.NullLit: return "NullLit";
         case ExprKind.Name: return "Name";

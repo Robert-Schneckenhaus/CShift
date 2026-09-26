@@ -54,6 +54,28 @@ As text - `"color " + c`, `$"{c}"`, `c.ToString()`, also in constants - an enum 
 (`Green`), like in C#. A value that is no member prints its number (`(Color)9` → `9`); members that share a value
 print the first name. `(int)c` gives the number.
 
+## `Enum<T>`: facts about an enum
+
+`Enum<T>` gives facts about an enum type, all of them constants (usable in other constants too):
+
+| | |
+|---|---|
+| `Enum<Color>.Count` | the number of declared members (`int`; members that share a value count separately) |
+| `Enum<Color>.Min`, `Enum<Color>.Max` | the smallest and largest value, of type `Color` |
+| `Enum<Color>.Values` | all members in declaration order, a `ReadOnlySlice<Color>` ([constant slice](constants-and-globals.md#constant-slices)) |
+| `Enum<Color>.Names` | their names, a `ReadOnlySlice<string>` |
+
+```csharp
+for (var i = 0; i < Enum<Color>.Count; i += 1)
+    Console.WriteLine(Enum<Color>.Names[i] + " = " + (int)Enum<Color>.Values[i]);
+
+const int Slots = (int)Enum<Color>.Max + 1;
+
+int CountOf<T>() { return Enum<T>.Count; }    // in generic code: checked for each type T it is used with
+```
+
+`Enum<T>` is not a type (a variable cannot have it), and `T` must be an enum (error enums included).
+
 Error codes are enums as well, declared with `error Name { ... }`: see [error enums](error-handling.md#error-enums-typed-error-codes).
 
 Next: [Memory model](memory-model.md).

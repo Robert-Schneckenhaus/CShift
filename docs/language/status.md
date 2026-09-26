@@ -21,8 +21,11 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
+| `Enum<T>.Count`, `.Min`, `.Max`, `.Values`, `.Names` (constants) | ✔ (self-hosted, [enums](enums.md#enumt-facts-about-an-enum)) |
+| `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed)) |
+| Constant slices: `const ReadOnlySlice<int> P = [2, 3, ..Q];`, indexing/slicing/`Length` in constants | ✔ (self-hosted, [constants](constants-and-globals.md#constant-slices)) |
 | Collection expressions: `[a, b, ..c]` as `T[]`, `Slice<T>`, `List<T>`, `HashSet<T>` or any struct with `Create()`/`Add(T)` | ✔ (self-hosted, [collection expressions](arrays-strings-collections.md#collection-expressions)) |
-| Slices: `a[i..j]`, `a[..j]`, `a[i..]`, `a[^n]`; views `Slice<T>` and `StringSlice` (no copy, `ToString()`/`ToArray()` copy) | ✔ (self-hosted, [slices](arrays-strings-collections.md#slices)) |
+| Slices: `a[i..j]`, `a[..j]`, `a[i..]`, `a[^n]`; views `Slice<T>`, `ReadOnlySlice<T>` and `StringSlice` (no copy, `ToString()`/`ToArray()` copy) | ✔ (self-hosted, [slices](arrays-strings-collections.md#slices)) |
 | Error enums (`error E { ... }`), `error(E.X)`, typed results `Error<T, E>` / `E<T>`, `is E code`, `case E.X:` | ✔ (self-hosted, [error handling](error-handling.md#error-enums-typed-error-codes)) |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
@@ -86,11 +89,11 @@ The design document leaves a number of things open; these are the decisions that
   `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue`,
   `EmbedText("file")`/`EmbedNames("folder", ".ext")`/`EmbedTexts("folder", ".ext")` (files are embedded into the
   program at compile time; paths are relative to the source file, and only string literals are accepted as
-  arguments). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
+  arguments; unlike `embed`, they also drop `\r`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.
-* **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums and
-  `string` are allowed; a constant must always be initialized, and the initializer consists only of literals,
+* **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums,
+  `string` and constant slices (`ReadOnlySlice<T>` of those) are allowed, arrays are not; a constant must always be initialized, and the initializer consists only of literals,
   operators, casts, enum values and other constants (`const Color Fav = Color.Green;`,
   `const Flags Rw = Flags.Read | Flags.Write;`, `const int Sum = A * 2 + 1;`). Top-level constants may be used before
   their declaration and are always checked, even if nothing uses them; they can also be accessed qualified

@@ -26,6 +26,9 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Member: return EmitMember(cg, e);
     case ExprKind.Index: return EmitIndex(cg, e);
     case ExprKind.Slice: return EmitSlice(cg, e);
+    case ExprKind.Embed:
+        FailEmbedPlace(cg, e.Loc);
+        return Value { };
     case ExprKind.NewArray: return EmitNewArray(cg, e);
     case ExprKind.Is: return EmitIs(cg, e);
     case ExprKind.Try: return EmitTry(cg, e);
@@ -757,6 +760,8 @@ Value EmitAssign(Compiler cg, Expr e)
         // arrays, strings and pointers: the element itself is the target
         if (types.IsStringSlice(holder.Type))
             Fail(cg, a.Target.Loc, "a StringSlice is read-only (strings are immutable)");
+        if (types.IsReadOnlySlice(holder.Type))
+            Fail(cg, a.Target.Loc, "a ReadOnlySlice is read-only (use an array or a Slice<T> to change elements)");
         target = EmitElement(cg, holder, ix.Index, ix.FromEnd, a.Target.Loc);
     }
     else

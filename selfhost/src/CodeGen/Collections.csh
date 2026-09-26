@@ -40,7 +40,7 @@ bool IsCollectionBuilder(Compiler cg, int t)
 int CollectionConversionCost(Compiler cg, int to)
 {
     var types = cg.Types;
-    if (types.IsArray(to) || types.Kind(to) == TypeKind.Slice || IsCollectionBuilder(cg, to))
+    if (types.IsArray(to) || types.IsElemSlice(to) || IsCollectionBuilder(cg, to))
         return 2;
     return -1;
 }
@@ -60,7 +60,7 @@ Value SpreadSource(Compiler cg, Expr item)
     Value src = ToRValue(cg, SettleCollection(cg, EmitRValue(cg, item)));
     if (types.IsStruct(src.Type) && MethodCandidates(cg, src.Type, "ToArray").Length > 0)
         src = EmitMethodCallOn(cg, src, "ToArray", new Arg[0], new int[0], item.Loc);
-    if (!types.IsArray(src.Type) && types.Kind(src.Type) != TypeKind.Slice)
+    if (!types.IsArray(src.Type) && !types.IsElemSlice(src.Type))
         Fail(cg, item.Loc, "'..' spreads an array, a slice or a collection with ToArray(), not '" + types.Name(src.Type) + "'");
     HoldTemp(cg, src);
     return src;
@@ -74,8 +74,8 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
     var n = cg.Tree.GetCollection(e);
     if (to != 0 && types.IsStruct(to))
         return EmitCollectionBuilder(cg, n, to, loc);
-    if (to != 0 && !types.IsArray(to) && types.Kind(to) != TypeKind.Slice)
-        Fail(cg, loc, "a collection expression cannot become '" + types.Name(to) + "' (only arrays, Slice<T> and structs with Create() and Add())");
+    if (to != 0 && !types.IsArray(to) && !types.IsElemSlice(to))
+        Fail(cg, loc, "a collection expression cannot become '" + types.Name(to) + "' (only arrays, Slice<T>, ReadOnlySlice<T> and structs with Create() and Add())");
 
     // the items, left to right: owned element values, and for ..c the part of c to copy
     int elem = to == 0 ? 0 : types.Elem(to);
@@ -142,7 +142,7 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
             at = ir.Bin("add", "i64", at, "1");
         }
     }
-    if (to != 0 && types.Kind(to) == TypeKind.Slice)
+    if (to != 0 && types.IsElemSlice(to))
     {
         // the view of the whole new array; it takes over the array's reference
         string ty = LlvmType(cg, to);

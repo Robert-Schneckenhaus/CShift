@@ -29,6 +29,54 @@ const int Broken = 2147483647 + 1;   // compile error: integer overflow in a con
 
 The same rules apply to enum member values (`B = A * 2`, `C = sizeof(int64)` are both fine).
 
+A constant always names its type: `const var` is an error.
+
+### Constant slices
+
+A constant can also hold several values, as a `ReadOnlySlice<T>` of numbers, `bool`, `char`, `string` or enums,
+written as a [collection expression](arrays-strings-collections.md#collection-expressions) that may spread other
+constant slices:
+
+```csharp
+const ReadOnlySlice<int> Primes = [2, 3, 5, 7];
+const ReadOnlySlice<int> More = [..Primes, 11, 13];
+const ReadOnlySlice<string> Names = ["Red", "Green", "Blue"];
+
+const int Largest = More[^1];                  // indexing, ^n, slicing and Length work in constants too
+const int Count = Primes[1..].Length;          // 3
+const int Letters = "hello".Length;            // (also for constant strings)
+```
+
+* **Arrays and `Slice<T>` cannot be constants**, because their elements can be changed; the error suggests
+  `ReadOnlySlice<T>`. A constant slice cannot be changed at all (it is [read-only](arrays-strings-collections.md#slices)),
+  `ToArray()` gives a normal copy.
+* The elements are stored once in static memory: using a constant slice copies and allocates nothing.
+* An index or a range outside the slice is a compile error.
+* A `thread` function may read global constants, constant slices included (slices still cannot be *parameters* of a
+  thread).
+* [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
+
+### Embedded files: `embed`
+
+`embed("file")` reads a file when the program is compiled and makes its content a string constant - for shaders,
+translations, version files and the like:
+
+```csharp
+const string Shader = embed("shaders/sprite.glsl");
+const string Version = embed("version.txt");
+```
+
+* **Only like this:** `embed(...)` is the whole initializer of a `const string` (top level or local). It does not exist
+  at run time, cannot be part of a larger expression, and its argument must be a string literal.
+* **Exact content:** the constant holds the file's text unchanged - quotes, backslashes, `\r\n` and `\n` stay as they
+  are (only a UTF-8 byte order mark is dropped), so `File.WriteAllText(path, Shader)` writes the same content. The file
+  must be UTF-8 text.
+* **Where the file is searched:** an absolute path is used as it is. Otherwise the path is relative to the source file
+  that contains `embed`, and if the file is not there, relative to the project folder (the folder of `cshift.json`).
+  A missing file is a compile error that lists where it was looked for.
+* The file is read on every build, so a change to it is picked up the next time the program is compiled.
+* `embed` is a keyword, so it cannot be used as a name.
+
 ## Global variables
 
 A global variable is declared at the top level, with any type, with or without an initializer:

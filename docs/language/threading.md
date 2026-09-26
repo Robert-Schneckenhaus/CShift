@@ -43,7 +43,8 @@ thread void Bad()
 ```
 
 This is checked transitively: a `thread` function may also not call a function that (directly or through further
-calls) reads or writes a global variable.
+calls) reads or writes a global variable. Constants (including [constant slices](constants-and-globals.md#constant-slices))
+are not global state; a thread may use them.
 
 Its parameters are restricted, because the reference counts of strings, arrays and the built-in containers are not
 atomic. A `thread` function's parameters may be:
@@ -56,7 +57,7 @@ atomic. A `thread` function's parameters may be:
   `SharedPtr<string>` is an error;
 * `Optional<T>`, `Error<T>` and structs made of the above (the strings in them are copied as well).
 
-Never `ref`/`const ref`, a raw pointer, an array, a built-in container or `Action`/`Func`: copying those would race on
+Never `ref`/`const ref`, a raw pointer, an array, a slice, a built-in container or `Action`/`Func`: copying those would race on
 a reference count that was never meant to be touched from two threads at once (or, for a raw pointer or
 `Action`/`Func`, silently alias data the other thread does not expect). A `Thread<T>` handle holds a `SharedPtr` to
 the result, so it can be passed to another thread only if `T` is thread-safe (`Thread<int>` yes, `Thread<string>`

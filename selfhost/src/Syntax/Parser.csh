@@ -1556,6 +1556,7 @@ struct Parser
         case TokenKind.KwNew:
         case TokenKind.KwThis:
         case TokenKind.KwSizeof:
+        case TokenKind.KwEmbed:
         case TokenKind.KwNull:
         case TokenKind.KwTrue:
         case TokenKind.KwFalse:
@@ -1714,6 +1715,17 @@ struct Parser
             e.Type = try ParseType();
             try Expect(TokenKind.RParen, "')'");
             return Tree.AddSizeOf(loc, e);
+        }
+        case TokenKind.KwEmbed:
+        {
+            // embed("file"): only a string literal, the file is read when the program is compiled
+            Advance();
+            try Expect(TokenKind.LParen, "'(' after 'embed'");
+            if (!Check(TokenKind.StringLit))
+                return error("embed needs a file name as a string literal: embed(\"file.txt\")", Cur().Loc.Pack());
+            Token path = Advance();
+            try Expect(TokenKind.RParen, "')' after the file name of 'embed'");
+            return Tree.AddEmbed(loc, StringLitExpr { Value = path.Text });
         }
         case TokenKind.KwDefault:
         {
