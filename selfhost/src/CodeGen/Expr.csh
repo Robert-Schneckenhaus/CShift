@@ -172,8 +172,10 @@ int FindLocal(Compiler cg, string name)
 {
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
+    {
         if (vars.Get(i - 1).Name == name)
             return i - 1;
+    }
     return -1;
 }
 
@@ -181,8 +183,10 @@ bool IsLocalName(Compiler cg, string name)
 {
     var vars = cg.Fn[0].Vars;
     for (var i = 0; i < vars.Count(); i += 1)
+    {
         if (vars.Get(i).Name == name)
             return true;
+    }
     return IsOuterName(cg, name);
 }
 

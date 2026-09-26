@@ -133,6 +133,21 @@ switch (color)
 }
 ```
 
+A body may be a single statement without braces, but **not another control statement** (`if`, `while`, `do`, `for`,
+`foreach`, `switch`, `using (...)`): nesting needs braces. `else if` chains are fine.
+
+```csharp
+foreach (var item in items)
+    if (item.Done)             // error: a nested 'if' needs braces
+        Count();
+
+foreach (var item in items)
+{
+    if (item.Done)
+        Count();
+}
+```
+
 `switch` also supports pattern matching for `Error<T>`/`Optional<T>` — see [error handling](error-handling.md).
 `break` exits the nearest loop or `switch`; `continue` starts the next iteration. Neither takes a label.
 

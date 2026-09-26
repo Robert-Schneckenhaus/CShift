@@ -836,6 +836,31 @@ struct Parser
         return Tree.AddExprStmt(loc, s);
     }
 
+    // The body of 'if', 'else', a loop or 'using (...)': one statement or a block, but not another control statement
+    // without braces ('if (a) if (b) F();', 'foreach (...) for (...) ...'). 'else if' is not affected.
+    Error<Stmt> ParseBody(string owner)
+    {
+        string nested = "";
+        switch (Kind())
+        {
+        case TokenKind.KwIf: nested = "if"; break;
+        case TokenKind.KwWhile: nested = "while"; break;
+        case TokenKind.KwDo: nested = "do"; break;
+        case TokenKind.KwFor: nested = "for"; break;
+        case TokenKind.KwForeach: nested = "foreach"; break;
+        case TokenKind.KwSwitch: nested = "switch"; break;
+        case TokenKind.KwUsing:
+            if (PeekKind(1) == TokenKind.LParen)
+                nested = "using";
+            break;
+        default: break;
+        }
+        if (nested.Length > 0)
+            return error("a nested '" + nested + "' needs braces: the body of '" + owner + "' must be a block '{ ... }' " +
+                         "when it is a control statement", Cur().Loc.Pack());
+        return ParseStatement();
+    }
+
     Error<Stmt> ParseIf()
     {
         SourceLoc loc = Advance().Loc;
@@ -843,9 +868,9 @@ struct Parser
         try Expect(TokenKind.LParen, "'(' after 'if'");
         s.Cond = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Then = try ParseStatement();
+        s.Then = try ParseBody("if");
         if (Match(TokenKind.KwElse))
-            s.Else = try ParseStatement();
+            s.Else = Check(TokenKind.KwIf) ? try ParseIf() : try ParseBody("else"); // 'else if' chains are fine
         return Tree.AddIf(loc, s);
     }
 
@@ -856,7 +881,7 @@ struct Parser
         try Expect(TokenKind.LParen, "'(' after 'while'");
         s.Cond = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("while");
         return Tree.AddWhile(loc, s);
     }
 
@@ -864,7 +889,7 @@ struct Parser
     {
         SourceLoc loc = Advance().Loc;
         var s = DoWhileStmt { };
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("do");
         try Expect(TokenKind.KwWhile, "'while' after do-body");
         try Expect(TokenKind.LParen, "'('");
         s.Cond = try ParseExpr();
@@ -894,7 +919,7 @@ struct Parser
         }
         s.Iterators = iterators.ToArray();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("for");
         return Tree.AddFor(loc, s);
     }
 
@@ -910,7 +935,7 @@ struct Parser
         try Expect(TokenKind.KwIn, "'in'");
         s.Iterable = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("foreach");
         return Tree.AddForeach(loc, s);
     }
 
@@ -999,7 +1024,7 @@ struct Parser
             try Expect(TokenKind.RParen, "')'");
             var s = UsingBlockStmt { };
             s.Decl = Tree.AddVarDecl(declLoc, decl);
-            s.Body = try ParseStatement();
+            s.Body = try ParseBody("using");
             return Tree.AddUsingBlock(loc, s);
         }
 

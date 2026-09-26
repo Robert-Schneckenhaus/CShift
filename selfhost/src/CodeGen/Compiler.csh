@@ -470,8 +470,10 @@ int[] LookupFunctions(Compiler cg, int file, string name)
 bool IsNamespace(Compiler cg, int file, string name)
 {
     foreach (var c in CandidateNames(cg, file, name))
+    {
         if (cg.Namespaces.Contains(c))
             return true;
+    }
     return false;
 }
 

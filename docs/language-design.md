@@ -1080,11 +1080,16 @@ else
 }
 ```
 
-A single statement is allowed without a block:
+A single statement is allowed without a block, but not another control statement (`if`, `while`, `do`, `for`,
+`foreach`, `switch`, `using (...)`); `else if` is allowed:
 
 ```csharp
 if (ready)
     Start();
+
+if (a)
+    if (b)        // error: a nested 'if' needs braces
+        Start();
 ```
 
 ### `while`

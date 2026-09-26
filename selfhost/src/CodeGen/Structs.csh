@@ -185,8 +185,10 @@ void LayoutStruct(Compiler cg, int index)
         if (types.IsVoid(ft))
             Fail(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
         for (var k = 0; k < fields.Count(); k += 1)
+        {
             if (fields.Get(k).Name == f.Name)
                 Fail(cg, f.Loc, "field '" + f.Name + "' is declared twice");
+        }
         if (si.Base != 0)
         {
             var inherited = FindField(cg, si.Base, f.Name);
@@ -218,8 +220,10 @@ bool StructNeedsArc(Compiler cg, int t)
     if (si.Base != 0 && NeedsArc(cg, si.Base))
         return true;
     foreach (var f in si.Fields)
+    {
         if (NeedsArc(cg, f.Type))
             return true;
+    }
     return false;
 }
 
@@ -280,8 +284,10 @@ Candidate[] MethodCandidates(Compiler cg, int structType, string name)
         var se = cg.Structs.Get(si.Entry);
         var found = List<Candidate>.Create();
         foreach (var m in se.Methods)
+        {
             if (cg.Funcs.Get(m).Decl.Name == name)
                 found.Add(Candidate { Entry = m, Owner = t });
+        }
         if (found.Count() > 0)
             return found.ToArray();
         t = si.Base;

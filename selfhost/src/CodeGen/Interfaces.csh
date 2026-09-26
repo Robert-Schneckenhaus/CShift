@@ -72,8 +72,10 @@ int FindImplementation(Compiler cg, int structType, int iface, int k)
             continue;
         bool same = true;
         for (var i = 0; i < sig.ParamTypes.Length; i += 1)
+        {
             if (fi.ParamTypes[i] != sig.ParamTypes[i] || fi.ParamRefs[i] != sig.ParamRefs[i])
                 same = false;
+        }
         if (same)
             return instance;
     }

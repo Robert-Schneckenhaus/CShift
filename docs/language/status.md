@@ -50,6 +50,9 @@ The design document leaves a number of things open; these are the decisions that
 
 * **Creating errors:** `return error("text");` or `error("text", code)`; `Error<T>` has `.Message` and `.Code`.
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
+* **Nested control statements need braces:** the body of `if`/`else`/`while`/`do`/`for`/`foreach`/`using (...)`
+  may be one statement without braces, but not another control statement (`if (a) if (b) F();` is an error;
+  `else if` is fine). The frozen C++ compiler does not check this; the sources follow the rule anyway.
 * **No bool semantics:** `Error<T>` and `Optional<T>` are not conditions (`if (x)`, `!x`, `&&`, `||`, `?:` are
   errors). A result is tested with `x is error e` / `x is T v`, an optional value with `x is T v` / `x == null`.
   (The frozen C++ compiler still accepts the bool forms; `selfhost/` tests `x.Message != null`, which

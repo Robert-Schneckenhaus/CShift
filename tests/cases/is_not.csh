@@ -98,9 +98,11 @@ int Main()
 
     bool always = true;
     if (always)
+    {
         if (P(7) is not int w)
             return 1;
         else
             Console.WriteLine("inner " + w.ToString());
+    }
     return 0;
 }

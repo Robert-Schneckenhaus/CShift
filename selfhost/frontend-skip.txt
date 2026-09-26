@@ -37,3 +37,6 @@ tests/cases/err_union_duplicate.csh
 tests/cases/is_not.csh
 tests/cases/err_is_not_unassigned.csh
 tests/cases/err_is_not_binding.csh
+tests/cases/err_nested_if.csh
+tests/cases/err_nested_loop.csh
+tests/cases/err_nested_else.csh

@@ -77,7 +77,10 @@ err_mutex_guard_thread.csh
 err_mutex_list.csh
 err_narrowing.csh
 err_native_int_narrowing.csh
+err_nested_else.csh
 err_nested_error.csh
+err_nested_if.csh
+err_nested_loop.csh
 err_no_main.csh
 err_no_overload.csh
 err_optional_condition.csh

@@ -141,8 +141,10 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] expli
             total += cost;
         }
         for (var i = fi.ParamTypes.Length; ok && i < args.Length; i += 1)
+        {
             if (args[i].V.IsRefArg)
                 ok = false;
+        }
         if (!ok)
             continue;
 

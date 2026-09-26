@@ -84,8 +84,10 @@ bool StructImplements(Compiler cg, int structType, int iface)
     {
         var si = GetStructInfo(cg, t);
         foreach (var i in si.Interfaces)
+        {
             if (i == iface)
                 return true;
+        }
         t = si.Base;
     }
     return false;
@@ -176,8 +178,10 @@ void VerifyStruct(Compiler cg, int structType)
                     continue;
                 bool same = true;
                 for (var i = 0; i < ptypes.Length; i += 1)
+                {
                     if (fi.ParamTypes[i] != ptypes[i] || fi.ParamRefs[i] != prefs[i])
                         same = false;
+                }
                 if (same)
                 {
                     found = true;
@@ -254,8 +258,10 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
             if (paramCount != ptypes.Length || isFunc == types.IsVoid(types.Elem(actual)))
                 return false;
             for (var i = 0; i < paramCount; i += 1)
+            {
                 if (!Unify(cg, node.Args[i], ptypes[i], tparams, file, bound))
                     return false;
+            }
             return !isFunc || Unify(cg, node.Args[n - 1], types.Elem(actual), tparams, file, bound);
         }
     }
@@ -307,8 +313,10 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
             return false;
     }
     foreach (var b in bound)
+    {
         if (b == 0)
             return false;
+    }
     result = bound;
     return true;
 }
