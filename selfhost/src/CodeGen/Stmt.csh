@@ -272,6 +272,8 @@ void EmitVarDecl(Compiler cg, Stmt s)
                 Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from the function name '" + init.GroupName +
                                 "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
         }
+        if (types.Kind(t) == TypeKind.Lambda)
+            Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from a lambda; declare it with its Action/Func type");
         var k = types.Kind(t);
         if (k == TypeKind.Null || k == TypeKind.ErrorLit || k == TypeKind.Void)
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from '" + types.Name(t) + "'");

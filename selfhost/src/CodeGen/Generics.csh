@@ -293,6 +293,8 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
     for (var i = 0; i < d.Params.Length && i < args.Length; i += 1)
     {
         int actual = args[i].V.Type;
+        if (cg.Types.Kind(actual) == TypeKind.Lambda)
+            continue; // a lambda takes its types from the parameter; it does not help to infer them
         if (cg.Types.Kind(actual) == TypeKind.MethodGroup)
         {
             int ft = GroupFunctionType(cg, args[i].V); // the natural type of a function name with a single meaning

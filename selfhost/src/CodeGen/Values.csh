@@ -259,6 +259,8 @@ int ConversionCost(Compiler cg, Value v, int to)
         int target = types.IsCFunction(to) ? types.Elem(to) : to;
         return types.IsFunction(target) && ResolveGroup(cg, v, target, ref unused) >= 0 ? 1 : -1;
     }
+    if (fromKind == TypeKind.Lambda)
+        return LambdaConversionCost(cg, v, to);
     // a function pointer field of a C struct and its Action/Func type
     if (fromKind == TypeKind.CFunction && types.Elem(from) == to)
         return 1;
@@ -315,6 +317,12 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         Value f = ConvertValue(cg, v, types.Elem(to), loc);
         HoldTemp(cg, f);
         return Rvalue(to, RawFunctionPointer(cg, f.V), false);
+    }
+    if (types.Kind(from) == TypeKind.Lambda)
+    {
+        if (!types.IsFunction(to))
+            Fail(cg, loc, "a lambda can only be converted to an Action/Func type, not '" + types.Name(to) + "'");
+        return EmitLambda(cg, v.LambdaNode, to, loc);
     }
     if (types.IsCFunction(from) && types.Elem(from) == to)
         return Rvalue(to, cg.Ir.InsertValue("{ ptr, ptr }", "zeroinitializer", "ptr", ToRValue(cg, v).V, "0"), false);

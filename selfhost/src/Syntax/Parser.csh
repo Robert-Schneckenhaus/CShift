@@ -1341,6 +1341,66 @@ struct Parser
         return expr;
     }
 
+    // '(' ... ')' '=>': the parameter list of a lambda.
+    bool IsLambdaParen()
+    {
+        int depth = 0;
+        for (var i = Pos; i < Tokens.Length; i += 1)
+        {
+            var k = Tokens[i].Kind;
+            if (k == TokenKind.LParen)
+                depth += 1;
+            else if (k == TokenKind.RParen)
+            {
+                depth -= 1;
+                if (depth == 0)
+                    return i + 1 < Tokens.Length && Tokens[i + 1].Kind == TokenKind.FatArrow;
+            }
+            else if (k == TokenKind.Eof || k == TokenKind.Semi || k == TokenKind.LBrace || k == TokenKind.RBrace)
+                return false;
+        }
+        return false;
+    }
+
+    // x => body, (x, y) => body, (int x, string y) => body, () => body; body: an expression or a block.
+    Error<Expr> ParseLambda()
+    {
+        SourceLoc loc = Cur().Loc;
+        var parameters = List<Param>.Create();
+        if (Check(TokenKind.Ident))
+        {
+            Token name = Advance();
+            parameters.Add(Param { Loc = name.Loc, Name = name.Text });
+        }
+        else
+        {
+            try Expect(TokenKind.LParen, "'('");
+            if (!Check(TokenKind.RParen))
+            {
+                do
+                {
+                    var p = Param { Loc = Cur().Loc };
+                    if (Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+                        p.Name = Advance().Text; // the type comes from the target
+                    else
+                    {
+                        p.Type = try ParseType();
+                        p.Name = try ExpectIdent("parameter name");
+                    }
+                    parameters.Add(p);
+                } while (Match(TokenKind.Comma));
+            }
+            try Expect(TokenKind.RParen, "')'");
+        }
+        try Expect(TokenKind.FatArrow, "'=>'");
+        var lambda = LambdaExpr { Params = parameters.ToArray() };
+        if (Check(TokenKind.LBrace))
+            lambda.Block = try ParseBlock();
+        else
+            lambda.Body = try ParseExpr();
+        return Tree.AddLambda(loc, lambda);
+    }
+
     // $"a{x}b{y}c" is "a" + x + "b" + y + "c": string concatenation (which also turns the values into text), built from
     // the left so that it starts with a string.
     Error<Expr> ParseInterpolated()
@@ -1536,9 +1596,13 @@ struct Parser
         case TokenKind.KwNew:
             return ParseNew();
         case TokenKind.LParen:
+            if (IsLambdaParen())
+                return ParseLambda();
             return ParseParenOrCast();
         case TokenKind.Ident:
         {
+            if (PeekKind(1) == TokenKind.FatArrow)
+                return ParseLambda();
             if (t.Text == "error" && PeekKind(1) == TokenKind.LParen)
             {
                 Advance();

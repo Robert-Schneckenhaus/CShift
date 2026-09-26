@@ -27,7 +27,8 @@ enum TypeKind : int32
     Function,    // Action<...> / Func<..., R>
     MethodGroup, // a function name used as a value
     SharedPtr,   // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
-    CFunction    // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
+    CFunction,   // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
+    Lambda       // a lambda before it is converted to an Action/Func type
 }
 
 struct TypeInfo
@@ -56,6 +57,7 @@ struct TypeContext
     int Null;
     int ErrorLit;
     int MethodGroup;
+    int Lambda;
     int I8;
     int I16;
     int I32;
@@ -96,6 +98,7 @@ struct TypeContext
         tc.SetNative(tc.Nint);
         tc.Nuint = tc.Add(TypeKind.Int, "nuint", 64, false);
         tc.SetNative(tc.Nuint);
+        tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
         return tc;
     }
 

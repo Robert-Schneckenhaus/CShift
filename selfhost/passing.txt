@@ -57,6 +57,10 @@ err_interface_variable.csh
 err_interp_brace.csh
 err_interp_empty.csh
 err_interp_struct.csh
+err_lambda_assign_capture.csh
+err_lambda_param_type.csh
+err_lambda_params.csh
+err_lambda_var.csh
 err_missing_return.csh
 err_multiple_inheritance.csh
 err_mutex_guard_thread.csh
@@ -92,6 +96,7 @@ error_void.csh
 exit_code.csh
 function_pointers.csh
 globals.csh
+lambdas.csh
 lang_additions.csh
 link_extern.csh
 main_args.csh

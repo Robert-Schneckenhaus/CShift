@@ -6,8 +6,7 @@
 //     {
 //         for (var i = 0; i < times; i += 1)
 //         {
-//             using (var guard = counter.Lock())      // unlocked again when the block is left
-//                 guard.Set(guard.Get() + 1);
+//             counter.Update(n => n + 1);            // or: using (var guard = counter.Lock()) guard.Set(guard.Get() + 1);
 //         }
 //     }
 //
@@ -84,6 +83,18 @@ struct Mutex<T>
             T value = p->Read();
             p->Unlock();
             return value;
+        }
+    }
+
+    // Replaces the value with change(value), under the lock: counter.Update(n => n + 1).
+    void Update(Func<T, T> change)
+    {
+        unsafe
+        {
+            _MutexState<T>* p = _state.Ptr();
+            p->Lock();
+            p->Write(change(p->Read()));
+            p->Unlock();
         }
     }
 

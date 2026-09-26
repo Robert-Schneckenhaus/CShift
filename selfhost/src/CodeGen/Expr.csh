@@ -58,6 +58,12 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Unary: return EmitUnary(cg, e);
     case ExprKind.Binary: return EmitBinary(cg, e);
     case ExprKind.Assign: return EmitAssign(cg, e);
+    case ExprKind.Lambda:
+    {
+        Value lambda = Rvalue(cg.Types.Lambda, "", false);
+        lambda.LambdaNode = e;
+        return lambda;
+    }
     case ExprKind.Conditional: return EmitConditional(cg, e);
     case ExprKind.Cast: return EmitCast(cg, e);
     case ExprKind.Start: return EmitStart(cg, e);
@@ -156,6 +162,8 @@ Value LookupVariable(Compiler cg, string name)
             return Lvalue(v.Type, cg.Ir.Load("ptr", v.Slot), v.IsConst);
         return Lvalue(v.Type, v.Slot, v.IsConst);
     }
+    if (cg.Fn[0].LambdaId > 0)
+        return CaptureVariable(cg, name); // a variable of an enclosing function, in the body of a lambda
     return Value { };
 }
 
@@ -175,7 +183,7 @@ bool IsLocalName(Compiler cg, string name)
     for (var i = 0; i < vars.Count(); i += 1)
         if (vars.Get(i).Name == name)
             return true;
-    return false;
+    return IsOuterName(cg, name);
 }
 
 Value EmitName(Compiler cg, Expr e)
@@ -738,7 +746,12 @@ Value EmitAssign(Compiler cg, Expr e)
         Fail(cg, e.Loc, "the left side of an assignment must be a variable, field or element");
     }
     if (target.IsConst)
+    {
+        if (a.Target.Kind == ExprKind.Name && FindLocal(cg, cg.Tree.GetName(a.Target).Name) < 0 && IsOuterName(cg, cg.Tree.GetName(a.Target).Name))
+            Fail(cg, e.Loc, "cannot assign to '" + cg.Tree.GetName(a.Target).Name + "': a lambda gets a read-only copy of the variables " +
+                                "it uses (return the new value instead)");
         Fail(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
+    }
 
     Value val;
     if (a.HasOp)

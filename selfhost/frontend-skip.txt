@@ -11,3 +11,12 @@ tests/cases/string_interpolation.csh
 tests/cases/err_interp_brace.csh
 tests/cases/err_interp_empty.csh
 tests/cases/err_interp_struct.csh
+
+# lambdas
+tests/cases/lambdas.csh
+tests/cases/err_lambda_assign_capture.csh
+tests/cases/err_lambda_var.csh
+tests/cases/err_lambda_params.csh
+tests/cases/err_lambda_param_type.csh
+tests/projects/lambda_c/src/main.csh
+tests/cases/thread_mutex.csh

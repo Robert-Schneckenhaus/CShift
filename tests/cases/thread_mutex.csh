@@ -45,7 +45,7 @@ int Main()
     guard.Set(3);
     guard.Dispose();
     guard.Dispose(); // only unlocks once
-    counter.Set(counter.Get() * 0 + 3);
+    counter.Update(n => n * 0 + 3);
     var other = counter; // a handle: copies share the value
     other.Set(0);
     Console.WriteLine(counter.Get().ToString() + " " + other.Get().ToString());

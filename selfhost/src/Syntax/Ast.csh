@@ -33,7 +33,8 @@ enum ExprKind : int32
     None, // the default value: no expression
     IntLit, FloatLit, CharLit, StringLit, BoolLit, NullLit,
     Name, Member, Call, Index, Unary, Binary, Assign, Conditional, Cast,
-    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start
+    NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start,
+    Lambda // only in the self-hosted compiler
 }
 
 struct Expr
@@ -251,6 +252,15 @@ struct RefArgExpr
 }
 
 // 'start f(...)': spawns the 'thread' function f on its own OS thread.
+// x => x + 1, (int a, int b) => { return a + b; }, () => Work(): the parameter types may be left out (they come
+// from the Action/Func type the lambda is converted to). Either Body or Block is set.
+struct LambdaExpr
+{
+    Param[] Params;
+    Expr Body;
+    Stmt Block;
+}
+
 struct StartExpr
 {
     Expr Operand;
@@ -530,6 +540,7 @@ struct Ast
     List<UncheckedExpr> Uncheckeds;
     List<RefArgExpr> RefArgs;
     List<StartExpr> Starts;
+    List<LambdaExpr> Lambdas;
 
     List<BlockStmt> Blocks;
     List<VarDeclStmt> VarDecls;
@@ -572,6 +583,7 @@ struct Ast
         a.Uncheckeds = List<UncheckedExpr>.Create();
         a.RefArgs = List<RefArgExpr>.Create();
         a.Starts = List<StartExpr>.Create();
+        a.Lambdas = List<LambdaExpr>.Create();
         a.Blocks = List<BlockStmt>.Create();
         a.VarDecls = List<VarDeclStmt>.Create();
         a.ExprStmts = List<ExprStmt>.Create();
@@ -793,6 +805,12 @@ struct Ast
         return Expr { Kind = ExprKind.RefArg, Index = RefArgs.Count() - 1, Loc = loc };
     }
 
+    Expr AddLambda(SourceLoc loc, LambdaExpr n)
+    {
+        Lambdas.Add(n);
+        return Expr { Kind = ExprKind.Lambda, Index = Lambdas.Count() - 1, Loc = loc };
+    }
+
     Expr AddStart(SourceLoc loc, StartExpr n)
     {
         Starts.Add(n);
@@ -824,6 +842,7 @@ struct Ast
     UncheckedExpr GetUnchecked(Expr e) { return Uncheckeds.Get(e.Index); }
     RefArgExpr GetRefArg(Expr e) { return RefArgs.Get(e.Index); }
     StartExpr GetStart(Expr e) { return Starts.Get(e.Index); }
+    LambdaExpr GetLambda(Expr e) { return Lambdas.Get(e.Index); }
 
     // ---- statements ----
 

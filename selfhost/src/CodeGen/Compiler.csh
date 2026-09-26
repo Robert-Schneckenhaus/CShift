@@ -100,6 +100,7 @@ struct Value
     Candidate[] Group;       // a function name used as a value (type "function")
     int[] GroupTypeArgs;
     string GroupName;
+    Expr LambdaNode;         // a lambda (type "lambda"): compiled when it is converted to an Action/Func type
 
     bool IsNone()
     {
@@ -163,6 +164,17 @@ struct FnState
     bool IsIntMain;
     int File;                          // file context of the function (for name lookup)
     Dictionary<string, int> Env;       // its type parameters
+    // lambdas (Lambdas.csh)
+    int LambdaId;                      // > 0 while the body of a lambda is compiled
+    List<ScopeVar> Outer;              // the variables of the enclosing functions (innermost last)
+    List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
+    string EnvType;                    // the LLVM type of the environment
+}
+
+struct LambdaCapture
+{
+    string Name;
+    int Type;
 }
 
 struct CgState
@@ -179,6 +191,7 @@ struct CgState
     int Imports;          // number of "using X from header" declarations in the program
     int LayoutDepth;      // struct layouts that are running (the methods of new structs wait until it is 0)
     bool InstantiatingMethods;
+    int LambdaCount;
 }
 
 // ---------------------------------------------------------------------------
