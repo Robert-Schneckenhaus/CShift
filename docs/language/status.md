@@ -89,7 +89,7 @@ The design document leaves a number of things open; these are the decisions that
   `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue`,
   `EmbedText("file")`/`EmbedNames("folder", ".ext")`/`EmbedTexts("folder", ".ext")` (files are embedded into the
   program at compile time; paths are relative to the source file, and only string literals are accepted as
-  arguments; unlike `embed`, they drop a byte order mark and `\r`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
+  arguments; unlike `embed`, they also drop `\r`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.
 * **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums,

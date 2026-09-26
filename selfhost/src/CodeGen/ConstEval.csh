@@ -1098,25 +1098,19 @@ string EmbedPath(Compiler cg, string name, SourceLoc loc)
     return "";
 }
 
-// const string X = embed("file"): the exact bytes of the file, read now (a byte order mark and line ends are kept).
-// The text must be UTF-8 like every string.
+// const string X = embed("file"): the content of the file, read now. Line ends, quotes and everything else stay as they
+// are; only a byte order mark is dropped. The text must be UTF-8 like every string.
 ConstVal ConstEmbed(Compiler cg, Expr init, int t)
 {
     var types = cg.Types;
     if (!types.IsString(t))
         Fail(cg, init.Loc, "embed(...) gives a string, so the constant must be 'const string', not '" + types.Name(t) + "'");
     string path = EmbedPath(cg, cg.Tree.GetEmbed(init).Value, init.Loc);
-    var read = File.ReadAllBytes(path); // the bytes as they are (ReadAllText would drop a byte order mark)
-    if (read is error readError)
-        Fail(cg, init.Loc, "embed: cannot read '" + path + "': " + readError.Message);
-    if (read is uint8[] bytes)
-    {
-        var decoded = Encoding.UTF8().GetString(bytes);
-        if (decoded is string text)
-            return ConstVal { Kind = ConstKind.String, Type = types.String, S = text };
-        if (decoded is error decodeError)
-            Fail(cg, init.Loc, "embed: '" + path + "' is not UTF-8 text (" + decodeError.Message + ")");
-    }
+    var read = File.ReadAllText(path); // UTF-8; a byte order mark is dropped, everything else stays as it is
+    if (read is string text)
+        return ConstVal { Kind = ConstKind.String, Type = types.String, S = text };
+    if (read is error e)
+        Fail(cg, init.Loc, "embed: cannot read '" + path + "': " + e.Message);
     return ConstVal { };
 }
 

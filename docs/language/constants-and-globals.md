@@ -68,8 +68,9 @@ const string Version = embed("version.txt");
 
 * **Only like this:** `embed(...)` is the whole initializer of a `const string` (top level or local). It does not exist
   at run time, cannot be part of a larger expression, and its argument must be a string literal.
-* **Exact content:** the constant holds the file's bytes unchanged - quotes, backslashes, a byte order mark, `\r\n` and
-  `\n` stay as they are, so `File.WriteAllText(path, Shader)` writes an identical file. The file must be UTF-8 text.
+* **Exact content:** the constant holds the file's text unchanged - quotes, backslashes, `\r\n` and `\n` stay as they
+  are (only a UTF-8 byte order mark is dropped), so `File.WriteAllText(path, Shader)` writes the same content. The file
+  must be UTF-8 text.
 * **Where the file is searched:** an absolute path is used as it is. Otherwise the path is relative to the source file
   that contains `embed`, and if the file is not there, relative to the project folder (the folder of `cshift.json`).
   A missing file is a compile error that lists where it was looked for.
