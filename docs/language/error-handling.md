@@ -36,15 +36,55 @@ else
 }
 ```
 
-`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present"
-(except `Error<Optional<T>>`, [see below](#nesting-only-erroroptionalt)):
+`is error e` matches only a failure and binds the result, so the error can be used under a name (it works for every
+`Error<T>`, including `Error<void>`, and as `case error e:` in a `switch`; `is error` without a name just tests):
 
 ```csharp
-if (!result)
+if (OpenFile(path) is error e)
+    Console.WriteLine($"failed ({e.Code}): {e.Message}");
+
+switch (Parse(text))
 {
-    // handle the error
+    case int value:
+        Use(value);
+        break;
+    case error e:
+        Report(e.Message);
+        break;
 }
 ```
+
+A pattern of the value's own type (`result is Error<File> r`) would always match, so it is a compile error.
+
+`Error<T>` is **not a condition**: `if (result)`, `!result`, `result && ...` and `result ? a : b` are compile errors,
+because they would hide what is tested. Write `is error e` (failed) or `is T v` (succeeded):
+
+```csharp
+if (Save() is error e)                    // Error<void>: 'is error' is the only test
+    Console.WriteLine("cannot save: " + e.Message);
+
+bool ok = Parse(text) is not error;       // just the outcome
+```
+
+### `is not`
+
+`is not` negates any pattern: `x is not T`, `x is not error`. For optional values (and anything else that can be
+compared with `null`), `x is null` and `x is not null` mean `x == null` and `x != null`.
+
+A binding of `is not` is assigned where the pattern *did* match, so it is used as a guard: `if (x is not T v)` makes
+`v` available in the `else` branch, and after the `if` when its branch cannot complete (`return`, `break`,
+`continue`):
+
+```csharp
+int Port(string text)
+{
+    if (text.ParseInt() is not int port)
+        return 80;               // 'port' is not assigned here
+    return port;                 // ... but here it is
+}
+```
+
+A binding under `is not` is only allowed as the whole condition of an `if`.
 
 ## `try`
 
@@ -86,18 +126,8 @@ if (found is User user)
 }
 ```
 
-Same `is`/bool semantics as `Error<T>`, but `try` must not be used with `Optional<T>`.
-
-## Pattern matching in `switch`
-
-```csharp
-switch (result)
-{
-    case Error<int> r:
-        Console.WriteLine("code " + r.Code.ToString());
-        break;
-}
-```
+`Optional<T>` is not a condition either (`if (found)` and `!found` are compile errors): test it with `is T v` or
+compare it with `null` (`found == null`, `found != null`). `try` must not be used with `Optional<T>`.
 
 ## Nesting: only `Error<Optional<T>>`
 
@@ -115,17 +145,17 @@ Error<Optional<User>> FindUser(int id)
 }
 ```
 
-Because it has two "no" cases, it **cannot be used as a condition**: `if (r)` and `!r` are compile errors (would they
-mean "failed" or "found nothing"?). Say which one you mean:
+Like every `Error<T>` it is not a condition (with two "no" cases, `!r` could not even say whether it means "failed" or
+"found nothing"). Say which one you mean with `is error e`, `is T v` or `is Optional<T> o`:
 
 ```csharp
 var r = FindUser(7);
-if (r is User u)                // succeeded and found a user
+if (r is error e)               // failed
+    Console.WriteLine("error: " + e.Message);
+else if (r is User u)           // succeeded and found a user
     Show(u);
-else if (r is Optional<User>)   // succeeded, found nothing
+else                            // succeeded, found nothing
     Console.WriteLine("no such user");
-else                            // failed
-    Console.WriteLine("error: " + r.Message);
 
 Optional<User> found = try FindUser(7);   // 'try' passes the error on and gives the Optional<T>
 ```

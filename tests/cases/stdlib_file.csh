@@ -15,10 +15,12 @@ int Check(string name, bool ok)
 // Checks that an Error<void> result reports success.
 int Succeeded(string name, Error<void> result)
 {
-    if (result)
-        return 0;
-    Console.WriteLine("FAIL: " + name + ": " + result.Message);
-    return 1;
+    if (result is error e)
+    {
+        Console.WriteLine("FAIL: " + name + ": " + e.Message);
+        return 1;
+    }
+    return 0;
 }
 
 int Main()
@@ -98,20 +100,20 @@ int Main()
     // Invalid UTF-8 is an error, not garbage.
     f += Succeeded("write invalid", File.WriteAllBytes(path, new uint8[] { 104, 0xFF }));
     var invalid = File.ReadAllText(path);
-    f += Check("invalid UTF-8 file", !invalid && invalid.Message.Contains("UTF-8"));
+    f += Check("invalid UTF-8 file", invalid is error e1 && e1.Message.Contains("UTF-8"));
 
     // ---- errors ----
     var missing = File.ReadAllText("no_such_directory/none.txt");
-    f += Check("missing file", !missing && missing.Message.Contains("cannot open") && missing.Code == 1);
+    f += Check("missing file", missing is error e2 && e2.Message.Contains("cannot open") && e2.Code == 1);
     var noBytes = File.ReadAllBytes("no_such_directory/none.bin");
-    f += Check("missing file (bytes)", !noBytes);
+    f += Check("missing file (bytes)", noBytes is error);
     var cannotCreate = File.WriteAllText("no_such_directory/x.txt", "a");
-    f += Check("cannot create", !cannotCreate && cannotCreate.Message.Contains("cannot create"));
+    f += Check("cannot create", cannotCreate is error e3 && e3.Message.Contains("cannot create"));
 
     // ---- delete ----
     f += Succeeded("Delete", File.Delete(path));
     f += Check("deleted", !File.Exists(path));
-    f += Check("Delete missing fails", !File.Delete(path));
+    f += Check("Delete missing fails", File.Delete(path) is error);
 
     return f;
 }

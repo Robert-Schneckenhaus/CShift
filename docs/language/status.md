@@ -16,13 +16,14 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Visibility via a `_` prefix (private) for fields and methods | ✔ |
 | Struct inheritance (one base, the base comes first in the layout), upcasting, hiding methods | ✔ |
 | Interfaces (methods), several per struct, checking the implementation | ✔ |
-| Interface values: dynamic dispatch through a method table, a boxed copy of the struct, `x is S s` | ✔ (self-hosted, [interfaces](interfaces-and-generics.md#interface-values)) |
+| Sum types: `union Shape : IShape { Circle, Rect }` (inline with a tag, `is`/`switch`, interface methods dispatched on the tag) | ✔ (self-hosted, [sum types](interfaces-and-generics.md#sum-types)) |
+| Interfaces as `ref`/`const ref` parameters: dynamic dispatch through a method table, no allocation, `x is S s` | ✔ (self-hosted, [interfaces](interfaces-and-generics.md#interface-parameters-dynamic-dispatch-without-allocation)) |
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
-| `Error<T>` / `Optional<T>`, bool semantics, `is T x`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` (never a bare condition) | ✔ ([error handling](error-handling.md)) |
+| `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `is not`, `is null`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |
 | `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (value, read-only alias, alias) | ✔ |
 | Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |
@@ -49,17 +50,26 @@ The design document leaves a number of things open; these are the decisions that
 
 * **Creating errors:** `return error("text");` or `error("text", code)`; `Error<T>` has `.Message` and `.Code`.
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
-* **Bool semantics** of `Error`/`Optional` apply in conditions and with `!`, `&&`, `||`, but not as an argument for a
-  `bool` parameter (use `x is T` instead).
-* **`is`/`case` patterns:** `x is int v` binds the value; `x is Error<int> r` binds the whole result. Pattern
-  variables are scoped to the `if`/`while`, or to the `case`.
+* **Nested control statements need braces:** the body of `if`/`else`/`while`/`do`/`for`/`foreach`/`using (...)`
+  may be one statement without braces, but not another control statement (`if (a) if (b) F();` is an error;
+  `else if` is fine). The frozen C++ compiler does not check this; the sources follow the rule anyway.
+* **No bool semantics:** `Error<T>` and `Optional<T>` are not conditions (`if (x)`, `!x`, `&&`, `||`, `?:` are
+  errors). A result is tested with `x is error e` / `x is T v`, an optional value with `x is T v` / `x == null`.
+  (The frozen C++ compiler still accepts the bool forms; `selfhost/` tests `x.Message != null`, which
+  both compilers understand.)
+* **`is`/`case` patterns:** `x is int v` binds the value; `x is error e` matches a failure and binds the whole result (a pattern of the value's own type would always match and is an error). Pattern
+  variables are scoped to the `if`/`while`, or to the `case`. `x is not P` negates a pattern; its binding
+  (`if (x is not T v) return;`) is usable in the `else` branch and after an `if` whose branch cannot complete.
+  `x is null` / `x is not null` mean `x == null` / `x != null`.
 * **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
   prints `error: <text>` to stderr and ends the program with exit code 1.
 * **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int`; a literal adapts to the
   other operand (`uint8 x = 200; int y = x * 3;` gives 600). Explicit casts never abort (they wrap/saturate); only
   `+ - * / %` are checked.
-* **Interface values** box a copy of the struct; copies of the interface value share the box (like C#).
-* **`Error<Optional<T>>`** is the only allowed nesting. It cannot be used as a condition (`if (r)`, `!r`): write
+* **Interfaces are not value types** (a value would need a hidden allocation): they are generic constraints and the
+  types of `ref`/`const ref` parameters (a pointer to the struct and its method table). For `const ref` the caller
+  passes a copy on its stack.
+* **`Error<Optional<T>>`** is the only allowed nesting. Like the others it is not a condition: write `r is error e`,
   `r is T v` (succeeded with a value) or `r is Optional<T> o` (succeeded).
 * **Contextual keywords:** `thread` and `where` are only keywords where they start a thread function or a
   constraint; elsewhere they are ordinary names.

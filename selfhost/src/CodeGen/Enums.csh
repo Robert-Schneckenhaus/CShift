@@ -26,8 +26,10 @@ EnumInfo GetEnumInfo(Compiler cg, int enumType)
 int FindEnumMember(EnumInfo info, string name)
 {
     for (var i = 0; i < info.Names.Length; i += 1)
+    {
         if (info.Names[i] == name)
             return i;
+    }
     return -1;
 }
 

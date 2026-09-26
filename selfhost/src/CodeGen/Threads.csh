@@ -33,6 +33,15 @@ bool IsThreadSafeType(Compiler cg, int t)
         return true;
     if (kind == TypeKind.SharedPtr || kind == TypeKind.Optional)
         return IsThreadSafeType(cg, types.Elem(t));
+    if (kind == TypeKind.Union)
+    {
+        foreach (var m in GetUnionInfo(cg, t).Members)
+        {
+            if (!IsThreadSafeType(cg, m))
+                return false;
+        }
+        return true;
+    }
     if (kind != TypeKind.Struct)
         return false;
     var si = GetStructInfo(cg, t);
@@ -360,6 +369,12 @@ string ThreadCopy(Compiler cg, int t, string v)
     }
     string ty = LlvmType(cg, t);
     var kind = types.Kind(t);
+    if (kind == TypeKind.Union)
+    {
+        // only unions of thread-safe members are passed to threads: their counts are atomic
+        EmitRetain(cg, t, v);
+        return v;
+    }
     if (kind == TypeKind.Optional)
     {
         int elem = types.Elem(t);

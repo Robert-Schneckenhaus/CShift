@@ -59,8 +59,53 @@ Value EmitErrorLit(Compiler cg, Expr e)
     return Rvalue(types.ErrorLit, agg, true);
 }
 
-// 'x is T v' tests for a value of the payload type; 'x is Error<T> r' always matches and binds the whole result.
+// 'error' as a pattern type: 'x is error e' matches a failed Error<T> (unless the program declares a type 'error').
+bool IsErrorPattern(Compiler cg, TypeRef t)
+{
+    var node = cg.Tree.GetType(t);
+    if (node.Kind != TypeRefKind.Named || node.Path.Length != 1 || node.Path[0] != "error" || node.Args.Length != 0)
+        return false;
+    var entry = TypeDeclEntry { };
+    return !LookupTypeDecl(cg, cg.Fn[0].File, "error", ref entry);
+}
+
+// The pattern type of 'x is P' / 'case P:' for a subject of type 'subject': the payload type, or - for 'error' - the
+// subject itself. A pattern of the subject's own type would always match; it is an error, because it reads like a test.
+int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, ref bool isError)
+{
+    var types = cg.Types;
+    isError = IsErrorPattern(cg, pattern);
+    if (isError)
+    {
+        if (!types.IsError(subject))
+            Fail(cg, loc, "'is error' needs an Error<T> value, not '" + types.Name(subject) + "'");
+        return subject;
+    }
+    int pt = DeclTypeOf(cg, pattern);
+    if (pt == subject)
+        Fail(cg, loc, "a pattern of the value's own type ('" + types.Name(pt) + "') would always match; test for a failure with 'is error e' " +
+                          "or for a value with 'is " + types.Name(types.Elem(subject)) + " v'");
+    return pt;
+}
+
+// 'x is not P' negates a pattern. A binding ('x is not T v') is assigned where the pattern did not fail, so it is only
+// allowed as the whole condition of an 'if' (see EmitIf): 'v' can then be used in the 'else' branch, and after the
+// 'if' when its branch cannot complete ('if (r is not int v) return 1; Use(v);').
 Value EmitIs(Compiler cg, Expr e)
+{
+    var n = cg.Tree.GetIs(e);
+    if (n.Negated && n.BindName.Length > 0 && cg.GuardIs != e.Index)
+        Fail(cg, e.Loc, "'is not' can only bind '" + n.BindName + "' as the whole condition of an 'if' (then '" + n.BindName +
+                            "' is usable in the 'else' branch, and after the 'if' if its branch returns, breaks or continues)");
+    cg.GuardIs = -1;
+    Value v = EmitIsPattern(cg, e);
+    if (!n.Negated)
+        return v;
+    return MakeBool(cg, cg.Ir.Bin("xor", "i1", v.V, "true"));
+}
+
+// 'x is T v' tests for a value of the payload type; 'x is error e' for a failure (e is the whole result).
+Value EmitIsPattern(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -68,6 +113,8 @@ Value EmitIs(Compiler cg, Expr e)
     Value subj = EmitRValue(cg, n.Operand);
     if (types.Kind(subj.Type) == TypeKind.Interface)
         return EmitInterfaceIs(cg, subj, DeclTypeOf(cg, n.Type), n.BindName, e.Loc);
+    if (IsUnionType(cg, subj.Type))
+        return EmitUnionIs(cg, subj, DeclTypeOf(cg, n.Type), n.BindName, cg.Tree.GetType(n.Type).Loc);
     if (!types.IsResultLike(subj.Type))
     {
         // 'thread is T result' (Thread<T> only): matches the Optional<T> of _TryGetResult() (stdlib/thread.csh), a value
@@ -86,7 +133,8 @@ Value EmitIs(Compiler cg, Expr e)
             Fail(cg, e.Loc, "'is' can only be used with Error<T>, Optional<T> and Thread<T> values, not '" + shown + "'");
         }
     }
-    int pattern = DeclTypeOf(cg, n.Type);
+    bool isErrorPattern = false;
+    int pattern = ResultPatternType(cg, subj.Type, n.Type, cg.Tree.GetType(n.Type).Loc, ref isErrorPattern);
     if (types.IsError(subj.Type) && types.IsOptional(types.Elem(subj.Type)) && pattern == types.Elem(types.Elem(subj.Type)))
     {
         // Error<Optional<T>> is T v: succeeded and has a value. The subject becomes its Optional<T> (empty on error).
@@ -102,7 +150,7 @@ Value EmitIs(Compiler cg, Expr e)
                                               types.Name(types.Elem(subj.Type)) + "' of '" + types.Name(subj.Type) + "'");
 
     string subjIr = LlvmType(cg, subj.Type);
-    string flag = whole ? "true" : ir.ExtractValue(subjIr, subj.V, "0");
+    string flag = whole ? ir.Bin("xor", "i1", ir.ExtractValue(subjIr, subj.V, "0"), "true") : ir.ExtractValue(subjIr, subj.V, "0");
     if (n.BindName.Length > 0)
     {
         // The payload is zero when there is no value, so the binding is unconditionally assigned.

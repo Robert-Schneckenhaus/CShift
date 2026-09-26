@@ -125,8 +125,10 @@ int GroupFunctionType(Compiler cg, Value g)
     if (fi.HasThis || d.IsVariadic || d.RetOut || d.RetCString || d.IsThread)
         return 0;
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
+    {
         if (fi.ParamRefs[i] != 0 || d.Params[i].CString)
             return 0;
+    }
     if (fi.ParamTypes.Length > 8)
         return 0;
     return cg.Types.FunctionOf(fi.ParamTypes, fi.Ret);

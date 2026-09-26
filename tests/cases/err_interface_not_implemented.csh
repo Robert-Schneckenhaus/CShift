@@ -1,5 +1,5 @@
-// A struct converts to an interface value only if it lists the interface.
-// expect-error: cannot implicitly convert 'Point' to 'IShape'
+// Only a struct that lists the interface can be passed as it.
+// expect-error: cannot convert 'Point' to 'const ref IShape'
 
 interface IShape
 {
@@ -12,8 +12,13 @@ struct Point
     double Area() { return 0.0; }
 }
 
+double Area(const ref IShape s)
+{
+    return s.Area();
+}
+
 int Main()
 {
-    IShape s = Point { X = 1.0 };
-    return 0;
+    var p = Point { X = 1.0 };
+    return (int)Area(p);
 }

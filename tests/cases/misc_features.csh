@@ -216,7 +216,7 @@ int Main()
     else
         failures += 1;
     var bad = MakeVec(false);
-    if (bad || bad.Code != 9)
+    if (!(bad is error e) || e.Code != 9)
         failures += 1;
     if (MaybeVec(true) is Vec2 ov)
     {
@@ -225,7 +225,7 @@ int Main()
     }
     else
         failures += 1;
-    if (MaybeVec(false))
+    if (MaybeVec(false) != null)
         failures += 1;
 
     // generics calling generics, inference from arrays

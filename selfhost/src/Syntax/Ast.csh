@@ -217,6 +217,7 @@ struct IsExpr
     Expr Operand;
     TypeRef Type;
     string BindName; // empty if there is no binding
+    bool Negated;    // 'x is not T'
 }
 
 struct TryExpr
@@ -480,6 +481,16 @@ struct ImportDecl
     string Header;
 }
 
+// union Shape : IShape { Circle, Rect }: one of the member types, stored inline with a tag (only in the self-hosted
+// compiler).
+struct UnionDecl
+{
+    SourceLoc Loc;
+    string Name;
+    TypeRef[] Members;
+    TypeRef[] Interfaces;
+}
+
 struct CompilationUnit
 {
     FileContext File;
@@ -489,6 +500,7 @@ struct CompilationUnit
     List<StructDecl> Structs;
     List<InterfaceDecl> Interfaces;
     List<EnumDecl> Enums;
+    List<UnionDecl> Unions;
     List<FuncDecl> Funcs;
     List<string> Links; // link "name";
 
@@ -502,6 +514,7 @@ struct CompilationUnit
         unit.Structs = List<StructDecl>.Create();
         unit.Interfaces = List<InterfaceDecl>.Create();
         unit.Enums = List<EnumDecl>.Create();
+        unit.Unions = List<UnionDecl>.Create();
         unit.Funcs = List<FuncDecl>.Create();
         unit.Links = List<string>.Create();
         return unit;

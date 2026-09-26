@@ -199,11 +199,14 @@ interface IDisposable
 
 A struct can implement several interfaces.
 
-Using an interface as a **generic constraint** never allocates: calls are resolved at compile time. An interface can
-also be used as a **value type** (`IShape s = circle;`, `List<IShape>`) for dynamic dispatch; converting a struct to
-an interface value copies it into a reference-counted box. That allocation is never hidden in the sense that it only
-happens where a struct meets an interface-typed variable, parameter, field or element — never inside a generic
-function or behind a method call. Code that must not allocate uses constraints.
+Using an interface must never produce a hidden boxing allocation. Interfaces are therefore not value types:
+
+* as a **generic constraint**, calls are resolved at compile time;
+* as the type of a **`ref`/`const ref` parameter**, the function receives a pointer to the caller's struct (or, for
+  `const ref`, to a copy on the caller's stack) and its method table — dynamic dispatch without an allocation. Such a
+  parameter cannot be stored, so it cannot outlive the struct.
+
+Collections of different structs use sum types (stored inline) instead of interface values.
 
 ---
 
@@ -530,16 +533,14 @@ if (result is File file)
     file.Read();
 }
 
-if (!result)
+if (result is error e)
 {
-    // error
+    // error: e.Message, e.Code
 }
 ```
 
-Its bool semantics are:
-
-* `true` → a value is present
-* `false` → an error
+`Error<T>` is not a condition (`if (result)`, `!result` are errors): `is error e` tests for a failure, `is T v` for
+a success. `is not` negates a pattern; `if (result is not File file) return;` makes `file` available after the `if`.
 
 ---
 
@@ -585,16 +586,13 @@ if (result is User user)
     user.Login();
 }
 
-if (!result)
+if (result == null)
 {
     // absent
 }
 ```
 
-Its bool semantics match `Error<T>`:
-
-* `true` → a value is present
-* `false` → no value
+`Optional<T>` is not a condition either: it is tested with `is T v` or compared with `null`.
 
 `try` must not be used with `Optional<T>`.
 
@@ -611,8 +609,8 @@ Optional<Optional<T>>
 ```
 
 `Error<Optional<T>>` is allowed, for an operation that can fail or find nothing (a lookup in a database or a file).
-Because it has two "no" cases, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
-means (`r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
+Like every `Error<T>`, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
+means (`r is error e`, `r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
 
 ---
 
@@ -933,7 +931,7 @@ if (x)
 }
 ```
 
-There is no implicit conversion from integers, pointers or other types to `bool`.
+There is no implicit conversion from integers, pointers, `Error<T>`, `Optional<T>` or other types to `bool`.
 
 ---
 
@@ -1082,11 +1080,16 @@ else
 }
 ```
 
-A single statement is allowed without a block:
+A single statement is allowed without a block, but not another control statement (`if`, `while`, `do`, `for`,
+`foreach`, `switch`, `using (...)`); `else if` is allowed:
 
 ```csharp
 if (ready)
     Start();
+
+if (a)
+    if (b)        // error: a nested 'if' needs braces
+        Start();
 ```
 
 ### `while`

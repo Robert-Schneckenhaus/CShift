@@ -224,7 +224,8 @@ struct AstDumper
         case ExprKind.Is:
         {
             var n = Tree.GetIs(e);
-            Line(indent, role, head + TypeAttr("type", n.Type) + (n.BindName.Length > 0 ? " bind=" + n.BindName : ""));
+            Line(indent, role, head + (n.Negated ? " not" : "") + TypeAttr("type", n.Type) +
+                 (n.BindName.Length > 0 ? " bind=" + n.BindName : ""));
             DumpExpr(indent + 1, "operand", n.Operand);
             break;
         }
@@ -524,6 +525,17 @@ struct AstDumper
             Line(1, "", "Interface" + At(d.Loc) + " name=" + d.Name + (d.TypeParams.Length > 0 ? " typeParams=" + NameList(d.TypeParams) : ""));
             for (var k = 0; k < d.Methods.Length; k += 1)
                 DumpFunc(2, "", d.Methods[k]);
+        }
+        for (var i = 0; i < unit.Unions.Count(); i += 1)
+        {
+            var u = unit.Unions.Get(i);
+            string members = "";
+            foreach (var m in u.Members)
+                members += (members.Length > 0 ? ", " : "") + TypeText(m);
+            string ifaces = "";
+            foreach (var m in u.Interfaces)
+                ifaces += (ifaces.Length > 0 ? ", " : "") + TypeText(m);
+            Line(1, "unions[" + i.ToString() + "]", "Union" + At(u.Loc) + " name=" + u.Name + " members=(" + members + ") interfaces=(" + ifaces + ")");
         }
         for (var i = 0; i < unit.Enums.Count(); i += 1)
         {

@@ -84,6 +84,7 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Struct:
     case TypeKind.Function:
     case TypeKind.Interface:
+    case TypeKind.Union:
         return "zeroinitializer";
     default: return "null";
     }
@@ -115,7 +116,8 @@ void EmitFunctionBody(Compiler cg, int instance)
     {
         if (sb.Length() > 0)
             sb.Append(", ");
-        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i])) + " %arg$" + i.ToString());
+        string pty = IsInterfaceType(cg, fi.ParamTypes[i]) ? "{ ptr, ptr }" : (fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i]));
+        sb.Append(pty + " %arg$" + i.ToString());
     }
     ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
     PushScope(cg);
@@ -131,7 +133,14 @@ void EmitFunctionBody(Compiler cg, int instance)
         int pt = fi.ParamTypes[i];
         string name = d.Params[i].Name;
         string arg = "%arg$" + i.ToString();
-        if (fi.ParamRefs[i] != 0)
+        if (IsInterfaceType(cg, pt))
+        {
+            // { data, table }: kept as it is, read-only (the method calls go through it)
+            string slot = ir.Alloca("{ ptr, ptr }", name);
+            ir.Store("{ ptr, ptr }", arg, slot);
+            cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = slot, IsConst = true });
+        }
+        else if (fi.ParamRefs[i] != 0)
         {
             string slot = ir.Alloca("ptr", name);
             ir.Store("ptr", arg, slot);
@@ -273,6 +282,8 @@ void EmitVarDecl(Compiler cg, Stmt s)
                 Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from the function name '" + init.GroupName +
                                 "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
         }
+        if (IsInterfaceType(cg, t))
+            Fail(cg, s.Loc, "'" + d.Name + "' cannot hold the interface parameter: an interface is only a 'ref'/'const ref' parameter");
         if (types.Kind(t) == TypeKind.Lambda)
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from a lambda; declare it with its Action/Func type");
         var k = types.Kind(t);
@@ -310,9 +321,17 @@ void EmitIf(Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetIf(s);
-    PushScope(cg); // scope of pattern variables declared in the condition
+    // 'if (x is not T v)': v belongs to the enclosing scope, visible where the pattern matched (see EmitIs)
+    bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
+    if (guard)
+        cg.GuardIs = n.Cond.Index;
+    else
+        PushScope(cg); // scope of pattern variables declared in the condition
     Value c = EmitCondition(cg, n.Cond);
     FlushTemps(cg, 0, true);
+    int bound = cg.Fn[0].Vars.Count() - 1;
+    if (guard)
+        SetVarVisible(cg, bound, false); // not assigned in the 'if' branch
 
     string thenLabel = ir.NewLabel("if.then");
     string elseLabel = n.Else.IsNull() ? "" : ir.NewLabel("if.else");
@@ -320,17 +339,46 @@ void EmitIf(Compiler cg, Stmt s)
     ir.CondBr(c.V, thenLabel, n.Else.IsNull() ? endLabel : elseLabel);
 
     ir.SetBlock(thenLabel);
-    EmitStmt(cg, n.Then);
+    EmitBranch(cg, n.Then);
+    bool thenCompletes = ir.BlockOpen();
     ir.Br(endLabel);
 
     if (!n.Else.IsNull())
     {
         ir.SetBlock(elseLabel);
-        EmitStmt(cg, n.Else);
+        if (guard)
+            SetVarVisible(cg, bound, true);
+        EmitBranch(cg, n.Else);
         ir.Br(endLabel);
     }
     ir.SetBlock(endLabel);
+    if (guard)
+        SetVarVisible(cg, bound, !thenCompletes);
+    else
+        PopScope(cg, true);
+}
+
+// A branch of an 'if' is a scope of its own even without braces ('else if (x is not T v) return;' binds v there).
+void EmitBranch(Compiler cg, Stmt s)
+{
+    PushScope(cg);
+    EmitStmt(cg, s);
     PopScope(cg, true);
+}
+
+// Hides a variable from name lookup (it stays in its scope for the cleanup): a binding of 'is not' where it is not
+// assigned.
+void SetVarVisible(Compiler cg, int index, bool visible)
+{
+    var vars = cg.Fn[0].Vars;
+    var v = vars.Get(index);
+    string hidden = " (not assigned here)";
+    bool isHidden = v.Name.EndsWith(hidden);
+    if (visible && isHidden)
+        v.Name = v.Name.Substring(0, v.Name.Length - hidden.Length);
+    else if (!visible && !isHidden)
+        v.Name = v.Name + hidden;
+    vars.Set(index, v);
 }
 
 bool IsLiteralTrue(Compiler cg, Expr e)

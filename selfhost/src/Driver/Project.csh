@@ -116,8 +116,10 @@ Error<string> ReadString(Json json, int obj, string key, string file, string fal
 bool EndsWithAny(string s, string[] endings)
 {
     foreach (var e in endings)
+    {
         if (s.Length > e.Length && s.EndsWith(e))
             return true;
+    }
     return false;
 }
 
@@ -214,8 +216,10 @@ Error<Project> LoadProject(string location, string target)
     {
         bool isKnown = false;
         foreach (var k in known)
+        {
             if (k == keys.Get(i))
                 isKnown = true;
+        }
         if (!isKnown)
             Console.WriteErrorLine(file + ": warning: unknown key '" + keys.Get(i) + "' is ignored");
     }
@@ -259,8 +263,10 @@ Error<Project> LoadProject(string location, string target)
     // remove duplicates (the list is sorted)
     var unique = List<string>.Create();
     foreach (var s in p.Sources)
+    {
         if (unique.Count() == 0 || unique.Get(unique.Count() - 1) != s)
             unique.Add(s);
+    }
     p.Sources = unique;
     if (p.Sources.Count() == 0)
         return error(file + ": no .csh source files found");

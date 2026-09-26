@@ -43,7 +43,8 @@ selfhost/
 │       ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
 │       ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
 │       ├── Lambdas.csh      lambdas and closures: captures, environments
-│       ├── Interfaces.csh   interface values: boxes, method tables, dispatch
+│       ├── Interfaces.csh   interfaces as ref/const ref parameters: method tables, dispatch
+│       ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
 │       ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
 │       └── Module.csh       compiling the whole program, the entry point
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts

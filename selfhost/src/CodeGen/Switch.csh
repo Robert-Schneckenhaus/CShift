@@ -27,6 +27,13 @@ void EmitSwitch(Compiler cg, Stmt s)
         subjVal = owned;
     }
     FlushTemps(cg, 0, true);
+    // a union is matched through memory (its tag and its payload)
+    string unionSlot = "";
+    if (IsUnionType(cg, st))
+    {
+        unionSlot = ir.Alloca(LlvmType(cg, st), "switch.union");
+        ir.Store(LlvmType(cg, st), subjVal, unionSlot);
+    }
 
     string endLabel = ir.NewLabel("switch.end");
     var bodies = new string[n.Sections.Length];
@@ -48,9 +55,17 @@ void EmitSwitch(Compiler cg, Stmt s)
             string cond;
             if (!label.PatType.IsNull())
             {
-                int pt = DeclTypeOf(cg, label.PatType);
-                if (pt == st)
-                    cond = "true"; // "case Error<int> r:" matches the whole result
+                bool isError = false;
+                int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
+                if (isError)
+                    cond = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true"); // "case error e:"
+                else if (IsUnionType(cg, st))
+                {
+                    int index = UnionMemberIndex(cg, st, pt);
+                    if (index < 0)
+                        Fail(cg, label.Loc, "'" + types.Name(pt) + "' is not a member of union '" + types.Name(st) + "'");
+                    cond = ir.ICmp("eq", "i32", UnionTag(cg, st, unionSlot), (index + 1).ToString());
+                }
                 else if (types.IsResultLike(st) && types.Elem(st) == pt)
                     cond = ir.ExtractValue(LlvmType(cg, st), subjVal, "0");
                 else
@@ -82,9 +97,11 @@ void EmitSwitch(Compiler cg, Stmt s)
         {
             if (label.PatType.IsNull() || label.PatName.Length == 0)
                 continue;
-            int pt = DeclTypeOf(cg, label.PatType);
+            bool isError = false;
+            int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
             string slot = ir.Alloca(LlvmType(cg, pt), label.PatName);
-            string payload = pt == st ? subjVal : ir.ExtractValue(LlvmType(cg, st), subjVal, "1");
+            string payload = IsUnionType(cg, st) ? ir.Load(LlvmType(cg, pt), UnionPayload(cg, st, unionSlot))
+                           : pt == st ? subjVal : ir.ExtractValue(LlvmType(cg, st), subjVal, "1");
             EmitRetain(cg, pt, payload);
             ir.Store(LlvmType(cg, pt), payload, slot);
             DeclareVar(cg, label.PatName, pt, slot);

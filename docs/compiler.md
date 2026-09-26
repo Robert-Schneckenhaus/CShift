@@ -44,7 +44,7 @@ The file-by-file tour is in [selfhost/README.md](../selfhost/README.md). In shor
 | `selfhost/src/Syntax` | lexer, syntax tree (arenas of nodes, handles), parser, token/tree dumps |
 | `selfhost/src/Sema` | the type table: types are interned integers |
 | `selfhost/src/Emit` | the IR writer (text) |
-| `selfhost/src/CodeGen` | declarations, type resolution, generics (monomorphization), expressions, calls, statements, ARC, `Error<T>`/`Optional<T>`, threads, lambdas, interface values, the constant evaluator, the runtime as IR |
+| `selfhost/src/CodeGen` | declarations, type resolution, generics (monomorphization), expressions, calls, statements, ARC, `Error<T>`/`Optional<T>`, threads, lambdas, interface parameters, sum types, the constant evaluator, the runtime as IR |
 | `selfhost/src/Driver` | command line, `cshift.json`, finding clang and the bundled toolchain, `.ffi` files and the header import |
 | `selfhost/native` | `host.c`: libclang (loaded at run time), the path of the executable, reading the embedded toolchain |
 | `stdlib/` | the standard library, in CShift, embedded into the compiler |
@@ -55,7 +55,7 @@ There is no separate type-checking pass: checking and code generation happen in 
 
 **Reference counting:** variables, fields and array elements own a reference; intermediate results carry a "+1" that
 is taken over when stored or released at the end of the statement. Arguments are passed borrowed; the called function
-retains its own parameters. Heap blocks (strings, arrays, closure environments, interface boxes) start with
+retains its own parameters. Heap blocks (strings, arrays, closure environments) start with
 `{int64 count, int64 length}`. `--arc-stats` prints the balance of allocations and frees at the end of the program.
 Only `SharedPtr<T>` counts atomically.
 

@@ -67,7 +67,7 @@ int Main()
     f += Check("default array", arr == null && arr.Length == 0);
     var pair = default(Pair);
     f += Check("default struct", pair.A == 0 && pair.B == null);
-    f += Check("default Optional", !default(Optional<int>));
+    f += Check("default Optional", default(Optional<int>) == null);
     var list = List<string>.Create();
     list.Add("keep");
     list.Add("remove");

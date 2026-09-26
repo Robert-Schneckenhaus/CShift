@@ -83,6 +83,14 @@ SizeAlign TypeLayout(Compiler cg, int t)
         return AggregateLayout(cg, new int[] { types.Bool, types.Elem(t) });
     case TypeKind.ErrorLit:
         return AggregateLayout(cg, new int[] { types.String, types.I32 });
+    case TypeKind.Function:
+    case TypeKind.Interface:
+        return SizeAlign { Size = 16, Align = 8 }; // { ptr, ptr }
+    case TypeKind.Union:
+    {
+        var ui = GetUnionInfo(cg, t);
+        return SizeAlign { Size = ui.Size, Align = ui.Align };
+    }
     default:
         return SizeAlign { Size = 8, Align = 8 }; // pointers, strings, arrays, function values
     }

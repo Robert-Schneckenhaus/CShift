@@ -150,7 +150,7 @@ struct Parser
         {
             int before = Pos;
             var r = ParseTopLevel();
-            if (!r)
+            if (r.Message != null)
             {
                 Diag.Report(FileId, r.Message, r.Code);
                 SynchronizeTopLevel();
@@ -252,6 +252,12 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
+        else if (CheckIdent("union") && PeekKind(1) == TokenKind.Ident && (PeekKind(2) == TokenKind.LBrace || PeekKind(2) == TokenKind.Colon))
+        {
+            // 'union' is a contextual keyword
+            UnionDecl u = try ParseUnion();
+            Unit.Unions.Add(u);
+        }
         else if (IsThreadModifier())
         {
             Advance();
@@ -265,7 +271,7 @@ struct Parser
             int start = Pos;
             bool isGlobal = false;
             var probe = ParseType();
-            if (probe)
+            if (probe.Message == null)
                 isGlobal = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Semi || PeekKind(1) == TokenKind.Assign);
             Pos = start;
             if (isGlobal)
@@ -291,6 +297,36 @@ struct Parser
         }
     }
 
+    // union Name [: Interface, ...] { Type, Type, ... }
+    Error<UnionDecl> ParseUnion()
+    {
+        var decl = UnionDecl { Loc = Cur().Loc };
+        Advance(); // union
+        decl.Name = try ExpectIdent("union name");
+        var interfaces = List<TypeRef>.Create();
+        if (Match(TokenKind.Colon))
+        {
+            do
+            {
+                interfaces.Add(try ParseType());
+            } while (Match(TokenKind.Comma));
+        }
+        decl.Interfaces = interfaces.ToArray();
+        try Expect(TokenKind.LBrace, "'{'");
+        var members = List<TypeRef>.Create();
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            members.Add(try ParseType());
+            if (!Match(TokenKind.Comma))
+                break;
+        }
+        try Expect(TokenKind.RBrace, "'}' after the member types of the union");
+        decl.Members = members.ToArray();
+        if (decl.Members.Length == 0)
+            return error("a union needs at least one member type", decl.Loc.Pack());
+        return decl;
+    }
+
     // 'thread' is a contextual keyword: a modifier when a function declaration follows ("thread int F(" or
     // "thread void F<"), otherwise an ordinary name.
     bool IsThreadModifier()
@@ -301,7 +337,7 @@ struct Parser
         Advance();
         var probe = ParseType();
         bool result = false;
-        if (probe)
+        if (probe.Message == null)
             result = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.LParen || PeekKind(1) == TokenKind.Lt);
         Pos = start;
         return result;
@@ -800,6 +836,31 @@ struct Parser
         return Tree.AddExprStmt(loc, s);
     }
 
+    // The body of 'if', 'else', a loop or 'using (...)': one statement or a block, but not another control statement
+    // without braces ('if (a) if (b) F();', 'foreach (...) for (...) ...'). 'else if' is not affected.
+    Error<Stmt> ParseBody(string owner)
+    {
+        string nested = "";
+        switch (Kind())
+        {
+        case TokenKind.KwIf: nested = "if"; break;
+        case TokenKind.KwWhile: nested = "while"; break;
+        case TokenKind.KwDo: nested = "do"; break;
+        case TokenKind.KwFor: nested = "for"; break;
+        case TokenKind.KwForeach: nested = "foreach"; break;
+        case TokenKind.KwSwitch: nested = "switch"; break;
+        case TokenKind.KwUsing:
+            if (PeekKind(1) == TokenKind.LParen)
+                nested = "using";
+            break;
+        default: break;
+        }
+        if (nested.Length > 0)
+            return error("a nested '" + nested + "' needs braces: the body of '" + owner + "' must be a block '{ ... }' " +
+                         "when it is a control statement", Cur().Loc.Pack());
+        return ParseStatement();
+    }
+
     Error<Stmt> ParseIf()
     {
         SourceLoc loc = Advance().Loc;
@@ -807,9 +868,9 @@ struct Parser
         try Expect(TokenKind.LParen, "'(' after 'if'");
         s.Cond = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Then = try ParseStatement();
+        s.Then = try ParseBody("if");
         if (Match(TokenKind.KwElse))
-            s.Else = try ParseStatement();
+            s.Else = Check(TokenKind.KwIf) ? try ParseIf() : try ParseBody("else"); // 'else if' chains are fine
         return Tree.AddIf(loc, s);
     }
 
@@ -820,7 +881,7 @@ struct Parser
         try Expect(TokenKind.LParen, "'(' after 'while'");
         s.Cond = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("while");
         return Tree.AddWhile(loc, s);
     }
 
@@ -828,7 +889,7 @@ struct Parser
     {
         SourceLoc loc = Advance().Loc;
         var s = DoWhileStmt { };
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("do");
         try Expect(TokenKind.KwWhile, "'while' after do-body");
         try Expect(TokenKind.LParen, "'('");
         s.Cond = try ParseExpr();
@@ -858,7 +919,7 @@ struct Parser
         }
         s.Iterators = iterators.ToArray();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("for");
         return Tree.AddFor(loc, s);
     }
 
@@ -874,7 +935,7 @@ struct Parser
         try Expect(TokenKind.KwIn, "'in'");
         s.Iterable = try ParseExpr();
         try Expect(TokenKind.RParen, "')'");
-        s.Body = try ParseStatement();
+        s.Body = try ParseBody("foreach");
         return Tree.AddForeach(loc, s);
     }
 
@@ -963,7 +1024,7 @@ struct Parser
             try Expect(TokenKind.RParen, "')'");
             var s = UsingBlockStmt { };
             s.Decl = Tree.AddVarDecl(declLoc, decl);
-            s.Body = try ParseStatement();
+            s.Body = try ParseBody("using");
             return Tree.AddUsingBlock(loc, s);
         }
 
@@ -1126,7 +1187,25 @@ struct Parser
 
             if (info.IsIs)
             {
+                // 'x is not P' negates a pattern ('not' is contextual: it counts only when a pattern follows)
+                bool negated = false;
+                if (Check(TokenKind.Ident) && Cur().Text == "not" &&
+                    (PeekKind(1) == TokenKind.Ident || PeekKind(1) == TokenKind.KwNull))
+                {
+                    Advance();
+                    negated = true;
+                }
+                if (Check(TokenKind.KwNull))
+                {
+                    // 'x is null' / 'x is not null' mean 'x == null' / 'x != null'
+                    SourceLoc nullLoc = Advance().Loc;
+                    var cmp = BinaryExpr { Op = negated ? BinOp.Ne : BinOp.Eq, Lhs = lhs };
+                    cmp.Rhs = Tree.AddNullLit(nullLoc);
+                    lhs = Tree.AddBinary(loc, cmp);
+                    continue;
+                }
                 var isNode = IsExpr { Operand = lhs };
+                isNode.Negated = negated;
                 isNode.Type = try ParseType();
                 isNode.BindName = "";
                 if (Check(TokenKind.Ident))

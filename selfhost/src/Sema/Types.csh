@@ -28,7 +28,8 @@ enum TypeKind : int32
     MethodGroup, // a function name used as a value
     SharedPtr,   // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
     CFunction,   // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
-    Lambda       // a lambda before it is converted to an Action/Func type
+    Lambda,      // a lambda before it is converted to an Action/Func type
+    Union        // union U { A, B }: one of the member types with a tag (Decl: index in Compiler.UnionInfos)
 }
 
 struct TypeInfo

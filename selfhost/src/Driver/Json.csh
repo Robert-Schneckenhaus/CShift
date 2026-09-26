@@ -39,8 +39,10 @@ struct Json
         if (n.Kind != JsonKind.Object)
             return -1;
         for (var i = 0; i < n.Keys.Count(); i += 1)
+        {
             if (n.Keys.Get(i) == key)
                 return n.Items.Get(i);
+        }
         return -1;
     }
 
