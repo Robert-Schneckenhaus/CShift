@@ -53,6 +53,37 @@ Numbers become the shortest text that reads back as the same value: `0.1`, `1.0 
 More string operations are extension-style methods from the standard library (`Contains`, `Trim`, `Split`, `Join`,
 `PadLeft`, `ParseInt`, …) — see the [standard library](../stdlib.md) for the full list.
 
+## Slices
+
+`a[i..j]` is a **view** of the elements `i` to `j - 1` of an array, a string or another slice — nothing is copied:
+
+```csharp
+int[] a = new int[] { 1, 2, 3, 4, 5 };
+Slice<int> mid = a[1..4];        // 2, 3, 4
+var head = a[..2];               // 1, 2
+var tail = a[3..];               // 4, 5
+var last = a[^2..];              // ^n counts from the end: 4, 5
+int end = a[^1];                 // also for a single element: 5
+
+string s = "hello world";
+StringSlice word = s[6..];       // "world"
+bool same = word == "world";     // slices and strings compare by their bytes
+```
+
+* An array gives a `Slice<T>`, a string a `StringSlice` (byte offsets, like `s[i]`). Slices have `Length`, `[i]`
+  (also `[^i]`), `foreach`, slicing again, and `==` for string slices; they go into text like strings (`"x" + word`,
+  `$"{word}"`).
+* A slice is a small value (the array or string it belongs to, the first element and the length). It holds a
+  reference to that block, so it can be stored, returned and put into lists like any value; it also keeps the
+  **whole** block alive (`bigText[0..10]` keeps all of `bigText`). Copy out with `word.ToString()` or
+  `mid.ToArray()` — copying is always explicit; a slice never turns into a `string` or array by itself.
+* A `Slice<T>` writes through: `mid[0] = 20` changes `a[1]` (arrays are shared anyway). A `StringSlice` is read-only.
+* A whole string or array converts to a slice for free, so a function that takes `StringSlice` or `Slice<T>` accepts
+  both: `int Sum(Slice<int> values)` can be called with `a` or `a[1..]`.
+* Ranges are checked: `0 <= start <= end <= Length`, otherwise the program panics like with an index out of range.
+* A slice cannot be passed to a `thread` function (its block's reference count is not atomic); pass
+  `word.ToString()` instead. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL).
+
 ## `List<T>`
 
 A growable array:

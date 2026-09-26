@@ -34,7 +34,8 @@ enum ExprKind : int32
     IntLit, FloatLit, CharLit, StringLit, BoolLit, NullLit,
     Name, Member, Call, Index, Unary, Binary, Assign, Conditional, Cast,
     NewArray, NewObject, StructInit, Is, Try, ErrorLit, SizeOf, Default, This, Unchecked, RefArg, Start,
-    Lambda // only in the self-hosted compiler
+    Lambda, // only in the self-hosted compiler
+    Slice   // a[i..j]
 }
 
 struct Expr
@@ -150,6 +151,17 @@ struct IndexExpr
 {
     Expr Object;
     Expr Index;
+    bool FromEnd;  // a[^n]: the n-th element from the end
+}
+
+// a[start..end], a[..end], a[start..], a[..]; ^n counts from the end. The result is a view (Slice<T>, StringSlice).
+struct SliceExpr
+{
+    Expr Object;
+    Expr Start;        // none: 0
+    Expr End;          // none: the length
+    bool StartFromEnd;
+    bool EndFromEnd;
 }
 
 struct UnaryExpr
@@ -538,6 +550,7 @@ struct Ast
     List<MemberExpr> Members;
     List<CallExpr> Calls;
     List<IndexExpr> Indexes;
+    List<SliceExpr> Slices;
     List<UnaryExpr> Unaries;
     List<BinaryExpr> Binaries;
     List<AssignExpr> Assigns;
@@ -581,6 +594,7 @@ struct Ast
         a.Members = List<MemberExpr>.Create();
         a.Calls = List<CallExpr>.Create();
         a.Indexes = List<IndexExpr>.Create();
+        a.Slices = List<SliceExpr>.Create();
         a.Unaries = List<UnaryExpr>.Create();
         a.Binaries = List<BinaryExpr>.Create();
         a.Assigns = List<AssignExpr>.Create();
@@ -723,6 +737,12 @@ struct Ast
         return Expr { Kind = ExprKind.Call, Index = Calls.Count() - 1, Loc = loc };
     }
 
+    Expr AddSlice(SourceLoc loc, SliceExpr n)
+    {
+        Slices.Add(n);
+        return Expr { Kind = ExprKind.Slice, Index = Slices.Count() - 1, Loc = loc };
+    }
+
     Expr AddIndex(SourceLoc loc, IndexExpr n)
     {
         Indexes.Add(n);
@@ -840,6 +860,7 @@ struct Ast
     MemberExpr GetMember(Expr e) { return Members.Get(e.Index); }
     CallExpr GetCall(Expr e) { return Calls.Get(e.Index); }
     IndexExpr GetIndex(Expr e) { return Indexes.Get(e.Index); }
+    SliceExpr GetSlice(Expr e) { return Slices.Get(e.Index); }
     UnaryExpr GetUnary(Expr e) { return Unaries.Get(e.Index); }
     BinaryExpr GetBinary(Expr e) { return Binaries.Get(e.Index); }
     AssignExpr GetAssign(Expr e) { return Assigns.Get(e.Index); }

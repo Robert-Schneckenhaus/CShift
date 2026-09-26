@@ -150,9 +150,18 @@ struct AstDumper
         case ExprKind.Index:
         {
             var n = Tree.GetIndex(e);
-            Line(indent, role, head);
+            Line(indent, role, head + (n.FromEnd ? " from_end" : ""));
             DumpExpr(indent + 1, "object", n.Object);
             DumpExpr(indent + 1, "index", n.Index);
+            break;
+        }
+        case ExprKind.Slice:
+        {
+            var n = Tree.GetSlice(e);
+            Line(indent, role, head + (n.StartFromEnd ? " start_from_end" : "") + (n.EndFromEnd ? " end_from_end" : ""));
+            DumpExpr(indent + 1, "object", n.Object);
+            DumpExpr(indent + 1, "start", n.Start);
+            DumpExpr(indent + 1, "end", n.End);
             break;
         }
         case ExprKind.Unary:
@@ -310,6 +319,7 @@ struct AstDumper
         case ExprKind.Member: return "Member";
         case ExprKind.Call: return "Call";
         case ExprKind.Index: return "Index";
+        case ExprKind.Slice: return "Slice";
         case ExprKind.Unary: return "Unary";
         case ExprKind.Binary: return "Binary";
         case ExprKind.Assign: return "Assign";

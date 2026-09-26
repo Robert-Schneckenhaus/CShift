@@ -29,7 +29,9 @@ enum TypeKind : int32
     SharedPtr,   // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
     CFunction,   // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
     Lambda,      // a lambda before it is converted to an Action/Func type
-    Union        // union U { A, B }: one of the member types with a tag (Decl: index in Compiler.UnionInfos)
+    Union,       // union U { A, B }: one of the member types with a tag (Decl: index in Compiler.UnionInfos)
+    Slice,       // Slice<T>: a view of part of an array { owner block, data, length }
+    StringSlice  // a view of part of a string (read-only), same layout
 }
 
 struct TypeInfo
@@ -39,7 +41,7 @@ struct TypeInfo
     int Bits;          // Int, Char, Float, Enum
     bool IsSigned;     // Int, Enum
     bool IsNative;     // nint / nuint
-    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result), SharedPtr
+    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result), SharedPtr, Slice
     int[] Params;      // Function: parameter types
     int Decl;          // Struct / Enum / Interface: index of its info in the compiler
     int Code;          // Error: the error enum of Error<T, E> (0: plain int codes); ErrorLit: see ErrorLitOf
@@ -60,6 +62,7 @@ struct TypeContext
     int ErrorLit;
     int MethodGroup;
     int Lambda;
+    int StringSlice;
     int I8;
     int I16;
     int I32;
@@ -101,6 +104,10 @@ struct TypeContext
         tc.Nuint = tc.Add(TypeKind.Int, "nuint", 64, false);
         tc.SetNative(tc.Nuint);
         tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
+        tc.StringSlice = tc.Add(TypeKind.StringSlice, "StringSlice", 0, false);
+        var ss = tc.Infos.Get(tc.StringSlice - 1);
+        ss.Elem = tc.Char;
+        tc.Infos.Set(tc.StringSlice - 1, ss);
         return tc;
     }
 
@@ -156,6 +163,8 @@ struct TypeContext
     bool IsFunction(int t) { return Kind(t) == TypeKind.Function; }
     bool IsSharedPtr(int t) { return Kind(t) == TypeKind.SharedPtr; }
     bool IsCFunction(int t) { return Kind(t) == TypeKind.CFunction; }
+    bool IsSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.StringSlice; } // either view
+    bool IsStringSlice(int t) { return Kind(t) == TypeKind.StringSlice; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
     // The integer type with the given width.
@@ -221,6 +230,7 @@ struct TypeContext
     }
 
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
+    int SliceOf(int elem) { return Derived(TypeKind.Slice, "Slice<" + Name(elem) + ">", elem); }
     int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
     int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }
 

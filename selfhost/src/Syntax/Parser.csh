@@ -1414,11 +1414,32 @@ struct Parser
             }
             else if (Check(TokenKind.LBracket))
             {
+                // a[i], a[^i] (from the end), or a slice: a[i..j], a[..j], a[i..], a[..]
                 Advance();
-                var i = IndexExpr { Object = expr };
-                i.Index = try ParseExpr();
-                try Expect(TokenKind.RBracket, "']'");
-                expr = Tree.AddIndex(loc, i);
+                Expr first = Expr { };
+                bool firstFromEnd = false;
+                if (!Check(TokenKind.DotDot))
+                {
+                    firstFromEnd = Match(TokenKind.Caret);
+                    first = try ParseExpr();
+                }
+                if (Match(TokenKind.DotDot))
+                {
+                    var sl = SliceExpr { Object = expr, Start = first, StartFromEnd = firstFromEnd };
+                    if (!Check(TokenKind.RBracket))
+                    {
+                        sl.EndFromEnd = Match(TokenKind.Caret);
+                        sl.End = try ParseExpr();
+                    }
+                    try Expect(TokenKind.RBracket, "']'");
+                    expr = Tree.AddSlice(loc, sl);
+                }
+                else
+                {
+                    var i = IndexExpr { Object = expr, Index = first, FromEnd = firstFromEnd };
+                    try Expect(TokenKind.RBracket, "']'");
+                    expr = Tree.AddIndex(loc, i);
+                }
             }
             else if (Check(TokenKind.LBrace) && (expr.Kind == ExprKind.Name || expr.Kind == ExprKind.Member) && LooksLikeStructInit())
             {

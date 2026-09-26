@@ -19,7 +19,7 @@ enum TokenKind : int32
 
     // Punctuation
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
-    Semi, Comma, Dot, Colon, Question, Arrow, Ellipsis,
+    Semi, Comma, Dot, DotDot, Colon, Question, Arrow, Ellipsis,
     Plus, Minus, Star, Slash, Percent, Amp, Pipe, Caret, Tilde, Bang,
     Assign, Lt, Gt, EqEq, NotEq, LtEq, GtEq, AmpAmp, PipePipe, Shl,
     PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign,
@@ -72,6 +72,7 @@ string TokenName(TokenKind kind)
     case TokenKind.Semi: return "';'";
     case TokenKind.Comma: return "','";
     case TokenKind.Dot: return "'.'";
+    case TokenKind.DotDot: return "'..'";
     case TokenKind.Colon: return "':'";
     case TokenKind.Assign: return "'='";
     case TokenKind.Lt: return "'<'";

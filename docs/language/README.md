@@ -16,7 +16,7 @@ precise list of what's implemented, and the decisions the design leaves open). T
 7. [Threads](threading.md) — `thread`, `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>`
 8. [Resources and `using`](resources.md) — `IDisposable`, deterministic cleanup
 9. [Functions and function pointers](functions-and-delegates.md) — overloading, parameters, `Action`/`Func`, lambdas
-10. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings and interpolation, `List`, `Dictionary`, indexers
+10. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings and interpolation, slices, `List`, `Dictionary`, indexers
 11. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
 12. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
 13. [Projects](projects.md) — `cshift.json`, building programs with more than one file

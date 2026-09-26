@@ -25,6 +25,7 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Call: return EmitCall(cg, e);
     case ExprKind.Member: return EmitMember(cg, e);
     case ExprKind.Index: return EmitIndex(cg, e);
+    case ExprKind.Slice: return EmitSlice(cg, e);
     case ExprKind.NewArray: return EmitNewArray(cg, e);
     case ExprKind.Is: return EmitIs(cg, e);
     case ExprKind.Try: return EmitTry(cg, e);
@@ -465,6 +466,15 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         return MakeBool(cg, op == BinOp.Eq ? isNull : ir.Bin("xor", "i1", isNull, "true"));
     }
 
+    // A string slice compared with a string or another string slice: the bytes.
+    if ((types.IsStringSlice(l.Type) || types.IsStringSlice(r.Type)) &&
+        (types.IsString(l.Type) || types.IsStringSlice(l.Type)) && (types.IsString(r.Type) || types.IsStringSlice(r.Type)))
+    {
+        if (!isEq)
+            Fail(cg, loc, "string slices can only be compared with '==' and '!='");
+        return EmitTextEquals(cg, op, l, r);
+    }
+
     // String equality.
     if (types.IsString(l.Type) && types.IsString(r.Type))
     {
@@ -739,7 +749,9 @@ Value EmitAssign(Compiler cg, Expr e)
             return Rvalue(newValue.Type, newValue.V, false);
         }
         // arrays, strings and pointers: the element itself is the target
-        target = EmitElement(cg, holder, ix.Index, a.Target.Loc);
+        if (types.IsStringSlice(holder.Type))
+            Fail(cg, a.Target.Loc, "a StringSlice is read-only (strings are immutable)");
+        target = EmitElement(cg, holder, ix.Index, ix.FromEnd, a.Target.Loc);
     }
     else
         target = EmitExpr(cg, a.Target);
@@ -916,6 +928,8 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
     int t = v.Type;
     if (types.IsString(t))
         return Consume(cg, v);
+    if (types.IsStringSlice(t))
+        return StringSliceText(cg, v);
     if (types.IsBool(t))
     {
         string s = ir.Select(v.V, "ptr", "@.cs.true", "@.cs.false");

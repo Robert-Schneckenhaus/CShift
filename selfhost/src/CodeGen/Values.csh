@@ -251,7 +251,7 @@ int ConversionCost(Compiler cg, Value v, int to)
             return 4; // Error<Optional<T>>: an empty Optional<T>
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
                 toKind == TypeKind.Optional || toKind == TypeKind.Function || toKind == TypeKind.SharedPtr ||
-                toKind == TypeKind.CFunction) ? 1 : -1;
+                toKind == TypeKind.CFunction || toKind == TypeKind.Slice || toKind == TypeKind.StringSlice) ? 1 : -1;
     }
     if (fromKind == TypeKind.MethodGroup)
     {
@@ -278,6 +278,9 @@ int ConversionCost(Compiler cg, Value v, int to)
         int litCode = types.Code(from);
         return types.Code(to) == 0 || litCode == 0 || litCode == types.Code(to) ? 1 : -1;
     }
+    // a whole string or array as a view (no copy)
+    if ((types.IsString(from) && types.IsStringSlice(to)) || (types.IsArray(from) && types.Kind(to) == TypeKind.Slice && types.Elem(from) == types.Elem(to)))
+        return 2;
     // Error<T, E> -> Error<T>: the code widens to int (same layout)
     if (types.IsError(from) && types.IsError(to) && types.Elem(from) == types.Elem(to) && types.Code(to) == 0)
         return 1;
@@ -359,6 +362,10 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         if (types.IsError(to) && types.Code(to) != 0 && (types.Kind(from) == TypeKind.ErrorLit || types.IsError(from)))
             hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
                    ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
+        if (types.IsStringSlice(from) && types.IsString(to))
+            hint = " (a slice is a view; copy it with .ToString())";
+        if (types.Kind(from) == TypeKind.Slice && types.IsArray(to))
+            hint = " (a slice is a view; copy it with .ToArray())";
         if (IsErrorEnum(cg, from) && types.IsResultLike(to))
             hint = " (an error code is not a value: write 'return error(" + types.Name(from) + ".Member);')";
         Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
@@ -374,7 +381,7 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     var fromKind = types.Kind(from);
     if (fromKind == TypeKind.Null && !types.IsError(to))
     {
-        if (types.IsOptional(to) || types.IsFunction(to))
+        if (types.IsOptional(to) || types.IsFunction(to) || types.IsSlice(to))
             return Rvalue(to, "zeroinitializer", false);
         return Rvalue(to, "null", false);
     }
@@ -391,6 +398,8 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
         Value r = ToRValue(cg, v);
         return Rvalue(to, NumericConvert(cg, r.V, from, to), false);
     }
+    if ((types.IsString(from) || types.IsArray(from)) && types.IsSlice(to))
+        return ToSlice(cg, v, to);
     if (IsErrorEnum(cg, from) && types.IsIntegral(to))
         return Rvalue(to, NumericConvert(cg, ToRValue(cg, v).V, types.I32, to), false);
     if (types.IsError(from) && types.IsError(to))

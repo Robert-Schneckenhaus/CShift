@@ -21,6 +21,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
+| Slices: `a[i..j]`, `a[..j]`, `a[i..]`, `a[^n]`; views `Slice<T>` and `StringSlice` (no copy, `ToString()`/`ToArray()` copy) | ✔ (self-hosted, [slices](arrays-strings-collections.md#slices)) |
 | Error enums (`error E { ... }`), `error(E.X)`, typed results `Error<T, E>` / `E<T>`, `is E code`, `case E.X:` | ✔ (self-hosted, [error handling](error-handling.md#error-enums-typed-error-codes)) |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |

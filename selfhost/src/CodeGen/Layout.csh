@@ -86,6 +86,9 @@ SizeAlign TypeLayout(Compiler cg, int t)
     case TypeKind.Function:
     case TypeKind.Interface:
         return SizeAlign { Size = 16, Align = 8 }; // { ptr, ptr }
+    case TypeKind.Slice:
+    case TypeKind.StringSlice:
+        return SizeAlign { Size = 24, Align = 8 }; // { ptr, ptr, i64 }
     case TypeKind.Union:
     {
         var ui = GetUnionInfo(cg, t);
