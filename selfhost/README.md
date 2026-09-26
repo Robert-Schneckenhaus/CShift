@@ -4,7 +4,8 @@ This is the CShift compiler: the `cshiftc` of the releases is `cshc`, built from
 by the frozen C++ compiler in `compiler/`, stage 2 by stage 1; see `build-release.sh`). It covers the whole language
 of the C++ compiler (threads, `SharedPtr<T>`, C header import through libclang, the bundled toolchain) and is where
 the language grows from now on. **`cshc` compiles itself**: `bootstrap.sh` checks that stage 1 and stage 2 produce
-identical LLVM IR. Open work is tracked in [../Todo.md](../Todo.md).
+identical LLVM IR. The big picture (stages, the freeze, tests, dependencies) is in [../docs/compiler.md](../docs/compiler.md);
+open work is tracked in [../Todo.md](../Todo.md). This file is the tour of the sources.
 
 ```
 selfhost/
@@ -40,7 +41,9 @@ selfhost/
 │       ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
 │       ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
 │       ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
-│       ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled (CodeGenThread.cpp)
+│       ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
+│       ├── Lambdas.csh      lambdas and closures: captures, environments
+│       ├── Interfaces.csh   interface values: boxes, method tables, dispatch
 │       ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
 │       └── Module.csh       compiling the whole program, the entry point
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
@@ -49,8 +52,7 @@ selfhost/
 ├── compare.sh               front end: compares cshc against the C++ compiler (tokens and syntax tree)
 ├── status.sh, passing.txt   code generator: which cases in tests/cases pass
 ├── bootstrap.sh             cshc builds itself; stage 1 and 2 must produce the same IR
-├── projects.sh              build tests/projects with cshc (cshc build/run/new)
-└── DEPENDENCIES.md          analysis: what the new compiler needs at runtime and what can be dropped
+└── projects.sh              build tests/projects with cshc (cshc build/run/new)
 ```
 
 ## Building and using it

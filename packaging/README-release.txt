@@ -20,8 +20,8 @@ Contents
 cshiftc.exe    the compiler
 toolchain\     clang/lld/libclang, headers and libraries (do not modify)
 README.md      language status, usage, the cshift.json project file
-FFI.md         importing C headers (using Name from "header.h";), function pointers
-BuildDesign.md, LanguageDesign.md
+docs/ffi.md    importing C headers (using Name from "header.h";), function pointers
+docs/          the language guide (docs/language), the standard library, the design documents
 
-Your own C libraries: see FFI.md and the includePaths/libraryPaths/links keys in cshift.json.
+Your own C libraries: see docs/ffi.md and the includePaths/libraryPaths/links keys in cshift.json.
 VS Code extension (syntax highlighting): the vscode-extension folder in the repository.

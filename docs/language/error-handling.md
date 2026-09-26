@@ -36,7 +36,8 @@ else
 }
 ```
 
-`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present":
+`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present"
+(except `Error<Optional<T>>`, [see below](#nesting-only-erroroptionalt)):
 
 ```csharp
 if (!result)

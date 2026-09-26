@@ -2,7 +2,7 @@
 //
 // A header is turned into a .ffi file (JSON with the functions, structs, enums and constants and their CShift types)
 // by libclang (FfiGenerator.csh); it is cached in obj/ffi and generated again when the header, the options or a header
-// it includes change. A ready-made .ffi file is used as it is. See FFI.md.
+// it includes change. A ready-made .ffi file is used as it is. See docs/ffi.md.
 
 namespace CShift.Driver;
 

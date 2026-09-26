@@ -26,7 +26,8 @@ cp "$build/cshiftc.exe" "$dist/"
 ldd "$build/cshiftc.exe" | awk '/=> .*\/(clang64|mingw64|ucrt64)\/bin\// { print $3 }' | while read -r dll; do
     cp -n "$dll" "$dist/"
 done
-cp "$root/README.md" "$root/FFI.md" "$root/BuildDesign.md" "$root/LanguageDesign.md" "$dist/"
+cp "$root/README.md" "$dist/"
+cp -r "$root/docs" "$dist/docs"
 cp "$root/packaging/README-release.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"
 echo "$version" > "$dist/VERSION"

@@ -2,7 +2,7 @@
 //
 // libclang is loaded at run time (selfhost/native/host.c, next to clang or from CSHIFT_LIBCLANG). The header is
 // parsed once; its functions, structs, unions, enums and simple macros become the JSON description that
-// LoadFfiUnit reads (see FFI.md). Functions that take or return structs by value get a C wrapper (the shim).
+// LoadFfiUnit reads (see docs/ffi.md). Functions that take or return structs by value get a C wrapper (the shim).
 
 namespace CShift.Driver;
 

@@ -40,7 +40,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `includePaths` | search paths for C headers (`using X from "h.h"`), relative to `cshift.json` | `[]` |
 | `defines` | macros used when parsing C headers (`NAME`, `NAME=value`) | `[]` |
 | `libraryPaths` | linker search paths (`-L`) | `[]` |
-| `ffiApi` | path fragments of C headers that belong to the imported API even when they live in system paths (`--ffi-api=`, see FFI.md) | `[]` |
+| `ffiApi` | path fragments of C headers that belong to the imported API even when they live in system paths (`--ffi-api=`, see [ffi.md](ffi.md)) | `[]` |
 | `target` | the target triple | host |
 
 Unknown keys produce a warning, invalid values an error naming the file. `$schema` is allowed; the VS Code extension

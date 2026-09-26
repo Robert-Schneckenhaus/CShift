@@ -38,8 +38,20 @@ if (greeting == "Hello, Ann!")
     Console.WriteLine("match");
 ```
 
+**Interpolated strings** put values into text; `{x}` is the same as `+ x +`, so anything that can be added to a
+string works (numbers, `bool`, `char`, strings, and structs with a `string ToString()` method). `{{` and `}}` are
+braces:
+
+```csharp
+int count = 3;
+string text = $"{name} has {count} item(s), {count * 2} in total {{approx.}}";
+const string Title = $"{AppName} {Version}";   // works in constants too
+```
+
+Numbers become the shortest text that reads back as the same value: `0.1`, `1.0 / 3.0` is `0.3333333333333333`.
+
 More string operations are extension-style methods from the standard library (`Contains`, `Trim`, `Split`, `Join`,
-`ParseInt`, …) — see the [main README](../../README.md#standard-library) for the full list.
+`PadLeft`, `ParseInt`, …) — see the [standard library](../stdlib.md) for the full list.
 
 ## `List<T>`
 
@@ -58,7 +70,14 @@ foreach (var name in names)
 
 Console.WriteLine(names.Count().ToString());
 names.Sort();       // needs T : IComparable<T>
+
+names[0] = "Amy";   // the indexer: names.Set(0, "Amy")
+string first = names[0];
+var longNames = names.Where(n => n.Length > 3);
 ```
+
+**Indexers:** `x[k]` calls `x.Get(k)` and `x[k] = v` calls `x.Set(k, v)` (also `x[k] += v`), for `List<T>`,
+`Dictionary<K, V>` and any struct of your own with such methods.
 
 ## `Dictionary<TKey, TValue>`
 
@@ -67,7 +86,9 @@ see [interfaces and generics](interfaces-and-generics.md) for adding them to you
 
 ```csharp
 var ages = Dictionary<string, int>.Create();
-ages.Set("Ann", 30);
+ages["Ann"] = 30;                       // ages.Set("Ann", 30)
+ages["Ann"] += 1;
+int annsAge = ages["Ann"];              // panics if the key is missing
 
 if (ages.TryGet("Ann") is int age)
     Console.WriteLine(age.ToString());
