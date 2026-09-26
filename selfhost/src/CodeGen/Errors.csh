@@ -85,6 +85,15 @@ Value EmitIs(Compiler cg, Expr e)
         }
     }
     int pattern = DeclTypeOf(cg, n.Type);
+    if (types.IsError(subj.Type) && types.IsOptional(types.Elem(subj.Type)) && pattern == types.Elem(types.Elem(subj.Type)))
+    {
+        // Error<Optional<T>> is T v: succeeded and has a value. The subject becomes its Optional<T> (empty on error).
+        HoldTemp(cg, subj);
+        int optional = types.Elem(subj.Type);
+        string ok = ir.ExtractValue(LlvmType(cg, subj.Type), subj.V, "0");
+        string inner = ir.ExtractValue(LlvmType(cg, subj.Type), subj.V, "1");
+        subj = Rvalue(optional, ir.Select(ok, LlvmType(cg, optional), inner, "zeroinitializer"), false);
+    }
     bool whole = pattern == subj.Type;
     if (!whole && pattern != types.Elem(subj.Type))
         Fail(cg, cg.Tree.GetType(n.Type).Loc, "pattern type '" + types.Name(pattern) + "' does not match the payload type '" +

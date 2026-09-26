@@ -1,5 +1,5 @@
 // Smaller language additions: indexers (x[k] is x.Get(k), x[k] = v is x.Set(k, v)), C#'s "Color Color" rule,
-// Error<Optional<T>>, 'thread' and 'where' as ordinary names, and round-trip float formatting.
+// Error<Optional<T>> (tested with 'is', never as a bare condition), 'thread' and 'where' as ordinary names, and round-trip float formatting.
 // Main returns the number of failed checks.
 // expect-exit: 0
 
@@ -123,7 +123,11 @@ int Main()
     var missing = Find(values, 3);
     failed += Check("missing", missing is Optional<int> m && !(m is int));
     var bad = Find(values, -1);
-    failed += Check("error", !bad && bad.Message == "negative");
+    failed += Check("error", !(bad is Optional<int>) && bad.Message == "negative");
+    // 'is T v' on Error<Optional<T>>: succeeded and has a value
+    failed += Check("is value", found is int direct && direct == 1);
+    failed += Check("is value missing", !(missing is int));
+    failed += Check("is value error", !(bad is int));
 
     // contextual keywords
     int where = 2;

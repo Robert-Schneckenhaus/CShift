@@ -211,6 +211,12 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
             HoldTemp(cg, cv);
             passed = cv.V;
             passedType = AbiParam(cg, pt);
+            if (d.IsExtern && types.IsFunction(pt))
+            {
+                // C gets the plain function pointer
+                passed = RawFunctionPointer(cg, cv.V);
+                passedType = "ptr";
+            }
             if (cstring)
             {
                 // const char*: pass the character data of the string (null stays NULL). Strings are NUL-terminated.
@@ -304,7 +310,8 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         callArgs.Append("ptr " + outSlot);
     }
 
-    string retType = d.RetOut ? "void" : AbiReturn(cg, fi.Ret);
+    bool rawFunctionResult = d.IsExtern && types.IsFunction(fi.Ret);
+    string retType = d.RetOut ? "void" : (rawFunctionResult ? "ptr" : AbiReturn(cg, fi.Ret));
     string result;
     if (d.IsVariadic)
     {
@@ -313,7 +320,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         {
             if (i > 0)
                 fixedTypes.Append(", ");
-            fixedTypes.Append(fi.ParamRefs[i] != 0 ? "ptr" : LlvmType(cg, fi.ParamTypes[i]));
+            fixedTypes.Append(fi.ParamRefs[i] != 0 ? "ptr" : ExternAbiParam(cg, fi.ParamTypes[i]));
         }
         result = ir.CallVariadic(retType, fixedTypes.ToString(), fi.LlvmName, callArgs.ToString());
     }
@@ -330,6 +337,8 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         // const char* result: copy it into a string that the caller owns.
         return Rvalue(types.String, ir.Call("ptr", "@__cs_from_cstr", "ptr " + result), true);
     }
+    if (rawFunctionResult)
+        return Rvalue(fi.Ret, ir.InsertValue("{ ptr, ptr }", "zeroinitializer", "ptr", result, "0"), false);
     return Rvalue(fi.Ret, result, NeedsArc(cg, fi.Ret));
 }
 
@@ -349,6 +358,12 @@ string AbiParam(Compiler cg, int t)
 {
     string ext = AbiExtension(cg, t);
     return ext.Length > 0 ? LlvmType(cg, t) + " " + ext : LlvmType(cg, t);
+}
+
+// A parameter of a C function: function values are plain function pointers there.
+string ExternAbiParam(Compiler cg, int t)
+{
+    return cg.Types.IsFunction(t) ? "ptr" : AbiParam(cg, t);
 }
 
 // "zeroext i8" for a result of the type.
@@ -391,7 +406,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart
     Value variable = LookupVariable(cg, n.Name);
     if (!variable.IsNone())
     {
-        if (!cg.Types.IsFunction(variable.Type))
+        if (!IsCallableType(cg, variable.Type))
             Fail(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
         RejectIndirectStart(cg, viaStart, e.Loc);
         return EmitIndirectCall(cg, variable, EmitArgs(cg, call.Args), e.Loc);
@@ -401,7 +416,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart
     {
         // A field with a function type is called like a function.
         var fieldPath = FindField(cg, currentOwner, n.Name);
-        if (fieldPath.Found && cg.Types.IsFunction(fieldPath.Type))
+        if (fieldPath.Found && IsCallableType(cg, fieldPath.Type))
         {
             RejectIndirectStart(cg, viaStart, e.Loc);
             Value field = FieldAccess(cg, ThisValue(cg, e.Loc), n.Name, e.Loc);
@@ -412,7 +427,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart
     if (globalIndex >= 0 && (CurrentOwner(cg) == 0 || MethodCandidates(cg, CurrentOwner(cg), n.Name).Length == 0))
     {
         Value global = GlobalUse(cg, globalIndex);
-        if (cg.Types.IsFunction(global.Type))
+        if (IsCallableType(cg, global.Type))
         {
             RejectIndirectStart(cg, viaStart, e.Loc);
             return EmitIndirectCall(cg, global, EmitArgs(cg, call.Args), e.Loc);
@@ -565,14 +580,14 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
     {
         // A field with a function type is called like a method: obj.Callback(x)
         var fieldPath = FindField(cg, obj.Type, m.Name);
-        if (fieldPath.Found && types.IsFunction(fieldPath.Type))
+        if (fieldPath.Found && IsCallableType(cg, fieldPath.Type))
         {
             Value field = FieldAccess(cg, obj, m.Name, e.Loc);
             return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
         }
     }
     var args = EmitArgs(cg, call.Args);
-    if (types.IsFunction(obj.Type) && m.Name == "Invoke")
+    if (IsCallableType(cg, obj.Type) && m.Name == "Invoke")
         return EmitIndirectCall(cg, obj, args, e.Loc);
     if (!types.IsStruct(obj.Type))
         return EmitBuiltinMethod(cg, obj, m.Name, args, e.Loc);
@@ -652,7 +667,7 @@ Value EmitCallVia(Compiler cg, Expr e, bool viaStart)
     // Any other expression that yields a function: handlers[i](x), MakeCallback()(x)
     RejectIndirectStart(cg, viaStart, e.Loc);
     Value fv = EmitExpr(cg, callee);
-    if (!cg.Types.IsFunction(fv.Type))
+    if (!IsCallableType(cg, fv.Type))
         Fail(cg, e.Loc, "this expression cannot be called (type '" + cg.Types.Name(fv.Type) + "')");
     return EmitIndirectCall(cg, fv, EmitArgs(cg, call.Args), e.Loc);
 }

@@ -423,8 +423,13 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         Value other = types.Kind(l.Type) == TypeKind.Null ? r : l;
         string isNull;
         var k = types.Kind(other.Type);
-        if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.Function)
+        if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.CFunction)
             isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        else if (k == TypeKind.Function)
+        {
+            HoldTemp(cg, other);
+            isNull = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", other.V, "0"), "null");
+        }
         else if (k == TypeKind.SharedPtr)
         {
             HoldTemp(cg, other);
@@ -467,6 +472,16 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         if ((types.IsBool(l.Type) || types.IsFunction(l.Type)) && !isEq)
             Fail(cg, loc, types.IsBool(l.Type) ? "bool values can only be compared with '==' and '!='"
                                                  : "function values can only be compared with '==' and '!='");
+        if (types.IsFunction(l.Type))
+        {
+            // the same function with the same environment
+            HoldTemp(cg, l);
+            HoldTemp(cg, r);
+            string sameFn = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", l.V, "0"), ir.ExtractValue("{ ptr, ptr }", r.V, "0"));
+            string sameEnv = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", l.V, "1"), ir.ExtractValue("{ ptr, ptr }", r.V, "1"));
+            string same = ir.Bin("and", "i1", sameFn, sameEnv);
+            return MakeBool(cg, op == BinOp.Eq ? same : ir.Bin("xor", "i1", same, "true"));
+        }
         bool s = types.IsEnum(l.Type) && types.IsSigned(l.Type);
         return MakeBool(cg, ir.ICmp(IntPredicate(op, s), LlvmType(cg, l.Type), l.V, r.V));
     }
@@ -514,6 +529,7 @@ Value EmitCondition(Compiler cg, Expr e)
     Value v = EmitRValue(cg, e);
     if (cg.Types.IsBool(v.Type))
         return v;
+    RejectAmbiguousCondition(cg, v.Type, e.Loc);
     if (cg.Types.IsResultLike(v.Type))
     {
         HoldTemp(cg, v);
@@ -521,6 +537,18 @@ Value EmitCondition(Compiler cg, Expr e)
     }
     Fail(cg, e.Loc, "a condition must be of type 'bool', not '" + cg.Types.Name(v.Type) + "' (there is no implicit conversion to bool)");
     return v;
+}
+
+// Error<Optional<T>> as a condition ('if (x)', '!x'): "failed" or "found nothing"? The reader could not tell, so it has
+// to be spelled out with 'is'.
+void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
+{
+    var types = cg.Types;
+    if (!types.IsError(t) || !types.IsOptional(types.Elem(t)))
+        return;
+    string inner = types.Name(types.Elem(types.Elem(t)));
+    Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition: it is unclear whether it asks for success or for a value; " +
+                      "write 'x is " + inner + " v' (succeeded with a value) or 'x is Optional<" + inner + "> o' (succeeded)");
 }
 
 // && and ||: the right side only runs if it can change the result.
@@ -620,6 +648,7 @@ Value EmitUnary(Compiler cg, Expr e)
         Value v = EmitRValue(cg, u.Operand);
         if (types.IsBool(v.Type))
             return MakeBool(cg, ir.Bin("xor", "i1", v.V, "true"));
+        RejectAmbiguousCondition(cg, v.Type, e.Loc);
         if (types.IsResultLike(v.Type))
         {
             HoldTemp(cg, v);

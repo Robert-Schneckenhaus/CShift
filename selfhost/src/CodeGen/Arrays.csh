@@ -270,6 +270,8 @@ string ReleaseFunction(Compiler cg, int t)
         return ResultHelper(cg, t, false);
     if (types.IsSharedPtr(t))
         return SharedReleaseHelper(cg, t);
+    if (types.IsFunction(t))
+        return FunctionReleaseHelper(cg);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -285,6 +287,8 @@ string RetainFunction(Compiler cg, int t)
         return ResultHelper(cg, t, true);
     if (types.IsSharedPtr(t))
         return SharedRetainHelper(cg);
+    if (types.IsFunction(t))
+        return FunctionRetainHelper(cg);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
 }

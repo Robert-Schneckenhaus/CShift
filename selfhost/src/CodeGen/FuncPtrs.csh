@@ -1,7 +1,11 @@
-// Function pointers: Action<...> and Func<..., R> (ports of CodeGen::groupValue, resolveGroup, groupFunctionType and
-// emitIndirectCall). A function value is a plain pointer to a function; there are no closures.
+// Function values: Action<...> and Func<..., R>.
 //
-// A function name used as a value has the type "function" (a method group). It becomes a function pointer when it is
+// A function value is { ptr fn, ptr env }. For a plain function (and a lambda that captures nothing) env is null and
+// fn is the function itself, so it can be passed to C as it is. A lambda that captures variables (Lambdas.csh) has an
+// environment: a reference-counted block { i64 count, i64 unused, ptr drop, captured values... }, and fn takes it as
+// an extra first parameter. 'drop' releases the captured values when the last reference goes away.
+//
+// A function name used as a value has the type "function" (a method group). It becomes a function value when it is
 // converted to an Action/Func type; the signature must match exactly.
 
 namespace CShift.CodeGen;
@@ -144,7 +148,44 @@ Value ConvertGroup(Compiler cg, Value v, int to, SourceLoc loc)
     }
     UseFunction(cg, instance);
     NoteCall(cg, instance); // taking the address of a function counts as a call (it is called through the pointer later)
-    return Rvalue(to, cg.Instances.Get(instance).LlvmName, false);
+    return Rvalue(to, "{ ptr " + cg.Instances.Get(instance).LlvmName + ", ptr null }", false);
+}
+
+// The plain function pointer of a function value for C; a closure (with an environment) cannot be called by C.
+string RawFunctionPointer(Compiler cg, string value)
+{
+    var ir = cg.Ir;
+    string env = ir.ExtractValue("{ ptr, ptr }", value, "1");
+    EmitPanicIf(cg, ir.ICmp("ne", "ptr", env, "null"), "a lambda that captures variables cannot be passed to C");
+    return ir.ExtractValue("{ ptr, ptr }", value, "0");
+}
+
+string FunctionRetainHelper(Compiler cg)
+{
+    string name = "@__cs_retain_fn";
+    if (cg.Ir.Declared.Add(name))
+        cg.Ir.AppendHelper("define internal void @__cs_retain_fn({ ptr, ptr } %f) {\nentry:\n" +
+                           "  %env = extractvalue { ptr, ptr } %f, 1\n  call void @__cs_retain(ptr %env)\n  ret void\n}\n");
+    return name;
+}
+
+// Releases the environment of a function value: the last reference calls its 'drop' function (which releases the
+// captured values) and frees the block.
+string FunctionReleaseHelper(Compiler cg)
+{
+    string name = "@__cs_release_fn";
+    if (cg.Ir.Declared.Add(name))
+        cg.Ir.AppendHelper("define internal void @__cs_release_fn({ ptr, ptr } %f) {\nentry:\n" +
+                           "  %env = extractvalue { ptr, ptr } %f, 1\n" +
+                           "  %isnull = icmp eq ptr %env, null\n  br i1 %isnull, label %done, label %dec\n" +
+                           "dec:\n  %rc = load i64, ptr %env\n  %rc1 = sub i64 %rc, 1\n  store i64 %rc1, ptr %env\n" +
+                           "  %last = icmp eq i64 %rc1, 0\n  br i1 %last, label %drop, label %done\n" +
+                           "drop:\n  %dropp = getelementptr i8, ptr %env, i64 16\n  %dropfn = load ptr, ptr %dropp\n" +
+                           "  call void %dropfn(ptr %env)\n  call void @free(ptr %env)\n" +
+                           (cg.St[0].ArcStats ? "  %fr = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n" : "") +
+                           "  br label %done\n" +
+                           "done:\n  ret void\n}\n");
+    return name;
 }
 
 // A call through a function pointer.
@@ -153,6 +194,8 @@ Value EmitIndirectCall(Compiler cg, Value callee, Arg[] args, SourceLoc loc)
     var types = cg.Types;
     var ir = cg.Ir;
     Value f = ToRValue(cg, callee);
+    if (cg.Types.IsCFunction(f.Type))
+        f = ConvertValue(cg, f, cg.Types.Elem(f.Type), loc);
     int ft = f.Type;
     var ptypes = types.Params(ft);
     if (args.Length != ptypes.Length)
@@ -171,10 +214,32 @@ Value EmitIndirectCall(Compiler cg, Value callee, Arg[] args, SourceLoc loc)
         callArgs.Append(AbiParam(cg, ptypes[i]) + " " + cv.V);
     }
 
-    EmitPanicIf(cg, ir.ICmp("eq", "ptr", f.V, "null"), "call of a null function");
+    // fn(args) for a plain function, fn(env, args) for a closure
+    HoldTemp(cg, f);
+    string fn = ir.ExtractValue("{ ptr, ptr }", f.V, "0");
+    string env = ir.ExtractValue("{ ptr, ptr }", f.V, "1");
+    EmitPanicIf(cg, ir.ICmp("eq", "ptr", fn, "null"), "call of a null function");
     int ret = types.Elem(ft);
-    string result = ir.Call(AbiReturn(cg, ret), f.V, callArgs.ToString());
+    string retAbi = AbiReturn(cg, ret);
+    string plainLabel = ir.NewLabel("call.plain");
+    string closureLabel = ir.NewLabel("call.closure");
+    string endLabel = ir.NewLabel("call.end");
+    ir.CondBr(ir.ICmp("eq", "ptr", env, "null"), plainLabel, closureLabel);
+    ir.SetBlock(plainLabel);
+    string plainResult = ir.Call(retAbi, fn, callArgs.ToString());
+    ir.Br(endLabel);
+    ir.SetBlock(closureLabel);
+    string closureResult = ir.Call(retAbi, fn, "ptr " + env + (callArgs.Length() > 0 ? ", " + callArgs.ToString() : ""));
+    ir.Br(endLabel);
+    ir.SetBlock(endLabel);
     if (types.IsVoid(ret))
         return Rvalue(types.Void, "", false);
+    string result = ir.Phi(LlvmType(cg, ret), "[ " + plainResult + ", %" + plainLabel + " ], [ " + closureResult + ", %" + closureLabel + " ]");
     return Rvalue(ret, result, NeedsArc(cg, ret));
+}
+
+// Values that can be called: Action/Func and the function pointer fields of C structs.
+bool IsCallableType(Compiler cg, int t)
+{
+    return cg.Types.IsFunction(t) || cg.Types.IsCFunction(t);
 }

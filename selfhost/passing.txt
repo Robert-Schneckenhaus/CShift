@@ -35,6 +35,7 @@ err_duplicate_function.csh
 err_enum_next_overflow.csh
 err_enum_no_base.csh
 err_enum_value_overflow.csh
+err_error_optional_condition.csh
 err_extern_struct.csh
 err_fallthrough.csh
 err_foreach_struct.csh

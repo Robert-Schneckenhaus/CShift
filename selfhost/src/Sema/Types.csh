@@ -26,7 +26,8 @@ enum TypeKind : int32
     ErrorLit,    // type of error("...") before it is converted to Error<T>
     Function,    // Action<...> / Func<..., R>
     MethodGroup, // a function name used as a value
-    SharedPtr    // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
+    SharedPtr,   // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
+    CFunction    // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
 }
 
 struct TypeInfo
@@ -148,6 +149,7 @@ struct TypeContext
     bool IsResultLike(int t) { var k = Kind(t); return k == TypeKind.Error || k == TypeKind.Optional; }
     bool IsFunction(int t) { return Kind(t) == TypeKind.Function; }
     bool IsSharedPtr(int t) { return Kind(t) == TypeKind.SharedPtr; }
+    bool IsCFunction(int t) { return Kind(t) == TypeKind.CFunction; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
     // The integer type with the given width.
@@ -180,6 +182,7 @@ struct TypeContext
     int ErrorOf(int elem) { return Derived(TypeKind.Error, "Error<" + Name(elem) + ">", elem); }
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
     int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
+    int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }
 
     // Action<params> for a void result, Func<params, ret> otherwise.
     int FunctionOf(int[] parameters, int ret)

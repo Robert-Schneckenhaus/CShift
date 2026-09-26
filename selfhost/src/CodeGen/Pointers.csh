@@ -72,10 +72,18 @@ bool EmitPointerCast(Compiler cg, Value v, int to, SourceLoc loc, ref Value resu
         return true;
     }
     // Function pointers and data pointers convert into each other (for C callbacks that are passed as void*).
-    if ((types.IsFunction(from) && types.IsPointer(to)) || (types.IsPointer(from) && types.IsFunction(to)))
+    if (types.IsFunction(from) && types.IsPointer(to))
     {
         RequireUnsafe(cg, loc, "pointer cast");
-        result = Rvalue(to, v.V, false);
+        Value f = ToRValue(cg, v);
+        HoldTemp(cg, f);
+        result = Rvalue(to, RawFunctionPointer(cg, f.V), false);
+        return true;
+    }
+    if (types.IsPointer(from) && types.IsFunction(to))
+    {
+        RequireUnsafe(cg, loc, "pointer cast");
+        result = Rvalue(to, ir.InsertValue("{ ptr, ptr }", "zeroinitializer", "ptr", ToRValue(cg, v).V, "0"), false);
         return true;
     }
     if (types.IsPointer(from) && types.IsInt(to))

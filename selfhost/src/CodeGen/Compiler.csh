@@ -640,8 +640,10 @@ string LlvmType(Compiler cg, int t)
         return "{ ptr, i32 }";
     case TypeKind.Struct:
         return StructIrName(cg, t);
+    case TypeKind.Function:
+        return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
     default:
-        return "ptr"; // string, pointer, array, null, function
+        return "ptr"; // string, pointer, array, null
     }
 }
 
@@ -660,6 +662,7 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.Error:
     case TypeKind.ErrorLit:
     case TypeKind.SharedPtr:
+    case TypeKind.Function:
         r = true;
         break;
     case TypeKind.Optional:
@@ -806,14 +809,14 @@ void DeclareExtern(Compiler cg, int instance)
     {
         if (i > 0)
             sb.Append(", ");
-        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : (d.Params[i].CString ? "ptr" : AbiParam(cg, fi.ParamTypes[i])));
+        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : (d.Params[i].CString ? "ptr" : ExternAbiParam(cg, fi.ParamTypes[i])));
     }
     // A shim returns a struct through an extra trailing pointer parameter and itself returns void.
     if (d.RetOut)
         sb.Append(fi.ParamTypes.Length > 0 ? ", ptr" : "ptr");
     if (d.IsVariadic)
         sb.Append(fi.ParamTypes.Length > 0 || d.RetOut ? ", ..." : "...");
-    string result = d.RetOut ? "void" : (d.RetCString ? "ptr" : AbiReturn(cg, fi.Ret));
+    string result = d.RetOut ? "void" : (d.RetCString || cg.Types.IsFunction(fi.Ret) ? "ptr" : AbiReturn(cg, fi.Ret));
     cg.Ir.Declare(fi.LlvmName, "declare " + result + " " + fi.LlvmName + "(" + sb.ToString() + ")");
 }
 

@@ -82,6 +82,7 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Error:
     case TypeKind.Optional:
     case TypeKind.Struct:
+    case TypeKind.Function:
         return "zeroinitializer";
     default: return "null";
     }
