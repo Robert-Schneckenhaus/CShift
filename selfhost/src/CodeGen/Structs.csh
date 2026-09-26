@@ -422,6 +422,11 @@ Value EmitMember(Compiler cg, Expr e)
     var types = cg.Types;
     var m = cg.Tree.GetMember(e);
 
+    // Enum<T>.Count, .Min, .Max, .Values, .Names: constants
+    int metaEnum = EnumMetaType(cg, m.Object, cg.Fn[0].File, cg.Fn[0].Env);
+    if (metaEnum != 0)
+        return ConstToValue(cg, EnumMeta(cg, metaEnum, m.Name, e.Loc));
+
     // A name that is not a variable may be a type or a namespace.
     string dotted = DottedName(cg, m.Object);
     bool colorColor = dotted.Length > 0 && ColorColorMeansType(cg, dotted, m.Name, e.Loc);

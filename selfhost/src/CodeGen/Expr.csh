@@ -757,6 +757,8 @@ Value EmitAssign(Compiler cg, Expr e)
         // arrays, strings and pointers: the element itself is the target
         if (types.IsStringSlice(holder.Type))
             Fail(cg, a.Target.Loc, "a StringSlice is read-only (strings are immutable)");
+        if (types.IsReadOnlySlice(holder.Type))
+            Fail(cg, a.Target.Loc, "a ReadOnlySlice is read-only (use an array or a Slice<T> to change elements)");
         target = EmitElement(cg, holder, ix.Index, ix.FromEnd, a.Target.Loc);
     }
     else

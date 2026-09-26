@@ -29,6 +29,33 @@ const int Broken = 2147483647 + 1;   // compile error: integer overflow in a con
 
 The same rules apply to enum member values (`B = A * 2`, `C = sizeof(int64)` are both fine).
 
+A constant always names its type: `const var` is an error.
+
+### Constant slices
+
+A constant can also hold several values, as a `ReadOnlySlice<T>` of numbers, `bool`, `char`, `string` or enums,
+written as a [collection expression](arrays-strings-collections.md#collection-expressions) that may spread other
+constant slices:
+
+```csharp
+const ReadOnlySlice<int> Primes = [2, 3, 5, 7];
+const ReadOnlySlice<int> More = [..Primes, 11, 13];
+const ReadOnlySlice<string> Names = ["Red", "Green", "Blue"];
+
+const int Largest = More[^1];                  // indexing, ^n, slicing and Length work in constants too
+const int Count = Primes[1..].Length;          // 3
+const int Letters = "hello".Length;            // (also for constant strings)
+```
+
+* **Arrays and `Slice<T>` cannot be constants**, because their elements can be changed; the error suggests
+  `ReadOnlySlice<T>`. A constant slice cannot be changed at all (it is [read-only](arrays-strings-collections.md#slices)),
+  `ToArray()` gives a normal copy.
+* The elements are stored once in static memory: using a constant slice copies and allocates nothing.
+* An index or a range outside the slice is a compile error.
+* A `thread` function may read global constants, constant slices included (slices still cannot be *parameters* of a
+  thread).
+* [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
+
 ## Global variables
 
 A global variable is declared at the top level, with any type, with or without an initializer:

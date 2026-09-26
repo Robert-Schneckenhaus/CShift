@@ -595,6 +595,14 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
             Fail(cg, node.Loc, "'Slice' expects exactly one type argument (Slice<T>)");
         return types.SliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
     }
+    if (!found && node.Path.Length == 1 && dotted == "Enum" && node.Args.Length == 1)
+        Fail(cg, node.Loc, "'Enum<T>' is not a type; it gives facts about an enum: Enum<T>.Count, .Min, .Max, .Values, .Names");
+    if (!found && node.Path.Length == 1 && dotted == "ReadOnlySlice")
+    {
+        if (node.Args.Length != 1)
+            Fail(cg, node.Loc, "'ReadOnlySlice' expects exactly one type argument (ReadOnlySlice<T>)");
+        return types.ReadOnlySliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
+    }
     if (!found && node.Path.Length == 1 && dotted == "StringSlice")
     {
         if (node.Args.Length != 0)
@@ -737,6 +745,7 @@ string LlvmType(Compiler cg, int t)
     case TypeKind.Interface:
         return "{ ptr, ptr }"; // a ref/const ref parameter: the struct and its method table (Interfaces.csh)
     case TypeKind.Slice:
+    case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
         return "{ ptr, ptr, i64 }"; // the block that owns the elements, the first element, the length (Slices.csh)
     default:
@@ -757,6 +766,7 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.String:
     case TypeKind.Array:
     case TypeKind.Slice:
+    case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
     case TypeKind.Error:
     case TypeKind.ErrorLit:

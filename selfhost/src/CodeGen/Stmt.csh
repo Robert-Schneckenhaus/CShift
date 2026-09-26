@@ -86,6 +86,7 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Interface:
     case TypeKind.Union:
     case TypeKind.Slice:
+    case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
         return "zeroinitializer";
     default: return "null";
@@ -255,7 +256,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
     {
         // a local constant has no storage: its value is computed now and inlined at every use
         if (!IsConstantType(cg, t))
-            Fail(cg, s.Loc, "constants can only be numbers, bool, char, string or enum values");
+            FailConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");

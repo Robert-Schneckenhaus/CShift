@@ -1,4 +1,4 @@
-// expect-error: constants can only be numbers, bool, char, string or enum values
+// expect-error: constants can only be numbers, bool, char, string, enum values or a ReadOnlySlice<T> of them
 struct Point
 {
     int X;

@@ -30,6 +30,7 @@ Indexing is bounds-checked; an out-of-range index panics.
 ```csharp
 int[] a = [1, 2, 3];                   // an array of exactly this length
 Slice<int> s = [4, 5];                 // a new array, as a view
+ReadOnlySlice<int> r = [6, 7];         // the same, read-only (in a constant: static data, no array)
 List<string> names = ["ann", "bob"];   // Create(), then Add per element
 HashSet<int> seen = [1, 2, 2];         // any struct with 'static Create()' and 'Add(T)'
 int[] all = [..a, ..s, 6];             // ..x spreads an array, a slice or a collection with ToArray()
@@ -97,10 +98,14 @@ bool same = word == "world";     // slices and strings compare by their bytes
   **whole** block alive (`bigText[0..10]` keeps all of `bigText`). Copy out with `word.ToString()` or
   `mid.ToArray()` — copying is always explicit; a slice never turns into a `string` or array by itself.
 * A `Slice<T>` writes through: `mid[0] = 20` changes `a[1]` (arrays are shared anyway). A `StringSlice` is read-only.
+* `ReadOnlySlice<T>` is the same view without write access: `view[0] = 1` is a compile error. Arrays, `Slice<T>` and
+  collection expressions convert to it for free (never the other way), so `int Sum(ReadOnlySlice<int> values)` accepts
+  all of them and promises not to change them. Slicing a `ReadOnlySlice<T>` gives another one; `ToArray()` copies it
+  into a normal array. [Constant slices](constants-and-globals.md#constant-slices) have this type.
 * A whole string or array converts to a slice for free, so a function that takes `StringSlice` or `Slice<T>` accepts
   both: `int Sum(Slice<int> values)` can be called with `a` or `a[1..]`.
 * Ranges are checked: `0 <= start <= end <= Length`, otherwise the program panics like with an index out of range.
-* A slice cannot be passed to a `thread` function (its block's reference count is not atomic); pass
+* No slice (`Slice<T>`, `ReadOnlySlice<T>`, `StringSlice`) can be passed to a `thread` function (its block's reference count is not atomic); pass
   `word.ToString()` instead. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL).
 
 ## `List<T>`

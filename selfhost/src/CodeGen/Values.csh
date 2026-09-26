@@ -251,7 +251,7 @@ int ConversionCost(Compiler cg, Value v, int to)
             return 4; // Error<Optional<T>>: an empty Optional<T>
         return (toKind == TypeKind.Pointer || toKind == TypeKind.String || toKind == TypeKind.Array ||
                 toKind == TypeKind.Optional || toKind == TypeKind.Function || toKind == TypeKind.SharedPtr ||
-                toKind == TypeKind.CFunction || toKind == TypeKind.Slice || toKind == TypeKind.StringSlice) ? 1 : -1;
+                toKind == TypeKind.CFunction || types.IsSlice(to)) ? 1 : -1;
     }
     if (fromKind == TypeKind.MethodGroup)
     {
@@ -281,8 +281,11 @@ int ConversionCost(Compiler cg, Value v, int to)
         return types.Code(to) == 0 || litCode == 0 || litCode == types.Code(to) ? 1 : -1;
     }
     // a whole string or array as a view (no copy)
-    if ((types.IsString(from) && types.IsStringSlice(to)) || (types.IsArray(from) && types.Kind(to) == TypeKind.Slice && types.Elem(from) == types.Elem(to)))
+    if ((types.IsString(from) && types.IsStringSlice(to)) || (types.IsArray(from) && types.IsElemSlice(to) && types.Elem(from) == types.Elem(to)))
         return 2;
+    // a Slice<T> as a ReadOnlySlice<T> (same layout; never the other way)
+    if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to) && types.Elem(from) == types.Elem(to))
+        return 1;
     // Error<T, E> -> Error<T>: the code widens to int (same layout)
     if (types.IsError(from) && types.IsError(to) && types.Elem(from) == types.Elem(to) && types.Code(to) == 0)
         return 1;
@@ -367,11 +370,13 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
             hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
                    ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
         if (types.Kind(from) == TypeKind.Collection)
-            hint = " (a collection expression becomes an array, a Slice<T>, or a struct with 'static Create()' and 'Add(T)')";
+            hint = " (a collection expression becomes an array, a Slice<T>, a ReadOnlySlice<T>, or a struct with 'static Create()' and 'Add(T)')";
         if (types.IsStringSlice(from) && types.IsString(to))
             hint = " (a slice is a view; copy it with .ToString())";
-        if (types.Kind(from) == TypeKind.Slice && types.IsArray(to))
+        if (types.IsElemSlice(from) && types.IsArray(to))
             hint = " (a slice is a view; copy it with .ToArray())";
+        if (types.IsReadOnlySlice(from) && types.Kind(to) == TypeKind.Slice)
+            hint = " (a ReadOnlySlice cannot become writable; copy it with .ToArray())";
         if (IsErrorEnum(cg, from) && types.IsResultLike(to))
             hint = " (an error code is not a value: write 'return error(" + types.Name(from) + ".Member);')";
         Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
@@ -406,6 +411,12 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     }
     if ((types.IsString(from) || types.IsArray(from)) && types.IsSlice(to))
         return ToSlice(cg, v, to);
+    if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to))
+    {
+        Value view = ToRValue(cg, v);
+        view.Type = to;
+        return view;
+    }
     if (IsErrorEnum(cg, from) && types.IsIntegral(to))
         return Rvalue(to, NumericConvert(cg, ToRValue(cg, v).V, types.I32, to), false);
     if (types.IsError(from) && types.IsError(to))

@@ -32,7 +32,8 @@ enum TypeKind : int32
     Union,       // union U { A, B }: one of the member types with a tag (Decl: index in Compiler.UnionInfos)
     Slice,       // Slice<T>: a view of part of an array { owner block, data, length }
     StringSlice, // a view of part of a string (read-only), same layout
-    Collection   // [a, b] before it is converted to the type it is used as
+    Collection,  // [a, b] before it is converted to the type it is used as
+    ReadOnlySlice // a read-only view of part of an array, same layout as Slice
 }
 
 struct TypeInfo
@@ -166,7 +167,9 @@ struct TypeContext
     bool IsFunction(int t) { return Kind(t) == TypeKind.Function; }
     bool IsSharedPtr(int t) { return Kind(t) == TypeKind.SharedPtr; }
     bool IsCFunction(int t) { return Kind(t) == TypeKind.CFunction; }
-    bool IsSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.StringSlice; } // either view
+    bool IsSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.StringSlice || k == TypeKind.ReadOnlySlice; } // any view
+    bool IsElemSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.ReadOnlySlice; } // a view of array elements
+    bool IsReadOnlySlice(int t) { return Kind(t) == TypeKind.ReadOnlySlice; }
     bool IsStringSlice(int t) { return Kind(t) == TypeKind.StringSlice; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
@@ -234,6 +237,7 @@ struct TypeContext
 
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
     int SliceOf(int elem) { return Derived(TypeKind.Slice, "Slice<" + Name(elem) + ">", elem); }
+    int ReadOnlySliceOf(int elem) { return Derived(TypeKind.ReadOnlySlice, "ReadOnlySlice<" + Name(elem) + ">", elem); }
     int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
     int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }
 

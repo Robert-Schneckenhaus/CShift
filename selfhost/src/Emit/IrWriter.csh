@@ -130,6 +130,23 @@ struct IrWriter
         return DoubleConst((double)narrowed);
     }
 
+    // The elements of a constant slice: an array block like a string literal's (immortal, never freed).
+    // 'items' are the typed element constants ("i32 5", "ptr @str.3").
+    string ConstArrayBlock(string elemIr, string[] items)
+    {
+        string arr = "[" + items.Length.ToString() + " x " + elemIr + "]";
+        string init = items.Length == 0 ? "zeroinitializer" : "[" + string.Join(", ", items) + "]";
+        string key = "a:" + arr + " " + init;
+        var found = Literals.TryGet(key);
+        if (found is string existing)
+            return existing;
+        string name = NewGlobal("carr");
+        Globals.Append(name + " = private global { i64, i64, " + arr + " } { i64 1152921504606846976, i64 " + items.Length.ToString() +
+                       ", " + arr + " " + init + " }\n");
+        Literals.Set(key, name);
+        return name;
+    }
+
     // ---- declarations ----
 
     // Adds a declaration once ("declare i32 @printf(ptr, ...)").

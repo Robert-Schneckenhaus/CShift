@@ -4,8 +4,10 @@ collection_expressions.csh
 console_stderr.csh
 const_default.csh
 const_eval.csh
+const_slices.csh
 consts.csh
 embed.csh
+enum_meta.csh
 enum_text.csh
 env_exit.csh
 err_break_outside.csh
@@ -14,6 +16,7 @@ err_collection_empty.csh
 err_collection_spread.csh
 err_collection_target.csh
 err_condition_not_bool.csh
+err_const_array.csh
 err_const_assign.csh
 err_const_cycle.csh
 err_const_div_zero.csh
@@ -29,6 +32,12 @@ err_const_overflow_mul.csh
 err_const_overflow_neg.csh
 err_const_overflow_unsigned.csh
 err_const_ref_assign.csh
+err_const_slice_element.csh
+err_const_slice_index.csh
+err_const_slice_nested.csh
+err_const_slice_range.csh
+err_const_slice_spread.csh
+err_const_slice_type.csh
 err_const_type.csh
 err_const_uninitialized.csh
 err_const_unused.csh
@@ -38,6 +47,9 @@ err_constructor.csh
 err_deref_safe.csh
 err_dictionary_key.csh
 err_duplicate_function.csh
+err_enum_meta_as_type.csh
+err_enum_meta_member.csh
+err_enum_meta_type.csh
 err_enum_next_overflow.csh
 err_enum_no_base.csh
 err_enum_value_overflow.csh
@@ -98,6 +110,9 @@ err_no_overload.csh
 err_optional_condition.csh
 err_optional_ternary.csh
 err_private_field.csh
+err_read_only_slice_convert.csh
+err_read_only_slice_thread.csh
+err_read_only_slice_write.csh
 err_ref_missing.csh
 err_slice_copy.csh
 err_slice_readonly.csh
@@ -170,6 +185,7 @@ panic_string_index.csh
 panic_substring.csh
 panic_underflow.csh
 panic_user.csh
+read_only_slices.csh
 shared_ptr.csh
 slices.csh
 stdlib_additions.csh

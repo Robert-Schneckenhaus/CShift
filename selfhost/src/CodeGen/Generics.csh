@@ -254,6 +254,13 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
             return Unify(cg, node.Args[0], types.Elem(actual), tparams, file, bound);
         return kind == TypeKind.Null || kind == TypeKind.Collection;
     }
+    if (name == "ReadOnlySlice" && node.Args.Length == 1 && !LookupTypeDecl(cg, file, name, ref entry))
+    {
+        // ReadOnlySlice<T> from any view of array elements or an array
+        if (kind == TypeKind.ReadOnlySlice || kind == TypeKind.Slice || kind == TypeKind.Array)
+            return Unify(cg, node.Args[0], types.Elem(actual), tparams, file, bound);
+        return kind == TypeKind.Null || kind == TypeKind.Collection;
+    }
     if (name == "Action" || name == "Func")
     {
         if (!LookupTypeDecl(cg, file, name, ref entry))

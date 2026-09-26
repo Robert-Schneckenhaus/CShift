@@ -19,7 +19,7 @@ using System.Native;
 
 extern "C" int snprintf(char* buffer, uint64 size, char* format, ...);
 
-enum ConstKind : int32 { Int, Float, Bool, String }
+enum ConstKind : int32 { Int, Float, Bool, String, Slice }
 
 struct ConstVal
 {
@@ -30,6 +30,7 @@ struct ConstVal
     double F;          // Float (a float32 holds a value that is exactly representable as float)
     bool B;            // Bool
     string S;          // String
+    ConstVal[] Items;  // Slice: the elements (Type is ReadOnlySlice<T>, or Collection before it gets its type)
     bool HasLit;       // an unsuffixed literal: adapts to the type of the value it is combined with
 }
 
@@ -279,6 +280,8 @@ ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allow
     int from = v.Type;
     if (from == to)
         return v;
+    if (v.Kind == ConstKind.Slice)
+        return ConstConvertSlice(cg, v, to, loc);
     // enumerators of imported C enums are written as integers
     if (allowEnumInt && types.IsEnum(to) && v.Kind == ConstKind.Int && !types.IsEnum(from))
     {
@@ -380,6 +383,8 @@ Value ConstToValue(Compiler cg, ConstVal v)
     case ConstKind.Bool:
         r = MakeBool(cg, v.B ? "true" : "false");
         break;
+    case ConstKind.Slice:
+        return ConstSliceValue(cg, v);
     default:
         r = Rvalue(types.String, cg.Ir.StringLiteral(v.S), false);
         break;
@@ -393,6 +398,26 @@ Value ConstToValue(Compiler cg, ConstVal v)
             r.LitInt = v.Neg ? -(int64)v.Mag : (int64)v.Mag;
     }
     return r;
+}
+
+// A constant slice at run time: a view of a static block (not owned; the block is never freed).
+Value ConstSliceValue(Compiler cg, ConstVal v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    if (!types.IsReadOnlySlice(v.Type))
+        Fail(cg, SourceLoc { }, "internal error: a constant slice without a type");
+    int elem = types.Elem(v.Type);
+    string elemIr = LlvmType(cg, elem);
+    var items = new string[v.Items.Length];
+    for (var i = 0; i < items.Length; i += 1)
+        items[i] = elemIr + " " + ConstToValue(cg, v.Items[i]).V;
+    string block = ir.ConstArrayBlock(elemIr, items);
+    string ty = LlvmType(cg, v.Type);
+    string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", block, "0");
+    agg = ir.InsertValue(ty, agg, "ptr", DataPtr(cg, block), "1");
+    agg = ir.InsertValue(ty, agg, "i64", items.Length.ToString(), "2");
+    return Rvalue(v.Type, agg, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +517,9 @@ ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc l
     var types = cg.Types;
     var l = l0;
     var r = r0;
+
+    if (l.Kind == ConstKind.Slice || r.Kind == ConstKind.Slice)
+        Fail(cg, loc, "operator '" + BinOpText(op) + "' cannot be applied to '" + types.Name(l.Type) + "' and '" + types.Name(r.Type) + "'");
 
     // String concatenation (the other operand may be any primitive).
     if (op == BinOp.Add && (types.IsString(l.Type) || types.IsString(r.Type)))
@@ -627,7 +655,25 @@ ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc
 bool IsConstantType(Compiler cg, int t)
 {
     var types = cg.Types;
+    if (types.IsReadOnlySlice(t))
+        return IsConstantElementType(cg, types.Elem(t));
+    return IsConstantElementType(cg, t);
+}
+
+bool IsConstantElementType(Compiler cg, int t)
+{
+    var types = cg.Types;
     return types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
+}
+
+// The error for a constant of a type that cannot be constant; arrays and slices get a hint.
+void FailConstantType(Compiler cg, SourceLoc loc, int t)
+{
+    var types = cg.Types;
+    if ((types.IsArray(t) || types.Kind(t) == TypeKind.Slice) && IsConstantElementType(cg, types.Elem(t)))
+        Fail(cg, loc, "a constant cannot be '" + types.Name(t) + "' (its elements could be changed); use 'const ReadOnlySlice<" +
+                      types.Name(types.Elem(t)) + ">'");
+    Fail(cg, loc, "constants can only be numbers, bool, char, string, enum values or a ReadOnlySlice<T> of them");
 }
 
 ConstVal ConstNotConstant(Compiler cg, ConstScope sc)
@@ -705,9 +751,16 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     {
         // Ns.Constant or Enum.Member
         var m = tree.GetMember(e);
+        int metaEnum = EnumMetaType(cg, m.Object, sc.File, sc.Env);
+        if (metaEnum != 0)
+            return EnumMeta(cg, metaEnum, m.Name, e.Loc);
         string dotted = DottedName(cg, m.Object);
         if (dotted.Length == 0)
+        {
+            if (m.Name == "Length")
+                return ConstLength(cg, ConstEval(cg, m.Object, sc), e.Loc);
             return ConstNotConstant(cg, sc);
+        }
         if (sc.Locals && FindLocal(cg, dotted.Split('.')[0].ToString()) >= 0)
             return ConstNotConstant(cg, sc);
         int c = LookupConst(cg, sc.File, dotted + "." + m.Name);
@@ -723,7 +776,58 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
                 Fail(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
             return ConstFromPattern(cg, et, (uint64)info.Values[member]);
         }
+        if (m.Name == "Length")
+            return ConstLength(cg, ConstEval(cg, m.Object, sc), e.Loc);
         return ConstNotConstant(cg, sc);
+    }
+    case ExprKind.Collection:
+    {
+        // [a, b, ..c]: its element type comes from the constant's type (ConstConvertSlice)
+        var n = tree.GetCollection(e);
+        var items = List<ConstVal>.Create();
+        for (var i = 0; i < n.Items.Length; i += 1)
+        {
+            ConstVal item = ConstEval(cg, n.Items[i], sc);
+            if (!n.Spread[i])
+            {
+                if (item.Kind == ConstKind.Slice)
+                    Fail(cg, n.Items[i].Loc, "a constant slice cannot contain slices");
+                items.Add(item);
+                continue;
+            }
+            if (item.Kind != ConstKind.Slice)
+                Fail(cg, n.Items[i].Loc, "'..' in a constant spreads a constant slice, not '" + types.Name(item.Type) + "'");
+            items.AddRange(item.Items);
+        }
+        return ConstVal { Kind = ConstKind.Slice, Type = types.Collection, Items = items.ToArray() };
+    }
+    case ExprKind.Index:
+    {
+        var ix = tree.GetIndex(e);
+        ConstVal obj = ConstEval(cg, ix.Object, sc);
+        if (obj.Kind != ConstKind.Slice)
+            return ConstNotConstant(cg, sc);
+        int i = ConstIndex(cg, ConstEval(cg, ix.Index, sc), ix.FromEnd, obj.Items.Length, ix.Index.Loc);
+        if (i < 0 || i >= obj.Items.Length)
+            Fail(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + obj.Items.Length.ToString() + " elements)");
+        return obj.Items[i];
+    }
+    case ExprKind.Slice:
+    {
+        var n = tree.GetSlice(e);
+        ConstVal obj = ConstEval(cg, n.Object, sc);
+        if (obj.Kind != ConstKind.Slice)
+            return ConstNotConstant(cg, sc);
+        int length = obj.Items.Length;
+        int start = n.Start.IsNull() ? 0 : ConstIndex(cg, ConstEval(cg, n.Start, sc), n.StartFromEnd, length, n.Start.Loc);
+        int end = n.End.IsNull() ? length : ConstIndex(cg, ConstEval(cg, n.End, sc), n.EndFromEnd, length, n.End.Loc);
+        if (start < 0 || start > end || end > length)
+            Fail(cg, e.Loc, "slice range " + start.ToString() + ".." + end.ToString() + " is out of bounds (the constant slice has " +
+                            length.ToString() + " elements)");
+        var part = new ConstVal[end - start];
+        for (var i = start; i < end; i += 1)
+            part[i - start] = obj.Items[i];
+        return ConstVal { Kind = ConstKind.Slice, Type = obj.Type, Items = part };
     }
     case ExprKind.Unary:
     {
@@ -847,6 +951,114 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     return ConstNotConstant(cg, sc);
 }
 
+// ---------------------------------------------------------------------------
+// Constant slices and Enum<T>
+// ---------------------------------------------------------------------------
+
+// An index or a range bound of a constant slice (^n counts from the end). Values that do not fit are reported as -1.
+int ConstIndex(Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
+{
+    var types = cg.Types;
+    if (v.Kind != ConstKind.Int || !types.IsIntegral(v.Type) || types.IsEnum(v.Type))
+        Fail(cg, loc, "an index must be an integer, not '" + types.Name(v.Type) + "'");
+    if (v.Mag > 0x7FFFFFFFul)
+        return -1;
+    int i = v.Neg ? -(int)v.Mag : (int)v.Mag;
+    return fromEnd ? length - i : i;
+}
+
+// x.Length of a constant slice or string.
+ConstVal ConstLength(Compiler cg, ConstVal v, SourceLoc loc)
+{
+    var types = cg.Types;
+    if (v.Kind == ConstKind.Slice)
+        return ConstMakeInt(types.I32, false, (uint64)v.Items.Length, false);
+    if (v.Kind == ConstKind.String)
+        return ConstMakeInt(types.I32, false, (uint64)v.S.Length, false);
+    Fail(cg, loc, "'" + types.Name(v.Type) + "' has no member 'Length'");
+    return v;
+}
+
+// A collection or constant slice as ReadOnlySlice<T>: every element converts to T.
+ConstVal ConstConvertSlice(Compiler cg, ConstVal v, int to, SourceLoc loc)
+{
+    var types = cg.Types;
+    if (!types.IsReadOnlySlice(to) || (v.Type != types.Collection && types.Elem(v.Type) != types.Elem(to)))
+    {
+        string hint = types.IsArray(to) || types.Kind(to) == TypeKind.Slice ? " (a constant slice is read-only; copy it with .ToArray())" : "";
+        Fail(cg, loc, "cannot implicitly convert '" + types.Name(v.Type) + "' to '" + types.Name(to) + "'" + hint);
+    }
+    int elem = types.Elem(to);
+    var items = new ConstVal[v.Items.Length];
+    for (var i = 0; i < items.Length; i += 1)
+        items[i] = ConstConvert(cg, v.Items[i], elem, loc, false);
+    return ConstVal { Kind = ConstKind.Slice, Type = to, Items = items };
+}
+
+// The enum of Enum<T> (the object of Enum<T>.Count and so on), or 0 if the expression is something else.
+int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
+{
+    if (e.Kind != ExprKind.Name)
+        return 0;
+    var n = cg.Tree.GetName(e);
+    if (n.Name != "Enum" || n.TypeArgs.Length != 1)
+        return 0;
+    var entry = TypeDeclEntry { };
+    if (LookupTypeDecl(cg, file, "Enum", ref entry))
+        return 0; // a type of the program that is called Enum
+    int t = ResolveValueType(cg, n.TypeArgs[0].Id, file, env);
+    if (!cg.Types.IsEnum(t))
+        Fail(cg, e.Loc, "Enum<T> needs an enum type, not '" + cg.Types.Name(t) + "'");
+    return t;
+}
+
+// Enum<T>.Count, .Min, .Max, .Values, .Names: facts about an enum, as constants.
+ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
+{
+    var types = cg.Types;
+    var info = GetEnumInfo(cg, et);
+    int n = info.Values.Length;
+    bool isSigned = ConstSignedType(cg, types.Elem(et));
+    switch (what)
+    {
+    case "Count":
+        return ConstMakeInt(types.I32, false, (uint64)n, false);
+    case "Min":
+    case "Max":
+    {
+        if (n == 0)
+            Fail(cg, loc, "enum '" + types.Name(et) + "' has no members, so it has no " + what);
+        int64 best = info.Values[0];
+        for (var i = 1; i < n; i += 1)
+        {
+            int64 v = info.Values[i];
+            bool less = isSigned ? v < best : unchecked((uint64)v) < unchecked((uint64)best);
+            if (what == "Min" ? less : (!less && v != best))
+                best = v;
+        }
+        return ConstFromPattern(cg, et, unchecked((uint64)best));
+    }
+    case "Values":
+    {
+        var items = new ConstVal[n];
+        for (var i = 0; i < n; i += 1)
+            items[i] = ConstFromPattern(cg, et, unchecked((uint64)info.Values[i]));
+        return ConstVal { Kind = ConstKind.Slice, Type = types.ReadOnlySliceOf(et), Items = items };
+    }
+    case "Names":
+    {
+        var items = new ConstVal[n];
+        for (var i = 0; i < n; i += 1)
+            items[i] = ConstVal { Kind = ConstKind.String, Type = types.String, S = info.Names[i] };
+        return ConstVal { Kind = ConstKind.Slice, Type = types.ReadOnlySliceOf(types.String), Items = items };
+    }
+    default:
+        break;
+    }
+    Fail(cg, loc, "Enum<" + types.Name(et) + "> has no member '" + what + "' (only Count, Min, Max, Values and Names)");
+    return ConstVal { };
+}
+
 // The value of a top-level constant (evaluated once; a constant that needs itself is an error).
 ConstVal ConstEvalDecl(Compiler cg, int index)
 {
@@ -860,7 +1072,7 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
     cg.Consts.Set(index, entry);
     int t = ResolveValueType(cg, c.Type.Id, entry.File, NoEnv());
     if (!IsConstantType(cg, t))
-        Fail(cg, c.Loc, "constants can only be numbers, bool, char, string or enum values");
+        FailConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
     ConstVal v = ConstEval(cg, c.Init, sc);
     // enumerators of imported C enums are written as integers
