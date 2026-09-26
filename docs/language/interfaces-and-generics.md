@@ -31,33 +31,38 @@ struct Circle : IShape
 A struct can implement several interfaces (in the base list, after its base struct if it has one); the compiler
 checks that every method is actually implemented, with a matching signature.
 
-### Interface values
+### Interface parameters (dynamic dispatch without allocation)
 
-An interface is also a type of its own: a variable, parameter, field or list element of an interface type holds any
-struct that implements it, and its methods are called through a method table (dynamic dispatch):
+An interface can be the type of a `ref` or `const ref` parameter. The function then takes any struct that implements
+the interface, and calls its methods through a method table — nothing is allocated:
 
 ```csharp
-IShape a = Circle { R = 1.0 };
-IShape b = Rect { W = 2.0, H = 3.0 };
+string Describe(const ref IShape shape)
+{
+    return $"{shape.Name()}: {shape.Area()}";
+}
 
-var shapes = List<IShape>.Create();
-shapes.Add(a);
-shapes.Add(b);
-foreach (var s in shapes)
-    Console.WriteLine(s.Area());
+void Enlarge(ref IShape shape, double factor)
+{
+    shape.Grow(factor);
+}
 
-if (b is Rect r)                  // the struct again (a copy), if it is one
-    Console.WriteLine(r.W);
+var c = Circle { R = 1.0 };
+Console.WriteLine(Describe(c));       // const ref: the callee works on a copy on the caller's stack
+Enlarge(ref c, 2.0);                  // ref: the callee changes c itself
 ```
 
-* Converting a struct to an interface **copies it into a box**. Copies of the interface value share that box (like a
-  boxed struct in C#), so a method that changes the struct is seen through every copy; the struct you started from
-  is not affected. The box is reference counted and freed with the last copy.
-* An interface value can be `null`; calling a method of a null interface value panics.
-* An interface value satisfies a constraint on its own interface (`Biggest<IShape>(a, b)` with
-  `where T : IShape`).
-* Generics with a constraint stay the zero-cost option (no box, calls are direct); interface values are for
-  collections of different structs and similar cases.
+* `const ref`: the caller passes a copy of its struct (on its stack, released after the call), so methods that change
+  the struct cannot change the caller's value. Any value can be passed, also `Describe(Circle { R = 3.0 })`.
+* `ref`: the caller passes its variable with `ref`, and the callee's changes are visible.
+* `shape is Rect r` tells which struct it is (and copies it out); an interface parameter can be passed on to another
+  function with an interface parameter.
+* An interface is **not a value type**: no interface variables, fields, results, list elements, type arguments or
+  lambda captures. That is what makes it free — the parameter can never outlive the struct it points to, so it
+  needs no allocation and no reference count. For collections of different structs, use a
+  [sum type](#sum-types) (inline, no allocation) or one list per struct type.
+* Generics with a constraint (below) stay the zero-cost option when the struct type is known at compile time: calls
+  are direct and can be inlined.
 
 ## Generic structs and functions
 

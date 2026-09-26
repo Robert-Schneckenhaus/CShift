@@ -210,6 +210,11 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
 
     var captures = cg.Fn[0].Captures;
     cg.Fn[0] = outerState;
+    foreach (var c in captures)
+    {
+        if (IsInterfaceType(cg, c.Type))
+            Fail(cg, loc, "a lambda cannot use the interface parameter '" + c.Name + "' (the lambda could outlive the struct it points to)");
+    }
     cg.Ir.S[0].Global = sub.S[0].Global;
     cg.Ir.S[0].Label = sub.S[0].Label;
 

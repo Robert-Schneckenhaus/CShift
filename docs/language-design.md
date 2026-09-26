@@ -199,11 +199,14 @@ interface IDisposable
 
 A struct can implement several interfaces.
 
-Using an interface as a **generic constraint** never allocates: calls are resolved at compile time. An interface can
-also be used as a **value type** (`IShape s = circle;`, `List<IShape>`) for dynamic dispatch; converting a struct to
-an interface value copies it into a reference-counted box. That allocation is never hidden in the sense that it only
-happens where a struct meets an interface-typed variable, parameter, field or element — never inside a generic
-function or behind a method call. Code that must not allocate uses constraints.
+Using an interface must never produce a hidden boxing allocation. Interfaces are therefore not value types:
+
+* as a **generic constraint**, calls are resolved at compile time;
+* as the type of a **`ref`/`const ref` parameter**, the function receives a pointer to the caller's struct (or, for
+  `const ref`, to a copy on the caller's stack) and its method table — dynamic dispatch without an allocation. Such a
+  parameter cannot be stored, so it cannot outlive the struct.
+
+Collections of different structs use sum types (stored inline) instead of interface values.
 
 ---
 

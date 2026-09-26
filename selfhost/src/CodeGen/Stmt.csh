@@ -115,7 +115,8 @@ void EmitFunctionBody(Compiler cg, int instance)
     {
         if (sb.Length() > 0)
             sb.Append(", ");
-        sb.Append((fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i])) + " %arg$" + i.ToString());
+        string pty = IsInterfaceType(cg, fi.ParamTypes[i]) ? "{ ptr, ptr }" : (fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i]));
+        sb.Append(pty + " %arg$" + i.ToString());
     }
     ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
     PushScope(cg);
@@ -131,7 +132,14 @@ void EmitFunctionBody(Compiler cg, int instance)
         int pt = fi.ParamTypes[i];
         string name = d.Params[i].Name;
         string arg = "%arg$" + i.ToString();
-        if (fi.ParamRefs[i] != 0)
+        if (IsInterfaceType(cg, pt))
+        {
+            // { data, table }: kept as it is, read-only (the method calls go through it)
+            string slot = ir.Alloca("{ ptr, ptr }", name);
+            ir.Store("{ ptr, ptr }", arg, slot);
+            cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = slot, IsConst = true });
+        }
+        else if (fi.ParamRefs[i] != 0)
         {
             string slot = ir.Alloca("ptr", name);
             ir.Store("ptr", arg, slot);
@@ -273,6 +281,8 @@ void EmitVarDecl(Compiler cg, Stmt s)
                 Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from the function name '" + init.GroupName +
                                 "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
         }
+        if (IsInterfaceType(cg, t))
+            Fail(cg, s.Loc, "'" + d.Name + "' cannot hold the interface parameter: an interface is only a 'ref'/'const ref' parameter");
         if (types.Kind(t) == TypeKind.Lambda)
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from a lambda; declare it with its Action/Func type");
         var k = types.Kind(t);

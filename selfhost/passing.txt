@@ -53,7 +53,13 @@ err_global_order_function.csh
 err_global_order_self.csh
 err_global_void.csh
 err_increment.csh
+err_interface_by_value.csh
+err_interface_capture.csh
+err_interface_list.csh
 err_interface_not_implemented.csh
+err_interface_ref_rvalue.csh
+err_interface_var_copy.csh
+err_interface_variable.csh
 err_interp_brace.csh
 err_interp_empty.csh
 err_interp_struct.csh
@@ -98,7 +104,7 @@ error_void.csh
 exit_code.csh
 function_pointers.csh
 globals.csh
-interface_values.csh
+interface_params.csh
 lambdas.csh
 lang_additions.csh
 link_extern.csh
@@ -121,7 +127,6 @@ panic_negative_array.csh
 panic_negative_index.csh
 panic_null_array.csh
 panic_null_function.csh
-panic_null_interface.csh
 panic_output_kept.csh
 panic_overflow.csh
 panic_string_index.csh

@@ -71,6 +71,11 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     if (args.Length != decl.TypeParams.Length)
         Fail(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
 
+    foreach (var a in args)
+    {
+        if (IsInterfaceType(cg, a))
+            Fail(cg, loc, "an interface cannot be a type argument ('" + cg.Types.Name(a) + "'); an interface is only a 'ref'/'const ref' parameter");
+    }
     string key = Qualified(cg, se.File, decl.Name) + TypeArgsSuffix(cg, args);
     var existing = cg.StructTypes.TryGet(key);
     if (existing is int found)

@@ -43,6 +43,8 @@ int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, boo
         if (types.IsChar(pointee) || pointee == types.I8 || pointee == types.U8 || types.IsVoid(pointee))
             return 2;
     }
+    if (IsInterfaceType(cg, paramType))
+        return InterfaceArgCost(cg, v, paramType, refKind);
     switch (refKind)
     {
     case 0:
@@ -188,6 +190,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
     NoteCall(cg, instance);
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
+    var interfaceCopies = List<TempRelease>.Create();
     var callArgs = StringBuilder.Create();
     if (fi.HasThis)
         callArgs.Append("ptr " + thisPtr);
@@ -200,7 +203,12 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
         string passedType;
         bool nullable = d.Params[i].Nullable;
         bool cstring = d.Params[i].CString;
-        if (fi.ParamRefs[i] == 0 && cstring && types.IsPointer(ToRValue(cg, a.V).Type))
+        if (IsInterfaceType(cg, pt))
+        {
+            passed = InterfaceArgument(cg, a.V, pt, fi.ParamRefs[i], interfaceCopies, aloc);
+            passedType = "{ ptr, ptr }";
+        }
+        else if (fi.ParamRefs[i] == 0 && cstring && types.IsPointer(ToRValue(cg, a.V).Type))
         {
             passed = ToRValue(cg, a.V).V; // a raw char* is passed as it is
             passedType = "ptr";
@@ -328,6 +336,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
     {
         result = ir.Call(retType, fi.LlvmName, callArgs.ToString());
     }
+    ReleaseInterfaceCopies(cg, interfaceCopies);
     if (d.RetOut)
         return Rvalue(fi.Ret, ir.Load(LlvmType(cg, fi.Ret), outSlot), NeedsArc(cg, fi.Ret));
     if (types.IsVoid(fi.Ret))

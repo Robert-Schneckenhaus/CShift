@@ -501,10 +501,24 @@ int PrimitiveType(Compiler cg, string name)
     }
 }
 
+// A parameter type: an interface is allowed for 'ref' and 'const ref' parameters (Interfaces.csh).
+int ResolveParamType(Compiler cg, Param p, int file, Dictionary<string, int> env)
+{
+    if (p.Ref == RefKind.None)
+        return ResolveValueType(cg, p.Type.Id, file, env);
+    return ResolveType(cg, p.Type.Id, file, env);
+}
+
 int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
-    // interfaces are value types too: a boxed struct and its method table (Interfaces.csh)
-    return ResolveType(cg, refType, file, env);
+    int t = ResolveType(cg, refType, file, env);
+    if (cg.Types.Kind(t) == TypeKind.Interface)
+    {
+        var node = cg.Tree.GetType(TypeRef { Id = refType });
+        Fail(cg, node.Loc, "interface '" + cg.Types.Name(t) + "' can only be the type of a 'ref' or 'const ref' parameter or a generic " +
+                               "constraint (a value of it would need a hidden allocation)");
+    }
+    return t;
 }
 
 // Resolves a type as written in the source. 'refType' is a TypeRef id. 'env' maps type parameters to types (may be null).
@@ -653,7 +667,7 @@ string LlvmType(Compiler cg, int t)
     case TypeKind.Function:
         return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
     case TypeKind.Interface:
-        return "{ ptr, ptr }"; // the boxed struct and its method table (Interfaces.csh)
+        return "{ ptr, ptr }"; // a ref/const ref parameter: the struct and its method table (Interfaces.csh)
     default:
         return "ptr"; // string, pointer, array, null
     }
@@ -675,7 +689,6 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.ErrorLit:
     case TypeKind.SharedPtr:
     case TypeKind.Function:
-    case TypeKind.Interface:
         r = true;
         break;
     case TypeKind.Optional:
@@ -708,7 +721,11 @@ int GetFuncInstance(Compiler cg, int entry, int owner, Dictionary<string, int> o
 
     string key = entry.ToString() + "|" + owner.ToString();
     foreach (var a in typeArgs)
+    {
+        if (IsInterfaceType(cg, a))
+            Fail(cg, loc, "an interface cannot be a type argument ('" + cg.Types.Name(a) + "'); use a constraint: where T : " + cg.Types.Name(a));
         key += "|" + cg.Types.Name(a);
+    }
     var existing = cg.InstanceKeys.TryGet(key);
     if (existing is int found)
         return found;
@@ -747,7 +764,7 @@ void EnsureSignature(Compiler cg, int instance)
     for (var i = 0; i < d.Params.Length; i += 1)
     {
         var p = d.Params[i];
-        int t = ResolveValueType(cg, p.Type.Id, fi.File, fi.Env);
+        int t = ResolveParamType(cg, p, fi.File, fi.Env);
         if (cg.Types.IsVoid(t))
             Fail(cg, p.Loc, "parameter '" + p.Name + "' cannot have type 'void'");
         paramTypes[i] = t;

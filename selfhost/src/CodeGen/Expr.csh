@@ -433,7 +433,7 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         var k = types.Kind(other.Type);
         if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.CFunction)
             isNull = ir.ICmp("eq", "ptr", other.V, "null");
-        else if (k == TypeKind.Function || k == TypeKind.Interface)
+        else if (k == TypeKind.Function)
         {
             HoldTemp(cg, other);
             isNull = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", other.V, "0"), "null");

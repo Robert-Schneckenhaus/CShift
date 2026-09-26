@@ -16,7 +16,7 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Visibility via a `_` prefix (private) for fields and methods | ✔ |
 | Struct inheritance (one base, the base comes first in the layout), upcasting, hiding methods | ✔ |
 | Interfaces (methods), several per struct, checking the implementation | ✔ |
-| Interface values: dynamic dispatch through a method table, a boxed copy of the struct, `x is S s` | ✔ (self-hosted, [interfaces](interfaces-and-generics.md#interface-values)) |
+| Interfaces as `ref`/`const ref` parameters: dynamic dispatch through a method table, no allocation, `x is S s` | ✔ (self-hosted, [interfaces](interfaces-and-generics.md#interface-parameters-dynamic-dispatch-without-allocation)) |
 | Generics: structs and functions, monomorphization, type inference, explicit type arguments | ✔ |
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
@@ -58,7 +58,9 @@ The design document leaves a number of things open; these are the decisions that
 * **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int`; a literal adapts to the
   other operand (`uint8 x = 200; int y = x * 3;` gives 600). Explicit casts never abort (they wrap/saturate); only
   `+ - * / %` are checked.
-* **Interface values** box a copy of the struct; copies of the interface value share the box (like C#).
+* **Interfaces are not value types** (a value would need a hidden allocation): they are generic constraints and the
+  types of `ref`/`const ref` parameters (a pointer to the struct and its method table). For `const ref` the caller
+  passes a copy on its stack.
 * **`Error<Optional<T>>`** is the only allowed nesting. It cannot be used as a condition (`if (r)`, `!r`): write
   `r is T v` (succeeded with a value) or `r is Optional<T> o` (succeeded).
 * **Contextual keywords:** `thread` and `where` are only keywords where they start a thread function or a

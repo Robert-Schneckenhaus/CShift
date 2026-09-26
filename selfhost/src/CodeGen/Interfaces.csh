@@ -1,17 +1,22 @@
-// Interface values (only in the self-hosted compiler): dynamic dispatch.
+// Interfaces as parameter types (only in the self-hosted compiler): dynamic dispatch without an allocation.
 //
-//     interface IShape { double Area(); }
-//     struct Circle : IShape { double R; double Area() { return 3.14159 * R * R; } }
+//     interface IShape { double Area(); void Grow(double f); }
 //
-//     IShape shape = Circle { R = 2 };        // the struct is copied into a box
-//     Console.WriteLine(shape.Area());        // calls Circle.Area through the method table
-//     if (shape is Circle c) ...              // the struct again (a copy)
+//     double Report(const ref IShape shape)          // any struct that implements IShape
+//     {
+//         return shape.Area();                        // called through the method table
+//     }
 //
-// An interface value is { ptr box, ptr table }. The box is a reference-counted block { i64 count, i64 unused, T value };
-// copies of the interface value share it (like a boxed struct in C#), so a method that changes the struct changes it
-// for every copy. The table is a constant per struct and interface: [drop, method 1, method 2, ...] in the order of
-// the interface's methods; struct methods take 'this' as their first parameter, so the table holds them directly.
-// 'drop' releases the struct in the box when the last reference goes away. A null interface value is { null, null }.
+//     Report(circle);           // const ref: the callee works on a copy on the caller's stack
+//     Enlarge(ref circle);      // ref: the callee works on 'circle' itself
+//
+// An interface can only be the type of a 'ref' or 'const ref' parameter (and a generic constraint). The parameter is
+// { ptr data, ptr table }: a pointer to the struct and the method table of that struct for the interface - a
+// constant [method 1, method 2, ...] in the order of the interface's methods (struct methods take 'this' as their
+// first parameter, so the table holds them directly). Nothing is allocated, and since such a parameter cannot be
+// stored anywhere (no interface variables, fields, results or captures), it cannot outlive the struct it points to.
+// For 'const ref' the caller passes a copy (on its stack, released after the call), so the methods cannot change the
+// caller's value; for 'ref' it passes its own variable.
 
 namespace CShift.CodeGen;
 
@@ -39,7 +44,7 @@ InterfaceMethodSig InterfaceMethod(Compiler cg, int iface, int k)
     sig.ParamRefs = new int[m.Params.Length];
     for (var i = 0; i < m.Params.Length; i += 1)
     {
-        sig.ParamTypes[i] = ResolveValueType(cg, m.Params[i].Type.Id, ie.File, ii.Env);
+        sig.ParamTypes[i] = ResolveParamType(cg, m.Params[i], ie.File, ii.Env);
         sig.ParamRefs[i] = (int)m.Params[i].Ref;
     }
     sig.Ret = ResolveValueType(cg, m.Ret.Id, ie.File, ii.Env);
@@ -84,7 +89,6 @@ string InterfaceTable(Compiler cg, int structType, int iface)
         return name;
     int count = InterfaceMethodCount(cg, iface);
     var entries = StringBuilder.Create();
-    entries.Append("ptr " + BoxDropHelper(cg, structType));
     for (var k = 0; k < count; k += 1)
     {
         int instance = FindImplementation(cg, structType, iface, k);
@@ -92,69 +96,68 @@ string InterfaceTable(Compiler cg, int structType, int iface)
             Fail(cg, SourceLoc { }, "internal error: '" + types.Name(structType) + "' does not implement '" + InterfaceMethod(cg, iface, k).Name + "'");
         UseFunction(cg, instance);
         NoteCall(cg, instance); // may be called through the table
-        entries.Append(", ptr " + cg.Instances.Get(instance).LlvmName);
+        entries.Append((k > 0 ? ", " : "") + "ptr " + cg.Instances.Get(instance).LlvmName);
     }
-    cg.Ir.Globals.Append(name + " = internal constant [" + (count + 1).ToString() + " x ptr] [" + entries.ToString() + "]\n");
+    cg.Ir.Globals.Append(name + " = internal constant [" + count.ToString() + " x ptr] [" + entries.ToString() + "]\n");
     return name;
 }
 
-// Releases the struct in a box whose last reference went away (the block itself is freed by the caller).
-string BoxDropHelper(Compiler cg, int structType)
+bool IsInterfaceType(Compiler cg, int t)
 {
-    string name = "@\"__box_drop." + cg.Types.Name(structType) + "\"";
-    if (!cg.Ir.Declared.Add(name))
-        return name;
-    string text = "define internal void " + name + "(ptr %box) {\nentry:\n";
-    if (NeedsArc(cg, structType))
-    {
-        string ty = LlvmType(cg, structType);
-        text += "  %p = getelementptr i8, ptr %box, i64 16\n  %v = load " + ty + ", ptr %p\n" +
-                "  call void " + ReleaseFunction(cg, structType) + "(" + ty + " %v)\n";
-    }
-    cg.Ir.AppendHelper(text + "  ret void\n}\n");
-    return name;
+    return cg.Types.Kind(t) == TypeKind.Interface;
 }
 
-string InterfaceRetainHelper(Compiler cg)
+// The cost of passing the argument to a 'ref' (refKind 1) or 'const ref' (2) parameter of interface type, -1 if not.
+int InterfaceArgCost(Compiler cg, Value v, int iface, int refKind)
 {
-    string name = "@__cs_retain_iface";
-    if (cg.Ir.Declared.Add(name))
-        cg.Ir.AppendHelper("define internal void @__cs_retain_iface({ ptr, ptr } %v) {\nentry:\n" +
-                           "  %box = extractvalue { ptr, ptr } %v, 0\n  call void @__cs_retain(ptr %box)\n  ret void\n}\n");
-    return name;
+    var types = cg.Types;
+    if (refKind == 0)
+        return -1;
+    if (refKind == 1 && (!v.IsRefArg || !v.IsLValue || v.IsConst))
+        return -1;
+    if (refKind == 2 && v.IsRefArg)
+        return -1;
+    if (v.Type == iface)
+        return 0;
+    if (types.IsStruct(v.Type) && StructImplements(cg, v.Type, iface))
+        return 1;
+    return -1;
 }
 
-string InterfaceReleaseHelper(Compiler cg)
+// The { data, table } value for an interface parameter. For 'const ref' a struct is copied into a slot of the caller;
+// 'releaseSlots' collects those slots, to be released after the call.
+string InterfaceArgument(Compiler cg, Value v, int iface, int refKind, List<TempRelease> releaseSlots, SourceLoc loc)
 {
-    string name = "@__cs_release_iface";
-    if (cg.Ir.Declared.Add(name))
-        cg.Ir.AppendHelper("define internal void @__cs_release_iface({ ptr, ptr } %v) {\nentry:\n" +
-                           "  %box = extractvalue { ptr, ptr } %v, 0\n" +
-                           "  %isnull = icmp eq ptr %box, null\n  br i1 %isnull, label %done, label %dec\n" +
-                           "dec:\n  %rc = load i64, ptr %box\n  %rc1 = sub i64 %rc, 1\n  store i64 %rc1, ptr %box\n" +
-                           "  %last = icmp eq i64 %rc1, 0\n  br i1 %last, label %drop, label %done\n" +
-                           "drop:\n  %table = extractvalue { ptr, ptr } %v, 1\n  %dropfn = load ptr, ptr %table\n" +
-                           "  call void %dropfn(ptr %box)\n  call void @free(ptr %box)\n" +
-                           (cg.St[0].ArcStats ? "  %fr = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n" : "") +
-                           "  br label %done\n" +
-                           "done:\n  ret void\n}\n");
-    return name;
-}
-
-// A struct value as an interface value: copied into a new box.
-Value BoxAsInterface(Compiler cg, Value v, int iface, SourceLoc loc)
-{
+    var types = cg.Types;
     var ir = cg.Ir;
-    int st = v.Type;
-    string table = InterfaceTable(cg, st, iface);
-    string value = Consume(cg, ToRValue(cg, v));
-    string box = ir.Call("ptr", "@__cs_alloc", "i64 " + SizeOfType(cg, st) + ", i64 0");
-    ir.Store(LlvmType(cg, st), value, DataPtr(cg, box));
-    string agg = ir.InsertValue("{ ptr, ptr }", "undef", "ptr", box, "0");
-    return Rvalue(iface, ir.InsertValue("{ ptr, ptr }", agg, "ptr", table, "1"), true);
+    if (v.Type == iface)
+        return ToRValue(cg, v).V; // an interface parameter passed on
+    if (!types.IsStruct(v.Type) || !StructImplements(cg, v.Type, iface))
+        Fail(cg, loc, "'" + types.Name(v.Type) + "' does not implement '" + types.Name(iface) + "'");
+    string data;
+    if (refKind == 1)
+        data = v.V;
+    else
+    {
+        string ty = LlvmType(cg, v.Type);
+        data = ir.Alloca(ty, "iface.copy");
+        ir.Store(ty, Consume(cg, ToRValue(cg, v)), data);
+        if (NeedsArc(cg, v.Type))
+            releaseSlots.Add(TempRelease { Type = v.Type, Value = data });
+    }
+    string agg = ir.InsertValue("{ ptr, ptr }", "undef", "ptr", data, "0");
+    return ir.InsertValue("{ ptr, ptr }", agg, "ptr", InterfaceTable(cg, v.Type, iface), "1");
 }
 
-// iface.Method(args): the method from the table, called with the struct in the box as 'this'.
+// After a call: releases the copies made for 'const ref' interface parameters (loaded from their slots, because the
+// methods may have changed them).
+void ReleaseInterfaceCopies(Compiler cg, List<TempRelease> slots)
+{
+    foreach (var s in slots)
+        EmitRelease(cg, s.Type, cg.Ir.Load(LlvmType(cg, s.Type), s.Value));
+}
+
+// shape.Method(args) on an interface parameter: the method from the table, called with the data pointer as 'this'.
 Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
@@ -171,7 +174,8 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
         int total = 0;
         for (var i = 0; i < args.Length && total >= 0; i += 1)
         {
-            int c = sig.ParamRefs[i] != 0 ? (args[i].V.Type == sig.ParamTypes[i] ? 0 : -1) : ConversionCost(cg, args[i].V, sig.ParamTypes[i]);
+            int c = IsInterfaceType(cg, sig.ParamTypes[i]) ? InterfaceArgCost(cg, args[i].V, sig.ParamTypes[i], sig.ParamRefs[i])
+                  : sig.ParamRefs[i] != 0 ? (args[i].V.Type == sig.ParamTypes[i] ? 0 : -1) : ConversionCost(cg, args[i].V, sig.ParamTypes[i]);
             total = c < 0 ? -1 : total + c;
         }
         if (total >= 0 && total < bestCost)
@@ -185,19 +189,20 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
     var s = InterfaceMethod(cg, iface, chosen);
 
     Value self = ToRValue(cg, obj);
-    HoldTemp(cg, self);
-    string box = ir.ExtractValue("{ ptr, ptr }", self.V, "0");
-    EmitPanicIf(cg, ir.ICmp("eq", "ptr", box, "null"), "call of a method of a null interface value");
+    string data = ir.ExtractValue("{ ptr, ptr }", self.V, "0");
     string table = ir.ExtractValue("{ ptr, ptr }", self.V, "1");
-    string fn = ir.Load("ptr", ir.Gep("ptr", table, "i64 " + (chosen + 1).ToString()));
+    string fn = ir.Load("ptr", ir.Gep("ptr", table, "i64 " + chosen.ToString()));
 
+    var releaseSlots = List<TempRelease>.Create();
     var callArgs = StringBuilder.Create();
-    callArgs.Append("ptr " + DataPtr(cg, box));
+    callArgs.Append("ptr " + data);
     for (var i = 0; i < args.Length; i += 1)
     {
         SourceLoc aloc = args[i].Source.IsNull() ? loc : args[i].Source.Loc;
         int pt = s.ParamTypes[i];
-        if (s.ParamRefs[i] == 0)
+        if (IsInterfaceType(cg, pt))
+            callArgs.Append(", { ptr, ptr } " + InterfaceArgument(cg, args[i].V, pt, s.ParamRefs[i], releaseSlots, aloc));
+        else if (s.ParamRefs[i] == 0)
         {
             Value cv = ConvertValue(cg, args[i].V, pt, aloc);
             HoldTemp(cg, cv);
@@ -215,21 +220,21 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
         }
     }
     string result = ir.Call(AbiReturn(cg, s.Ret), fn, callArgs.ToString());
+    ReleaseInterfaceCopies(cg, releaseSlots);
     if (types.IsVoid(s.Ret))
         return Rvalue(types.Void, "", false);
     return Rvalue(s.Ret, result, NeedsArc(cg, s.Ret));
 }
 
-// 'x is S v' for an interface value: true if the box holds an S (its table is the one of S); v is a copy of it.
+// 'shape is S v' for an interface parameter: true if it points to an S (its table is the one of S); v is a copy.
 Value EmitInterfaceIs(Compiler cg, Value subj, int pattern, string bindName, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
     if (!types.IsStruct(pattern))
-        Fail(cg, loc, "an interface value can only be matched against a struct type, not '" + types.Name(pattern) + "'");
+        Fail(cg, loc, "an interface can only be matched against a struct type, not '" + types.Name(pattern) + "'");
     if (!StructImplements(cg, pattern, subj.Type))
         Fail(cg, loc, "'" + types.Name(pattern) + "' does not implement '" + types.Name(subj.Type) + "'");
-    HoldTemp(cg, subj);
     string table = InterfaceTable(cg, pattern, subj.Type);
     string flag = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", subj.V, "1"), table);
     if (bindName.Length > 0)
@@ -242,12 +247,12 @@ Value EmitInterfaceIs(Compiler cg, Value subj, int pattern, string bindName, Sou
         var last = vars.Get(vars.Count() - 1);
         last.ResetOnCleanup = true;
         vars.Set(vars.Count() - 1, last);
-        // only when it matches: the box may hold another struct
+        // only when it matches: it may point to another struct
         string yes = ir.NewLabel("is.match");
         string done = ir.NewLabel("is.done");
         ir.CondBr(flag, yes, done);
         ir.SetBlock(yes);
-        string value = ir.Load(ty, DataPtr(cg, ir.ExtractValue("{ ptr, ptr }", subj.V, "0")));
+        string value = ir.Load(ty, ir.ExtractValue("{ ptr, ptr }", subj.V, "0"));
         EmitRetain(cg, pattern, value);
         StoreSlot(cg, pattern, slot, value, true);
         ir.Br(done);

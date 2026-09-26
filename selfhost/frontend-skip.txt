@@ -23,5 +23,5 @@ tests/cases/thread_mutex.csh
 tests/cases/list_functions.csh
 
 # interface values
-tests/cases/interface_values.csh
+tests/cases/interface_params.csh
 tests/cases/error_pattern.csh
