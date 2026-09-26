@@ -98,6 +98,20 @@ struct File
         return;
     }
 
+    // Copies a file; an existing target is replaced only with 'overwrite'.
+    static Error<void> Copy(string source, string target, bool overwrite)
+    {
+        if (!overwrite && Exists(target))
+            return error("the file '" + target + "' already exists", 4);
+        var bytes = try ReadAllBytes(source);
+        return WriteAllBytes(target, bytes);
+    }
+
+    static Error<void> Copy(string source, string target)
+    {
+        return Copy(source, target, false);
+    }
+
     static Error<void> WriteAllText(string path, string text)
     {
         return WriteAllText(path, text, Encoding.UTF8());

@@ -93,6 +93,10 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     LayoutStruct(cg, index);
     cg.St[0].LayoutDepth -= 1;
     CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
+    if ((key.StartsWith("System.Mutex<") || key.StartsWith("System.MutexGuard<")) && cg.Files.Get(se.File).IsPrelude &&
+        !IsThreadTransferable(cg, args[0]))
+        Fail(cg, loc, "Mutex<T> needs a value that can be copied between threads (numbers, strings, SharedPtr<T> of thread-safe " +
+                          "values, and Optional<T>/Error<T>/structs of them), not '" + types.Name(args[0]) + "'");
     cg.PendingVerify.Add(t);
 
     // The methods of a struct of the program are always generated.
@@ -371,6 +375,36 @@ Value EmitNewObject(Compiler cg, Expr e)
     return Rvalue(t, "zeroinitializer", false);
 }
 
+// C#'s "Color Color" rule: a local variable or field may have the name of its own type (Color Color). Then 'Color.X'
+// means the type when X is not a member of the value: enum members, static methods and constants of the type.
+bool ColorColorMeansType(Compiler cg, string name, string member, SourceLoc loc)
+{
+    var entry = TypeDeclEntry { };
+    if (name.Contains('.') || !LookupTypeDecl(cg, cg.Fn[0].File, name, ref entry))
+        return false;
+    int valueType = 0;
+    int local = FindLocal(cg, name);
+    if (local >= 0)
+        valueType = cg.Fn[0].Vars.Get(local).Type;
+    else if (CurrentOwner(cg) != 0 && FindField(cg, CurrentOwner(cg), name).Found)
+        valueType = FindField(cg, CurrentOwner(cg), name).Type;
+    else
+        return false;
+    if (entry.Kind == DeclKind.Enum)
+        return GetEnumType(cg, entry.Index) == valueType;
+    if (entry.Kind != DeclKind.Struct || cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0 ||
+        GetStructType(cg, entry.Index, new int[0], loc) != valueType)
+        return false;
+    if (FindField(cg, valueType, member).Found)
+        return false;
+    foreach (var c in MethodCandidates(cg, valueType, member))
+    {
+        if (!cg.Funcs.Get(c.Entry).Decl.IsStatic)
+            return false;
+    }
+    return true;
+}
+
 // obj.Name, Type.Name
 Value EmitMember(Compiler cg, Expr e)
 {
@@ -379,7 +413,8 @@ Value EmitMember(Compiler cg, Expr e)
 
     // A name that is not a variable may be a type or a namespace.
     string dotted = DottedName(cg, m.Object);
-    if (dotted.Length > 0 && !IsLocalName(cg, dotted.Split('.')[0]))
+    bool colorColor = dotted.Length > 0 && ColorColorMeansType(cg, dotted, m.Name, e.Loc);
+    if (dotted.Length > 0 && (!IsLocalName(cg, dotted.Split('.')[0]) || colorColor))
     {
         int prim = PrimitiveType(cg, dotted);
         if (prim != 0)
@@ -390,9 +425,11 @@ Value EmitMember(Compiler cg, Expr e)
             Fail(cg, e.Loc, "type '" + dotted + "' has no member '" + m.Name + "'");
         }
         var entry = TypeDeclEntry { };
-        if (CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found == false)
+        if (colorColor || CurrentOwner(cg) == 0 || FindField(cg, CurrentOwner(cg), dotted.Split('.')[0]).Found == false)
         {
             bool isTypeName = LookupTypeDecl(cg, cg.Fn[0].File, dotted, ref entry);
+            if (isTypeName && dotted == "Thread" && m.Name == "Cancelled" && entry.Kind == DeclKind.Struct)
+                return EmitThreadCancelled(cg, e.Loc);
             if (isTypeName && entry.Kind == DeclKind.Enum)
             {
                 int et = GetEnumType(cg, entry.Index);

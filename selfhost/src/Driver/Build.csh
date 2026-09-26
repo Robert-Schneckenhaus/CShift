@@ -20,7 +20,6 @@ struct BuildOptions
     string Target;
     string Cc;
     string Stdlib;
-    string FfiTool;
     string ProjectDir;
     List<FfiImport> Imports;    // "using X from header" declarations found in the sources
     int Optimize;
@@ -41,7 +40,7 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", FfiTool = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
+        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
         o.Libs = List<string>.Create();
@@ -56,24 +55,32 @@ struct BuildOptions
 
 void PrintUsage()
 {
-    Console.WriteErrorLine("cshc - the CShift compiler written in CShift\n\n" +
-        "usage: cshc [options] file.csh [file2.csh ...]     compile single files\n" +
-        "       cshc build [project] [options]              build a project (cshift.json)\n" +
-        "       cshc run   [project] [options]              build and run a project\n" +
-        "       cshc new   <directory>                      create a new project\n\n" +
+    Console.WriteErrorLine("cshiftc - CShift compiler\n\n" +
+        "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n" +
+        "       cshiftc build [project] [options]              build a project (cshift.json)\n" +
+        "       cshiftc run   [project] [options]              build and run a project\n" +
+        "       cshiftc new   <directory>                      create a new project\n\n" +
+        "'project' is a directory containing cshift.json or the path of a project file;\n" +
+        "without it cshift.json is searched in the current directory and its parents.\n\n" +
         "options:\n" +
-        "  -o <file>          output file\n" +
-        "  -c                 compile to an object file only (no linking)\n" +
-        "  --emit-llvm        write LLVM IR (.ll) instead of an executable\n" +
-        "  -O0 .. -O3         optimization level (default -O2)\n" +
-        "  --target <triple>  target triple (default: host)\n" +
-        "  --cc <program>     clang program (default: CSHIFT_CC, then clang)\n" +
-        "  --stdlib <dir>     use this standard library instead of the embedded one\n" +
-        "  -l<name>, -L<dir>  link a library / library search path\n" +
-        "  file.a, file.o     libraries and object files are passed to the linker\n" +
-        "  --run              run the program after building\n" +
-        "  --arc-stats        debug: print heap allocations/frees when the program exits\n" +
-        "  -v                 verbose output");
+        "  -o <file>        output file\n" +
+        "  -c               compile to an object file only (no linking)\n" +
+        "  --emit-llvm      write LLVM IR (.ll) instead of an executable\n" +
+        "  -O0 .. -O3       optimization level (default -O2)\n" +
+        "  --target <triple> target triple (default: host)\n" +
+        "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
+        "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
+        "  -l<name>         link an additional library\n" +
+        "  -L<dir>          library search path for the linker\n" +
+        "  -I<dir>          include path for C headers (using X from \"header.h\")\n" +
+        "  -D<name>[=value] define a macro when parsing C headers\n" +
+        "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n" +
+        "  file.a, file.o   libraries and object files are passed to the linker\n" +
+        "  --run            run the program after building\n" +
+        "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
+        "  -v               verbose output\n" +
+        "  --version        print the version\n" +
+        "  -h, --help       show this help");
 }
 
 bool IsLinkerInput(string a)
@@ -107,11 +114,6 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         {
             i += 1;
             o.Target = args[i];
-        }
-        else if (a == "--ffi-tool" && i + 1 < args.Length)
-        {
-            i += 1;
-            o.FfiTool = args[i];
         }
         else if (a == "--no-stdlib")
             o.Stdlib = "-";
@@ -163,7 +165,7 @@ int Cshc(string[] args)
     }
     if (args[0] == "--version")
     {
-        Console.WriteLine("cshc dev");
+        Console.WriteLine("cshiftc " + CshcVersion() + " (self-hosted)");
         return 0;
     }
 
@@ -199,7 +201,7 @@ int Cshc(string[] args)
     if (command == "build" || command == "run")
     {
         string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : "";
-        var loaded = LoadProject(location);
+        var loaded = LoadProject(location, o.Target);
         if (loaded is Project project)
         {
             o.FromProject = true;
@@ -244,20 +246,41 @@ int Cshc(string[] args)
     return Build(o);
 }
 
-// A cc that works: --cc, then CSHIFT_CC, then clang from PATH, then the usual MSYS2 folders on Windows.
+// The version: selfhost/version/version.txt, read when cshc is compiled (the release workflow writes it).
+string CshcVersion()
+{
+    var texts = EmbedTexts("../../version", ".txt");
+    return texts.Length > 0 ? texts[0].Trim() : "dev";
+}
+
+// The C compiler that is used as linker driver, to compile generated C code and to find libclang: --cc, then
+// CSHIFT_CC, then the toolchain that comes with cshc (the folder 'toolchain' next to it, or the one a standalone
+// build carries inside itself), then clang, cc or gcc from PATH, then the usual MSYS2 folders on Windows.
 string LocateClang(string cc, bool windows)
 {
     if (cc.Length > 0)
-        return cc;
+    {
+        string found = FindProgram(cc, windows);
+        return found.Length > 0 ? found : cc;
+    }
     var fromEnv = Process.GetEnv("CSHIFT_CC");
     if (fromEnv is string configured)
     {
         if (configured.Length > 0)
-            return configured;
+        {
+            string found = FindProgram(configured, windows);
+            return found.Length > 0 ? found : configured;
+        }
     }
-    string quiet = windows ? " > nul 2>&1" : " > /dev/null 2>&1";
-    if (Process.Run("clang --version" + quiet) == 0)
-        return "clang";
+    string bundled = BundledClang(windows);
+    if (bundled.Length > 0)
+        return bundled;
+    foreach (var name in new string[] { "clang", "cc", "gcc" })
+    {
+        string found = FindProgram(name, windows);
+        if (found.Length > 0)
+            return found;
+    }
     if (windows)
     {
         var root = Process.GetEnv("MSYS2_ROOT");
@@ -269,14 +292,87 @@ string LocateClang(string cc, bool windows)
         if (File.Exists("C:/msys64/clang64/bin/clang.exe"))
             return "C:/msys64/clang64/bin/clang.exe";
     }
-    else
+    return "";
+}
+
+// The path of a program: as it is if it contains a directory, otherwise searched in PATH ("" if not found).
+string FindProgram(string name, bool windows)
+{
+    string exe = windows && !name.ToLower().EndsWith(".exe") ? name + ".exe" : name;
+    if (name.Contains('/') || name.Contains('\\'))
+        return File.Exists(exe) ? exe : (File.Exists(name) ? name : "");
+    var path = Process.GetEnv("PATH");
+    if (path is string dirs)
     {
-        if (Process.Run("cc --version" + quiet) == 0)
-            return "cc";
-        if (Process.Run("gcc --version" + quiet) == 0)
-            return "gcc";
+        foreach (var dir in dirs.Split(windows ? ';' : ':'))
+        {
+            if (dir.Length == 0)
+                continue;
+            string candidate = Path.Combine(dir, exe);
+            if (File.Exists(candidate))
+                return Path.Normalize(candidate);
+        }
     }
     return "";
+}
+
+// The release archives contain a toolchain (clang, lld, libclang, C libraries) in the folder 'toolchain' next to the
+// compiler; it is used before anything in PATH so that the versions match. A standalone build carries the same
+// toolchain appended to its own file (packaging/make-standalone.sh) and extracts it into a cache directory the first
+// time it is needed.
+string BundledClang(bool windows)
+{
+    string self = Host.ExecutablePath();
+    if (self.Length == 0)
+        return "";
+    string clangName = windows ? "clang.exe" : "clang";
+    string candidate = Path.Combine(Path.Combine(Path.Combine(Path.GetDirectory(Path.Normalize(self)), "toolchain"), "bin"), clangName);
+    if (File.Exists(candidate))
+        return candidate;
+
+    int64 offset = 0;
+    int64 size = 0;
+    if (Host.EmbeddedToolchain(self, ref offset, ref size) == 0)
+        return "";
+    string cacheDir = ToolchainCacheDir(windows);
+    if (cacheDir.Length == 0)
+        return "";
+    string cached = Path.Combine(Path.Combine(Path.Combine(cacheDir, "toolchain"), "bin"), clangName);
+    if (File.Exists(cached))
+        return cached;
+    // extracted with the system 'tar' (part of Windows since 10 1803 and of every Linux/macOS)
+    if (!Directory.Create(cacheDir))
+        return "";
+    string archive = Path.Combine(cacheDir, "toolchain.tar.gz");
+    if (Host.CopyFilePart(self, offset, size, archive) == 0)
+        return "";
+    Process.Run("tar xzf \"" + NativePath(archive, windows) + "\" -C \"" + NativePath(cacheDir, windows) + "\"");
+    File.Delete(archive);
+    return File.Exists(cached) ? cached : "";
+}
+
+// A per-user, per-version cache directory for the extracted toolchain.
+string ToolchainCacheDir(bool windows)
+{
+    string baseDir = "";
+    if (windows)
+    {
+        var local = Process.GetEnv("LOCALAPPDATA");
+        if (local is string l)
+            baseDir = l;
+    }
+    else
+    {
+        var xdg = Process.GetEnv("XDG_CACHE_HOME");
+        var home = Process.GetEnv("HOME");
+        if (xdg is string x && x.Length > 0)
+            baseDir = x;
+        else if (home is string h && h.Length > 0)
+            baseDir = h + "/.cache";
+    }
+    if (baseDir.Length == 0)
+        return "";
+    return Path.Combine(Path.Combine(Path.Normalize(baseDir), "cshift"), "toolchain-" + CshcVersion());
 }
 
 void EnsureParentDirectory(string file)
@@ -467,6 +563,9 @@ int Build(BuildOptions o)
             command.Append(" -l" + lib);
         if (!windows)
             command.Append(" -lm"); // the math functions of the standard library
+        // 'thread' functions (stdlib/thread.csh). On Windows the static archive: the import library would make every
+        // program depend on libwinpthread-1.dll, which is not part of the toolchain.
+        command.Append(windows ? " -Wl,-Bstatic -lpthread -Wl,-Bdynamic" : " -lpthread");
         foreach (var lib in o.Libs)
             command.Append(" -l" + lib);
     }

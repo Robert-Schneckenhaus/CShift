@@ -25,7 +25,10 @@ enum TypeKind : int32
     Null,        // type of the 'null' literal
     ErrorLit,    // type of error("...") before it is converted to Error<T>
     Function,    // Action<...> / Func<..., R>
-    MethodGroup  // a function name used as a value
+    MethodGroup, // a function name used as a value
+    SharedPtr,   // SharedPtr<T>: an atomically reference-counted box, safe to share between threads
+    CFunction,   // a function pointer field of a C struct (a plain pointer; Elem is its Action/Func type)
+    Lambda       // a lambda before it is converted to an Action/Func type
 }
 
 struct TypeInfo
@@ -35,7 +38,7 @@ struct TypeInfo
     int Bits;          // Int, Char, Float, Enum
     bool IsSigned;     // Int, Enum
     bool IsNative;     // nint / nuint
-    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result)
+    int Elem;          // Pointer, Array, Error, Optional, Enum (base type), Function (result), SharedPtr
     int[] Params;      // Function: parameter types
     int Decl;          // Struct / Enum / Interface: index of its info in the compiler
     int Arc;           // cache for NeedsArc: -1 unknown, 0 no, 1 yes
@@ -54,6 +57,7 @@ struct TypeContext
     int Null;
     int ErrorLit;
     int MethodGroup;
+    int Lambda;
     int I8;
     int I16;
     int I32;
@@ -94,6 +98,7 @@ struct TypeContext
         tc.SetNative(tc.Nint);
         tc.Nuint = tc.Add(TypeKind.Int, "nuint", 64, false);
         tc.SetNative(tc.Nuint);
+        tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
         return tc;
     }
 
@@ -146,6 +151,8 @@ struct TypeContext
     bool IsOptional(int t) { return Kind(t) == TypeKind.Optional; }
     bool IsResultLike(int t) { var k = Kind(t); return k == TypeKind.Error || k == TypeKind.Optional; }
     bool IsFunction(int t) { return Kind(t) == TypeKind.Function; }
+    bool IsSharedPtr(int t) { return Kind(t) == TypeKind.SharedPtr; }
+    bool IsCFunction(int t) { return Kind(t) == TypeKind.CFunction; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
     // The integer type with the given width.
@@ -177,6 +184,8 @@ struct TypeContext
     int ArrayOf(int elem) { return Derived(TypeKind.Array, Name(elem) + "[]", elem); }
     int ErrorOf(int elem) { return Derived(TypeKind.Error, "Error<" + Name(elem) + ">", elem); }
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
+    int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
+    int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }
 
     // Action<params> for a void result, Func<params, ret> otherwise.
     int FunctionOf(int[] parameters, int ret)

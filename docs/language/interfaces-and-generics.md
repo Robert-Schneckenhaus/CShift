@@ -31,9 +31,33 @@ struct Circle : IShape
 A struct can implement several interfaces (in the base list, after its base struct if it has one); the compiler
 checks that every method is actually implemented, with a matching signature.
 
-Interfaces currently work as a **constraint** (below) and in base lists, but not yet as a variable or parameter type
-of their own (that would need dynamic dispatch through a fat pointer). To process different shapes uniformly today,
-use generics with a constraint, or a `switch`/`is` over a known set of structs.
+### Interface values
+
+An interface is also a type of its own: a variable, parameter, field or list element of an interface type holds any
+struct that implements it, and its methods are called through a method table (dynamic dispatch):
+
+```csharp
+IShape a = Circle { R = 1.0 };
+IShape b = Rect { W = 2.0, H = 3.0 };
+
+var shapes = List<IShape>.Create();
+shapes.Add(a);
+shapes.Add(b);
+foreach (var s in shapes)
+    Console.WriteLine(s.Area());
+
+if (b is Rect r)                  // the struct again (a copy), if it is one
+    Console.WriteLine(r.W);
+```
+
+* Converting a struct to an interface **copies it into a box**. Copies of the interface value share that box (like a
+  boxed struct in C#), so a method that changes the struct is seen through every copy; the struct you started from
+  is not affected. The box is reference counted and freed with the last copy.
+* An interface value can be `null`; calling a method of a null interface value panics.
+* An interface value satisfies a constraint on its own interface (`Biggest<IShape>(a, b)` with
+  `where T : IShape`).
+* Generics with a constraint stay the zero-cost option (no box, calls are direct); interface values are for
+  collections of different structs and similar cases.
 
 ## Generic structs and functions
 

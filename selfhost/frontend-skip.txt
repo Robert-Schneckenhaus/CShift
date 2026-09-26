@@ -1,16 +1,26 @@
-# Files skipped by selfhost/compare.sh: they use syntax the CShift front end (selfhost/src/Syntax) does not know
-# yet, so it cannot tokenize/parse them the same way the C++ front end does - that is an expected difference, not
-# a regression. One path per line, relative to the repository root; '#' starts a comment.
+# Files skipped by selfhost/compare.sh: they use syntax that only the self-hosted front end (selfhost/src/Syntax)
+# knows - features added after the C++ compiler was frozen - so the frozen C++ front end cannot parse them the same
+# way. That is an expected difference, not a regression. One path per line, relative to the repository root; '#'
+# starts a comment.
 
-# 'thread'/'start' (see Todo.md, section "Threads"): cshiftc only, by deliberate choice; not yet ported to cshc.
-tests/cases/err_start_non_thread.csh
-tests/cases/err_thread_bare_call.csh
-tests/cases/err_thread_function_pointer.csh
-tests/cases/err_thread_global.csh
-tests/cases/err_thread_instance_method.csh
-tests/cases/err_thread_ref_param.csh
-tests/cases/err_thread_unsafe_param.csh
-tests/cases/thread_basic.csh
-tests/cases/thread_cancel.csh
-tests/cases/thread_start_contextual.csh
-tests/cases/thread_static_method.csh
+# 'thread' and 'where' used as names (contextual keywords)
+tests/cases/lang_additions.csh
+
+# interpolated strings ($"...{x}...")
+tests/cases/string_interpolation.csh
+tests/cases/err_interp_brace.csh
+tests/cases/err_interp_empty.csh
+tests/cases/err_interp_struct.csh
+
+# lambdas
+tests/cases/lambdas.csh
+tests/cases/err_lambda_assign_capture.csh
+tests/cases/err_lambda_var.csh
+tests/cases/err_lambda_params.csh
+tests/cases/err_lambda_param_type.csh
+tests/projects/lambda_c/src/main.csh
+tests/cases/thread_mutex.csh
+tests/cases/list_functions.csh
+
+# interface values
+tests/cases/interface_values.csh

@@ -15,6 +15,9 @@ using System;
 using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
+using System.Native;
+
+extern "C" int snprintf(char* buffer, uint64 size, char* format, ...);
 
 enum ConstKind : int32 { Int, Float, Bool, String }
 
@@ -302,6 +305,29 @@ ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allow
     return v;
 }
 
+// The text of a float the way the program formats it at run time (RoundTripHelper in Runtime.csh): the fewest digits
+// that read back as the same value. Written out here instead of using ToString() so that it does not depend on the
+// compiler that built cshc.
+string RoundTripText(double value, bool single)
+{
+    unsafe
+    {
+        char* buffer = (char*)Memory.Allocate(48);
+        string result = "";
+        int last = single ? 9 : 17;
+        for (var p = single ? 6 : 15; p <= last; p += 1)
+        {
+            snprintf(buffer, 48, "%.*g".CStr(), p, value);
+            result = string.FromCStr(buffer);
+            double back = strtod(buffer, null);
+            if (single ? (float)back == (float)value : back == value)
+                break;
+        }
+        Memory.Free(buffer);
+        return result;
+    }
+}
+
 // The text of a value in a string concatenation.
 string ConstToText(Compiler cg, ConstVal v)
 {
@@ -313,12 +339,7 @@ string ConstToText(Compiler cg, ConstVal v)
         return v.B ? "true" : "false";
     case ConstKind.Float:
     {
-        if (cg.Types.Bits(v.Type) == 32)
-        {
-            float narrow = (float)v.F;
-            return narrow.ToString();
-        }
-        return v.F.ToString();
+        return RoundTripText(v.F, cg.Types.Bits(v.Type) == 32);
     }
     default:
     {

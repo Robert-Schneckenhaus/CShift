@@ -51,7 +51,7 @@ void OnKey(Mfb.mfb_window* window, Mfb.mfb_key key, Mfb.mfb_key_mod mod, bool pr
 Mfb.mfb_set_keyboard_callback(window, OnKey);
 ```
 
-This is a large enough topic to have [its own document](../../FFI.md): the full type mapping table, how pointers and
+This is a large enough topic to have [its own document](../ffi.md): the full type mapping table, how pointers and
 `nint`/`nuint` map, `ffiApi` for umbrella headers, and the current limitations (no C++, no unions/bit fields, no
 `long double`, …). The `demo-minifb/` and `demo-opengl/` projects are complete, runnable examples that import real C libraries this
 way.

@@ -199,7 +199,11 @@ interface IDisposable
 
 A struct can implement several interfaces.
 
-Using an interface must never produce a hidden boxing allocation.
+Using an interface as a **generic constraint** never allocates: calls are resolved at compile time. An interface can
+also be used as a **value type** (`IShape s = circle;`, `List<IShape>`) for dynamic dispatch; converting a struct to
+an interface value copies it into a reference-counted box. That allocation is never hidden in the sense that it only
+happens where a struct meets an interface-typed variable, parameter, field or element — never inside a generic
+function or behind a method call. Code that must not allocate uses constraints.
 
 ---
 
@@ -596,18 +600,19 @@ Its bool semantics match `Error<T>`:
 
 ---
 
-## 26. No nested `Error`/`Optional` types
+## 26. Nested `Error`/`Optional` types
 
 The following combinations are not allowed:
 
 ```text
 Error<Error<T>>
-Error<Optional<T>>
 Optional<Error<T>>
 Optional<Optional<T>>
 ```
 
-This keeps errors and optional values unambiguous and simple to use.
+`Error<Optional<T>>` is allowed, for an operation that can fail or find nothing (a lookup in a database or a file).
+Because it has two "no" cases, it cannot be used as a condition (`if (r)`, `!r`); the code has to say which case it
+means (`r is T v`, `r is Optional<T> o`, `try r`). This keeps errors and optional values unambiguous.
 
 ---
 

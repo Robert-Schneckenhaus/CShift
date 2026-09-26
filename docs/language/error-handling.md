@@ -36,7 +36,8 @@ else
 }
 ```
 
-`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present":
+`Error<T>` (and `Optional<T>`, below) also behaves like a `bool` in a condition — `true` means "a value is present"
+(except `Error<Optional<T>>`, [see below](#nesting-only-erroroptionalt)):
 
 ```csharp
 if (!result)
@@ -98,9 +99,35 @@ switch (result)
 }
 ```
 
-## No nesting
+## Nesting: only `Error<Optional<T>>`
 
-`Error<Error<T>>`, `Error<Optional<T>>`, `Optional<Error<T>>` and `Optional<Optional<T>>` are all disallowed, so a
-result is always unambiguous.
+`Error<Error<T>>`, `Optional<Error<T>>` and `Optional<Optional<T>>` are disallowed. `Error<Optional<T>>` is allowed,
+for a lookup that can fail *or* find nothing:
+
+```csharp
+Error<Optional<User>> FindUser(int id)
+{
+    if (!connected)
+        return error("no connection");
+    if (!exists)
+        return null;            // succeeded, nothing found
+    return user;                // succeeded with a value
+}
+```
+
+Because it has two "no" cases, it **cannot be used as a condition**: `if (r)` and `!r` are compile errors (would they
+mean "failed" or "found nothing"?). Say which one you mean:
+
+```csharp
+var r = FindUser(7);
+if (r is User u)                // succeeded and found a user
+    Show(u);
+else if (r is Optional<User>)   // succeeded, found nothing
+    Console.WriteLine("no such user");
+else                            // failed
+    Console.WriteLine("error: " + r.Message);
+
+Optional<User> found = try FindUser(7);   // 'try' passes the error on and gives the Optional<T>
+```
 
 Next: [Threads](threading.md).

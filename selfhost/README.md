@@ -1,21 +1,19 @@
 # selfhost: the CShift compiler in CShift
 
-Goal: write the compiler (`compiler/`, C++ with LLVM) in CShift itself, so that it eventually compiles itself.
-
-**Status:** the lexer and parser are complete and verified against the C++ compiler. The code generator covers almost
-the whole language (structs, arrays, `Error<T>`/`Optional<T>`, generics, interfaces, enums, `switch`, pointers/`unsafe`,
-function pointers, global variables and constants with a compile-time evaluator, the standard library as a prelude,
-FFI); all 80 test cases in `tests/cases` pass with `cshc`. `tests/test.csh` behaves identically with `cshc` and with
-the C++ compiler, and **`cshc` compiles itself** (`selfhost/bootstrap.sh`: stage 1 and stage 2 produce identical
-LLVM IR). What's still open is tracked in [../Todo.md](../Todo.md) (in short: generating `.ffi` files from a C header
-still needs the C++ compiler's libclang, and `cshc` doesn't yet find a bundled `toolchain/` next to itself).
+This is the CShift compiler: the `cshiftc` of the releases is `cshc`, built from this folder in two stages (stage 1
+by the frozen C++ compiler in `compiler/`, stage 2 by stage 1; see `build-release.sh`). It covers the whole language
+of the C++ compiler (threads, `SharedPtr<T>`, C header import through libclang, the bundled toolchain) and is where
+the language grows from now on. **`cshc` compiles itself**: `bootstrap.sh` checks that stage 1 and stage 2 produce
+identical LLVM IR. The big picture (stages, the freeze, tests, dependencies) is in [../docs/compiler.md](../docs/compiler.md);
+open work is tracked in [../Todo.md](../Todo.md). This file is the tour of the sources.
 
 ```
 selfhost/
 ├── cshift.json              project "cshc" (build with: cshiftc build selfhost)
 ├── src/
-│   ├── Driver/              command line: Build.csh (options, build/run/new, clang), Project.csh (cshift.json), Json.csh,
-│   │                        Ffi.csh (loading .ffi files), EmbeddedStdlib.csh (the stdlib embedded via EmbedTexts)
+│   ├── Driver/              command line: Build.csh (options, build/run/new, finding clang and the toolchain),
+│   │                        Project.csh (cshift.json), Json.csh, Ffi.csh (loading and caching .ffi files),
+│   │                        FfiGenerator.csh (C header -> .ffi with libclang), EmbeddedStdlib.csh (the stdlib, via EmbedTexts)
 │   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
@@ -43,13 +41,18 @@ selfhost/
 │       ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
 │       ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
 │       ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
+│       ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
+│       ├── Lambdas.csh      lambdas and closures: captures, environments
+│       ├── Interfaces.csh   interface values: boxes, method tables, dispatch
 │       ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
 │       └── Module.csh       compiling the whole program, the entry point
+├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
+├── version/version.txt      the version cshc reports (written by build-release.sh)
+├── build-release.sh         stage 0 -> stage 1 -> stage 2 (the released cshiftc), with the bootstrap check
 ├── compare.sh               front end: compares cshc against the C++ compiler (tokens and syntax tree)
 ├── status.sh, passing.txt   code generator: which cases in tests/cases pass
 ├── bootstrap.sh             cshc builds itself; stage 1 and 2 must produce the same IR
-├── projects.sh              build tests/projects with cshc (cshc build/run/new)
-└── DEPENDENCIES.md          analysis: what the new compiler needs at runtime and what can be dropped
+└── projects.sh              build tests/projects with cshc (cshc build/run/new)
 ```
 
 ## Building and using it
@@ -61,7 +64,7 @@ selfhost/bin/cshc --emit-llvm hello.csh -o hello.ll     # just the IR
 selfhost/bin/cshc --tokens file.csh | --ast file.csh    # dumps (compare with cshiftc --dump-tokens / --dump-ast)
 ```
 
-`cshc` writes **LLVM IR as text** (`.ll`) and calls `clang` (from `PATH` or `--cc`), which optimizes it, generates
+`cshc` writes **LLVM IR as text** (`.ll`) and calls `clang` (the bundled toolchain, `PATH` or `--cc`), which optimizes it, generates
 machine code and links it. That way `cshc` itself needs no LLVM (no 100 MB link, no `unsafe` wrapper around the
 LLVM-C API); like the C++ compiler, it produces the same kind of IR (as a reference: `cshiftc --emit-llvm`).
 

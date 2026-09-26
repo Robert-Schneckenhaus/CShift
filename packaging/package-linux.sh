@@ -6,6 +6,7 @@
 #   packaging/package-linux.sh <version> <build-dir> <output-dir>
 #
 # LLVM_PREFIX (default /usr/lib/llvm-22) is the LLVM installation whose clang is bundled. patchelf is required.
+# <build-dir> contains the released cshiftc: the self-hosted compiler (selfhost/build-release.sh).
 # Result: <output-dir>/cshift-<version>-linux-x64/
 set -euo pipefail
 
@@ -22,7 +23,8 @@ mkdir -p "$dist/toolchain/bin" "$dist/toolchain/lib"
 
 # ---- the compiler and the documentation ----
 cp "$build/cshiftc" "$dist/"
-cp "$root/README.md" "$root/FFI.md" "$root/BuildDesign.md" "$root/LanguageDesign.md" "$dist/"
+cp "$root/README.md" "$dist/"
+cp -r "$root/docs" "$dist/docs"
 cp "$root/packaging/README-release-linux.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"
 echo "$version" > "$dist/VERSION"

@@ -74,7 +74,7 @@ string CompileProgram(Compiler cg, string triple)
     cg.St[0].MainFunc = main + 1;
 
     // 3. Generate the function bodies. Calls add work while this runs.
-    while (cg.St[0].WorkHead < cg.WorkQueue.Count() || cg.PendingVerify.Count() > 0)
+    while (cg.St[0].WorkHead < cg.WorkQueue.Count() || cg.PendingVerify.Count() > 0 || cg.PendingTrampolines.Count() > 0)
     {
         while (cg.PendingVerify.Count() > 0)
         {
@@ -89,8 +89,15 @@ string CompileProgram(Compiler cg, string triple)
             cg.St[0].WorkHead += 1;
             EmitFunctionBody(cg, instance);
         }
+        else if (cg.PendingTrampolines.Count() > 0)
+        {
+            int threadFunc = cg.PendingTrampolines.Get(0);
+            cg.PendingTrampolines.RemoveAt(0);
+            EmitThreadTrampoline(cg, threadFunc);
+        }
     }
 
+    CheckThreadPurity(cg);
     CheckGlobalInitOrder(cg);
     EmitEntryPoint(cg);
 

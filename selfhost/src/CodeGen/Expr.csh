@@ -58,8 +58,15 @@ Value EmitExpr(Compiler cg, Expr e)
     case ExprKind.Unary: return EmitUnary(cg, e);
     case ExprKind.Binary: return EmitBinary(cg, e);
     case ExprKind.Assign: return EmitAssign(cg, e);
+    case ExprKind.Lambda:
+    {
+        Value lambda = Rvalue(cg.Types.Lambda, "", false);
+        lambda.LambdaNode = e;
+        return lambda;
+    }
     case ExprKind.Conditional: return EmitConditional(cg, e);
     case ExprKind.Cast: return EmitCast(cg, e);
+    case ExprKind.Start: return EmitStart(cg, e);
     case ExprKind.RefArg:
     {
         // 'ref x': the address of x is passed
@@ -155,6 +162,8 @@ Value LookupVariable(Compiler cg, string name)
             return Lvalue(v.Type, cg.Ir.Load("ptr", v.Slot), v.IsConst);
         return Lvalue(v.Type, v.Slot, v.IsConst);
     }
+    if (cg.Fn[0].LambdaId > 0)
+        return CaptureVariable(cg, name); // a variable of an enclosing function, in the body of a lambda
     return Value { };
 }
 
@@ -174,7 +183,7 @@ bool IsLocalName(Compiler cg, string name)
     for (var i = 0; i < vars.Count(); i += 1)
         if (vars.Get(i).Name == name)
             return true;
-    return false;
+    return IsOuterName(cg, name);
 }
 
 Value EmitName(Compiler cg, Expr e)
@@ -422,8 +431,18 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         Value other = types.Kind(l.Type) == TypeKind.Null ? r : l;
         string isNull;
         var k = types.Kind(other.Type);
-        if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.Function)
+        if (k == TypeKind.Pointer || k == TypeKind.String || k == TypeKind.Array || k == TypeKind.CFunction)
             isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        else if (k == TypeKind.Function || k == TypeKind.Interface)
+        {
+            HoldTemp(cg, other);
+            isNull = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", other.V, "0"), "null");
+        }
+        else if (k == TypeKind.SharedPtr)
+        {
+            HoldTemp(cg, other);
+            isNull = ir.ICmp("eq", "ptr", other.V, "null");
+        }
         else if (k == TypeKind.Optional)
         {
             HoldTemp(cg, other);
@@ -461,6 +480,16 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
         if ((types.IsBool(l.Type) || types.IsFunction(l.Type)) && !isEq)
             Fail(cg, loc, types.IsBool(l.Type) ? "bool values can only be compared with '==' and '!='"
                                                  : "function values can only be compared with '==' and '!='");
+        if (types.IsFunction(l.Type))
+        {
+            // the same function with the same environment
+            HoldTemp(cg, l);
+            HoldTemp(cg, r);
+            string sameFn = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", l.V, "0"), ir.ExtractValue("{ ptr, ptr }", r.V, "0"));
+            string sameEnv = ir.ICmp("eq", "ptr", ir.ExtractValue("{ ptr, ptr }", l.V, "1"), ir.ExtractValue("{ ptr, ptr }", r.V, "1"));
+            string same = ir.Bin("and", "i1", sameFn, sameEnv);
+            return MakeBool(cg, op == BinOp.Eq ? same : ir.Bin("xor", "i1", same, "true"));
+        }
         bool s = types.IsEnum(l.Type) && types.IsSigned(l.Type);
         return MakeBool(cg, ir.ICmp(IntPredicate(op, s), LlvmType(cg, l.Type), l.V, r.V));
     }
@@ -508,6 +537,7 @@ Value EmitCondition(Compiler cg, Expr e)
     Value v = EmitRValue(cg, e);
     if (cg.Types.IsBool(v.Type))
         return v;
+    RejectAmbiguousCondition(cg, v.Type, e.Loc);
     if (cg.Types.IsResultLike(v.Type))
     {
         HoldTemp(cg, v);
@@ -515,6 +545,18 @@ Value EmitCondition(Compiler cg, Expr e)
     }
     Fail(cg, e.Loc, "a condition must be of type 'bool', not '" + cg.Types.Name(v.Type) + "' (there is no implicit conversion to bool)");
     return v;
+}
+
+// Error<Optional<T>> as a condition ('if (x)', '!x'): "failed" or "found nothing"? The reader could not tell, so it has
+// to be spelled out with 'is'.
+void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
+{
+    var types = cg.Types;
+    if (!types.IsError(t) || !types.IsOptional(types.Elem(t)))
+        return;
+    string inner = types.Name(types.Elem(types.Elem(t)));
+    Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition: it is unclear whether it asks for success or for a value; " +
+                      "write 'x is " + inner + " v' (succeeded with a value) or 'x is Optional<" + inner + "> o' (succeeded)");
 }
 
 // && and ||: the right side only runs if it can change the result.
@@ -614,6 +656,7 @@ Value EmitUnary(Compiler cg, Expr e)
         Value v = EmitRValue(cg, u.Operand);
         if (types.IsBool(v.Type))
             return MakeBool(cg, ir.Bin("xor", "i1", v.V, "true"));
+        RejectAmbiguousCondition(cg, v.Type, e.Loc);
         if (types.IsResultLike(v.Type))
         {
             HoldTemp(cg, v);
@@ -647,7 +690,48 @@ Value EmitAssign(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var a = cg.Tree.GetAssign(e);
-    Value target = EmitExpr(cg, a.Target);
+    Value target;
+    if (a.Target.Kind == ExprKind.Index)
+    {
+        // x[k] = v on a struct: x.Set(k, v); x[k] op= v: x.Set(k, x.Get(k) op v)
+        var ix = cg.Tree.GetIndex(a.Target);
+        Value holder = EmitExpr(cg, ix.Object);
+        if (types.IsStruct(holder.Type))
+        {
+            if (holder.IsConst)
+                Fail(cg, e.Loc, "cannot assign to an element of a read-only value (a constant or a 'const ref' parameter)");
+            // the key is used twice (Get and Set) and the values are passed on: each owned temporary is held once
+            // here and passed on borrowed
+            Value keyValue = EmitRValue(cg, ix.Index);
+            HoldTemp(cg, keyValue);
+            keyValue.Owned = false;
+            var key = Arg { V = keyValue, Source = ix.Index };
+            Value newValue;
+            if (a.HasOp)
+            {
+                var getArgs = new Arg[1];
+                getArgs[0] = key;
+                Value cur = EmitMethodCallOn(cg, holder, "Get", getArgs, new int[0], e.Loc);
+                HoldTemp(cg, cur);
+                cur.Owned = false;
+                Value rhs = EmitRValue(cg, a.Value);
+                Value res = EmitArithmetic(cg, a.Op, cur, rhs, e.Loc);
+                if (res.Type != cur.Type && types.IsNumeric(res.Type) && types.IsNumeric(cur.Type))
+                    res = Rvalue(cur.Type, NumericConvert(cg, res.V, res.Type, cur.Type), false);
+                newValue = res;
+            }
+            else
+                newValue = EmitRValue(cg, a.Value);
+            HoldTemp(cg, newValue);
+            newValue.Owned = false;
+            EmitIndexerSet(cg, holder, key, newValue, e.Loc);
+            return Rvalue(newValue.Type, newValue.V, false);
+        }
+        // arrays, strings and pointers: the element itself is the target
+        target = EmitElement(cg, holder, ix.Index, a.Target.Loc);
+    }
+    else
+        target = EmitExpr(cg, a.Target);
     if (!target.IsLValue)
     {
         // a constant (local or top level) is a value, not a variable
@@ -662,7 +746,12 @@ Value EmitAssign(Compiler cg, Expr e)
         Fail(cg, e.Loc, "the left side of an assignment must be a variable, field or element");
     }
     if (target.IsConst)
+    {
+        if (a.Target.Kind == ExprKind.Name && FindLocal(cg, cg.Tree.GetName(a.Target).Name) < 0 && IsOuterName(cg, cg.Tree.GetName(a.Target).Name))
+            Fail(cg, e.Loc, "cannot assign to '" + cg.Tree.GetName(a.Target).Name + "': a lambda gets a read-only copy of the variables " +
+                                "it uses (return the new value instead)");
         Fail(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
+    }
 
     Value val;
     if (a.HasOp)
@@ -844,6 +933,22 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
             return ir.Call("ptr", "@__cs_fmt_f32", "double " + wide);
         }
         return ir.Call("ptr", "@__cs_fmt_f64", "double " + v.V);
+    }
+    if (types.IsStruct(t))
+    {
+        // a struct with 'string ToString()' (like C#'s override of ToString)
+        foreach (var c in MethodCandidates(cg, t, "ToString"))
+        {
+            var d = cg.Funcs.Get(c.Entry).Decl;
+            if (!d.IsStatic && d.Params.Length == 0)
+            {
+                Value text = EmitMethodCallOn(cg, v, "ToString", new Arg[0], new int[0], loc);
+                if (!types.IsString(text.Type))
+                    Fail(cg, loc, "'" + types.Name(t) + ".ToString()' must return a string to be used as text");
+                return Consume(cg, text);
+            }
+        }
+        Fail(cg, loc, "cannot convert '" + types.Name(t) + "' to a string (give it a method 'string ToString()')");
     }
     Fail(cg, loc, "cannot convert '" + types.Name(t) + "' to a string");
     return v.V;

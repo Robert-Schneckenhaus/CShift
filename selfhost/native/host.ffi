@@ -1,0 +1,839 @@
+{
+  "format": 2,
+  "namespace": "Host",
+  "header": "host.c",
+  "target": "",
+  "flags": [],
+  "generator": "hand-written (selfhost/native/host.c)",
+  "dependencies": [],
+  "shim": "host.c",
+  "constants": [],
+  "enums": [],
+  "structs": [
+    {
+      "name": "CXCursor",
+      "kind": "struct",
+      "size": 32,
+      "align": 8,
+      "opaque": false,
+      "fields": [
+        {
+          "name": "Kind",
+          "type": "int32",
+          "offset": 0
+        },
+        {
+          "name": "XData",
+          "type": "int32",
+          "offset": 4
+        },
+        {
+          "name": "Data0",
+          "type": "void*",
+          "offset": 8
+        },
+        {
+          "name": "Data1",
+          "type": "void*",
+          "offset": 16
+        },
+        {
+          "name": "Data2",
+          "type": "void*",
+          "offset": 24
+        }
+      ]
+    },
+    {
+      "name": "CXType",
+      "kind": "struct",
+      "size": 24,
+      "align": 8,
+      "opaque": false,
+      "fields": [
+        {
+          "name": "Kind",
+          "type": "int32",
+          "offset": 0
+        },
+        {
+          "name": "Pad",
+          "type": "int32",
+          "offset": 4
+        },
+        {
+          "name": "Data0",
+          "type": "void*",
+          "offset": 8
+        },
+        {
+          "name": "Data1",
+          "type": "void*",
+          "offset": 16
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "ClangOpen",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "path",
+          "type": "string",
+          "cstring": true
+        }
+      ],
+      "symbol": "host_clang_open"
+    },
+    {
+      "name": "ClangError",
+      "returns": "string",
+      "params": [],
+      "symbol": "host_clang_error",
+      "retCString": true
+    },
+    {
+      "name": "ClangVersion",
+      "returns": "string",
+      "params": [],
+      "symbol": "host_clang_version",
+      "retCString": true
+    },
+    {
+      "name": "ClangCreateIndex",
+      "returns": "void*",
+      "params": [],
+      "symbol": "host_clang_create_index"
+    },
+    {
+      "name": "ClangDisposeIndex",
+      "returns": "void",
+      "params": [
+        {
+          "name": "index",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_dispose_index"
+    },
+    {
+      "name": "ClangParse",
+      "returns": "void*",
+      "params": [
+        {
+          "name": "index",
+          "type": "void*"
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "cstring": true
+        },
+        {
+          "name": "args",
+          "type": "string",
+          "cstring": true
+        },
+        {
+          "name": "unsaved_text",
+          "type": "string",
+          "cstring": true
+        },
+        {
+          "name": "flags",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_parse"
+    },
+    {
+      "name": "ClangDisposeTu",
+      "returns": "void",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_dispose_tu"
+    },
+    {
+      "name": "ClangNumDiagnostics",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_num_diagnostics"
+    },
+    {
+      "name": "ClangDiagnosticSeverity",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        },
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_diagnostic_severity"
+    },
+    {
+      "name": "ClangDiagnosticText",
+      "returns": "string",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        },
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_diagnostic_text",
+      "retCString": true
+    },
+    {
+      "name": "ClangInclusions",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_inclusions"
+    },
+    {
+      "name": "ClangInclusionFile",
+      "returns": "void*",
+      "params": [
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_inclusion_file"
+    },
+    {
+      "name": "ClangInclusionDepth",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_inclusion_depth"
+    },
+    {
+      "name": "ClangFileName",
+      "returns": "string",
+      "params": [
+        {
+          "name": "file",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_file_name",
+      "retCString": true
+    },
+    {
+      "name": "ClangFileIsSystem",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        },
+        {
+          "name": "file",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_file_is_system"
+    },
+    {
+      "name": "ClangTuCursor",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        }
+      ],
+      "symbol": "host_clang_tu_cursor",
+      "retOut": true
+    },
+    {
+      "name": "ClangChildren",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_children"
+    },
+    {
+      "name": "ClangChild",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_child",
+      "retOut": true
+    },
+    {
+      "name": "ClangCursorKind",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_kind"
+    },
+    {
+      "name": "ClangCursorSpelling",
+      "returns": "string",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_spelling",
+      "retCString": true
+    },
+    {
+      "name": "ClangCursorType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangCursorDefinition",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_definition",
+      "retOut": true
+    },
+    {
+      "name": "ClangCanonicalCursor",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_canonical_cursor",
+      "retOut": true
+    },
+    {
+      "name": "ClangHashCursor",
+      "returns": "uint32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_hash_cursor"
+    },
+    {
+      "name": "ClangCursorIsNull",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_is_null"
+    },
+    {
+      "name": "ClangArgument",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        },
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_argument",
+      "retOut": true
+    },
+    {
+      "name": "ClangStorageClass",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_storage_class"
+    },
+    {
+      "name": "ClangOffsetOfField",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_offset_of_field"
+    },
+    {
+      "name": "ClangIsBitField",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_is_bit_field"
+    },
+    {
+      "name": "ClangEnumValue",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_enum_value"
+    },
+    {
+      "name": "ClangEnumUnsignedValue",
+      "returns": "uint64",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_enum_unsigned_value"
+    },
+    {
+      "name": "ClangEnumIntegerType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_enum_integer_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangTypedefUnderlying",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_typedef_underlying",
+      "retOut": true
+    },
+    {
+      "name": "ClangMacroFunctionLike",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_macro_function_like"
+    },
+    {
+      "name": "ClangMacroBuiltin",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_macro_builtin"
+    },
+    {
+      "name": "ClangIsInvalid",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_is_invalid"
+    },
+    {
+      "name": "ClangIncludedFile",
+      "returns": "void*",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_included_file"
+    },
+    {
+      "name": "ClangCursorFile",
+      "returns": "void*",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_file"
+    },
+    {
+      "name": "ClangTokenize",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "tu",
+          "type": "void*"
+        },
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_tokenize"
+    },
+    {
+      "name": "ClangTokenKind",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_token_kind"
+    },
+    {
+      "name": "ClangTokenSpelling",
+      "returns": "string",
+      "params": [
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_token_spelling",
+      "retCString": true
+    },
+    {
+      "name": "ClangCanonicalType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_canonical_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangPointeeType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_pointee_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangResultType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_result_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangNumArgTypes",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_num_arg_types"
+    },
+    {
+      "name": "ClangArgType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        },
+        {
+          "name": "i",
+          "type": "int32"
+        }
+      ],
+      "symbol": "host_clang_arg_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangIsVariadic",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_is_variadic"
+    },
+    {
+      "name": "ClangTypeDeclaration",
+      "returns": "CXCursor",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_type_declaration",
+      "retOut": true
+    },
+    {
+      "name": "ClangNamedType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_named_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangModifiedType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_modified_type",
+      "retOut": true
+    },
+    {
+      "name": "ClangSizeOf",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_size_of"
+    },
+    {
+      "name": "ClangAlignOf",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_align_of"
+    },
+    {
+      "name": "ClangIsConst",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_is_const"
+    },
+    {
+      "name": "ClangTypeSpelling",
+      "returns": "string",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_type_spelling",
+      "retCString": true
+    },
+    {
+      "name": "ClangArrayElementType",
+      "returns": "CXType",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_array_element_type",
+      "retOut": true
+    },
+    {
+      "name": "ExecutablePath",
+      "returns": "string",
+      "params": [],
+      "symbol": "host_executable_path",
+      "retCString": true
+    },
+    {
+      "name": "FileSize",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "path",
+          "type": "string",
+          "cstring": true
+        }
+      ],
+      "symbol": "host_file_size"
+    },
+    {
+      "name": "CopyFilePart",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "source",
+          "type": "string",
+          "cstring": true
+        },
+        {
+          "name": "offset",
+          "type": "int64"
+        },
+        {
+          "name": "size",
+          "type": "int64"
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "cstring": true
+        }
+      ],
+      "symbol": "host_copy_file_part"
+    },
+    {
+      "name": "EmbeddedToolchain",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "path",
+          "type": "string",
+          "cstring": true
+        },
+        {
+          "name": "offset",
+          "type": "int64",
+          "ref": "ref"
+        },
+        {
+          "name": "size",
+          "type": "int64",
+          "ref": "ref"
+        }
+      ],
+      "symbol": "host_embedded_toolchain"
+    }
+  ],
+  "skipped": []
+}

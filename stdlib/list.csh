@@ -213,6 +213,62 @@ struct List<T>
         return result;
     }
 
+    // ---- with functions (lambdas): list.ForEach(x => Console.WriteLine(x)), list.Where(x => x > 0) ----
+
+    void ForEach(Action<T> action)
+    {
+        for (var i = 0; i < Count(); i += 1)
+            action(Get(i));
+    }
+
+    // A new list with the elements for which 'keep' is true.
+    List<T> Where(Func<T, bool> keep)
+    {
+        var result = List<T>.Create();
+        for (var i = 0; i < Count(); i += 1)
+        {
+            T item = Get(i);
+            if (keep(item))
+                result.Add(item);
+        }
+        return result;
+    }
+
+    // A new list with 'convert' applied to every element: list.Select<string>(x => x.ToString()).
+    List<U> Select<U>(Func<T, U> convert)
+    {
+        var result = List<U>.Create();
+        for (var i = 0; i < Count(); i += 1)
+            result.Add(convert(Get(i)));
+        return result;
+    }
+
+    bool Any(Func<T, bool> test)
+    {
+        return FindIndex(test) >= 0;
+    }
+
+    bool All(Func<T, bool> test)
+    {
+        for (var i = 0; i < Count(); i += 1)
+        {
+            if (!test(Get(i)))
+                return false;
+        }
+        return true;
+    }
+
+    // The index of the first element for which 'test' is true, or -1.
+    int FindIndex(Func<T, bool> test)
+    {
+        for (var i = 0; i < Count(); i += 1)
+        {
+            if (test(Get(i)))
+                return i;
+        }
+        return -1;
+    }
+
     // Makes sure the storage exists and can hold at least 'needed' elements.
     void _Grow(int needed)
     {

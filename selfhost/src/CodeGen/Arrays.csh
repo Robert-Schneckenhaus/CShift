@@ -87,9 +87,19 @@ Value EmitIndex(Compiler cg, Expr e)
     var ir = cg.Ir;
     var n = cg.Tree.GetIndex(e);
     Value obj = EmitExpr(cg, n.Object);
-    Value idx = EmitRValue(cg, n.Index);
+    if (types.IsStruct(obj.Type))
+        return EmitIndexerGet(cg, obj, n.Index, e.Loc);
+    return EmitElement(cg, obj, n.Index, e.Loc);
+}
+
+// The element of an array, a string or a pointer (the object is already evaluated).
+Value EmitElement(Compiler cg, Value obj, Expr index, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    Value idx = EmitRValue(cg, index);
     if (!types.IsIntegral(idx.Type))
-        Fail(cg, n.Index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
+        Fail(cg, index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
     bool signedIndex = types.IsInt(idx.Type) && types.IsSigned(idx.Type);
     string i64v = NumericConvert(cg, idx.V, idx.Type, signedIndex ? types.I64 : types.U64);
 
@@ -107,14 +117,35 @@ Value EmitIndex(Compiler cg, Expr e)
     }
     if (types.IsPointer(t))
     {
-        RequireUnsafe(cg, e.Loc, "pointer indexing");
+        RequireUnsafe(cg, loc, "pointer indexing");
         if (types.IsVoid(types.Elem(t)))
-            Fail(cg, e.Loc, "cannot index 'void*'");
+            Fail(cg, loc, "cannot index 'void*'");
         Value p = ToRValue(cg, obj);
         return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), p.V, "i64 " + i64v), false);
     }
-    Fail(cg, e.Loc, "cannot index a value of type '" + types.Name(t) + "'");
+    Fail(cg, loc, "cannot index a value of type '" + types.Name(t) + "'");
     return obj;
+}
+
+// The indexer of a struct: x[k] is x.Get(k), x[k] = v is x.Set(k, v) (List<T>, Dictionary<K, V> and any struct with
+// such methods).
+Value EmitIndexerGet(Compiler cg, Value obj, Expr index, SourceLoc loc)
+{
+    if (MethodCandidates(cg, obj.Type, "Get").Length == 0)
+        Fail(cg, loc, "cannot index a value of type '" + cg.Types.Name(obj.Type) + "' (it has no method 'Get')");
+    var args = new Arg[1];
+    args[0] = Arg { V = EmitRValue(cg, index), Source = index };
+    return EmitMethodCallOn(cg, obj, "Get", args, new int[0], loc);
+}
+
+Value EmitIndexerSet(Compiler cg, Value obj, Arg key, Value value, SourceLoc loc)
+{
+    if (MethodCandidates(cg, obj.Type, "Set").Length == 0)
+        Fail(cg, loc, "cannot assign to an element of '" + cg.Types.Name(obj.Type) + "' (it has no method 'Set')");
+    var args = new Arg[2];
+    args[0] = key;
+    args[1] = Arg { V = value };
+    return EmitMethodCallOn(cg, obj, "Set", args, new int[0], loc);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +268,12 @@ string ReleaseFunction(Compiler cg, int t)
         return StructHelper(cg, t, false);
     if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
         return ResultHelper(cg, t, false);
+    if (types.IsSharedPtr(t))
+        return SharedReleaseHelper(cg, t);
+    if (types.IsFunction(t))
+        return FunctionReleaseHelper(cg);
+    if (types.Kind(t) == TypeKind.Interface)
+        return InterfaceReleaseHelper(cg);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -250,8 +287,55 @@ string RetainFunction(Compiler cg, int t)
         return StructHelper(cg, t, true);
     if (types.IsResultLike(t) || types.Kind(t) == TypeKind.ErrorLit)
         return ResultHelper(cg, t, true);
+    if (types.IsSharedPtr(t))
+        return SharedRetainHelper(cg);
+    if (types.IsFunction(t))
+        return FunctionRetainHelper(cg);
+    if (types.Kind(t) == TypeKind.Interface)
+        return InterfaceRetainHelper(cg);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
+}
+
+// SharedPtr<T>: an atomically reference-counted box {i64 count, i64 unused, T value}, safe to share between OS threads.
+// Retaining is the same for every T, so one helper serves all of them.
+string SharedRetainHelper(Compiler cg)
+{
+    string name = "@__cs_retain_shared";
+    if (!cg.Ir.Declared.Add(name))
+        return name;
+    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+                       "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %inc\n" +
+                       "inc:\n  %old = atomicrmw add ptr %p, i64 1 monotonic\n  br label %done\n" +
+                       "done:\n  ret void\n}\n\n");
+    return name;
+}
+
+// Atomic decrement; the last owner releases the value (if it needs ARC) and frees the block. acq_rel so that the freeing
+// thread sees every write the other owners made to the value before they let go of it.
+string SharedReleaseHelper(Compiler cg, int t)
+{
+    string name = "@\"__release." + cg.Types.Name(t) + "\"";
+    if (!cg.Ir.Declared.Add(name))
+        return name;
+    int elem = cg.Types.Elem(t);
+    string releaseValue = "";
+    if (NeedsArc(cg, elem))
+    {
+        string ty = LlvmType(cg, elem);
+        releaseValue = "  %vp = getelementptr i8, ptr %p, i64 16\n  %v = load " + ty + ", ptr %vp\n" +
+                       "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %v)\n";
+    }
+    string counter = cg.St[0].ArcStats
+        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
+        : "";
+    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+                       "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
+                       "dec:\n  %old = atomicrmw sub ptr %p, i64 1 acq_rel\n" +
+                       "  %last = icmp eq i64 %old, 1\n  br i1 %last, label %free, label %done\n" +
+                       "free:\n" + releaseValue + "  call void @free(ptr %p)\n" + counter + "  br label %done\n" +
+                       "done:\n  ret void\n}\n\n");
+    return name;
 }
 
 // "@"__release.T[]"", "@"__clone.T[]"", "@"__copy.T[]"": written the first time they are needed.
@@ -277,7 +361,7 @@ string ArrayReleaseText(Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string counter = cg.St[0].ArcStats
-        ? "  %f = load i64, ptr @__cs_frees\n  %f1 = add i64 %f, 1\n  store i64 %f1, ptr @__cs_frees\n"
+        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
         : "";
     return "define internal void " + name + "(ptr %p) {\nentry:\n" +
            "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +

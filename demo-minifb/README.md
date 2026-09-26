@@ -49,7 +49,7 @@ linked (`unknown file type`).
 * `"links"` lists the library (`libminifb.a`, a file) and the Windows libraries (`gdi32`, `opengl32`, `user32`,
   `winmm`).
 * Everything from the header lives in the `Mfb` namespace: `Mfb.mfb_open_ex(...)`, `Mfb.mfb_window*`,
-  `Mfb.MFB_WF_RESIZABLE`, …. Details: [../FFI.md](../FFI.md).
+  `Mfb.MFB_WF_RESIZABLE`, …. Details: [../docs/ffi.md](../docs/ffi.md).
 
 ## Extending it
 
@@ -60,4 +60,4 @@ linked (`unknown file type`).
 * More callbacks (`mfb_set_mouse_move_callback`, `mfb_set_resize_callback`, …) are functions with the matching
   `Action<…>` type.
 
-The project file's format is described in [../BuildDesign.md](../BuildDesign.md).
+The project file's format is described in [../docs/build.md](../docs/build.md).

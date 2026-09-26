@@ -73,6 +73,15 @@ struct Dictionary<TKey, TValue>
         return _state[0].Entries[index].Value;
     }
 
+    // The value of key; panics if the key is not present (dict[key] calls it). TryGet asks without panicking.
+    TValue Get(TKey key)
+    {
+        int index = _Find(key);
+        if (index < 0)
+            Environment.Panic("the key is not present in the Dictionary");
+        return _state[0].Entries[index].Value;
+    }
+
     TValue GetOrDefault(TKey key, TValue fallback)
     {
         int index = _Find(key);

@@ -1,8 +1,8 @@
 // Importing C headers: "using Geo from "geo.h";" (port of the reading side of compiler/src/FfiImport.cpp).
 //
 // A header is turned into a .ffi file (JSON with the functions, structs, enums and constants and their CShift types)
-// by libclang. cshc has no libclang: a ready-made .ffi file is used as it is, and for a header the helper
-// "cshiftc --ffi-prepare" (the C++ compiler) is asked to generate or refresh the .ffi file; see FFI.md.
+// by libclang (FfiGenerator.csh); it is cached in obj/ffi and generated again when the header, the options or a header
+// it includes change. A ready-made .ffi file is used as it is. See docs/ffi.md.
 
 namespace CShift.Driver;
 
@@ -108,54 +108,122 @@ Error<FfiFiles> PrepareFfi(FfiImport imp, BuildOptions o, string cacheDir)
         return FfiFiles { FfiPath = file, Shims = ShimsOf(file) };
     }
 
-    // A C header: the C++ compiler (libclang) generates the .ffi file.
-    string tool = "cshiftc";
-    var configured = Process.GetEnv("CSHIFT_FFI_TOOL");
-    if (configured is string fromEnv)
+    string ffiPath = Path.Combine(cacheDir, SanitizeName(imp.Name) + ".ffi");
+    var options = FfiOptionsOf(o, LocateClang(o.Cc, Process.IsWindows()));
+    string why = "not generated yet";
+    if (File.Exists(ffiPath) && IsFfiFresh(ffiPath, imp.Header, options, ref why))
     {
-        if (fromEnv.Length > 0)
-            tool = fromEnv;
+        if (o.Verbose)
+            Console.WriteErrorLine("ffi: '" + imp.Name + "' is up to date (" + ffiPath + ")");
+        return FfiFiles { FfiPath = ffiPath, Shims = ShimsOf(ffiPath) };
     }
-    if (o.FfiTool.Length > 0)
-        tool = o.FfiTool;
-    bool windows = Process.IsWindows();
-    var command = StringBuilder.Create();
-    command.Append("\"" + (windows ? tool.Replace("/", "\\") : tool) + "\" --ffi-prepare " + imp.Name + " \"" + imp.Header + "\"");
-    command.Append(" --ffi-base-dir \"" + baseArg + "\" --ffi-cache-dir \"" + cacheDir + "\"");
-    if (o.Target.Length > 0)
-        command.Append(" --target " + o.Target);
-    if (o.Cc.Length > 0)
-        command.Append(" --cc \"" + o.Cc + "\"");
-    foreach (var p in o.IncludePaths)
-        command.Append(" -I\"" + p + "\"");
-    foreach (var d in o.Defines)
-        command.Append(" -D" + d);
-    foreach (var a in o.ApiPaths)
-        command.Append(" \"--ffi-api=" + a + "\"");
     if (o.Verbose)
-        command.Append(" -v");
-    var output = Process.RunCapture(command.ToString() + (windows ? " 2>nul" : " 2>/dev/null"));
-    string text = "";
-    if (output is string captured)
-        text = captured;
-    string ffiPath = "";
-    var shims = List<string>.Create();
-    foreach (var raw in text.Split('\n'))
+        Console.WriteErrorLine("ffi: generating '" + ffiPath + "' from \"" + imp.Header + "\" (" + why + ")");
+    if (!Directory.Create(cacheDir))
+        return error("cannot create '" + cacheDir + "'");
+    try GenerateFfi(imp.Name, imp.Header, baseArg, options, ffiPath);
+    return FfiFiles { FfiPath = ffiPath, Shims = ShimsOf(ffiPath) };
+}
+
+FfiOptions FfiOptionsOf(BuildOptions o, string clang)
+{
+    string target = o.Target;
+    if (target.Length == 0 && clang.Length > 0)
     {
-        string line = raw.Trim();
-        if (line.StartsWith("ffi "))
-            ffiPath = line.Substring(4);
-        else if (line.StartsWith("shim "))
-            shims.Add(line.Substring(5));
+        // the host triple, as the clang that links the program sees it
+        var printed = Process.RunCapture("\"" + (Process.IsWindows() ? clang.Replace("/", "\\") : clang) + "\" -print-target-triple");
+        if (printed is string text)
+            target = text.Trim();
     }
-    if (ffiPath.Length == 0)
+    return FfiOptions { Target = target, IncludePaths = o.IncludePaths, Defines = o.Defines, ApiPaths = o.ApiPaths, Clang = clang, Verbose = o.Verbose };
+}
+
+string SanitizeName(string name)
+{
+    var bytes = new uint8[name.Length];
+    for (var i = 0; i < name.Length; i += 1)
     {
-        // run again to show the error of the helper
-        Process.Run(command.ToString());
-        return error("the header import needs libclang, which cshc does not have. Install cshiftc and put it in PATH (or set CSHIFT_FFI_TOOL / --ffi-tool), " +
-                     "or import a ready-made .ffi file (using " + imp.Name + " from \"" + Path.ChangeExtension(imp.Header, ".ffi") + "\")");
+        char c = name[i];
+        bytes[i] = Char.IsLetterOrDigit(c) || c == '_' || c == '-' ? (uint8)c : (uint8)'_';
     }
-    return FfiFiles { FfiPath = ffiPath, Shims = shims };
+    return string.FromBytes(bytes);
+}
+
+// A cached .ffi file is used while the header, the options and every header it depends on are unchanged.
+bool IsFfiFresh(string ffiPath, string header, FfiOptions options, ref string why)
+{
+    var read = File.ReadAllText(ffiPath);
+    if (read is string text)
+    {
+        var json = Json.Create(text);
+        var parsed = json.ParseDocument();
+        if (parsed is int root)
+        {
+            if (json.KindOf(root) != JsonKind.Object)
+            {
+                why = "not a JSON object";
+                return false;
+            }
+            if (JsonInt(json, root, "format", -1) != FfiFormat())
+            {
+                why = "format changed";
+                return false;
+            }
+            if (JsonString(json, root, "header", "") != header)
+            {
+                why = "different header";
+                return false;
+            }
+            if (JsonString(json, root, "target", "") != options.Target)
+            {
+                why = "different target";
+                return false;
+            }
+            var flags = FfiFlags(options);
+            int recorded = json.Get(root, "flags");
+            if (recorded < 0 || json.KindOf(recorded) != JsonKind.Array || json.Nodes.Get(recorded).Items.Count() != flags.Count())
+            {
+                why = "different compiler flags";
+                return false;
+            }
+            var items = json.Nodes.Get(recorded).Items;
+            for (var i = 0; i < flags.Count(); i += 1)
+            {
+                int item = items.Get(i);
+                if (json.KindOf(item) != JsonKind.String || json.Text(item) != flags.Get(i))
+                {
+                    why = "different compiler flags";
+                    return false;
+                }
+            }
+            int deps = json.Get(root, "dependencies");
+            if (deps < 0 || json.KindOf(deps) != JsonKind.Array || json.Nodes.Get(deps).Items.Count() == 0)
+            {
+                why = "no dependency information";
+                return false;
+            }
+            foreach (var dep in json.Nodes.Get(deps).Items)
+            {
+                string path = JsonString(json, dep, "path", "");
+                string hash = FfiHashFile(path);
+                if (hash.Length == 0)
+                {
+                    why = "'" + path + "' is missing";
+                    return false;
+                }
+                if (hash != JsonString(json, dep, "hash", ""))
+                {
+                    why = "'" + path + "' changed";
+                    return false;
+                }
+            }
+            return true;
+        }
+        why = "not valid JSON";
+        return false;
+    }
+    why = "unreadable";
+    return false;
 }
 
 // ---- creating the declarations ----

@@ -121,7 +121,64 @@ bool EndsWithAny(string s, string[] endings)
     return false;
 }
 
-Error<Project> LoadProject(string location)
+// The platform of a target triple ("windows", "macos" or "linux"); the host system for an empty triple.
+string PlatformOf(string target)
+{
+    string lower = target.ToLower();
+    if (lower.Length == 0)
+    {
+        if (Process.IsWindows())
+            return "windows";
+        return File.Exists("/System/Library/CoreServices/SystemVersion.plist") ? "macos" : "linux";
+    }
+    if (lower.Contains("windows") || lower.Contains("mingw"))
+        return "windows";
+    if (lower.Contains("apple") || lower.Contains("darwin") || lower.Contains("macos"))
+        return "macos";
+    return "linux";
+}
+
+// "platforms": { "windows": { "links": [...], ... }, "linux": {...}, "macos": {...} } - entries that only apply when
+// building for that platform; they are added to the lists of the project.
+Error<void> ReadPlatformLists(Json json, int root, string file, string platform, List<string> links, List<string> includes,
+                              List<string> libraries, List<string> defines)
+{
+    int platforms = json.Get(root, "platforms");
+    if (platforms < 0)
+        return;
+    if (json.KindOf(platforms) != JsonKind.Object)
+        return error(file + ": 'platforms' must be an object with the keys \"windows\", \"linux\" and/or \"macos\"");
+    var keys = json.Nodes.Get(platforms).Keys;
+    for (var i = 0; i < keys.Count(); i += 1)
+    {
+        string name = keys.Get(i);
+        if (name != "windows" && name != "linux" && name != "macos")
+            return error(file + ": unknown platform '" + name + "' in 'platforms' (use \"windows\", \"linux\" or \"macos\")");
+        int entry = json.Nodes.Get(platforms).Items.Get(i);
+        if (json.KindOf(entry) != JsonKind.Object)
+            return error(file + ": 'platforms." + name + "' must be an object");
+        foreach (var key in json.Nodes.Get(entry).Keys)
+        {
+            if (key != "links" && key != "includePaths" && key != "libraryPaths" && key != "defines")
+                return error(file + ": 'platforms." + name + "' may contain \"links\", \"includePaths\", \"libraryPaths\" and \"defines\", not '" + key + "'");
+        }
+        if (name != platform)
+            continue;
+        bool present = false;
+        foreach (var v in try ReadStringList(json, entry, "links", file, ref present))
+            links.Add(v);
+        foreach (var v in try ReadStringList(json, entry, "includePaths", file, ref present))
+            includes.Add(v);
+        foreach (var v in try ReadStringList(json, entry, "libraryPaths", file, ref present))
+            libraries.Add(v);
+        foreach (var v in try ReadStringList(json, entry, "defines", file, ref present))
+            defines.Add(v);
+    }
+    return;
+}
+
+// 'target' is the target given on the command line ("" if none): it decides which "platforms" entries apply.
+Error<Project> LoadProject(string location, string target)
 {
     string file = try FindProjectFile(location);
     string text = "";
@@ -151,7 +208,7 @@ Error<Project> LoadProject(string location)
     p.LibraryPaths = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi" };
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -189,6 +246,8 @@ Error<Project> LoadProject(string location)
     var libraryEntries = try ReadStringList(json, root, "libraryPaths", file, ref present);
     p.Defines = try ReadStringList(json, root, "defines", file, ref present);
     p.ApiPaths = try ReadStringList(json, root, "ffiApi", file, ref present);
+    try ReadPlatformLists(json, root, file, PlatformOf(target.Length > 0 ? target : p.Target), linkEntries, includeEntries,
+                          libraryEntries, p.Defines);
     bool sourcesPresent = false;
     var sourceEntries = try ReadStringList(json, root, "sources", file, ref sourcesPresent);
     if (!sourcesPresent)

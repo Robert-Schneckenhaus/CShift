@@ -100,6 +100,7 @@ struct Value
     Candidate[] Group;       // a function name used as a value (type "function")
     int[] GroupTypeArgs;
     string GroupName;
+    Expr LambdaNode;         // a lambda (type "lambda"): compiled when it is converted to an Action/Func type
 
     bool IsNone()
     {
@@ -163,6 +164,17 @@ struct FnState
     bool IsIntMain;
     int File;                          // file context of the function (for name lookup)
     Dictionary<string, int> Env;       // its type parameters
+    // lambdas (Lambdas.csh)
+    int LambdaId;                      // > 0 while the body of a lambda is compiled
+    List<ScopeVar> Outer;              // the variables of the enclosing functions (innermost last)
+    List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
+    string EnvType;                    // the LLVM type of the environment
+}
+
+struct LambdaCapture
+{
+    string Name;
+    int Type;
 }
 
 struct CgState
@@ -179,6 +191,7 @@ struct CgState
     int Imports;          // number of "using X from header" declarations in the program
     int LayoutDepth;      // struct layouts that are running (the methods of new structs wait until it is 0)
     bool InstantiatingMethods;
+    int LambdaCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +236,8 @@ struct Compiler
     List<FuncInfo> Instances;
     Dictionary<string, int> InstanceKeys;
     List<int> WorkQueue;
+    List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
+    HashSet<int> TrampolinesQueued;
 
     static Compiler Create(Ast tree, Diagnostics diag, bool windows)
     {
@@ -261,6 +276,8 @@ struct Compiler
         cg.Instances = List<FuncInfo>.Create();
         cg.InstanceKeys = Dictionary<string, int>.Create();
         cg.WorkQueue = List<int>.Create();
+        cg.PendingTrampolines = List<int>.Create();
+        cg.TrampolinesQueued = HashSet<int>.Create();
         return cg;
     }
 }
@@ -486,11 +503,8 @@ int PrimitiveType(Compiler cg, string name)
 
 int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
-    int t = ResolveType(cg, refType, file, env);
-    var node = cg.Tree.GetType(TypeRef { Id = refType });
-    if (cg.Types.Kind(t) == TypeKind.Interface)
-        Fail(cg, node.Loc, "interface '" + cg.Types.Name(t) + "' can only be used as a generic constraint or in a base list");
-    return t;
+    // interfaces are value types too: a boxed struct and its method table (Interfaces.csh)
+    return ResolveType(cg, refType, file, env);
 }
 
 // Resolves a type as written in the source. 'refType' is a TypeRef id. 'env' maps type parameters to types (may be null).
@@ -530,13 +544,30 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 
     var entry = TypeDeclEntry { };
     bool found = LookupTypeDecl(cg, file, dotted, ref entry);
+    if (found && node.Path.Length == 1 && dotted == "Thread" && node.Args.Length == 0 && entry.Kind == DeclKind.Struct &&
+        cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0)
+    {
+        // Bare 'Thread' (no type argument) is the non-generic handle, a separate struct ('_ThreadVoid') because a
+        // struct name cannot be overloaded by the number of type arguments; see stdlib/thread.csh.
+        var voidEntry = TypeDeclEntry { };
+        if (LookupTypeDecl(cg, file, "System._ThreadVoid", ref voidEntry))
+            return GetStructType(cg, voidEntry.Index, new int[0], node.Loc);
+    }
+    if (!found && node.Path.Length == 1 && dotted == "SharedPtr")
+    {
+        if (node.Args.Length != 1)
+            Fail(cg, node.Loc, "'SharedPtr' expects exactly one type argument");
+        return types.SharedPtrOf(ResolveValueType(cg, node.Args[0].Id, file, env));
+    }
     if (!found && node.Path.Length == 1 && (dotted == "Error" || dotted == "Optional"))
     {
         if (node.Args.Length != 1)
             Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument");
         int inner = ResolveValueType(cg, node.Args[0].Id, file, env);
-        if (types.IsResultLike(inner))
-            Fail(cg, node.Loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + types.Name(inner) + ">)");
+        // Error<Optional<T>> is allowed (a lookup that can fail or find nothing); other nestings are ambiguous ('null',
+        // 'is' and 'try' would not know which level they mean).
+        if (types.IsResultLike(inner) && !(dotted == "Error" && types.IsOptional(inner)))
+            Fail(cg, node.Loc, "Error<T> and Optional<T> cannot be nested (" + dotted + "<" + types.Name(inner) + ">); only Error<Optional<T>> is allowed");
         // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
         if (types.IsVoid(inner) && dotted != "Error")
             Fail(cg, node.Loc, dotted + "<void> is not supported");
@@ -619,8 +650,12 @@ string LlvmType(Compiler cg, int t)
         return "{ ptr, i32 }";
     case TypeKind.Struct:
         return StructIrName(cg, t);
+    case TypeKind.Function:
+        return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
+    case TypeKind.Interface:
+        return "{ ptr, ptr }"; // the boxed struct and its method table (Interfaces.csh)
     default:
-        return "ptr"; // string, pointer, array, null, function
+        return "ptr"; // string, pointer, array, null
     }
 }
 
@@ -638,6 +673,9 @@ bool NeedsArc(Compiler cg, int t)
     case TypeKind.Array:
     case TypeKind.Error:
     case TypeKind.ErrorLit:
+    case TypeKind.SharedPtr:
+    case TypeKind.Function:
+    case TypeKind.Interface:
         r = true;
         break;
     case TypeKind.Optional:
@@ -730,6 +768,8 @@ void EnsureSignature(Compiler cg, int instance)
         if (!d.RetOut && (cg.Types.IsStruct(fi.Ret) || cg.Types.IsResultLike(fi.Ret)))
             Fail(cg, d.Loc, "extern function '" + d.Name + "': returning '" + cg.Types.Name(fi.Ret) + "' by value from C is not supported, use a pointer instead");
     }
+    if (d.IsThread)
+        CheckThreadSignature(cg, fi);
     fi.SignatureResolved = true;
     fi.LlvmName = FunctionSymbol(cg, fi);
     if (!d.IsExtern && !cg.Symbols.Add(fi.LlvmName))
@@ -782,14 +822,14 @@ void DeclareExtern(Compiler cg, int instance)
     {
         if (i > 0)
             sb.Append(", ");
-        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : (d.Params[i].CString ? "ptr" : AbiParam(cg, fi.ParamTypes[i])));
+        sb.Append(fi.ParamRefs[i] != 0 ? "ptr" : (d.Params[i].CString ? "ptr" : ExternAbiParam(cg, fi.ParamTypes[i])));
     }
     // A shim returns a struct through an extra trailing pointer parameter and itself returns void.
     if (d.RetOut)
         sb.Append(fi.ParamTypes.Length > 0 ? ", ptr" : "ptr");
     if (d.IsVariadic)
         sb.Append(fi.ParamTypes.Length > 0 || d.RetOut ? ", ..." : "...");
-    string result = d.RetOut ? "void" : (d.RetCString ? "ptr" : AbiReturn(cg, fi.Ret));
+    string result = d.RetOut ? "void" : (d.RetCString || cg.Types.IsFunction(fi.Ret) ? "ptr" : AbiReturn(cg, fi.Ret));
     cg.Ir.Declare(fi.LlvmName, "declare " + result + " " + fi.LlvmName + "(" + sb.ToString() + ")");
 }
 

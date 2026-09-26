@@ -66,5 +66,5 @@ builds, *Tasks: Run Task → cshiftc: run* runs the program.
   `src/matrix.csh`, column-major like OpenGL expects) goes to the vertex shader as the uniform `uMvp`; the fragment
   shader outputs the interpolated color. The shaders (GLSL `#version 330 core`) are at the top of `src/main.csh`.
 
-The project file's format is described in [../BuildDesign.md](../BuildDesign.md), header import in
-[../FFI.md](../FFI.md).
+The project file's format is described in [../docs/build.md](../docs/build.md), header import in
+[../docs/ffi.md](../docs/ffi.md).

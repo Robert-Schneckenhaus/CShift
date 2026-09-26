@@ -269,6 +269,26 @@ struct AstDumper
             DumpExpr(indent + 1, "operand", n.Operand);
             break;
         }
+        case ExprKind.Start:
+        {
+            var n = Tree.GetStart(e);
+            Line(indent, role, head);
+            DumpExpr(indent + 1, "operand", n.Operand);
+            break;
+        }
+        case ExprKind.Lambda:
+        {
+            var n = Tree.GetLambda(e);
+            string ps = "";
+            foreach (var p in n.Params)
+                ps += (ps.Length > 0 ? ", " : "") + (p.Type.IsNull() ? "" : Tree.TypeToString(p.Type) + " ") + p.Name;
+            Line(indent, role, head + " (" + ps + ")");
+            if (n.Block.Kind != StmtKind.None)
+                DumpStmt(indent + 1, "block", n.Block);
+            else
+                DumpExpr(indent + 1, "body", n.Body);
+            break;
+        }
         default:
             Line(indent, role, head);
             break;
@@ -305,6 +325,8 @@ struct AstDumper
         case ExprKind.This: return "This";
         case ExprKind.Unchecked: return "Unchecked";
         case ExprKind.RefArg: return "RefArg";
+        case ExprKind.Start: return "Start";
+        case ExprKind.Lambda: return "Lambda";
         default: return "?";
         }
     }
@@ -446,7 +468,7 @@ struct AstDumper
     void DumpFunc(int indent, string role, FuncDecl f)
     {
         Line(indent, role, "Func" + At(f.Loc) + " name=" + f.Name + TypeAttr("ret", f.Ret) + Flag(f.IsStatic, "static") +
-                           Flag(f.IsExtern, "extern") + Flag(f.IsVariadic, "variadic") +
+                           Flag(f.IsExtern, "extern") + Flag(f.IsVariadic, "variadic") + Flag(f.IsThread, "thread") +
                            (f.TypeParams.Length > 0 ? " typeParams=" + NameList(f.TypeParams) : ""));
         for (var i = 0; i < f.Params.Length; i += 1)
         {

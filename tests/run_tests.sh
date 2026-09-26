@@ -3,7 +3,9 @@
 #
 #   tests/run_tests.sh [path/to/cshiftc] [-O0|-O1|-O2|-O3]
 #
-# The compiler is taken from the first argument, $CSHIFTC or build/cshiftc[.exe].
+# The compiler is taken from the first argument, $CSHIFTC, build/stage2/cshiftc[.exe] (the self-hosted compiler that is
+# released, see selfhost/build-release.sh) or selfhost/bin/cshc[.exe]. The C++ compiler (build/cshiftc) is only the
+# stage 0 of the bootstrap; it is frozen and not tested with this suite any more (new features exist only in cshc).
 # clang (or the program given with $CSHIFT_CC) must be available for linking.
 #
 # What is tested:
@@ -30,7 +32,7 @@ for arg in "$@"; do
 done
 if [ -z "$COMPILER" ]; then COMPILER="${CSHIFTC:-}"; fi
 if [ -z "$COMPILER" ]; then
-    for c in "$DIR/../build/cshiftc" "$DIR/../build/cshiftc.exe"; do
+    for c in "$DIR/../build/stage2/cshiftc" "$DIR/../build/stage2/cshiftc.exe" "$DIR/../selfhost/bin/cshc" "$DIR/../selfhost/bin/cshc.exe"; do
         if [ -x "$c" ]; then COMPILER="$c"; break; fi
     done
 fi
@@ -192,9 +194,10 @@ else
 fi
 
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
-#   The lexer and parser of selfhost/ are built with the compiler under test. Token and syntax tree dumps of all
-#   .csh files of the repository must be identical to those of the C++ front end (selfhost/compare.sh).
-#   CSHIFT_SKIP_SELFHOST=1 skips this section.
+#   cshc (selfhost/) is built with the compiler under test; it must pass the test cases, build the projects and
+#   rebuild itself (bootstrap). If the C++ stage 0 is there ($CSHIFT_STAGE0, else build/cshiftc[.exe]), the token and
+#   syntax tree dumps of all .csh files must still be identical to its front end (selfhost/compare.sh; files with
+#   syntax that only cshc knows are listed in selfhost/frontend-skip.txt). CSHIFT_SKIP_SELFHOST=1 skips this section.
 echo "== selfhost/"
 if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
     echo "skipped"
@@ -207,7 +210,15 @@ else
     else
         cshc="$work/bin/cshc"
         [ -f "$cshc.exe" ] && cshc="$cshc.exe"
-        if bash "$DIR/../selfhost/compare.sh" "$COMPILER" "$cshc" > "$TMP/selfhost.cmp" 2>&1; then
+        stage0="${CSHIFT_STAGE0:-}"
+        if [ -z "$stage0" ]; then
+            for c in "$DIR/../build/cshiftc" "$DIR/../build/cshiftc.exe"; do
+                if [ -x "$c" ]; then stage0="$c"; break; fi
+            done
+        fi
+        if [ -z "$stage0" ]; then
+            echo "      (no C++ stage 0: front end comparison skipped)"
+        elif bash "$DIR/../selfhost/compare.sh" "$stage0" "$cshc" > "$TMP/selfhost.cmp" 2>&1; then
             report_ok "selfhost front end"
         else
             report_fail "selfhost front end" "different output from the C++ front end:"
@@ -235,8 +246,8 @@ else
         else
             report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
         fi
-        # Projects (cshift.json, build/run/new) built by cshc. C headers are imported through the C++ compiler (libclang).
-        if CSHIFT_FFI_TOOL="$COMPILER" bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+        # Projects (cshift.json, build/run/new, C headers through libclang) built by cshc.
+        if bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
             report_ok "selfhost projects"
             head -n 1 "$TMP/selfhost.proj"
         else

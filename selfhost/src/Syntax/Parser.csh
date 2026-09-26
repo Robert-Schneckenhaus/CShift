@@ -252,6 +252,13 @@ struct Parser
             FuncDecl f = try ParseFunction(true, false);
             Unit.Funcs.Add(f);
         }
+        else if (IsThreadModifier())
+        {
+            Advance();
+            FuncDecl f = try ParseFunction(false, false);
+            f.IsThread = true;
+            Unit.Funcs.Add(f);
+        }
         else if (Check(TokenKind.Ident))
         {
             // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
@@ -284,6 +291,22 @@ struct Parser
         }
     }
 
+    // 'thread' is a contextual keyword: a modifier when a function declaration follows ("thread int F(" or
+    // "thread void F<"), otherwise an ordinary name.
+    bool IsThreadModifier()
+    {
+        if (!CheckIdent("thread"))
+            return false;
+        int start = Pos;
+        Advance();
+        var probe = ParseType();
+        bool result = false;
+        if (probe)
+            result = Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.LParen || PeekKind(1) == TokenKind.Lt);
+        Pos = start;
+        return result;
+    }
+
     Error<string[]> ParseTypeParams()
     {
         try Expect(TokenKind.Lt, "'<'");
@@ -299,8 +322,10 @@ struct Parser
     Error<Constraint[]> ParseConstraints()
     {
         var list = List<Constraint>.Create();
-        while (Match(TokenKind.KwWhere))
+        // 'where' is a contextual keyword: "where T : ..." (else it is an ordinary name)
+        while (CheckIdent("where") && PeekKind(1) == TokenKind.Ident && PeekKind(2) == TokenKind.Colon)
         {
+            Advance();
             var c = Constraint { };
             c.Param = try ExpectIdent("type parameter name");
             try Expect(TokenKind.Colon, "':'");
@@ -341,14 +366,27 @@ struct Parser
         var methods = List<FuncDecl>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
-            bool isStatic = Match(TokenKind.KwStatic);
+            bool isStatic = false;
+            bool isThread = false;
+            while (true)
+            {
+                if (Match(TokenKind.KwStatic))
+                    isStatic = true;
+                else if (IsThreadModifier())
+                {
+                    Advance();
+                    isThread = true;
+                }
+                else
+                    break;
+            }
             SourceLoc memberLoc = Cur().Loc;
             TypeRef type = try ParseType();
             string name = try ExpectIdent("member name");
 
             if (Check(TokenKind.LParen) || Check(TokenKind.Lt))
             {
-                var fn = FuncDecl { Loc = memberLoc, Name = name, Ret = type, IsStatic = isStatic, Owner = Unit.Structs.Count() };
+                var fn = FuncDecl { Loc = memberLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
                 try ParseFunctionRest(ref fn);
                 methods.Add(fn);
             }
@@ -356,6 +394,8 @@ struct Parser
             {
                 if (isStatic)
                     return error("static fields are not supported", memberLoc.Pack());
+                if (isThread)
+                    return error("'thread' can only be used on a method", memberLoc.Pack());
                 fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1 });
                 try Expect(TokenKind.Semi, "';' after field");
             }
@@ -1147,6 +1187,15 @@ struct Parser
         default:
             break;
         }
+        // 'start' is a contextual keyword: only an identifier 'start' directly followed by another identifier (the
+        // callee) starts a thread, e.g. 'start Foo(...)'. Two adjacent identifiers never form any other expression.
+        if (CheckIdent("start") && PeekKind(1) == TokenKind.Ident)
+        {
+            Advance();
+            var s = StartExpr { };
+            s.Operand = try ParseUnary();
+            return Tree.AddStart(loc, s);
+        }
         Expr primary = try ParsePrimary();
         return ParsePostfix(primary);
     }
@@ -1292,6 +1341,90 @@ struct Parser
         return expr;
     }
 
+    // '(' ... ')' '=>': the parameter list of a lambda.
+    bool IsLambdaParen()
+    {
+        int depth = 0;
+        for (var i = Pos; i < Tokens.Length; i += 1)
+        {
+            var k = Tokens[i].Kind;
+            if (k == TokenKind.LParen)
+                depth += 1;
+            else if (k == TokenKind.RParen)
+            {
+                depth -= 1;
+                if (depth == 0)
+                    return i + 1 < Tokens.Length && Tokens[i + 1].Kind == TokenKind.FatArrow;
+            }
+            else if (k == TokenKind.Eof || k == TokenKind.Semi || k == TokenKind.LBrace || k == TokenKind.RBrace)
+                return false;
+        }
+        return false;
+    }
+
+    // x => body, (x, y) => body, (int x, string y) => body, () => body; body: an expression or a block.
+    Error<Expr> ParseLambda()
+    {
+        SourceLoc loc = Cur().Loc;
+        var parameters = List<Param>.Create();
+        if (Check(TokenKind.Ident))
+        {
+            Token name = Advance();
+            parameters.Add(Param { Loc = name.Loc, Name = name.Text });
+        }
+        else
+        {
+            try Expect(TokenKind.LParen, "'('");
+            if (!Check(TokenKind.RParen))
+            {
+                do
+                {
+                    var p = Param { Loc = Cur().Loc };
+                    if (Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+                        p.Name = Advance().Text; // the type comes from the target
+                    else
+                    {
+                        p.Type = try ParseType();
+                        p.Name = try ExpectIdent("parameter name");
+                    }
+                    parameters.Add(p);
+                } while (Match(TokenKind.Comma));
+            }
+            try Expect(TokenKind.RParen, "')'");
+        }
+        try Expect(TokenKind.FatArrow, "'=>'");
+        var lambda = LambdaExpr { Params = parameters.ToArray() };
+        if (Check(TokenKind.LBrace))
+            lambda.Block = try ParseBlock();
+        else
+            lambda.Body = try ParseExpr();
+        return Tree.AddLambda(loc, lambda);
+    }
+
+    // $"a{x}b{y}c" is "a" + x + "b" + y + "c": string concatenation (which also turns the values into text), built from
+    // the left so that it starts with a string.
+    Error<Expr> ParseInterpolated()
+    {
+        Token first = Advance();
+        Expr result = Tree.AddStringLit(first.Loc, StringLitExpr { Value = first.Text });
+        while (true)
+        {
+            Expr hole = try ParseExpr();
+            result = Tree.AddBinary(hole.Loc, BinaryExpr { Op = BinOp.Add, Lhs = result, Rhs = hole });
+            if (Check(TokenKind.InterpMid) || Check(TokenKind.InterpEnd))
+            {
+                Token part = Advance();
+                if (part.Text.Length > 0)
+                    result = Tree.AddBinary(part.Loc, BinaryExpr { Op = BinOp.Add, Lhs = result, Rhs = Tree.AddStringLit(part.Loc, StringLitExpr { Value = part.Text }) });
+                if (part.Kind == TokenKind.InterpEnd)
+                    return result;
+            }
+            else
+                return error("expected '}' after the expression in an interpolated string, found " + TokenName(Kind()), Cur().Loc.Pack());
+        }
+        return result;
+    }
+
     bool CastFollows(TypeRef type)
     {
         switch (Kind())
@@ -1301,6 +1434,7 @@ struct Parser
         case TokenKind.FloatLit:
         case TokenKind.CharLit:
         case TokenKind.StringLit:
+        case TokenKind.InterpStart:
         case TokenKind.LParen:
         case TokenKind.Bang:
         case TokenKind.Tilde:
@@ -1427,6 +1561,8 @@ struct Parser
             Advance();
             return Tree.AddStringLit(loc, StringLitExpr { Value = t.Text });
         }
+        case TokenKind.InterpStart:
+            return ParseInterpolated();
         case TokenKind.KwTrue:
         case TokenKind.KwFalse:
         {
@@ -1460,9 +1596,13 @@ struct Parser
         case TokenKind.KwNew:
             return ParseNew();
         case TokenKind.LParen:
+            if (IsLambdaParen())
+                return ParseLambda();
             return ParseParenOrCast();
         case TokenKind.Ident:
         {
+            if (PeekKind(1) == TokenKind.FatArrow)
+                return ParseLambda();
             if (t.Text == "error" && PeekKind(1) == TokenKind.LParen)
             {
                 Advance();

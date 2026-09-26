@@ -125,6 +125,8 @@ void LayoutExplicitStruct(Compiler cg, int index)
         int ft = ResolveValueType(cg, f.Type.Id, se.File, si.Env);
         if (types.IsVoid(ft))
             Fail(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
+        if (types.IsFunction(ft))
+            ft = types.CFunctionOf(ft); // C stores a plain function pointer
         var l = TypeLayout(cg, ft);
         if (f.Offset % l.Align != 0)
             Fail(cg, decl.Loc, "struct '" + decl.Name + "': field '" + f.Name + "' is not naturally aligned (packed structs are not supported)");

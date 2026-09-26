@@ -45,13 +45,32 @@ thread void Bad()
 This is checked transitively: a `thread` function may also not call a function that (directly or through further
 calls) reads or writes a global variable.
 
-Its parameters are restricted the same way `ref`/pointers are restricted elsewhere, but stricter: a `thread`
-function's parameters must be plain value types (numbers, `bool`, `char`, enums, `Optional<T>` of one of those,
-or a struct built only from these) or [`SharedPtr<T>`](#sharedptrt) - never `ref`/`const ref`, a raw pointer, a
-string, an array, a built-in container, `Error<T>`, or `Action`/`Func`. Copying one of those across threads would
-race on a reference count that was never meant to be touched from two threads at once (or, for a raw pointer or
-`Action`/`Func`, silently alias data the other thread does not expect). Its return type has no such restriction -
-`Error<T>`, a string, anything - since the value only ever moves from the thread to whoever calls `Join()`.
+Its parameters are restricted, because the reference counts of strings, arrays and the built-in containers are not
+atomic. A `thread` function's parameters may be:
+
+* plain values: numbers, `bool`, `char`, enums;
+* **strings**: the thread gets its **own copy** (a new block that only the thread owns and releases when it is done).
+  Strings cannot be changed, so the copy behaves exactly like the original;
+* [`SharedPtr<T>`](#sharedptrt) of a **thread-safe** `T` (plain values, `SharedPtr`s of thread-safe values, and
+  `Optional<T>`/structs made of them) - the value is *shared*, so a string inside it is not allowed:
+  `SharedPtr<string>` is an error;
+* `Optional<T>`, `Error<T>` and structs made of the above (the strings in them are copied as well).
+
+Never `ref`/`const ref`, a raw pointer, an array, a built-in container or `Action`/`Func`: copying those would race on
+a reference count that was never meant to be touched from two threads at once (or, for a raw pointer or
+`Action`/`Func`, silently alias data the other thread does not expect). A `Thread<T>` handle holds a `SharedPtr` to
+the result, so it can be passed to another thread only if `T` is thread-safe (`Thread<int>` yes, `Thread<string>`
+no). The return type has no such restriction - `Error<T>`, a string, anything - since the value only ever moves
+from the thread to whoever calls `Join()`.
+
+```csharp
+thread int CountWords(string text)      // 'text' is the thread's own copy
+{
+    return text.Split(' ').Length;
+}
+
+Thread<int> t = start CountWords("one two three");
+```
 
 `thread` can mark a free function or a `static` struct method (it cannot see `this`, so it cannot mark an
 instance method), and it cannot be generic or variadic.
@@ -105,7 +124,8 @@ result, a default value, or anything else of type `T` is equally valid.
 
 A `SharedPtr<T>` is a box for one value of type `T` with an atomically reference-counted handle, safe to copy
 between threads (unlike the reference counts of strings, arrays and the built-in containers, which are not
-atomic and are exactly why those are not allowed as `thread` parameters):
+atomic). Its value must itself be thread-safe (no strings, arrays or containers inside) when it is passed to a
+thread:
 
 ```csharp
 var box = SharedPtr<int>.Create(41);
@@ -129,5 +149,37 @@ void Main()
 
 Only the reference count itself is thread-safe - concurrent access to the value through `.Ptr()` from more than
 one thread needs its own synchronization, exactly like `std::shared_ptr` in C++.
+
+## `Mutex<T>`
+
+A `Mutex<T>` is a value that several threads share, guarded by a lock. Like `SharedPtr<T>` it is a handle (copies
+share the value and the lock) and can be passed to `thread` functions:
+
+```csharp
+thread void Count(Mutex<int> counter, int times)
+{
+    for (var i = 0; i < times; i += 1)
+    {
+        using (var guard = counter.Lock())   // released when the block is left
+            guard.Set(guard.Get() + 1);
+    }
+}
+
+var counter = Mutex<int>.Create(0);
+var a = start Count(counter, 1000);
+var b = start Count(counter, 1000);
+a.Join();
+b.Join();
+Console.WriteLine(counter.Get());   // 2000
+```
+
+* `Mutex<T>.Create(value)`, `.Lock()` returns a `MutexGuard<T>` that holds the lock until `Dispose()` (`using`).
+* `guard.Get()` / `guard.Set(value)` read and write the value while the lock is held; `mutex.Get()` /
+  `mutex.Set(value)` lock just for that one call.
+* The value only goes in and out as a copy that shares no reference count with anything else (strings are copied
+  into new blocks, `Memory.CopyForThread`). So `T` must be copyable between threads: numbers, `bool`, `char`, enums,
+  strings, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs of them - not arrays or
+  containers (`Mutex<List<int>>` is an error).
+* A `MutexGuard<T>` cannot be passed to another thread: the thread that locked a mutex has to unlock it.
 
 Next: [Resources and `using`](resources.md).

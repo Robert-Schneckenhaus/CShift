@@ -42,7 +42,6 @@ struct Lexer
         lexer.Keywords.Set("new", TokenKind.KwNew);
         lexer.Keywords.Set("try", TokenKind.KwTry);
         lexer.Keywords.Set("is", TokenKind.KwIs);
-        lexer.Keywords.Set("where", TokenKind.KwWhere);
         lexer.Keywords.Set("const", TokenKind.KwConst);
         lexer.Keywords.Set("ref", TokenKind.KwRef);
         lexer.Keywords.Set("static", TokenKind.KwStatic);
@@ -51,6 +50,7 @@ struct Lexer
         lexer.Keywords.Set("null", TokenKind.KwNull);
         lexer.Keywords.Set("this", TokenKind.KwThis);
         lexer.Keywords.Set("sizeof", TokenKind.KwSizeof);
+        // 'start' (as in 'start Foo(...)') is not a keyword: the parser recognizes it by its position (ParseUnary).
         return lexer;
     }
 
@@ -157,6 +157,25 @@ struct Lexer
                 break;
 
             char c = Peek(0);
+            if (c == '$' && Peek(1) == '"')
+            {
+                int mark = tokens.Count();
+                SourceLoc interpLoc = Here();
+                var interp = LexInterpolated(tokens);
+                if (!interp)
+                {
+                    Diag.Report(FileId, interp.Message, interp.Code);
+                    // continue after the string with an empty string in its place (no follow-up errors)
+                    while (tokens.Count() > mark)
+                        tokens.RemoveAt(tokens.Count() - 1);
+                    while (!AtEnd() && Peek(0) != '"' && Peek(0) != '\n')
+                        Advance();
+                    if (!AtEnd() && Peek(0) == '"')
+                        Advance();
+                    tokens.Add(Token { Kind = TokenKind.StringLit, Loc = interpLoc, Text = "" });
+                }
+                continue;
+            }
             Error<Token> result;
             if (Char.IsDigit(c))
                 result = LexNumber();
@@ -417,6 +436,95 @@ struct Lexer
         return t;
     }
 
+    // $"a {x} b {y + 1} c": InterpStart("a "), the tokens of x, InterpMid(" b "), the tokens of y + 1, InterpEnd(" c").
+    // A string without holes is a plain StringLit. "{{" and "}}" are literal braces; the escapes are those of strings.
+    Error<void> LexInterpolated(List<Token> tokens)
+    {
+        SourceLoc start = Here();
+        Advance(); // $
+        Advance(); // "
+        var text = StringBuilder.Create();
+        var textLoc = start;
+        bool anyHole = false;
+        while (true)
+        {
+            if (AtEnd() || Peek(0) == '\n')
+                return error("unterminated interpolated string", start.Pack());
+            char c = Advance();
+            if (c == '"')
+                break;
+            if (c == '{' && Peek(0) == '{')
+            {
+                Advance();
+                text.Append('{');
+            }
+            else if (c == '}' && Peek(0) == '}')
+            {
+                Advance();
+                text.Append('}');
+            }
+            else if (c == '}')
+                return error("a single '}' in an interpolated string must be written as '}}'", Here().Pack());
+            else if (c == '{')
+            {
+                tokens.Add(Token { Kind = anyHole ? TokenKind.InterpMid : TokenKind.InterpStart, Loc = textLoc, Text = text.ToString() });
+                text.Clear();
+                anyHole = true;
+                // the tokens of the hole, up to the matching '}'
+                int depth = 0;
+                int first = tokens.Count();
+                while (true)
+                {
+                    SkipTrivia();
+                    if (AtEnd())
+                        return error("unterminated interpolated string", start.Pack());
+                    char h = Peek(0);
+                    if (h == '}' && depth == 0)
+                        break;
+                    if (h == '$' && Peek(1) == '"')
+                    {
+                        try LexInterpolated(tokens);
+                        continue;
+                    }
+                    Error<Token> result;
+                    if (Char.IsDigit(h))
+                        result = LexNumber();
+                    else if (h == '"')
+                        result = LexString();
+                    else if (h == '\'')
+                        result = LexChar();
+                    else if (IsIdentStart(h))
+                        result = LexIdentifier();
+                    else
+                        result = LexPunct();
+                    var tok = try result;
+                    if (tok.Kind == TokenKind.LBrace)
+                        depth += 1;
+                    else if (tok.Kind == TokenKind.RBrace)
+                        depth -= 1;
+                    tokens.Add(tok);
+                }
+                if (tokens.Count() == first)
+                    return error("empty hole '{}' in an interpolated string", Here().Pack());
+                textLoc = Here();
+                Advance(); // }
+            }
+            else if (c == '\\')
+            {
+                bool isU = Peek(0) == 'u';
+                uint32 cp = try LexEscape();
+                if (isU)
+                    AppendUtf8(text, cp);
+                else
+                    text.Append((char)cp);
+            }
+            else
+                text.Append(c);
+        }
+        tokens.Add(Token { Kind = anyHole ? TokenKind.InterpEnd : TokenKind.StringLit, Loc = anyHole ? textLoc : start, Text = text.ToString() });
+        return;
+    }
+
     Error<Token> LexChar()
     {
         var t = Token { Kind = TokenKind.CharLit, Loc = Here(), Text = "" };
@@ -519,7 +627,7 @@ struct Lexer
             break;
         case '^': t.Kind = Match('=') ? TokenKind.CaretAssign : TokenKind.Caret; break;
         case '!': t.Kind = Match('=') ? TokenKind.NotEq : TokenKind.Bang; break;
-        case '=': t.Kind = Match('=') ? TokenKind.EqEq : TokenKind.Assign; break;
+        case '=': t.Kind = Match('=') ? TokenKind.EqEq : (Match('>') ? TokenKind.FatArrow : TokenKind.Assign); break;
         case '<':
             if (Match('<'))
                 t.Kind = Match('=') ? TokenKind.ShlAssign : TokenKind.Shl;

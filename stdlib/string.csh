@@ -78,7 +78,13 @@ int IndexOf(string s, string value)
 
 int IndexOf(string s, char value)
 {
-    for (var i = 0; i < s.Length; i += 1)
+    return IndexOf(s, value, 0);
+}
+
+// Index of the first occurrence of the character at or after start, or -1.
+int IndexOf(string s, char value, int start)
+{
+    for (var i = start < 0 ? 0 : start; i < s.Length; i += 1)
     {
         if (s[i] == value)
             return i;
@@ -147,6 +153,66 @@ string Trim(string s)
     while (end > start && IsSpace(s[end - 1]))
         end -= 1;
     return s.Substring(start, end - start);
+}
+
+// Without the white space at the start.
+string TrimStart(string s)
+{
+    int start = 0;
+    while (start < s.Length && IsSpace(s[start]))
+        start += 1;
+    return s.Substring(start, s.Length - start);
+}
+
+// Without the white space at the end.
+string TrimEnd(string s)
+{
+    int end = s.Length;
+    while (end > 0 && IsSpace(s[end - 1]))
+        end -= 1;
+    return s.Substring(0, end);
+}
+
+// Without the given characters at the start / at the end: "007".TrimStart('0') is "7".
+string TrimStart(string s, char c)
+{
+    int start = 0;
+    while (start < s.Length && s[start] == c)
+        start += 1;
+    return s.Substring(start, s.Length - start);
+}
+
+string TrimEnd(string s, char c)
+{
+    int end = s.Length;
+    while (end > 0 && s[end - 1] == c)
+        end -= 1;
+    return s.Substring(0, end);
+}
+
+// Filled up to 'width' characters (bytes) with spaces or 'fill' on the left / on the right: "7".PadLeft(3, '0') is "007".
+string PadLeft(string s, int width)
+{
+    return PadLeft(s, width, ' ');
+}
+
+string PadLeft(string s, int width, char fill)
+{
+    if (s.Length >= width)
+        return s;
+    return Repeat(fill.ToString(), width - s.Length) + s;
+}
+
+string PadRight(string s, int width)
+{
+    return PadRight(s, width, ' ');
+}
+
+string PadRight(string s, int width, char fill)
+{
+    if (s.Length >= width)
+        return s;
+    return s + Repeat(fill.ToString(), width - s.Length);
 }
 
 string ToUpper(string s)
