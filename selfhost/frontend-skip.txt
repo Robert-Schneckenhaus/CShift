@@ -24,3 +24,4 @@ tests/cases/list_functions.csh
 
 # interface values
 tests/cases/interface_values.csh
+tests/cases/error_pattern.csh

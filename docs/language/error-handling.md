@@ -46,6 +46,26 @@ if (!result)
 }
 ```
 
+`is error e` matches only a failure and binds the result, so the error can be used under a name (it works for every
+`Error<T>`, and as `case error e:` in a `switch`):
+
+```csharp
+if (OpenFile(path) is error e)
+    Console.WriteLine($"failed ({e.Code}): {e.Message}");
+
+switch (Parse(text))
+{
+    case int value:
+        Use(value);
+        break;
+    case error e:
+        Report(e.Message);
+        break;
+}
+```
+
+A pattern of the value's own type (`result is Error<File> r`) would always match, so it is a compile error.
+
 ## `try`
 
 `try` unwraps an `Error<T>` and, on failure, immediately returns that same error from the current function — the
@@ -116,16 +136,16 @@ Error<Optional<User>> FindUser(int id)
 ```
 
 Because it has two "no" cases, it **cannot be used as a condition**: `if (r)` and `!r` are compile errors (would they
-mean "failed" or "found nothing"?). Say which one you mean:
+mean "failed" or "found nothing"?). Say which one you mean with `is error e`, `is T v` or `is Optional<T> o`:
 
 ```csharp
 var r = FindUser(7);
-if (r is User u)                // succeeded and found a user
+if (r is error e)               // failed
+    Console.WriteLine("error: " + e.Message);
+else if (r is User u)           // succeeded and found a user
     Show(u);
-else if (r is Optional<User>)   // succeeded, found nothing
+else                            // succeeded, found nothing
     Console.WriteLine("no such user");
-else                            // failed
-    Console.WriteLine("error: " + r.Message);
 
 Optional<User> found = try FindUser(7);   // 'try' passes the error on and gives the Optional<T>
 ```

@@ -771,18 +771,20 @@ void TestErrorAndOptional(ref Tester t)
     }
     t.Check("switch pattern", seen == 9);
 
-    // "case Error<int> r" matches the whole result and binds it
-    var whole = Parse("77");
-    int code = 0;
-    switch (whole)
+    // "case error e" matches a failure and binds the whole result
+    var failure = Parse("x");
+    string message = "";
+    switch (failure)
     {
-        case Error<int> all:
-            if (all is int inner)
-                code = inner;
+        case int x:
+            message = "value";
+            break;
+        case error e:
+            message = e.Message;
             break;
     }
-    t.Check("switch whole-result pattern", code == 77);
-    t.Check("is whole-result pattern", whole is Error<int> alias && alias is int);
+    t.Check("switch error pattern", message.Length > 0 && message != "value");
+    t.Check("is error pattern", failure is error bad && bad.Message == message && !(Parse("77") is error));
 
     // Optional<T>
     var data = new int[] { 5, 6, 7 };

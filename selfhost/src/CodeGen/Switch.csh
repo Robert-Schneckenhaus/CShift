@@ -48,9 +48,10 @@ void EmitSwitch(Compiler cg, Stmt s)
             string cond;
             if (!label.PatType.IsNull())
             {
-                int pt = DeclTypeOf(cg, label.PatType);
-                if (pt == st)
-                    cond = "true"; // "case Error<int> r:" matches the whole result
+                bool isError = false;
+                int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
+                if (isError)
+                    cond = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true"); // "case error e:"
                 else if (types.IsResultLike(st) && types.Elem(st) == pt)
                     cond = ir.ExtractValue(LlvmType(cg, st), subjVal, "0");
                 else
@@ -82,7 +83,8 @@ void EmitSwitch(Compiler cg, Stmt s)
         {
             if (label.PatType.IsNull() || label.PatName.Length == 0)
                 continue;
-            int pt = DeclTypeOf(cg, label.PatType);
+            bool isError = false;
+            int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
             string slot = ir.Alloca(LlvmType(cg, pt), label.PatName);
             string payload = pt == st ? subjVal : ir.ExtractValue(LlvmType(cg, st), subjVal, "1");
             EmitRetain(cg, pt, payload);

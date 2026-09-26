@@ -37,11 +37,11 @@ int Main()
     failed += Check("relative path same", Path.GetRelativePath("/a/b", "/a/b") == ".");
     failed += Check("relative path below", Path.GetRelativePath("/a", "/a/b/c") == "b/c");
     failed += Check("create nested", Directory.Create("d1/d2/d3") && Directory.Exists("d1/d2/d3"));
-    failed += Check("write", File.WriteAllText("d1/d2/one.txt", "hello") is Error<void> w && w);
-    failed += Check("copy", File.Copy("d1/d2/one.txt", "d1/two.txt") is Error<void> c && c);
+    failed += Check("write", !(File.WriteAllText("d1/d2/one.txt", "hello") is error));
+    failed += Check("copy", !(File.Copy("d1/d2/one.txt", "d1/two.txt") is error));
     failed += Check("copied", File.ReadAllText("d1/two.txt") is string text && text == "hello");
     failed += Check("copy no overwrite", !File.Copy("d1/d2/one.txt", "d1/two.txt"));
-    failed += Check("copy overwrite", File.Copy("d1/d2/one.txt", "d1/two.txt", true) is Error<void> o && o);
+    failed += Check("copy overwrite", !(File.Copy("d1/d2/one.txt", "d1/two.txt", true) is error));
     var entries = Directory.GetEntries("d1");
     failed += Check("entries", entries.Count() == 2 && entries.Get(0) == "d2" && entries.Get(1) == "two.txt");
     failed += Check("find files", Directory.FindFiles("d1", ".txt").Count() == 2);

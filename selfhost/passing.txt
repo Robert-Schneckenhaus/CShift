@@ -36,6 +36,7 @@ err_enum_next_overflow.csh
 err_enum_no_base.csh
 err_enum_value_overflow.csh
 err_error_optional_condition.csh
+err_error_pattern_type.csh
 err_extern_struct.csh
 err_fallthrough.csh
 err_foreach_struct.csh
@@ -91,6 +92,8 @@ err_unknown_type.csh
 err_unsigned_negate.csh
 err_using_not_disposable.csh
 err_void_result_value.csh
+err_whole_result_pattern.csh
+error_pattern.csh
 error_void.csh
 exit_code.csh
 function_pointers.csh

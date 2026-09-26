@@ -51,7 +51,7 @@ The design document leaves a number of things open; these are the decisions that
 * **Implicit conversion** `T → Error<T>` / `T → Optional<T>`; `null` stands for "no value" (`Optional`).
 * **Bool semantics** of `Error`/`Optional` apply in conditions and with `!`, `&&`, `||`, but not as an argument for a
   `bool` parameter (use `x is T` instead).
-* **`is`/`case` patterns:** `x is int v` binds the value; `x is Error<int> r` binds the whole result. Pattern
+* **`is`/`case` patterns:** `x is int v` binds the value; `x is error e` matches a failure and binds the whole result (a pattern of the value's own type would always match and is an error). Pattern
   variables are scoped to the `if`/`while`, or to the `case`.
 * **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
   prints `error: <text>` to stderr and ends the program with exit code 1.
