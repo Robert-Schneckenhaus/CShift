@@ -162,6 +162,7 @@ panic_user.csh
 shared_ptr.csh
 stdlib_additions.csh
 stdlib_dictionary.csh
+stdlib_errors.csh
 stdlib_file.csh
 stdlib_list.csh
 stdlib_math.csh

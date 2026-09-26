@@ -52,8 +52,8 @@ writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `
 **`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
 `WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`,
 `Copy(source, target [, overwrite])`. Reading returns
-`Error<string>` or `Error<uint8[]>`, writing and deleting return `Error<void>`; a UTF-8 BOM is skipped when reading
-text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
+`IoError<string>` or `IoError<uint8[]>`, writing, copying and deleting return `IoError<void>` (see *Error codes*
+below); a UTF-8 BOM is skipped when reading text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
 
 ```csharp
 using System;
@@ -66,8 +66,19 @@ Error<string> Load(string path)
 }
 ```
 
+**Error codes** ([error enums](language/error-handling.md#error-enums-typed-error-codes), `stdlib/errors.csh`):
+
+| Enum | Members | Returned by |
+|---|---|---|
+| `IoError` | `CannotOpen` (1), `CannotWrite` (2), `CannotDelete` (3), `AlreadyExists` (4), `InvalidText` (5), `CannotCreate` (6) | `File.*` |
+| `ParseError` | `Invalid` (1), `OutOfRange` (2) | `ParseInt`, `ParseInt64`, `ParseDouble` |
+| `EncodingError` | `OutOfBounds` (1), `NotAscii` (2), `InvalidUtf8` (3) | `Encoding.GetString` |
+
+A caller can match a code (`case IoError.CannotOpen:`, `if (r is IoError code)`); a typed result converts to a
+plain `Error<T>`, and `try` passes it on from a function returning `Error<T>` or the same typed result.
+
 **`Encoding`** — `Encoding.UTF8()` and `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])`
-(`Error<string>`: invalid UTF-8, or bytes above 127 for ASCII, are errors), `GetByteCount`, `Name()`. Strings are
+(`EncodingError<string>`: invalid UTF-8, or bytes above 127 for ASCII, are errors), `GetByteCount`, `Name()`. Strings are
 always UTF-8 in memory; `GetBytes` with ASCII replaces other characters with `?`. More encodings can be added as a
 new `EncodingKind`.
 
@@ -80,7 +91,7 @@ like in C#), `Lerp`, `IsNaN`, `IsInfinity`. Integer arguments are widened to `do
 `Contains`, `IndexOf` (also `IndexOf(char, start)`), `LastIndexOf`, `StartsWith`, `EndsWith`, `Trim`,
 `TrimStart`/`TrimEnd` (white space, or a given character), `PadLeft`/`PadRight` (with spaces or a given character),
 `ToUpper`/`ToLower` (ASCII only), `Replace`,
-`Repeat`, `Split` (by character or string), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`Error<…>`), plus
+`Repeat`, `Split` (by character or string), `Join`, `ParseInt`/`ParseInt64`/`ParseDouble` (`ParseError<…>`), plus
 `Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise). Positions are byte offsets;
 `string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written as a function in
 `namespace String` (the first parameter is the string).

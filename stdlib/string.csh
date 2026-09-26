@@ -8,6 +8,7 @@
 
 namespace String;
 
+using System;
 using System.Native;
 
 bool IsNullOrEmpty(string s)
@@ -333,7 +334,7 @@ string Join(string separator, string[] parts)
 
 // ---- Parsing ----
 
-Error<int64> ParseInt64(string s)
+ParseError<int64> ParseInt64(string s)
 {
     int n = s.Length;
     int i = 0;
@@ -344,7 +345,7 @@ Error<int64> ParseInt64(string s)
         i = 1;
     }
     if (i >= n)
-        return error("invalid number '" + s + "'");
+        return error("invalid number '" + s + "'", ParseError.Invalid);
 
     // Accumulate as a negative number so that int64.MinValue can be parsed.
     int64 value = 0;
@@ -352,41 +353,41 @@ Error<int64> ParseInt64(string s)
     {
         char c = s[i];
         if (c < '0' || c > '9')
-            return error("invalid number '" + s + "'");
+            return error("invalid number '" + s + "'", ParseError.Invalid);
         int digit = c - '0';
         if (value < (int64.MinValue + digit) / 10)
-            return error("number out of range '" + s + "'");
+            return error("number out of range '" + s + "'", ParseError.OutOfRange);
         value = value * 10 - digit;
         i += 1;
     }
     if (!negative)
     {
         if (value == int64.MinValue)
-            return error("number out of range '" + s + "'");
+            return error("number out of range '" + s + "'", ParseError.OutOfRange);
         value = -value;
     }
     return value;
 }
 
-Error<int> ParseInt(string s)
+ParseError<int> ParseInt(string s)
 {
     var value = try ParseInt64(s);
     if (value < int.MinValue || value > int.MaxValue)
-        return error("number out of range '" + s + "'");
+        return error("number out of range '" + s + "'", ParseError.OutOfRange);
     return (int)value;
 }
 
-Error<double> ParseDouble(string s)
+ParseError<double> ParseDouble(string s)
 {
     if (s.Length == 0)
-        return error("invalid number ''");
+        return error("invalid number ''", ParseError.Invalid);
     unsafe
     {
         char* start = s.CStr();
         char* end = start;
         double value = strtod(start, &end);
         if (end == start || *end != 0)
-            return error("invalid number '" + s + "'");
+            return error("invalid number '" + s + "'", ParseError.Invalid);
         return value;
     }
 }

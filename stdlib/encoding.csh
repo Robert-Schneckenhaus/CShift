@@ -76,16 +76,16 @@ struct Encoding
         return GetBytes(s).Length;
     }
 
-    Error<string> GetString(uint8[] bytes)
+    EncodingError<string> GetString(uint8[] bytes)
     {
         return GetString(bytes, 0, bytes.Length);
     }
 
     // Decodes count bytes starting at start. Invalid input (malformed UTF-8, bytes above 127 for ASCII) is an error.
-    Error<string> GetString(uint8[] bytes, int start, int count)
+    EncodingError<string> GetString(uint8[] bytes, int start, int count)
     {
         if (start < 0 || count < 0 || start + count > bytes.Length)
-            return error("byte range is out of bounds");
+            return error("byte range is out of bounds", EncodingError.OutOfBounds);
         int end = start + count;
 
         if (_kind == EncodingKind.ASCII)
@@ -93,7 +93,7 @@ struct Encoding
             for (var i = start; i < end; i += 1)
             {
                 if (bytes[i] >= 0x80)
-                    return error("byte at index " + i + " is not ASCII");
+                    return error("byte at index " + i + " is not ASCII", EncodingError.NotAscii);
             }
             return string.FromBytes(bytes, start, count);
         }
@@ -128,22 +128,22 @@ struct Encoding
             }
             else
             {
-                return error("invalid UTF-8 byte at index " + position);
+                return error("invalid UTF-8 byte at index " + position, EncodingError.InvalidUtf8);
             }
 
             if (position + extra >= end)
-                return error("truncated UTF-8 sequence at index " + position);
+                return error("truncated UTF-8 sequence at index " + position, EncodingError.InvalidUtf8);
             for (var k = 1; k <= extra; k += 1)
             {
                 int next = bytes[position + k];
                 if ((next & 0xC0) != 0x80)
-                    return error("invalid UTF-8 continuation byte at index " + (position + k));
+                    return error("invalid UTF-8 continuation byte at index " + (position + k), EncodingError.InvalidUtf8);
                 codePoint = (codePoint << 6) | (next & 0x3F);
             }
             if ((extra == 2 && codePoint < 0x800) || (extra == 3 && (codePoint < 0x10000 || codePoint > 0x10FFFF)))
-                return error("overlong or out-of-range UTF-8 sequence at index " + position);
+                return error("overlong or out-of-range UTF-8 sequence at index " + position, EncodingError.InvalidUtf8);
             if (codePoint >= 0xD800 && codePoint <= 0xDFFF)
-                return error("UTF-8 sequence encodes a surrogate at index " + position);
+                return error("UTF-8 sequence encodes a surrogate at index " + position, EncodingError.InvalidUtf8);
             position += extra + 1;
         }
         return string.FromBytes(bytes, start, count);
