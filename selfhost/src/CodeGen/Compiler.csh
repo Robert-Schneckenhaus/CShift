@@ -108,6 +108,7 @@ struct Value
     int[] GroupTypeArgs;
     string GroupName;
     Expr LambdaNode;         // a lambda (type "lambda"): compiled when it is converted to an Action/Func type
+    Expr CollectionNode;     // [a, b] (type "collection"): built when it is converted to the type it is used as
 
     bool IsNone()
     {

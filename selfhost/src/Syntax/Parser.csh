@@ -1656,6 +1656,22 @@ struct Parser
 
         switch (t.Kind)
         {
+        case TokenKind.LBracket:
+        {
+            // [a, b, ..c]: a collection expression (a trailing comma is allowed)
+            Advance();
+            var items = List<Expr>.Create();
+            var spread = List<bool>.Create();
+            while (!Check(TokenKind.RBracket) && !Check(TokenKind.Eof))
+            {
+                spread.Add(Match(TokenKind.DotDot));
+                items.Add(try ParseExpr());
+                if (!Match(TokenKind.Comma))
+                    break;
+            }
+            try Expect(TokenKind.RBracket, "']'");
+            return Tree.AddCollection(loc, CollectionExpr { Items = items.ToArray(), Spread = spread.ToArray() });
+        }
         case TokenKind.IntLit:
         {
             Advance();

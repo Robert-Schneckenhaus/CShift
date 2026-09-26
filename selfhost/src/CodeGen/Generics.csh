@@ -213,7 +213,11 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
     if (node.Kind == TypeRefKind.Pointer)
         return types.IsPointer(actual) && Unify(cg, node.Elem, types.Elem(actual), tparams, file, bound);
     if (node.Kind == TypeRefKind.Array)
+    {
+        if (types.Kind(actual) == TypeKind.Collection)
+            return true; // [a, b] takes the parameter's type; T is inferred from other arguments (or given)
         return types.IsArray(actual) && Unify(cg, node.Elem, types.Elem(actual), tparams, file, bound);
+    }
 
     var kind = types.Kind(actual);
     if (node.Path.Length == 1 && node.Args.Length == 0)
@@ -222,7 +226,7 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
         {
             if (tparams[i] == node.Path[0])
             {
-                if (kind == TypeKind.Null || kind == TypeKind.ErrorLit || kind == TypeKind.MethodGroup)
+                if (kind == TypeKind.Null || kind == TypeKind.ErrorLit || kind == TypeKind.MethodGroup || kind == TypeKind.Collection)
                     return true; // cannot infer from these; another argument may bind it
                 if (bound[i] == 0)
                     bound[i] = actual;
@@ -248,7 +252,7 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
         // Slice<T> from a slice or an array (which converts to a slice of itself)
         if (kind == TypeKind.Slice || kind == TypeKind.Array)
             return Unify(cg, node.Args[0], types.Elem(actual), tparams, file, bound);
-        return kind == TypeKind.Null;
+        return kind == TypeKind.Null || kind == TypeKind.Collection;
     }
     if (name == "Action" || name == "Func")
     {

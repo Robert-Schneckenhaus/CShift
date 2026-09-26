@@ -86,7 +86,7 @@ Value EmitIndex(Compiler cg, Expr e)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetIndex(e);
-    Value obj = EmitExpr(cg, n.Object);
+    Value obj = SettleCollection(cg, EmitExpr(cg, n.Object));
     if (types.IsStruct(obj.Type))
     {
         if (n.FromEnd)
@@ -177,7 +177,7 @@ void EmitForeach(Compiler cg, Stmt s)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetForeach(s);
-    Value it = EmitRValue(cg, n.Iterable);
+    Value it = SettleCollection(cg, EmitRValue(cg, n.Iterable));
     int collType = it.Type;
     if (types.IsStruct(collType))
     {

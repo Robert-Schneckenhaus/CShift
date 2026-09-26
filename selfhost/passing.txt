@@ -1,5 +1,6 @@
 arc_stress.csh
 builtins.csh
+collection_expressions.csh
 console_stderr.csh
 const_default.csh
 const_eval.csh
@@ -8,6 +9,10 @@ embed.csh
 enum_text.csh
 env_exit.csh
 err_break_outside.csh
+err_collection_element.csh
+err_collection_empty.csh
+err_collection_spread.csh
+err_collection_target.csh
 err_condition_not_bool.csh
 err_const_assign.csh
 err_const_cycle.csh

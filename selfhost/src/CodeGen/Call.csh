@@ -582,7 +582,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
 
     // An instance call: never a 'thread' function (a thread function cannot be an instance method).
     RejectIndirectStart(cg, viaStart, e.Loc);
-    Value obj = EmitExpr(cg, m.Object);
+    Value obj = SettleCollection(cg, EmitExpr(cg, m.Object));
     if (m.ViaArrow)
         obj = DerefPointer(cg, obj, e.Loc);
     else if (types.IsPointer(obj.Type))

@@ -475,7 +475,7 @@ Value EmitMember(Compiler cg, Expr e)
         }
     }
 
-    Value obj = EmitExpr(cg, m.Object);
+    Value obj = SettleCollection(cg, EmitExpr(cg, m.Object)); // [1, 2].Length: an array
     if (m.ViaArrow)
         obj = DerefPointer(cg, obj, e.Loc);
     else if (types.IsPointer(obj.Type))
