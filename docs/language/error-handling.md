@@ -63,8 +63,28 @@ because they would hide what is tested. Write `is error e` (failed) or `is T v` 
 if (Save() is error e)                    // Error<void>: 'is error' is the only test
     Console.WriteLine("cannot save: " + e.Message);
 
-bool ok = !(Parse(text) is error);        // just the outcome
+bool ok = Parse(text) is not error;       // just the outcome
 ```
+
+### `is not`
+
+`is not` negates any pattern: `x is not T`, `x is not error`. For optional values (and anything else that can be
+compared with `null`), `x is null` and `x is not null` mean `x == null` and `x != null`.
+
+A binding of `is not` is assigned where the pattern *did* match, so it is used as a guard: `if (x is not T v)` makes
+`v` available in the `else` branch, and after the `if` when its branch cannot complete (`return`, `break`,
+`continue`):
+
+```csharp
+int Port(string text)
+{
+    if (text.ParseInt() is not int port)
+        return 80;               // 'port' is not assigned here
+    return port;                 // ... but here it is
+}
+```
+
+A binding under `is not` is only allowed as the whole condition of an `if`.
 
 ## `try`
 

@@ -1162,7 +1162,25 @@ struct Parser
 
             if (info.IsIs)
             {
+                // 'x is not P' negates a pattern ('not' is contextual: it counts only when a pattern follows)
+                bool negated = false;
+                if (Check(TokenKind.Ident) && Cur().Text == "not" &&
+                    (PeekKind(1) == TokenKind.Ident || PeekKind(1) == TokenKind.KwNull))
+                {
+                    Advance();
+                    negated = true;
+                }
+                if (Check(TokenKind.KwNull))
+                {
+                    // 'x is null' / 'x is not null' mean 'x == null' / 'x != null'
+                    SourceLoc nullLoc = Advance().Loc;
+                    var cmp = BinaryExpr { Op = negated ? BinOp.Ne : BinOp.Eq, Lhs = lhs };
+                    cmp.Rhs = Tree.AddNullLit(nullLoc);
+                    lhs = Tree.AddBinary(loc, cmp);
+                    continue;
+                }
                 var isNode = IsExpr { Operand = lhs };
+                isNode.Negated = negated;
                 isNode.Type = try ParseType();
                 isNode.BindName = "";
                 if (Check(TokenKind.Ident))

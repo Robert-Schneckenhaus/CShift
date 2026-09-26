@@ -217,6 +217,7 @@ struct IsExpr
     Expr Operand;
     TypeRef Type;
     string BindName; // empty if there is no binding
+    bool Negated;    // 'x is not T'
 }
 
 struct TryExpr

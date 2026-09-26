@@ -224,7 +224,8 @@ struct AstDumper
         case ExprKind.Is:
         {
             var n = Tree.GetIs(e);
-            Line(indent, role, head + TypeAttr("type", n.Type) + (n.BindName.Length > 0 ? " bind=" + n.BindName : ""));
+            Line(indent, role, head + (n.Negated ? " not" : "") + TypeAttr("type", n.Type) +
+                 (n.BindName.Length > 0 ? " bind=" + n.BindName : ""));
             DumpExpr(indent + 1, "operand", n.Operand);
             break;
         }

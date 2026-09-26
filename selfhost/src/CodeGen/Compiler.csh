@@ -246,6 +246,7 @@ struct Compiler
     Dictionary<string, int> InstanceKeys;
     List<int> WorkQueue;
     List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
+    int GuardIs;                    // the 'x is not T v' that is the whole condition of the current 'if' (-1: none)
     HashSet<int> TrampolinesQueued;
 
     static Compiler Create(Ast tree, Diagnostics diag, bool windows)
@@ -288,6 +289,7 @@ struct Compiler
         cg.InstanceKeys = Dictionary<string, int>.Create();
         cg.WorkQueue = List<int>.Create();
         cg.PendingTrampolines = List<int>.Create();
+        cg.GuardIs = -1;
         cg.TrampolinesQueued = HashSet<int>.Create();
         return cg;
     }

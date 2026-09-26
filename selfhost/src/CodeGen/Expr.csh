@@ -215,6 +215,9 @@ Value EmitName(Compiler cg, Expr e)
         return GroupValue(cg, group, ResolveTypeArgs(cg, n.TypeArgs), n.Name);
     if (!cg.St[0].StdlibLoaded && IsStdlibName(n.Name))
         Fail(cg, e.Loc, "cshc does not support the standard library yet ('" + n.Name + "')");
+    if (FindLocal(cg, n.Name + " (not assigned here)") >= 0)
+        Fail(cg, e.Loc, "'" + n.Name + "' is not assigned here: 'x is not T " + n.Name + "' assigns it only where the pattern " +
+                            "matched (the 'else' branch, or after the 'if' when its branch returns, breaks or continues)");
     Fail(cg, e.Loc, "undefined name '" + n.Name + "'");
     return Value { };
 }

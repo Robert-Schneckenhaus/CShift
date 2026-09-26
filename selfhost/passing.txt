@@ -65,6 +65,8 @@ err_interface_variable.csh
 err_interp_brace.csh
 err_interp_empty.csh
 err_interp_struct.csh
+err_is_not_binding.csh
+err_is_not_unassigned.csh
 err_lambda_assign_capture.csh
 err_lambda_param_type.csh
 err_lambda_params.csh
@@ -113,6 +115,7 @@ exit_code.csh
 function_pointers.csh
 globals.csh
 interface_params.csh
+is_not.csh
 lambdas.csh
 lang_additions.csh
 link_extern.csh

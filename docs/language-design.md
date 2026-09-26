@@ -540,7 +540,7 @@ if (result is error e)
 ```
 
 `Error<T>` is not a condition (`if (result)`, `!result` are errors): `is error e` tests for a failure, `is T v` for
-a success.
+a success. `is not` negates a pattern; `if (result is not File file) return;` makes `file` available after the `if`.
 
 ---
 

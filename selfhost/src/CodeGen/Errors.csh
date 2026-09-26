@@ -88,8 +88,24 @@ int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, 
     return pt;
 }
 
-// 'x is T v' tests for a value of the payload type; 'x is error e' for a failure (e is the whole result).
+// 'x is not P' negates a pattern. A binding ('x is not T v') is assigned where the pattern did not fail, so it is only
+// allowed as the whole condition of an 'if' (see EmitIf): 'v' can then be used in the 'else' branch, and after the
+// 'if' when its branch cannot complete ('if (r is not int v) return 1; Use(v);').
 Value EmitIs(Compiler cg, Expr e)
+{
+    var n = cg.Tree.GetIs(e);
+    if (n.Negated && n.BindName.Length > 0 && cg.GuardIs != e.Index)
+        Fail(cg, e.Loc, "'is not' can only bind '" + n.BindName + "' as the whole condition of an 'if' (then '" + n.BindName +
+                            "' is usable in the 'else' branch, and after the 'if' if its branch returns, breaks or continues)");
+    cg.GuardIs = -1;
+    Value v = EmitIsPattern(cg, e);
+    if (!n.Negated)
+        return v;
+    return MakeBool(cg, cg.Ir.Bin("xor", "i1", v.V, "true"));
+}
+
+// 'x is T v' tests for a value of the payload type; 'x is error e' for a failure (e is the whole result).
+Value EmitIsPattern(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;

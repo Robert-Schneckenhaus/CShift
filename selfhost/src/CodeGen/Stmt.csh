@@ -321,9 +321,17 @@ void EmitIf(Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetIf(s);
-    PushScope(cg); // scope of pattern variables declared in the condition
+    // 'if (x is not T v)': v belongs to the enclosing scope, visible where the pattern matched (see EmitIs)
+    bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
+    if (guard)
+        cg.GuardIs = n.Cond.Index;
+    else
+        PushScope(cg); // scope of pattern variables declared in the condition
     Value c = EmitCondition(cg, n.Cond);
     FlushTemps(cg, 0, true);
+    int bound = cg.Fn[0].Vars.Count() - 1;
+    if (guard)
+        SetVarVisible(cg, bound, false); // not assigned in the 'if' branch
 
     string thenLabel = ir.NewLabel("if.then");
     string elseLabel = n.Else.IsNull() ? "" : ir.NewLabel("if.else");
@@ -331,17 +339,46 @@ void EmitIf(Compiler cg, Stmt s)
     ir.CondBr(c.V, thenLabel, n.Else.IsNull() ? endLabel : elseLabel);
 
     ir.SetBlock(thenLabel);
-    EmitStmt(cg, n.Then);
+    EmitBranch(cg, n.Then);
+    bool thenCompletes = ir.BlockOpen();
     ir.Br(endLabel);
 
     if (!n.Else.IsNull())
     {
         ir.SetBlock(elseLabel);
-        EmitStmt(cg, n.Else);
+        if (guard)
+            SetVarVisible(cg, bound, true);
+        EmitBranch(cg, n.Else);
         ir.Br(endLabel);
     }
     ir.SetBlock(endLabel);
+    if (guard)
+        SetVarVisible(cg, bound, !thenCompletes);
+    else
+        PopScope(cg, true);
+}
+
+// A branch of an 'if' is a scope of its own even without braces ('else if (x is not T v) return;' binds v there).
+void EmitBranch(Compiler cg, Stmt s)
+{
+    PushScope(cg);
+    EmitStmt(cg, s);
     PopScope(cg, true);
+}
+
+// Hides a variable from name lookup (it stays in its scope for the cleanup): a binding of 'is not' where it is not
+// assigned.
+void SetVarVisible(Compiler cg, int index, bool visible)
+{
+    var vars = cg.Fn[0].Vars;
+    var v = vars.Get(index);
+    string hidden = " (not assigned here)";
+    bool isHidden = v.Name.EndsWith(hidden);
+    if (visible && isHidden)
+        v.Name = v.Name.Substring(0, v.Name.Length - hidden.Length);
+    else if (!visible && !isHidden)
+        v.Name = v.Name + hidden;
+    vars.Set(index, v);
 }
 
 bool IsLiteralTrue(Compiler cg, Expr e)

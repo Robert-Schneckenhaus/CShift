@@ -23,7 +23,7 @@ marked *(self-hosted)* exist only in the self-hosted compiler (`cshiftc` since t
 | Enums with a mandatory base type and explicit values | ✔ |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
-| `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |
+| `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `is not`, `is null`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |
 | `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (value, read-only alias, alias) | ✔ |
 | Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |
@@ -55,7 +55,9 @@ The design document leaves a number of things open; these are the decisions that
   (The frozen C++ compiler still accepts the bool forms; `selfhost/` tests `x.Message != null`, which
   both compilers understand.)
 * **`is`/`case` patterns:** `x is int v` binds the value; `x is error e` matches a failure and binds the whole result (a pattern of the value's own type would always match and is an error). Pattern
-  variables are scoped to the `if`/`while`, or to the `case`.
+  variables are scoped to the `if`/`while`, or to the `case`. `x is not P` negates a pattern; its binding
+  (`if (x is not T v) return;`) is usable in the `else` branch and after an `if` whose branch cannot complete.
+  `x is null` / `x is not null` mean `x == null` / `x != null`.
 * **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
   prints `error: <text>` to stderr and ends the program with exit code 1.
 * **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int`; a literal adapts to the
