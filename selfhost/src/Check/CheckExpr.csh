@@ -66,13 +66,9 @@ Value CheckExpr(Compiler cg, Expr e)
         }
         return Rvalue(t, "", false);
     }
-    case ExprKind.Cast:
-    {
-        var c = tree.GetCast(e);
-        int to = DeclTypeOf(cg, c.Type);
-        CheckExpr(cg, c.Operand);
-        return Rvalue(to, "", false); // whether the cast is allowed is checked by code generation for now
-    }
+    case ExprKind.Cast: return CheckCast(cg, e);
+    case ExprKind.Try: return CheckTry(cg, e);
+    case ExprKind.ErrorLit: return CheckErrorLit(cg, e);
     case ExprKind.This:
         if (cg.Fn[0].ThisSlot.Length == 0)
         {
@@ -95,14 +91,7 @@ Value CheckExpr(Compiler cg, Expr e)
         o.IsRefArg = true;
         return o;
     }
-    case ExprKind.Is:
-    {
-        var n = tree.GetIs(e);
-        CheckExpr(cg, n.Operand);
-        if (n.BindName.Length > 0)
-            DeclareVar(cg, n.BindName, cg.Types.Unknown, "%v"); // the pattern is checked by code generation for now
-        return Rvalue(cg.Types.Bool, "", false);
-    }
+    case ExprKind.Is: return CheckIs(cg, e);
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
         CheckError(cg, e.Loc, EmbedPlaceError());
@@ -119,17 +108,6 @@ void CheckParts(Compiler cg, Expr e)
     var tree = cg.Tree;
     switch (e.Kind)
     {
-    case ExprKind.Try:
-        CheckExpr(cg, tree.GetTry(e).Operand);
-        break;
-    case ExprKind.ErrorLit:
-    {
-        var n = tree.GetErrorLit(e);
-        CheckExpr(cg, n.Message);
-        if (!n.Code.IsNull())
-            CheckExpr(cg, n.Code);
-        break;
-    }
     case ExprKind.Collection:
         foreach (var item in tree.GetCollection(e).Items)
             CheckExpr(cg, item);
@@ -421,4 +399,141 @@ Value CheckAssign(Compiler cg, Expr e)
     else
         CheckConversion(cg, rhs, target.Type, a.Value.Loc);
     return Lvalue(target.Type, target.V, false);
+}
+
+// (T)x: the same value if it converts implicitly, numbers into each other; pointer casts are checked by code generation
+// for now (see EmitCast).
+Value CheckCast(Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var c = cg.Tree.GetCast(e);
+    int to = DeclTypeOf(cg, c.Type);
+    Value v = CheckRValue(cg, c.Operand);
+    int from = v.Type;
+    if (from == to)
+        return v;
+    if (types.IsUnknown(from) || types.IsPointer(from) || types.IsPointer(to) || ConversionCost(cg, v, to) >= 0)
+        return Rvalue(to, "", false);
+    bool fromNumeric = types.IsInt(from) || types.IsChar(from) || types.IsEnum(from) || types.IsFloat(from);
+    bool toNumeric = types.IsInt(to) || types.IsChar(to) || types.IsEnum(to) || types.IsFloat(to);
+    if (fromNumeric && toNumeric)
+    {
+        if (types.IsEnum(from) && types.IsFloat(to))
+            CheckError(cg, e.Loc, "cannot cast an enum to a floating point type");
+        return Rvalue(to, "", false);
+    }
+    CheckError(cg, e.Loc, "cannot cast '" + types.Name(from) + "' to '" + types.Name(to) + "'");
+    return Rvalue(to, "", false);
+}
+
+// 'try x' (see EmitTry).
+Value CheckTry(Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    Value subj = CheckRValue(cg, cg.Tree.GetTry(e).Operand);
+    if (IsUnknown(cg, subj))
+        return subj;
+    if (!types.IsError(subj.Type))
+    {
+        CheckError(cg, e.Loc, "'try' can only be used with Error<T> values, not '" + types.Name(subj.Type) + "'");
+        return UnknownValue(cg);
+    }
+    int retType = cg.Fn[0].RetType;
+    bool intMain = cg.St[0].MainFunc == cg.Fn[0].Func + 1 && types.IsInt(retType) || IsMainCandidate(cg);
+    if (!types.IsError(retType) && !intMain)
+        CheckError(cg, e.Loc, "'try' can only be used in a function that returns Error<T>");
+    else if (types.IsError(retType) && types.Code(retType) != 0 && types.Code(retType) != types.Code(subj.Type))
+        CheckError(cg, e.Loc, "'try' cannot pass on the error of '" + types.Name(subj.Type) + "' from a function that returns '" +
+                              types.Name(retType) + "': its codes are not values of " + types.Name(types.Code(retType)) +
+                              "; translate it: 'if (x is error e) return error(e.Message, " + types.Name(types.Code(retType)) + ".Member);'");
+    return Rvalue(types.Elem(subj.Type), "", false);
+}
+
+// True while the checker is in the function that will be the entry point 'int Main()' (code generation knows it as
+// MainFunc; the checker runs before it is chosen).
+bool IsMainCandidate(Compiler cg)
+{
+    var fi = cg.Instances.Get(cg.Fn[0].Func);
+    var d = cg.Funcs.Get(fi.Entry).Decl;
+    return d.Name == "Main" && fi.Owner == 0 && cg.Types.IsInt(fi.Ret) && !cg.Files.Get(fi.File).IsPrelude;
+}
+
+// error("message"), error("message", code), error(E.Member) (see EmitErrorLit).
+Value CheckErrorLit(Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var n = cg.Tree.GetErrorLit(e);
+    Value first = CheckRValue(cg, n.Message);
+    int codeType = 0;
+    if (n.Code.IsNull() && IsErrorEnum(cg, first.Type))
+        codeType = first.Type;
+    else
+    {
+        CheckConversion(cg, first, types.String, n.Message.Loc);
+        if (!n.Code.IsNull())
+        {
+            Value c = CheckRValue(cg, n.Code);
+            if (IsErrorEnum(cg, c.Type))
+                codeType = c.Type;
+            else
+            {
+                codeType = -1;
+                CheckConversion(cg, c, types.I32, n.Code.Loc);
+            }
+        }
+    }
+    return Rvalue(types.ErrorLitOf(codeType), "", false);
+}
+
+// 'x is P' / 'x is P v' / 'x is not P' on Error<T> and Optional<T> (see EmitIs, EmitIsPattern); interfaces, unions and
+// threads are checked by code generation for now. The binding is declared where code generation declares it.
+Value CheckIs(Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var n = cg.Tree.GetIs(e);
+    Value boolean = Rvalue(types.Bool, "", false);
+    if (n.Negated && n.BindName.Length > 0 && cg.GuardIs != e.Index)
+        CheckError(cg, e.Loc, "'is not' can only bind '" + n.BindName + "' as the whole condition of an 'if' (then '" + n.BindName +
+                              "' is usable in the 'else' branch, and after the 'if' if its branch returns, breaks or continues)");
+    cg.GuardIs = -1;
+    Value subj = CheckRValue(cg, n.Operand);
+    int bound = types.Unknown;
+    int t = subj.Type;
+    if (!types.IsUnknown(t) && types.Kind(t) != TypeKind.Interface && !IsUnionType(cg, t))
+    {
+        if (!types.IsResultLike(t))
+        {
+            var sd = types.IsStruct(t) ? cg.Structs.Get(GetStructInfo(cg, t).Entry).Decl : StructDecl { };
+            if (!(types.IsStruct(t) && sd.Name == "Thread" && sd.TypeParams.Length > 0))
+            {
+                string shown = types.IsStruct(t) && sd.Name == "_ThreadVoid" ? "Thread" : types.Name(t);
+                CheckError(cg, e.Loc, "'is' can only be used with Error<T>, Optional<T> and Thread<T> values, not '" + shown + "'");
+            }
+        }
+        else
+        {
+            bool isErrorPattern = false;
+            string why = "";
+            int pattern = ResultPatternTypeOrError(cg, t, n.Type, ref isErrorPattern, ref why);
+            var patternLoc = cg.Tree.GetType(n.Type).Loc;
+            if (pattern == 0)
+                CheckError(cg, patternLoc, why);
+            else if (IsErrorEnum(cg, pattern))
+                bound = pattern;
+            else
+            {
+                int subject = t;
+                if (types.IsError(t) && types.IsOptional(types.Elem(t)) && pattern == types.Elem(types.Elem(t)))
+                    subject = types.Elem(t);
+                if (pattern != subject && pattern != types.Elem(subject))
+                    CheckError(cg, patternLoc, "pattern type '" + types.Name(pattern) + "' does not match the payload type '" +
+                                               types.Name(types.Elem(subject)) + "' of '" + types.Name(subject) + "'");
+                else
+                    bound = pattern;
+            }
+        }
+    }
+    if (n.BindName.Length > 0)
+        DeclareVar(cg, n.BindName, bound, "%v");
+    return boolean;
 }

@@ -121,22 +121,41 @@ bool IsErrorPattern(Compiler cg, TypeRef t)
 // subject itself. A pattern of the subject's own type would always match; it is an error, because it reads like a test.
 int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, ref bool isError)
 {
+    string why = "";
+    int pt = ResultPatternTypeOrError(cg, subject, pattern, ref isError, ref why);
+    if (pt == 0)
+        Fail(cg, loc, why);
+    return pt;
+}
+
+// ResultPatternType for the checker: 0 and the message instead of an error.
+int ResultPatternTypeOrError(Compiler cg, int subject, TypeRef pattern, ref bool isError, ref string why)
+{
     var types = cg.Types;
     isError = IsErrorPattern(cg, pattern);
     if (isError)
     {
         if (!types.IsError(subject))
-            Fail(cg, loc, "'is error' needs an Error<T> value, not '" + types.Name(subject) + "'");
+        {
+            why = "'is error' needs an Error<T> value, not '" + types.Name(subject) + "'";
+            return 0;
+        }
         return subject;
     }
     int pt = DeclTypeOf(cg, pattern);
     // 'x is E code' (E the error enum of Error<T, E>): a failure, binding its code
     if (IsErrorEnum(cg, pt) && !(types.IsError(subject) && types.Code(subject) == pt))
-        Fail(cg, loc, "'is " + types.Name(pt) + "' needs an Error<T, " + types.Name(pt) + "> value, not '" + types.Name(subject) +
-                      "'" + (types.IsError(subject) && types.Code(subject) == 0 ? " (its codes are plain ints)" : ""));
+    {
+        why = "'is " + types.Name(pt) + "' needs an Error<T, " + types.Name(pt) + "> value, not '" + types.Name(subject) +
+              "'" + (types.IsError(subject) && types.Code(subject) == 0 ? " (its codes are plain ints)" : "");
+        return 0;
+    }
     if (pt == subject)
-        Fail(cg, loc, "a pattern of the value's own type ('" + types.Name(pt) + "') would always match; test for a failure with 'is error e' " +
-                          "or for a value with 'is " + types.Name(types.Elem(subject)) + " v'");
+    {
+        why = "a pattern of the value's own type ('" + types.Name(pt) + "') would always match; test for a failure with 'is error e' " +
+              "or for a value with 'is " + types.Name(types.Elem(subject)) + " v'";
+        return 0;
+    }
     return pt;
 }
 

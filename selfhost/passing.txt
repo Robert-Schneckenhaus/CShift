@@ -141,6 +141,7 @@ err_ref_missing.csh
 err_several_errors.csh
 err_several_members.csh
 err_several_methods.csh
+err_several_results.csh
 err_slice_copy.csh
 err_slice_readonly.csh
 err_slice_thread.csh
