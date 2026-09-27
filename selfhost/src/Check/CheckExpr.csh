@@ -551,6 +551,8 @@ void CheckLambdaBody(Compiler cg, Expr e)
     var l = cg.Tree.GetLambda(e);
     int savedRet = cg.Fn[0].RetType;
     var savedLoops = cg.Fn[0].Loops;
+    bool savedLive = cg.Fn[0].Live;
+    cg.Fn[0].Live = true;
     cg.Fn[0].RetType = cg.Types.Unknown;
     cg.Fn[0].Loops = List<LoopCtx>.Create();
     PushScope(cg);
@@ -563,4 +565,5 @@ void CheckLambdaBody(Compiler cg, Expr e)
     PopScope(cg, false);
     cg.Fn[0].RetType = savedRet;
     cg.Fn[0].Loops = savedLoops;
+    cg.Fn[0].Live = savedLive;
 }

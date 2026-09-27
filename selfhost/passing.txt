@@ -143,6 +143,7 @@ err_several_interfaces.csh
 err_several_lambdas.csh
 err_several_members.csh
 err_several_methods.csh
+err_several_paths.csh
 err_several_results.csh
 err_several_switch.csh
 err_slice_copy.csh

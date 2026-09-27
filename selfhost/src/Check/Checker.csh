@@ -101,7 +101,11 @@ void CheckFunction(Compiler cg, int instance)
         else
             DeclareVar(cg, name, pt, "%p");
     }
+    cg.Fn[0].Live = true;
     CheckBlock(cg, d.Body, true);
+    // falling off the end (see EmitFunctionBody): the end is reached for sure, so code generation reaches it too
+    if (cg.Fn[0].Live && !cg.Types.IsVoid(fi.Ret) && !IsVoidResult(cg, fi.Ret))
+        CheckError(cg, d.Loc, "not all code paths of '" + fi.Name + "' return a value");
     PopScope(cg, false);
     cg.Ir.EndFunction();
 }
