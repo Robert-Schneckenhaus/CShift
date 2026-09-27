@@ -26,6 +26,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Constant slices: `const ReadOnlySlice<int> P = [2, 3, ..Q];`, indexing/slicing/`Length` in constants | ✔ (self-hosted, [constants](constants-and-globals.md#constant-slices)) |
 | Collection expressions: `[a, b, ..c]` as `T[]`, `Slice<T>`, `List<T>`, `HashSet<T>` or any struct with `Create()`/`Add(T)` | ✔ (self-hosted, [collection expressions](arrays-strings-collections.md#collection-expressions)) |
 | `Fixed<T, N>`: fixed-size arrays stored inline (values: on the stack, inside structs), C arrays in structs imported as `Fixed` | ✔ (self-hosted, [fixed-size arrays](arrays-strings-collections.md#fixed-size-arrays-fixedt-n)) |
+| Panics show where they happened (`file:line:column in Function`), index checks the index and the length, a standard library function that rejects its arguments also where the program called it | ✔ (self-hosted, [basics](basics.md)) |
 | Slices: `a[i..j]`, `a[..j]`, `a[i..]`, `a[^n]`; views `Slice<T>`, `ReadOnlySlice<T>` and `StringSlice` (no copy, `ToString()`/`ToArray()` copy) | ✔ (self-hosted, [slices](arrays-strings-collections.md#slices)) |
 | Error enums (`error E { ... }`), `error(E.X)`, typed results `Error<T, E>` / `E<T>`, `is E code`, `case E.X:` | ✔ (self-hosted, [error handling](error-handling.md#error-enums-typed-error-codes)) |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |

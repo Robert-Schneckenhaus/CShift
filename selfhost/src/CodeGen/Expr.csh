@@ -10,7 +10,19 @@ using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
 
+// Every expression is written through here: the current location is the expression's own while it (and the checks
+// after its operands) is written.
 Value EmitExpr(Compiler cg, Expr e)
+{
+    SourceLoc outer = cg.St[0].Loc;
+    if (e.Loc.Line > 0)
+        cg.St[0].Loc = e.Loc;
+    Value v = EmitExprKind(cg, e);
+    cg.St[0].Loc = outer;
+    return v;
+}
+
+Value EmitExprKind(Compiler cg, Expr e)
 {
     switch (e.Kind)
     {
@@ -246,7 +258,63 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
 // Checks that stop the program
 // ---------------------------------------------------------------------------
 
-// Continues normally unless 'cond' is true: then the program panics with the message.
+// Where a panic happens, as a C string: "path:line:column in Function" (the current location, see EmitExpr). A path
+// below the current directory is shown relative to it.
+string PanicWhere(Compiler cg)
+{
+    SourceLoc loc = cg.St[0].Loc;
+    string where = "";
+    if (loc.Line > 0 && loc.File >= 0 && loc.File < cg.Diag.Files.Count())
+    {
+        string path = cg.Diag.Files.Get(loc.File);
+        if (Path.IsRooted(path))
+        {
+            string relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), path);
+            if (!relative.StartsWith("..") && !Path.IsRooted(relative))
+                path = relative;
+        }
+        where = path + ":" + loc.Line.ToString() + ":" + loc.Col.ToString();
+    }
+    int fn = cg.Fn.Length > 0 ? cg.Fn[0].Func : -1;
+    if (fn >= 0 && fn < cg.Instances.Count())
+        where += (where.Length > 0 ? " in " : "in ") + cg.Instances.Get(fn).Name;
+    return cg.Ir.CString(where.Length > 0 ? where : "unknown location");
+}
+
+// True while a function of the standard library is written.
+bool InLibrary(Compiler cg)
+{
+    if (cg.Fn.Length == 0)
+        return false;
+    int file = cg.Fn[0].File;
+    return file >= 0 && file < cg.Files.Count() && cg.Files.Get(file).IsPrelude;
+}
+
+// A function of the standard library that calls Environment.Panic reports where the program called it: it has a second
+// entry point (name.at) with the call site as a hidden last parameter. The plain entry point (for function values,
+// method tables and the library itself) passes no call site.
+bool ReportsCaller(Compiler cg, FuncInfo fi)
+{
+    var d = cg.Funcs.Get(fi.Entry).Decl;
+    return d.CallsPanic && !d.IsExtern && !d.IsThread && !d.Body.IsNull() && cg.Files.Get(fi.File).IsPrelude;
+}
+
+string CallerEntryName(string llvmName)
+{
+    if (llvmName.EndsWith("\""))
+        return llvmName.Substring(0, llvmName.Length - 1) + ".at\"";
+    return llvmName + ".at";
+}
+
+// The call site this function was given (a C string), or null.
+string CallerOperand(Compiler cg)
+{
+    if (cg.Fn.Length == 0 || cg.Fn[0].CallerArg == null || cg.Fn[0].CallerArg.Length == 0)
+        return "null";
+    return cg.Fn[0].CallerArg;
+}
+
+// Continues normally unless 'cond' is true: then the program panics with the message and where it happened.
 void EmitPanicIf(Compiler cg, string cond, string message)
 {
     var ir = cg.Ir;
@@ -254,7 +322,21 @@ void EmitPanicIf(Compiler cg, string cond, string message)
     string okLabel = ir.NewLabel("cont");
     ir.CondBr(cond, failLabel, okLabel);
     ir.SetBlock(failLabel);
-    ir.Call("void", "@__cs_panic", "ptr " + ir.CString(message));
+    ir.Call("void", "@__cs_panic_at", "ptr " + ir.CString(message) + ", ptr " + PanicWhere(cg) + ", ptr " + CallerOperand(cg));
+    ir.Unreachable();
+    ir.SetBlock(okLabel);
+}
+
+// Like EmitPanicIf for an index check: the message also shows the index and the length (both i64).
+void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, string length)
+{
+    var ir = cg.Ir;
+    string failLabel = ir.NewLabel("panic");
+    string okLabel = ir.NewLabel("cont");
+    ir.CondBr(cond, failLabel, okLabel);
+    ir.SetBlock(failLabel);
+    ir.Call("void", "@__cs_panic_index", "ptr " + ir.CString(message) + ", i64 " + index + ", i64 " + length + ", ptr " + PanicWhere(cg) +
+                                          ", ptr " + CallerOperand(cg));
     ir.Unreachable();
     ir.SetBlock(okLabel);
 }

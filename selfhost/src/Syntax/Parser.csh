@@ -39,6 +39,7 @@ struct Parser
     Ast Tree;
     CompilationUnit Unit;
     int FileId;
+    int PanicCalls;      // calls of Environment.Panic in the function body that is being parsed
 
     static Parser Create(List<Token> tokens, Diagnostics diag, Ast tree)
     {
@@ -561,7 +562,11 @@ struct Parser
         try ParseParams(ref fn);
         fn.Constraints = try ParseConstraints();
         if (Check(TokenKind.LBrace))
+        {
+            PanicCalls = 0;
             fn.Body = try ParseBlock();
+            fn.CallsPanic = PanicCalls > 0;
+        }
         else
             try Expect(TokenKind.Semi, "';' or function body");
     }
@@ -1427,6 +1432,12 @@ struct Parser
             {
                 var c = CallExpr { Callee = expr };
                 c.Args = try ParseArgs();
+                if (expr.Kind == ExprKind.Member)
+                {
+                    var callee = Tree.GetMember(expr);
+                    if (callee.Name == "Panic" && callee.Object.Kind == ExprKind.Name && Tree.GetName(callee.Object).Name == "Environment")
+                        PanicCalls += 1;
+                }
                 expr = Tree.AddCall(loc, c);
             }
             else if (Check(TokenKind.LBracket))

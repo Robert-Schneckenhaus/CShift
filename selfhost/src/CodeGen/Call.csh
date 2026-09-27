@@ -336,7 +336,18 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
     }
     else
     {
-        result = ir.Call(retType, fi.LlvmName, callArgs.ToString());
+        // A library function that can panic gets the call site as a hidden last argument ("called from ..." in the
+        // panic): the place in the program, or, inside the library, the call site the caller itself was given.
+        if (ReportsCaller(cg, fi))
+        {
+            string site = InLibrary(cg) ? CallerOperand(cg) : PanicWhere(cg);
+            string all = callArgs.ToString();
+            result = ir.Call(retType, CallerEntryName(fi.LlvmName), all + (all.Length > 0 ? ", " : "") + "ptr " + site);
+        }
+        else
+        {
+            result = ir.Call(retType, fi.LlvmName, callArgs.ToString());
+        }
     }
     ReleaseInterfaceCopies(cg, interfaceCopies);
     if (d.RetOut)
@@ -793,7 +804,7 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
             Value msg = ConvertValue(cg, args[0].V, types.String, loc);
             HoldTemp(cg, msg);
             string data = ir.Call("ptr", "@__cs_data", "ptr " + msg.V);
-            ir.Call("void", "@__cs_panic", "ptr " + data);
+            ir.Call("void", "@__cs_panic_at", "ptr " + data + ", ptr " + PanicWhere(cg) + ", ptr " + CallerOperand(cg));
             ir.Unreachable();
             return none;
         }

@@ -126,7 +126,7 @@ Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     HoldTemp(cg, s);
     var parts = PartsOf(cg, s);
     string i = SliceBound(cg, index, fromEnd, parts.Length);
-    EmitPanicIf(cg, ir.ICmp("uge", "i64", i, parts.Length), "slice index out of range");
+    EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i, parts.Length), "slice index out of range", i, parts.Length);
     int elem = SliceElemType(cg, s.Type);
     string addr = ir.Gep(LlvmType(cg, elem), parts.Data, "i64 " + i);
     if (types.IsStringSlice(s.Type))

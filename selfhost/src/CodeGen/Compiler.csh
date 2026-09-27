@@ -177,6 +177,7 @@ struct FnState
     List<ScopeVar> Outer;              // the variables of the enclosing functions (innermost last)
     List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
     string EnvType;                    // the LLVM type of the environment
+    string CallerArg;                  // a library function that reports its caller: the parameter with the call site
 }
 
 struct LambdaCapture
@@ -192,6 +193,7 @@ struct CgState
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
     string ProjectDir;    // the folder of the project file, for embed("file") ("" = not built from a project)
+    SourceLoc Loc;        // the statement or expression that is being written (for the location of a panic)
     bool StdlibLoaded;    // the standard library was added as prelude
     bool HasGlobalsInit;  // __cs_init_globals exists
     int InitInstance;     // the pseudo function instance of synthetic code (+1, 0 = none)
