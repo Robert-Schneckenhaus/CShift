@@ -44,6 +44,10 @@ Value CheckExpr(Compiler cg, Expr e)
         return CheckCall(cg, s.Operand, true);
     }
     case ExprKind.Index: return CheckIndex(cg, e);
+    case ExprKind.Slice: return CheckSliceExpr(cg, e);
+    case ExprKind.NewArray: return CheckNewArray(cg, e);
+    case ExprKind.NewObject: return CheckNewObject(cg, e);
+    case ExprKind.StructInit: return CheckStructInit(cg, e);
     case ExprKind.Unary: return CheckUnary(cg, e);
     case ExprKind.Binary: return CheckBinary(cg, e);
     case ExprKind.Assign: return CheckAssign(cg, e);
@@ -115,19 +119,6 @@ void CheckParts(Compiler cg, Expr e)
     var tree = cg.Tree;
     switch (e.Kind)
     {
-    case ExprKind.NewArray:
-    {
-        var n = tree.GetNewArray(e);
-        if (!n.Size.IsNull())
-            CheckExpr(cg, n.Size);
-        foreach (var item in n.Init)
-            CheckExpr(cg, item);
-        break;
-    }
-    case ExprKind.StructInit:
-        foreach (var f in tree.GetStructInit(e).Fields)
-            CheckExpr(cg, f.Value);
-        break;
     case ExprKind.Try:
         CheckExpr(cg, tree.GetTry(e).Operand);
         break;
@@ -137,16 +128,6 @@ void CheckParts(Compiler cg, Expr e)
         CheckExpr(cg, n.Message);
         if (!n.Code.IsNull())
             CheckExpr(cg, n.Code);
-        break;
-    }
-    case ExprKind.Slice:
-    {
-        var n = tree.GetSlice(e);
-        CheckExpr(cg, n.Object);
-        if (!n.Start.IsNull())
-            CheckExpr(cg, n.Start);
-        if (!n.End.IsNull())
-            CheckExpr(cg, n.End);
         break;
     }
     case ExprKind.Collection:
@@ -210,35 +191,6 @@ Value CheckField(Compiler cg, Value obj, string name, SourceLoc loc)
     if (obj.IsLValue)
         return Lvalue(p.Type, "%f", obj.IsConst);
     return Rvalue(p.Type, "", false);
-}
-
-// True if 'obj.Name' / 'obj.Method()' starts with a type, a namespace or a builtin name (Console, Math, ...) rather
-// than a value (see EmitMember and EmitMemberCall); those are checked by code generation for now.
-bool IsStaticPath(Compiler cg, Expr obj, string member, SourceLoc loc)
-{
-    string dotted = DottedName(cg, obj);
-    if (dotted.Length == 0)
-        return false;
-    string first = dotted.Split('.')[0].ToString();
-    if (ColorColorMeansType(cg, dotted, member, loc))
-        return true;
-    if (IsLocalName(cg, first))
-        return false;
-    int owner = CurrentOwner(cg);
-    return owner == 0 || !FindField(cg, owner, first).Found;
-}
-
-// obj.Name: fields of struct values; everything else later.
-Value CheckMember(Compiler cg, Expr e)
-{
-    var types = cg.Types;
-    var m = cg.Tree.GetMember(e);
-    if (EnumMetaType(cg, m.Object, cg.Fn[0].File, cg.Fn[0].Env) != 0 || IsStaticPath(cg, m.Object, m.Name, e.Loc))
-        return UnknownValue(cg);
-    Value obj = CheckExpr(cg, m.Object);
-    if (IsUnknown(cg, obj) || m.ViaArrow || !types.IsStruct(obj.Type) || !FindField(cg, obj.Type, m.Name).Found)
-        return UnknownValue(cg);
-    return CheckField(cg, obj, m.Name, e.Loc);
 }
 
 Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
@@ -332,61 +284,6 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
         return UnknownValue(cg);
     }
     return Rvalue(fi.Ret, "", false);
-}
-
-Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
-{
-    var types = cg.Types;
-    bool known = true;
-    if (IsStaticPath(cg, m.Object, m.Name, e.Loc))
-    {
-        CheckArgs(cg, call.Args, ref known);
-        return UnknownValue(cg); // static methods, namespaces, Console, ...: code generation for now
-    }
-    Value obj = CheckExpr(cg, m.Object);
-    var args = CheckArgs(cg, call.Args, ref known);
-    if (IsUnknown(cg, obj) || !known || m.ViaArrow || viaStart || !types.IsStruct(obj.Type))
-        return UnknownValue(cg);
-    var cands = MethodCandidates(cg, obj.Type, m.Name);
-    if (cands.Length == 0)
-    {
-        var fieldPath = FindField(cg, obj.Type, m.Name);
-        if (!(fieldPath.Found && IsCallableType(cg, fieldPath.Type)))
-            CheckError(cg, e.Loc, "struct '" + types.Name(obj.Type) + "' has no method '" + m.Name + "'");
-        return UnknownValue(cg);
-    }
-    string why = "";
-    int instance = TryResolveOverload(cg, cands, args, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
-    if (instance < 0)
-    {
-        CheckError(cg, e.Loc, why);
-        return UnknownValue(cg);
-    }
-    var fi = cg.Instances.Get(instance);
-    if (!fi.HasThis)
-    {
-        CheckError(cg, e.Loc, "'" + m.Name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + m.Name + "(...)'");
-        return UnknownValue(cg);
-    }
-    if (m.Name.Length > 0 && m.Name[0] == '_' && CurrentOwner(cg) != fi.Owner)
-    {
-        CheckError(cg, e.Loc, "method '" + m.Name + "' is private to '" + types.Name(fi.Owner) + "'");
-        return UnknownValue(cg);
-    }
-    return Rvalue(fi.Ret, "", false);
-}
-
-// a[i] on arrays, slices and Fixed values; strings and indexers (a struct's Get) later.
-Value CheckIndex(Compiler cg, Expr e)
-{
-    var types = cg.Types;
-    var ix = cg.Tree.GetIndex(e);
-    Value obj = CheckExpr(cg, ix.Object);
-    CheckExpr(cg, ix.Index);
-    int t = obj.Type;
-    if (types.IsArray(t) || types.Kind(t) == TypeKind.Slice || types.IsFixed(t))
-        return Lvalue(SliceElemType(cg, t), "%e", false);
-    return UnknownValue(cg);
 }
 
 Value CheckUnary(Compiler cg, Expr e)
