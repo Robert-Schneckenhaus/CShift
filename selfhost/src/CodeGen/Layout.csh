@@ -90,6 +90,11 @@ SizeAlign TypeLayout(Compiler cg, int t)
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
         return SizeAlign { Size = 24, Align = 8 }; // { ptr, ptr, i64 }
+    case TypeKind.Fixed:
+    {
+        var e = TypeLayout(cg, types.Elem(t));
+        return SizeAlign { Size = e.Size * (int64)types.Count(t), Align = e.Align };
+    }
     case TypeKind.Union:
     {
         var ui = GetUnionInfo(cg, t);

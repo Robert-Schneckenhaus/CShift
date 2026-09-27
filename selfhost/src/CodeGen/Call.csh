@@ -931,6 +931,14 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             return EmitArrayClone(cg, obj);
         }
     }
+    else if (types.IsFixed(t))
+    {
+        if (method == "ToArray")
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            return FixedToArray(cg, obj);
+        }
+    }
     else if (types.IsSlice(t))
     {
         // copying out of a view is explicit: ToString() / ToArray()

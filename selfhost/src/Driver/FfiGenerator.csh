@@ -576,6 +576,22 @@ struct FfiGenerator
     }
 
     // The CShift type of a C type, or "" (with a reason) if it cannot be represented. Pointers become raw pointers.
+    // The type of a struct field: like TypeString, and a C array 'float m[16]' is Fixed<float, 16> (nested arrays nest).
+    string FieldTypeString(Host.CXType t, ref string why)
+    {
+        string native = "";
+        var p = Peel(t, true, ref native);
+        if (native.Length == 0 && p.Kind == (int)CxType.ConstantArray)
+        {
+            int64 size = Host.ClangArraySize(p);
+            string element = FieldTypeString(Host.ClangArrayElementType(p), ref why);
+            if (element.Length == 0 || element == "void" || size < 1 || size > 1048576)
+                return "";
+            return "Fixed<" + element + ", " + size.ToString() + ">";
+        }
+        return TypeString(t, ref why);
+    }
+
     string TypeString(Host.CXType t, ref string why)
     {
         string native = "";
@@ -851,9 +867,9 @@ struct FfiGenerator
                 if (bits < 0 || bits % 8 != 0)
                     continue;
                 string why = "";
-                string ft = TypeString(Host.ClangCursorType(field), ref why);
+                string ft = FieldTypeString(Host.ClangCursorType(field), ref why);
                 if (ft.Length == 0 || ft == "void")
-                    continue; // arrays, long double, ... are padding
+                    continue; // long double, flexible array members, ... are padding
                 s.Fields.Add(FField { Name = fieldName, Type = ft, Offset = bits / 8 });
             }
         }

@@ -589,11 +589,22 @@ struct Parser
             Advance();
             do
             {
-                args.Add(try ParseType());
+                args.Add(try ParseTypeArg());
             } while (Match(TokenKind.Comma));
             try Expect(TokenKind.Gt, "'>'");
         }
         return NewType(TypeRefKind.Named, loc, path.ToArray(), args.ToArray(), TypeRef { });
+    }
+
+    // A type argument: a type, or a number (the size in Fixed<int, 16>).
+    Error<TypeRef> ParseTypeArg()
+    {
+        if (Check(TokenKind.IntLit))
+        {
+            Token n = Advance();
+            return NewType(TypeRefKind.Number, n.Loc, new string[] { n.IntValue.ToString() }, new TypeRef[0], TypeRef { });
+        }
+        return ParseType();
     }
 
     Error<TypeRef> ParseType()
@@ -649,7 +660,7 @@ struct Parser
         var list = List<TypeRef>.Create();
         do
         {
-            list.Add(try ParseType());
+            list.Add(try ParseTypeArg());
         } while (Match(TokenKind.Comma));
         try Expect(TokenKind.Gt, "'>'");
         return list.ToArray();
@@ -1378,6 +1389,12 @@ struct Parser
     {
         int save = Pos;
         var r = TryParseTypeArgs();
+        // a number is only a type argument of Fixed<T, N>, which has no static members: "a < 3, b > (c)" stays a comparison
+        for (var i = 0; r.Ok && i < r.Args.Length; i += 1)
+        {
+            if (Tree.GetType(r.Args[i]).Kind == TypeRefKind.Number)
+                r.Ok = false;
+        }
         if (r.Ok && (Check(TokenKind.LParen) || Check(TokenKind.Dot) || Check(TokenKind.LBrace) || Check(TokenKind.Semi) ||
                      Check(TokenKind.Comma) || Check(TokenKind.RParen)))
             return r;

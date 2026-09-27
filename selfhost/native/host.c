@@ -94,7 +94,8 @@ typedef void (*CXInclusionVisitor)(CXFile, CXSourceLocation *, unsigned, void *)
     X(void, clang_disposeDiagnostic, (void *))                                                                         \
     X(CXString, clang_getClangVersion, (void))                                                                         \
     X(CXFile, clang_getIncludedFile, (CXCursor))                                                                       \
-    X(CXType, clang_getArrayElementType, (CXType))
+    X(CXType, clang_getArrayElementType, (CXType))                                                                     \
+    X(long long, clang_getArraySize, (CXType))
 
 #define DECLARE(ret, name, params) static ret(*p_##name) params;
 CLANG_FUNCTIONS(DECLARE)
@@ -413,6 +414,7 @@ int64_t host_clang_align_of(const CXType *t) { return p_clang_Type_getAlignOf(*t
 int32_t host_clang_is_const(const CXType *t) { return p_clang_isConstQualifiedType(*t) != 0; }
 const char *host_clang_type_spelling(const CXType *t) { return cx(p_clang_getTypeSpelling(*t)); }
 void host_clang_array_element_type(const CXType *t, CXType *ret) { *ret = p_clang_getArrayElementType(*t); }
+int64_t host_clang_array_size(const CXType *t) { return p_clang_getArraySize(*t); }
 
 /* ---- the running program ---- */
 

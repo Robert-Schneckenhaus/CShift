@@ -103,6 +103,8 @@ Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc lo
     var ir = cg.Ir;
     if (types.IsSlice(obj.Type))
         return EmitSliceElement(cg, obj, index, fromEnd, loc);
+    if (types.IsFixed(obj.Type))
+        return EmitFixedElement(cg, obj, index, fromEnd, loc);
     if (fromEnd && (types.IsArray(obj.Type) || types.IsString(obj.Type)))
     {
         Value whole = ToRValue(cg, obj);
@@ -184,8 +186,9 @@ void EmitForeach(Compiler cg, Stmt s)
         EmitForeachStruct(cg, s, it);
         return;
     }
-    if (!types.IsArray(collType) && !types.IsString(collType) && !types.IsSlice(collType))
-        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
+    if (!types.IsArray(collType) && !types.IsString(collType) && !types.IsSlice(collType) && !types.IsFixed(collType))
+        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N> or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
+    bool isFixed = types.IsFixed(collType);
     int elemType = SliceElemType(cg, collType);
     string collIr = LlvmType(cg, collType); // ptr, or { ptr, ptr, i64 } for a slice
 
@@ -197,7 +200,8 @@ void EmitForeach(Compiler cg, Stmt s)
 
     string idxSlot = ir.Alloca("i64", "foreach.idx");
     ir.Store("i64", "0", idxSlot);
-    string len = PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Length;
+    // a Fixed is iterated in its own slot (a copy): its length is a constant
+    string len = isFixed ? types.Count(collType).ToString() : PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Length;
 
     string condLabel = ir.NewLabel("foreach.cond");
     string bodyLabel = ir.NewLabel("foreach.body");
@@ -213,7 +217,7 @@ void EmitForeach(Compiler cg, Stmt s)
     int outerDepth = ScopeCount(cg);
     PushScope(cg); // per-iteration scope for the loop variable
     int varType = n.Type.IsNull() ? elemType : DeclTypeOf(cg, n.Type);
-    string first = PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Data;
+    string first = isFixed ? collSlot : PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Data;
     string addr = ir.Gep(LlvmType(cg, elemType), first, "i64 " + idx);
     Value elem = Lvalue(elemType, addr, true);
     Value cv = ConvertValue(cg, elem, varType, s.Loc);
@@ -297,6 +301,8 @@ string ReleaseFunction(Compiler cg, int t)
         return UnionHelper(cg, t, false);
     if (types.IsSlice(t))
         return SliceHelper(cg, t, false);
+    if (types.IsFixed(t))
+        return FixedHelper(cg, t, false);
     Fail(cg, SourceLoc { }, "cshc does not release values of type '" + types.Name(t) + "' yet");
     return "";
 }
@@ -318,6 +324,8 @@ string RetainFunction(Compiler cg, int t)
         return UnionHelper(cg, t, true);
     if (types.IsSlice(t))
         return SliceHelper(cg, t, true);
+    if (types.IsFixed(t))
+        return FixedHelper(cg, t, true);
     Fail(cg, SourceLoc { }, "cshc does not count references of '" + types.Name(t) + "' yet");
     return "";
 }
