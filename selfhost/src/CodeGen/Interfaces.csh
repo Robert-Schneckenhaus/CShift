@@ -176,11 +176,9 @@ void ReleaseInterfaceCopies(Compiler cg, List<TempRelease> slots)
 }
 
 // shape.Method(args) on an interface parameter: the method from the table, called with the data pointer as 'this'.
-Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
+// The method of the interface that 'name(args)' calls (the cheapest conversions), or -1; shared with the checker.
+int ChooseInterfaceMethod(Compiler cg, int iface, string name, Arg[] args)
 {
-    var types = cg.Types;
-    var ir = cg.Ir;
-    int iface = obj.Type;
     int count = InterfaceMethodCount(cg, iface);
     int chosen = -1;
     int bestCost = 1000000;
@@ -202,6 +200,15 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
             bestCost = total;
         }
     }
+    return chosen;
+}
+
+Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    int iface = obj.Type;
+    int chosen = ChooseInterfaceMethod(cg, iface, name, args);
     if (chosen < 0)
         Fail(cg, loc, "interface '" + types.Name(iface) + "' has no method '" + name + "' that takes these arguments");
     var s = InterfaceMethod(cg, iface, chosen);

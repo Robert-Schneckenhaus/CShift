@@ -263,9 +263,25 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
     }
     var args = CheckArgs(cg, call.Args, ref known);
-    if (types.IsUnknown(t) || m.ViaArrow || types.Kind(t) == TypeKind.Collection || (IsCallableType(cg, t) && m.Name == "Invoke") ||
-        types.Kind(t) == TypeKind.Interface || IsUnionType(cg, t))
+    if (types.IsUnknown(t) || m.ViaArrow || types.Kind(t) == TypeKind.Collection || (IsCallableType(cg, t) && m.Name == "Invoke"))
         return UnknownValue(cg);
+    if (types.Kind(t) == TypeKind.Interface)
+        return CheckInterfaceCall(cg, t, m.Name, args, known, e.Loc);
+    if (IsUnionType(cg, t))
+    {
+        // a method of one of the union's interfaces (see EmitUnionCall)
+        foreach (var iface in GetUnionInfo(cg, t).Interfaces)
+        {
+            int count = InterfaceMethodCount(cg, iface);
+            for (var k = 0; k < count; k += 1)
+            {
+                if (InterfaceMethod(cg, iface, k).Name == m.Name)
+                    return CheckInterfaceCall(cg, iface, m.Name, args, known, e.Loc);
+            }
+        }
+        CheckError(cg, e.Loc, "union '" + types.Name(t) + "' has no method '" + m.Name + "' (it can call the methods of the interfaces it lists)");
+        return UnknownValue(cg);
+    }
     if (!types.IsStruct(t))
         return CheckBuiltinMethod(cg, obj, m.Name, args, known, e.Loc);
     return CheckMethodCallOn(cg, obj, m.Name, args, known, ResolveTypeArgs(cg, m.TypeArgs), e.Loc);
@@ -717,4 +733,18 @@ Value CheckStructInit(Compiler cg, Expr e)
             CheckConversion(cg, v, p.Type, f.Value.Loc);
     }
     return Rvalue(t, "", false);
+}
+
+// iface.Method(args) (see EmitInterfaceCall).
+Value CheckInterfaceCall(Compiler cg, int iface, string name, Arg[] args, bool known, SourceLoc loc)
+{
+    if (!known)
+        return UnknownValue(cg);
+    int chosen = ChooseInterfaceMethod(cg, iface, name, args);
+    if (chosen < 0)
+    {
+        CheckError(cg, loc, "interface '" + cg.Types.Name(iface) + "' has no method '" + name + "' that takes these arguments");
+        return UnknownValue(cg);
+    }
+    return Rvalue(InterfaceMethod(cg, iface, chosen).Ret, "", false);
 }
