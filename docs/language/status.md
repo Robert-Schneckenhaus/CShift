@@ -22,7 +22,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
 | `Enum<T>.Count`, `.Min`, `.Max`, `.Values`, `.Names` (constants) | ✔ (self-hosted, [enums](enums.md#enumt-facts-about-an-enum)) |
-| `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed)) |
+| `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder; `embed("*.txt")`/`embed_filenames("*.txt")` give the contents/names of all matching files as a `const ReadOnlySlice<string>` | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed-and-embed_filenames)) |
 | Constant slices: `const ReadOnlySlice<int> P = [2, 3, ..Q];`, indexing/slicing/`Length` in constants | ✔ (self-hosted, [constants](constants-and-globals.md#constant-slices)) |
 | Collection expressions: `[a, b, ..c]` as `T[]`, `Slice<T>`, `List<T>`, `HashSet<T>` or any struct with `Create()`/`Add(T)` | ✔ (self-hosted, [collection expressions](arrays-strings-collections.md#collection-expressions)) |
 | `Fixed<T, N>`: fixed-size arrays stored inline (values: on the stack, inside structs), C arrays in structs imported as `Fixed` | ✔ (self-hosted, [fixed-size arrays](arrays-strings-collections.md#fixed-size-arrays-fixedt-n)) |
@@ -91,7 +91,8 @@ The design document leaves a number of things open; these are the decisions that
   `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue`,
   `EmbedText("file")`/`EmbedNames("folder", ".ext")`/`EmbedTexts("folder", ".ext")` (files are embedded into the
   program at compile time; paths are relative to the source file, and only string literals are accepted as
-  arguments; unlike `embed`, they also drop `\r`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
+  arguments; unlike `embed`, they also drop `\r`; replaced by `embed("folder/*.ext")`/`embed_filenames(...)` and
+  removed in the next release). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.
 * **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums,

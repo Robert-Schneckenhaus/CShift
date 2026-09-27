@@ -285,7 +285,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
         if (!IsConstantType(cg, t))
             FailConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
-        ConstVal cv = d.Init.Kind == ExprKind.Embed ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
+        ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
         var constVars = cg.Fn[0].Vars;
         var constVar = constVars.Get(constVars.Count() - 1);

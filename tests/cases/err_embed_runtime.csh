@@ -1,5 +1,5 @@
 // embed only initializes a string constant; it does not exist at run time.
-// expect-error: embed(...) can only be the whole initializer of a string constant: const string Text = embed("file.txt");
+// expect-error: embed(...) and embed_filenames(...) can only be the whole initializer of a constant: const string Text = embed("file.txt");
 
 int Main()
 {

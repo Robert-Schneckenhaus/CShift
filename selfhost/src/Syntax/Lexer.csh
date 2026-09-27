@@ -51,6 +51,7 @@ struct Lexer
         lexer.Keywords.Set("this", TokenKind.KwThis);
         lexer.Keywords.Set("sizeof", TokenKind.KwSizeof);
         lexer.Keywords.Set("embed", TokenKind.KwEmbed);
+        lexer.Keywords.Set("embed_filenames", TokenKind.KwEmbedFilenames);
         // 'start' (as in 'start Foo(...)') is not a keyword: the parser recognizes it by its position (ParseUnary).
         return lexer;
     }

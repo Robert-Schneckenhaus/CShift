@@ -37,7 +37,8 @@ enum ExprKind : int32
     Lambda, // only in the self-hosted compiler
     Slice,  // a[i..j]
     Collection, // [a, b, ..c]
-    Embed       // embed("file"): the text of a file, read when the program is compiled
+    Embed,          // embed("file") / embed("*.txt"): the text of files, read when the program is compiled
+    EmbedFilenames  // embed_filenames("*.txt"): the names of the files that match
 }
 
 struct Expr
@@ -835,11 +836,11 @@ struct Ast
         return Expr { Kind = ExprKind.ErrorLit, Index = ErrorLits.Count() - 1, Loc = loc };
     }
 
-    // embed("file"): the path is kept like a string literal
-    Expr AddEmbed(SourceLoc loc, StringLitExpr n)
+    // embed("file") / embed_filenames("*.txt"): the path is kept like a string literal
+    Expr AddEmbed(SourceLoc loc, StringLitExpr n, bool names)
     {
         StringLits.Add(n);
-        return Expr { Kind = ExprKind.Embed, Index = StringLits.Count() - 1, Loc = loc };
+        return Expr { Kind = names ? ExprKind.EmbedFilenames : ExprKind.Embed, Index = StringLits.Count() - 1, Loc = loc };
     }
 
     Expr AddSizeOf(SourceLoc loc, SizeOfExpr n)

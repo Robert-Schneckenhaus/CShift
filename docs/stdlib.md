@@ -8,7 +8,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | Namespace | File | Contents |
 |---|---|---|
 | global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
-| `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
+| `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stack.csh`, `queue.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
 | `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
 | `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
 | `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
@@ -39,6 +39,13 @@ if the key is missing), `Add(k, v)` (`Error<void>`, fails on a duplicate key), `
 sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (a handle to shared storage, like `List`).
 **`HashSet<T>`** — `Create()`, `Add(v)` (`true` if it was new), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`,
 `ToArray()`.
+**`Stack<T>`** (last in, first out) — `Create()`, `Create(capacity)`, `Push(v)`, `Pop()`, `Peek()` (both panic when
+empty), `TryPop()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = top), `Contains(v)`, `Clear()`, `ToArray()`
+(top first). `foreach` goes from the top down.
+**`Queue<T>`** (first in, first out, a ring buffer) — `Create()`, `Create(capacity)`, `Enqueue(v)`, `Dequeue()`,
+`Peek()` (both panic when empty), `TryDequeue()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = front),
+`Contains(v)`, `Clear()`, `ToArray()` (front first). `foreach` goes from the front to the back. Both are handles to
+shared storage, like `List`.
 **`Process.Run("command")`** runs a command line through the shell and returns its exit code; `RunCapture("command")`
 also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
 (`Optional<string>`); `IsWindows()` reports the platform.
@@ -131,7 +138,8 @@ on that.
 `Memory.Allocate/Free` (`unsafe`), `Memory.CopyForThread(v)` (a copy that shares no reference count: strings get new
 blocks), `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `string.FromCStr` (`unsafe`), `ToString()`,
 `CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`, `EmbedText`/`EmbedNames`/`EmbedTexts`
-(files embedded at compile time).
+(files embedded at compile time; replaced by [`embed`/`embed_filenames`](language/constants-and-globals.md#embedded-files-embed-and-embed_filenames)
+and removed in the next release).
 
 **Writing library code:** `stdlib/` is compiled by the compiler of the same commit, so it may use every language
 feature; only the compiler's own sources are limited to the stage 0 release. See [compiler.md](compiler.md).

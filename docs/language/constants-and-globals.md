@@ -56,7 +56,7 @@ const int Letters = "hello".Length;            // (also for constant strings)
   thread).
 * [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
 
-### Embedded files: `embed`
+### Embedded files: `embed` and `embed_filenames`
 
 `embed("file")` reads a file when the program is compiled and makes its content a string constant - for shaders,
 translations, version files and the like:
@@ -66,16 +66,35 @@ const string Shader = embed("shaders/sprite.glsl");
 const string Version = embed("version.txt");
 ```
 
-* **Only like this:** `embed(...)` is the whole initializer of a `const string` (top level or local). It does not exist
-  at run time, cannot be part of a larger expression, and its argument must be a string literal.
+With a wildcard (`*` for any characters, `?` for one) in the file name, `embed` reads all matching files and gives
+their contents as a constant `ReadOnlySlice<string>`, sorted by file name. `embed_filenames` gives the names of the
+same files (without the folder), in the same order, so the two slices belong together:
+
+```csharp
+const ReadOnlySlice<string> Levels = embed("levels/*.txt");
+const ReadOnlySlice<string> LevelNames = embed_filenames("levels/*.txt");   // "1-intro.txt", "2-cave.txt", ...
+
+for (var i = 0; i < Levels.Length; i += 1)
+    Console.WriteLine(LevelNames[i] + ": " + Levels[i].Length.ToString() + " characters");
+```
+
+* **Result type:** with a wildcard it is always `const ReadOnlySlice<string>` (empty if no file matches); without one
+  it is `const string` (`embed_filenames("x.txt")` gives `"x.txt"` and checks that the file exists). The constant must
+  be declared with exactly this type.
+* **Wildcards only in the file name:** `embed("data/*.json")` is fine, `embed("*/a.json")` is an error. Folders never
+  match, and subfolders are not searched.
+* **Only like this:** `embed(...)`/`embed_filenames(...)` is the whole initializer of a constant (top level or local).
+  It does not exist at run time, cannot be part of a larger expression, and its argument must be a string literal.
+  The constants are ordinary constants afterwards: `[..LevelNames, "extra.txt"]` is a constant slice too.
 * **Exact content:** the constant holds the file's text unchanged - quotes, backslashes, `\r\n` and `\n` stay as they
   are (only a UTF-8 byte order mark is dropped), so `File.WriteAllText(path, Shader)` writes the same content. The file
   must be UTF-8 text.
 * **Where the file is searched:** an absolute path is used as it is. Otherwise the path is relative to the source file
   that contains `embed`, and if the file is not there, relative to the project folder (the folder of `cshift.json`).
-  A missing file is a compile error that lists where it was looked for.
+  A missing file is a compile error that lists where it was looked for. For a wildcard the folder is searched the same
+  way: the first folder that has a matching file is used.
 * The file is read on every build, so a change to it is picked up the next time the program is compiled.
-* `embed` is a keyword, so it cannot be used as a name.
+* `embed` and `embed_filenames` are keywords, so they cannot be used as names.
 
 ## Global variables
 

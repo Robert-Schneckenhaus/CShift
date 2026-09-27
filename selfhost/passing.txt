@@ -9,6 +9,7 @@ const_slices.csh
 consts.csh
 embed.csh
 embed_file.csh
+embed_wildcard.csh
 enum_meta.csh
 enum_text.csh
 env_exit.csh
@@ -50,10 +51,14 @@ err_deref_safe.csh
 err_dictionary_key.csh
 err_duplicate_function.csh
 err_embed_expression.csh
+err_embed_filenames_missing.csh
+err_embed_filenames_type.csh
 err_embed_literal.csh
 err_embed_missing.csh
 err_embed_runtime.csh
 err_embed_type.csh
+err_embed_wildcard_folder.csh
+err_embed_wildcard_type.csh
 err_enum_meta_as_type.csh
 err_enum_meta_member.csh
 err_enum_meta_type.csh
@@ -205,6 +210,7 @@ panic_output_kept.csh
 panic_overflow.csh
 panic_slice_index.csh
 panic_slice_range.csh
+panic_stack_empty.csh
 panic_string_index.csh
 panic_substring.csh
 panic_underflow.csh
@@ -212,6 +218,7 @@ panic_user.csh
 read_only_slices.csh
 shared_ptr.csh
 slices.csh
+stack_queue.csh
 stdlib_additions.csh
 stdlib_dictionary.csh
 stdlib_errors.csh
