@@ -104,6 +104,39 @@ const string Title = $"{AppName} {Version}";   // works in constants too
 
 Numbers become the shortest text that reads back as the same value: `0.1`, `1.0 / 3.0` is `0.3333333333333333`.
 
+### Number formats and alignment
+
+`ToString("F2")` and `{x:F2}` in an interpolated string format a number; `{x,8}` fills the text with spaces on the
+left up to 8 characters, `{x,-8}` on the right (for any value), and both combine as `{x,8:F2}`:
+
+```csharp
+double price = 1234.5;
+Console.WriteLine($"{"Total",-8}|{price,12:N2}|");   // "Total   |    1,234.50|"
+string hex = 255.ToString("X4");                     // "00FF"
+```
+
+| Format | For | Result |
+|---|---|---|
+| `D5` | integers | at least 5 digits: `42` → `00042` |
+| `X`, `x4` | integers | hexadecimal, upper/lower case, at least 4 digits: `255` → `FF`, `00ff`; negative values in two's complement of the type's size |
+| `B8` | integers | binary, at least 8 digits: `5` → `00000101` |
+| `F2` | all numbers | fixed point with 2 decimals (default 2): `3.14159` → `3.14` |
+| `N2` | all numbers | like `F`, with `,` between thousands: `1234567` → `1,234,567.00` |
+| `E3`, `e3` | all numbers | scientific, 3 decimals (default 6): `1234.5` → `1.235E+003` |
+| `P1` | all numbers | percent (times 100), 1 decimal (default 2): `0.256` → `25.6 %` |
+| `G` | all numbers | the same as `ToString()` |
+
+* The letter can be followed by up to two digits (0 to 99). The text is the same on every platform: `.` for the
+  decimal point and `,` between thousands, no locale.
+* Floating point values are formatted from their exact binary value and rounded half away from zero, like .NET:
+  `0.125.ToString("F2")` is `0.13`, `2.5.ToString("F0")` is `3`. A result that is zero has no minus sign
+  (`(-0.001).ToString("F2")` is `0.00`).
+* A format written as a string literal is checked by the compiler; a format that is only known at run time panics
+  if it is invalid.
+* In a hole, the `:` of a conditional `a ? b : c` is part of the expression, the next `:` starts the format.
+* The alignment counts bytes (like `PadLeft`), so text with non-ASCII characters lines up only in bytes.
+* A hole with a format or alignment is not a constant expression (it calls the standard library).
+
 More string operations are extension-style methods from the standard library (`Contains`, `Trim`, `Split`, `Join`,
 `PadLeft`, `ParseInt`, …) — see the [standard library](../stdlib.md) for the full list.
 

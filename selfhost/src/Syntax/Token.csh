@@ -33,7 +33,8 @@ enum TokenKind : int32
     InterpStart,  // $"text{   the text up to the first hole of an interpolated string
     InterpMid,    // }text{    the text between two holes
     InterpEnd,    // }text"    the text after the last hole
-    FatArrow      // =>        lambdas
+    FatArrow,     // =>        lambdas
+    InterpFormat  // ,8:F2     the alignment (IntValue as int64, 0 = none) and format (Text) at the end of a hole
 }
 
 struct Token
@@ -63,6 +64,7 @@ string TokenName(TokenKind kind)
     case TokenKind.InterpMid: return "'}' of an interpolation hole";
     case TokenKind.InterpEnd: return "end of an interpolated string";
     case TokenKind.FatArrow: return "'=>'";
+    case TokenKind.InterpFormat: return "format of an interpolation hole";
     case TokenKind.LBrace: return "'{'";
     case TokenKind.RBrace: return "'}'";
     case TokenKind.LParen: return "'('";

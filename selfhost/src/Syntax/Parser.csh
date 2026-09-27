@@ -1553,6 +1553,8 @@ struct Parser
         while (true)
         {
             Expr hole = try ParseExpr();
+            if (Check(TokenKind.InterpFormat))
+                hole = FormatHole(hole, Advance());
             result = Tree.AddBinary(hole.Loc, BinaryExpr { Op = BinOp.Add, Lhs = result, Rhs = hole });
             if (Check(TokenKind.InterpMid) || Check(TokenKind.InterpEnd))
             {
@@ -1566,6 +1568,29 @@ struct Parser
                 return error("expected '}' after the expression in an interpolated string, found " + TokenName(Kind()), Cur().Loc.Pack());
         }
         return result;
+    }
+
+    // {x:F2} is x.ToString("F2"); {x,8} is ("" + x).PadLeft(8), {x,-8} is ("" + x).PadRight(8) (both with the format).
+    Expr FormatHole(Expr hole, Token format)
+    {
+        var loc = format.Loc;
+        Expr text = hole;
+        if (format.Text.Length > 0)
+        {
+            var toString = Tree.AddMember(loc, MemberExpr { Object = hole, Name = "ToString", TypeArgs = new TypeRef[0] });
+            var arg = new Expr[1];
+            arg[0] = Tree.AddStringLit(loc, StringLitExpr { Value = format.Text });
+            text = Tree.AddCall(loc, CallExpr { Callee = toString, Args = arg });
+        }
+        int64 alignment = unchecked((int64)format.IntValue);
+        if (alignment == 0)
+            return text;
+        if (format.Text.Length == 0)
+            text = Tree.AddBinary(loc, BinaryExpr { Op = BinOp.Add, Lhs = Tree.AddStringLit(loc, StringLitExpr { Value = "" }), Rhs = text });
+        var pad = Tree.AddMember(loc, MemberExpr { Object = text, Name = alignment > 0 ? "PadLeft" : "PadRight", TypeArgs = new TypeRef[0] });
+        var width = new Expr[1];
+        width[0] = Tree.AddIntLit(loc, IntLitExpr { Value = (uint64)(alignment > 0 ? alignment : -alignment) });
+        return Tree.AddCall(loc, CallExpr { Callee = pad, Args = width });
     }
 
     bool CastFollows(TypeRef type)

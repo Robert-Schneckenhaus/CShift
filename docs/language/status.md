@@ -42,7 +42,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | C FFI: `extern "C"`, variadic functions (`printf`), `link "lib"`, pointers | ✔ |
 | Function values `Action<…>`/`Func<…,R>`, C-compatible | ✔ (extension) |
 | Lambdas and closures (captures are read-only copies) | ✔ (self-hosted, [functions](functions-and-delegates.md#lambdas-and-closures)) |
-| String interpolation `$"a {x} b"` (concatenation; `string ToString()` of structs) | ✔ (self-hosted, [strings](arrays-strings-collections.md)) |
+| String interpolation `$"a {x} b"` (concatenation; `string ToString()` of structs), number formats and alignment (`ToString("F2")`, `{x,8:F2}`) | ✔ (self-hosted, [strings](arrays-strings-collections.md)) |
 | Indexers: `x[k]` calls `Get(k)`, `x[k] = v` calls `Set(k, v)` (`List`, `Dictionary`, own structs) | ✔ (self-hosted) |
 | Importing C headers: `using Name from "header.h";` (libclang, a `.ffi` cache), `nint`/`nuint`, structs by value | ✔ (see [../ffi.md](../ffi.md)) |
 | `unsafe`: pointers, `&`, `*`, pointer arithmetic, `Memory.Allocate/Free` | ✔ |
