@@ -37,6 +37,7 @@ int[] all = [..a, ..s, 6];             // ..x spreads an array, a slice or a col
 int[] none = [];
 var inferred = [1.5, 2.0];             // no type to become: an array of the first element's type (double[])
 Process([1, 2, 3]);                    // as an argument, the parameter's type decides
+Optional<int[]> Find() { return [1, 2]; }   // Optional<T> / Error<T>: the T is built, then wrapped
 ```
 
 An array or slice is built with one allocation of exactly the right length (spreads included). The elements convert

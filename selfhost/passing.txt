@@ -1,6 +1,7 @@
 arc_stress.csh
 builtins.csh
 collection_expressions.csh
+collection_results.csh
 console_stderr.csh
 const_default.csh
 const_eval.csh

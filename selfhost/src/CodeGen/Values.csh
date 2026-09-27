@@ -349,7 +349,15 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
         return UnionFromMember(cg, v, to, UnionMemberIndex(cg, to, from));
     if (types.Kind(from) == TypeKind.Collection)
+    {
+        // [..] as Optional<T> / Error<T>: build the T, then wrap it like any other value
+        if (types.IsResultLike(to))
+        {
+            string payload = Consume(cg, ConvertValue(cg, v, types.Elem(to), loc));
+            return Rvalue(to, MakeSome(cg, to, payload), NeedsArc(cg, to));
+        }
         return EmitCollection(cg, v.CollectionNode, to, loc);
+    }
     if (types.Kind(from) == TypeKind.Lambda)
     {
         if (!types.IsFunction(to))

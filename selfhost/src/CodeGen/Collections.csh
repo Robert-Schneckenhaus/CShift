@@ -40,6 +40,12 @@ bool IsCollectionBuilder(Compiler cg, int t)
 int CollectionConversionCost(Compiler cg, int to)
 {
     var types = cg.Types;
+    // Optional<T> and Error<T> take a collection that T takes (one step more)
+    if (types.IsResultLike(to))
+    {
+        int inner = types.IsVoid(types.Elem(to)) ? -1 : CollectionConversionCost(cg, types.Elem(to));
+        return inner < 0 ? -1 : inner + 1;
+    }
     if (types.IsArray(to) || types.IsElemSlice(to) || types.IsFixed(to) || IsCollectionBuilder(cg, to))
         return 2;
     return -1;
