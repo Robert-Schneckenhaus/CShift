@@ -92,7 +92,8 @@ panic: List index out of range (index 4, count 2)
   called from src/Game/Party.csh:77:31 in Party.Member
 ```
 
-The same goes for `Environment.Panic("message")`. Paths below the current directory are shown relative to it.
+The same goes for `Environment.Panic("message")`. The path is the one the compiler was given; in a project it is
+relative to the project folder.
 
 ## Operators
 

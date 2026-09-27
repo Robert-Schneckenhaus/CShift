@@ -258,8 +258,8 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
 // Checks that stop the program
 // ---------------------------------------------------------------------------
 
-// Where a panic happens, as a C string: "path:line:column in Function" (the current location, see EmitExpr). A path
-// below the current directory is shown relative to it.
+// Where a panic happens, as a C string: "path:line:column in Function" (the current location, see EmitExpr). The path
+// is the one the compiler was given; in a project it is relative to the project folder.
 string PanicWhere(Compiler cg)
 {
     SourceLoc loc = cg.St[0].Loc;
@@ -267,12 +267,10 @@ string PanicWhere(Compiler cg)
     if (loc.Line > 0 && loc.File >= 0 && loc.File < cg.Diag.Files.Count())
     {
         string path = cg.Diag.Files.Get(loc.File);
-        if (Path.IsRooted(path))
-        {
-            string relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), path);
-            if (!relative.StartsWith("..") && !Path.IsRooted(relative))
-                path = relative;
-        }
+        string project = cg.St[0].ProjectDir;
+        if (project.Length > 0 && project != "." && path.Length > project.Length + 1 && path.StartsWith(project) &&
+            (path[project.Length] == '/' || path[project.Length] == '\\'))
+            path = path.Substring(project.Length + 1);
         where = path + ":" + loc.Line.ToString() + ":" + loc.Col.ToString();
     }
     int fn = cg.Fn.Length > 0 ? cg.Fn[0].Func : -1;
