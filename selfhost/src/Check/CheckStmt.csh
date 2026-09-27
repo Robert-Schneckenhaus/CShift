@@ -214,6 +214,12 @@ void CheckReturn(Compiler cg, Stmt s)
     var types = cg.Types;
     var n = cg.Tree.GetReturn(s);
     int rt = cg.Fn[0].RetType;
+    if (types.IsUnknown(rt))
+    {
+        if (!n.Value.IsNull())
+            CheckExpr(cg, n.Value); // in a lambda
+        return;
+    }
     if (!n.Value.IsNull())
     {
         if (types.IsVoid(rt))

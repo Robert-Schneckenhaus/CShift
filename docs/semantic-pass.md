@@ -56,7 +56,7 @@ errors is limited (50); after that the compiler stops.
 |---|---|---|
 | 1 | Unknown type, error limit, the checker for statements and scopes, names, literals, operators, assignments, conditions, variable declarations, `return`, calls of functions and methods by name, fields | done |
 | 2 | Member calls of every kind (static, namespaces, builtins like `Console`, strings, arrays), `new`, struct initializers, indexing and slices | done |
-| 3 | Patterns (`is`, `switch`), unions, `Error<T>`/`Optional<T>`/`try`, lambdas and collection expressions, casts, interfaces, threads | |
+| 3 | Patterns (`is`, `switch`), unions, `Error<T>`/`Optional<T>`/`try`, lambdas and collection expressions, casts, interfaces, threads | in progress: `is` on results, `try`, `error(...)`, casts and the bodies of lambdas are done |
 | 4 | Declarations with recovery: constants, globals, struct fields and signatures report and continue | |
 | 5 | Code generation reads the checker's results (types, chosen overloads, conversions) and its own checks go away | |
 | 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | |

@@ -92,6 +92,9 @@ Value CheckExpr(Compiler cg, Expr e)
         return o;
     }
     case ExprKind.Is: return CheckIs(cg, e);
+    case ExprKind.Lambda:
+        CheckLambdaBody(cg, e);
+        return UnknownValue(cg); // its type comes from the Action/Func it is converted to (code generation for now)
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
         CheckError(cg, e.Loc, EmbedPlaceError());
@@ -439,6 +442,8 @@ Value CheckTry(Compiler cg, Expr e)
         return UnknownValue(cg);
     }
     int retType = cg.Fn[0].RetType;
+    if (types.IsUnknown(retType))
+        return Rvalue(types.Elem(subj.Type), "", false); // in a lambda
     bool intMain = cg.St[0].MainFunc == cg.Fn[0].Func + 1 && types.IsInt(retType) || IsMainCandidate(cg);
     if (!types.IsError(retType) && !intMain)
         CheckError(cg, e.Loc, "'try' can only be used in a function that returns Error<T>");
@@ -536,4 +541,26 @@ Value CheckIs(Compiler cg, Expr e)
     if (n.BindName.Length > 0)
         DeclareVar(cg, n.BindName, bound, "%v");
     return boolean;
+}
+
+// The body of a lambda, in a scope of its own: its parameters (with the unknown type unless they are written), and the
+// variables of the enclosing function, which a lambda reads. Its 'return' belongs to the lambda, whose result type is
+// not known here, and 'break'/'continue' cannot leave it.
+void CheckLambdaBody(Compiler cg, Expr e)
+{
+    var l = cg.Tree.GetLambda(e);
+    int savedRet = cg.Fn[0].RetType;
+    var savedLoops = cg.Fn[0].Loops;
+    cg.Fn[0].RetType = cg.Types.Unknown;
+    cg.Fn[0].Loops = List<LoopCtx>.Create();
+    PushScope(cg);
+    foreach (var p in l.Params)
+        DeclareVar(cg, p.Name, p.Type.IsNull() ? cg.Types.Unknown : DeclTypeOf(cg, p.Type), "%p");
+    if (!l.Block.IsNull())
+        CheckBlock(cg, l.Block, true);
+    else
+        CheckExpr(cg, l.Body);
+    PopScope(cg, false);
+    cg.Fn[0].RetType = savedRet;
+    cg.Fn[0].Loops = savedLoops;
 }
