@@ -202,7 +202,7 @@ void CheckConversion(Compiler cg, Value v, int to, SourceLoc loc)
         return;
     var k = types.Kind(v.Type);
     // lambdas, function names and collection expressions are converted by code generation for now
-    if (k == TypeKind.Lambda || k == TypeKind.MethodGroup || k == TypeKind.Collection || types.IsCFunction(to) || IsUnionType(cg, to))
+    if (k == TypeKind.Lambda || k == TypeKind.MethodGroup || k == TypeKind.Collection || types.IsCFunction(to))
         return;
     string why = ConversionError(cg, v, to);
     if (why.Length > 0)
@@ -270,24 +270,95 @@ void CheckForeach(Compiler cg, Stmt s)
     PopScope(cg, false);
 }
 
-// switch: the subject and every section; the patterns and case values are checked by code generation for now, their
-// variables are known here with the unknown type.
+// switch: the subject, the labels and every section (see EmitSwitch); whether the switch is exhaustive and whether a
+// section falls through are checked by code generation for now.
 void CheckSwitch(Compiler cg, Stmt s)
 {
+    var types = cg.Types;
     var n = cg.Tree.GetSwitch(s);
-    CheckExpr(cg, n.Subject);
+    PushScope(cg);
+    Value subj = CheckRValue(cg, n.Subject);
+    int st = subj.Type;
+    bool known = !types.IsUnknown(st);
+    bool hasDefault = false;
+    for (var i = 0; i < n.Sections.Length; i += 1)
+    {
+        foreach (var label in n.Sections[i].Labels)
+        {
+            if (label.IsDefault)
+            {
+                if (hasDefault)
+                    CheckError(cg, label.Loc, "the switch already has a 'default' label");
+                hasDefault = true;
+                continue;
+            }
+            if (!label.PatType.IsNull())
+            {
+                if (known)
+                    CheckPatternLabel(cg, st, label);
+            }
+            else if (known && types.IsError(st) && types.Code(st) != 0)
+                CheckConversion(cg, CheckRValue(cg, label.Value), types.Code(st), label.Loc);
+            else
+            {
+                Value lv = CheckRValue(cg, label.Value);
+                if (known && !IsUnknown(cg, lv))
+                {
+                    string why = types.IsEnum(st) ? ConversionError(cg, lv, st) : "";
+                    if (why.Length == 0 && CompareType(cg, BinOp.Eq, Rvalue(st, "", false), lv, ref why) != 0)
+                        why = "";
+                    ReportIf(cg, label.Loc, why);
+                }
+            }
+        }
+    }
+    cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = "", ScopeDepth = ScopeCount(cg) });
     foreach (var section in n.Sections)
     {
         PushScope(cg);
         foreach (var label in section.Labels)
         {
-            if (!label.PatType.IsNull() && label.PatName.Length > 0)
-                DeclareVar(cg, label.PatName, cg.Types.Unknown, "%v");
+            if (label.PatType.IsNull() || label.PatName.Length == 0)
+                continue;
+            int bound = types.Unknown;
+            if (known)
+            {
+                bool isError = false;
+                string why = "";
+                int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref why);
+                if (pt != 0)
+                    bound = pt;
+            }
+            DeclareVar(cg, label.PatName, bound, "%v");
         }
-        cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = "", ScopeDepth = ScopeCount(cg) });
-        foreach (var st in section.Body)
-            CheckStmt(cg, st);
-        cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);
+        foreach (var st2 in section.Body)
+            CheckStmt(cg, st2);
         PopScope(cg, false);
     }
+    cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);
+    PopScope(cg, false);
+}
+
+// 'case T name:' / 'case error e:' on a result or a union (see EmitSwitch).
+void CheckPatternLabel(Compiler cg, int st, CaseLabel label)
+{
+    var types = cg.Types;
+    bool isError = false;
+    string why = "";
+    int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref why);
+    if (pt == 0)
+    {
+        CheckError(cg, label.Loc, why);
+        return;
+    }
+    if (isError || IsErrorEnum(cg, pt))
+        return;
+    if (IsUnionType(cg, st))
+    {
+        if (UnionMemberIndex(cg, st, pt) < 0)
+            CheckError(cg, label.Loc, "'" + types.Name(pt) + "' is not a member of union '" + types.Name(st) + "'");
+        return;
+    }
+    if (!(types.IsResultLike(st) && types.Elem(st) == pt))
+        CheckError(cg, label.Loc, "pattern type '" + types.Name(pt) + "' does not match the switch subject of type '" + types.Name(st) + "'");
 }
