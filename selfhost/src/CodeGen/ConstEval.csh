@@ -720,6 +720,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     case ExprKind.StringLit:
         return ConstVal { Kind = ConstKind.String, Type = types.String, S = tree.GetStringLit(e).Value };
     case ExprKind.Embed:
+    case ExprKind.EmbedFilenames:
         FailEmbedPlace(cg, e.Loc);
         break;
     case ExprKind.BoolLit:
@@ -1063,55 +1064,173 @@ ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
 }
 
 // ---------------------------------------------------------------------------
-// embed("file")
+// embed("file"), embed("*.txt"), embed_filenames("*.txt")
 // ---------------------------------------------------------------------------
+
+bool IsEmbedExpr(Expr e)
+{
+    return e.Kind == ExprKind.Embed || e.Kind == ExprKind.EmbedFilenames;
+}
 
 void FailEmbedPlace(Compiler cg, SourceLoc loc)
 {
-    Fail(cg, loc, "embed(...) can only be the whole initializer of a string constant: const string Text = embed(\"file.txt\");");
+    Fail(cg, loc, "embed(...) and embed_filenames(...) can only be the whole initializer of a constant: " +
+        "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\");");
+}
+
+// True if the name has a wildcard ('*': any characters, '?': one character).
+bool HasWildcard(string name)
+{
+    return name.IndexOf('*') >= 0 || name.IndexOf('?') >= 0;
+}
+
+// True if 'name' matches the pattern with '*' and '?'.
+bool WildcardMatch(string pattern, string name)
+{
+    int p = 0;
+    int n = 0;
+    int starP = -1; // the last '*' seen and where in the name it started
+    int starN = 0;
+    while (n < name.Length)
+    {
+        if (p < pattern.Length && (pattern[p] == '?' || pattern[p] == name[n]))
+        {
+            p += 1;
+            n += 1;
+        }
+        else if (p < pattern.Length && pattern[p] == '*')
+        {
+            starP = p;
+            starN = n;
+            p += 1;
+        }
+        else if (starP >= 0)
+        {
+            // let the last '*' take one more character
+            p = starP + 1;
+            starN += 1;
+            n = starN;
+        }
+        else
+            return false;
+    }
+    while (p < pattern.Length && pattern[p] == '*')
+        p += 1;
+    return p == pattern.Length;
+}
+
+// The folders a relative embed path is looked up in: the folder of the source file, then the project folder.
+List<string> EmbedBases(Compiler cg, SourceLoc loc)
+{
+    var bases = List<string>.Create();
+    bases.Add(Path.GetDirectory(cg.Diag.Files.Get(loc.File)));
+    string projectDir = cg.St[0].ProjectDir;
+    if (projectDir.Length > 0)
+        bases.Add(projectDir);
+    return bases;
 }
 
 // The file of embed("name"): an absolute path as it is, otherwise relative to the source file that uses it, then
 // relative to the project's folder.
-string EmbedPath(Compiler cg, string name, SourceLoc loc)
+string EmbedPath(Compiler cg, string word, string name, SourceLoc loc)
 {
     if (Path.IsRooted(name))
     {
-        if (!File.Exists(name))
-            Fail(cg, loc, "embed: the file '" + name + "' does not exist");
+        if (!File.Exists(name) || Directory.Exists(name))
+            Fail(cg, loc, word + ": the file '" + name + "' does not exist");
         return name;
     }
-    string source = cg.Diag.Files.Get(loc.File);
-    string besideSource = Path.Combine(Path.GetDirectory(source), name);
-    if (File.Exists(besideSource))
-        return besideSource;
-    string tried = "'" + besideSource + "'";
-    string projectDir = cg.St[0].ProjectDir;
-    if (projectDir.Length > 0)
+    string tried = "";
+    foreach (var baseDir in EmbedBases(cg, loc))
     {
-        string inProject = Path.Combine(projectDir, name);
-        if (File.Exists(inProject))
-            return inProject;
-        tried += " and '" + inProject + "'";
+        string path = Path.Combine(baseDir, name);
+        if (File.Exists(path) && !Directory.Exists(path))
+            return path;
+        tried += (tried.Length > 0 ? " and '" : "'") + path + "'";
     }
-    Fail(cg, loc, "embed: cannot find the file '" + name + "' (looked for " + tried + ")");
+    Fail(cg, loc, word + ": cannot find the file '" + name + "' (looked for " + tried + ")");
+    return "";
+}
+
+// The files of embed("dir/*.txt"): the wildcards may only be in the file name. The folder is looked up like a file
+// (absolute, beside the source file, in the project folder); the first folder with a matching file is used. The
+// names are sorted; no match gives an empty list.
+List<string> EmbedMatches(Compiler cg, string word, string pattern, SourceLoc loc, ref string folder)
+{
+    string dir = Path.GetDirectory(pattern);
+    string filePattern = Path.GetFileName(pattern);
+    if (HasWildcard(dir))
+        Fail(cg, loc, word + ": wildcards ('*', '?') are only allowed in the file name, not in the folder: '" + pattern + "'");
+    var bases = List<string>.Create();
+    if (Path.IsRooted(pattern))
+        bases.Add("");
+    else
+        bases = EmbedBases(cg, loc);
+    var names = List<string>.Create();
+    foreach (var baseDir in bases)
+    {
+        string candidate = Path.Combine(baseDir, dir);
+        if (candidate.Length == 0)
+            candidate = ".";
+        if (!Directory.Exists(candidate))
+            continue;
+        foreach (var entry in Directory.GetEntries(candidate))
+        {
+            if (WildcardMatch(filePattern, entry) && !Directory.Exists(Path.Combine(candidate, entry)))
+                names.Add(entry);
+        }
+        if (names.Count() > 0)
+        {
+            folder = candidate;
+            return names;
+        }
+    }
+    return names;
+}
+
+string EmbedRead(Compiler cg, string word, string path, SourceLoc loc)
+{
+    var read = File.ReadAllText(path); // UTF-8; a byte order mark is dropped, everything else stays as it is
+    if (read is string text)
+        return text;
+    if (read is error e)
+        Fail(cg, loc, word + ": cannot read '" + path + "': " + e.Message);
     return "";
 }
 
 // const string X = embed("file"): the content of the file, read now. Line ends, quotes and everything else stay as they
 // are; only a byte order mark is dropped. The text must be UTF-8 like every string.
+// const ReadOnlySlice<string> X = embed("dir/*.txt"): the contents of the matching files, sorted by name.
+// embed_filenames gives the file names (without the folder) instead: a string without wildcards (the file must
+// exist), a ReadOnlySlice<string> with them (in the same order as embed).
 ConstVal ConstEmbed(Compiler cg, Expr init, int t)
 {
     var types = cg.Types;
-    if (!types.IsString(t))
-        Fail(cg, init.Loc, "embed(...) gives a string, so the constant must be 'const string', not '" + types.Name(t) + "'");
-    string path = EmbedPath(cg, cg.Tree.GetEmbed(init).Value, init.Loc);
-    var read = File.ReadAllText(path); // UTF-8; a byte order mark is dropped, everything else stays as it is
-    if (read is string text)
-        return ConstVal { Kind = ConstKind.String, Type = types.String, S = text };
-    if (read is error e)
-        Fail(cg, init.Loc, "embed: cannot read '" + path + "': " + e.Message);
-    return ConstVal { };
+    bool wantNames = init.Kind == ExprKind.EmbedFilenames;
+    string word = wantNames ? "embed_filenames" : "embed";
+    string pattern = cg.Tree.GetEmbed(init).Value;
+    if (!HasWildcard(pattern))
+    {
+        if (!types.IsString(t))
+            Fail(cg, init.Loc, word + "(\"" + pattern + "\") gives a string, so the constant must be 'const string', not '" + types.Name(t) +
+                "' (a pattern with '*' or '?' gives a ReadOnlySlice<string>)");
+        string path = EmbedPath(cg, word, pattern, init.Loc);
+        string value = wantNames ? Path.GetFileName(path) : EmbedRead(cg, word, path, init.Loc);
+        return ConstVal { Kind = ConstKind.String, Type = types.String, S = value };
+    }
+    int sliceType = types.ReadOnlySliceOf(types.String);
+    if (t != sliceType)
+        Fail(cg, init.Loc, word + "(\"" + pattern + "\") gives the files that match, so the constant must be 'const ReadOnlySlice<string>', not '" +
+            types.Name(t) + "'");
+    string folder = "";
+    var names = EmbedMatches(cg, word, pattern, init.Loc, ref folder);
+    var items = new ConstVal[names.Count()];
+    for (var i = 0; i < items.Length; i += 1)
+    {
+        string value = wantNames ? names.Get(i) : EmbedRead(cg, word, Path.Combine(folder, names.Get(i)), init.Loc);
+        items[i] = ConstVal { Kind = ConstKind.String, Type = types.String, S = value };
+    }
+    return ConstVal { Kind = ConstKind.Slice, Type = sliceType, Items = items };
 }
 
 // The value of a top-level constant (evaluated once; a constant that needs itself is an error).
@@ -1129,7 +1248,7 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
     if (!IsConstantType(cg, t))
         FailConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
-    ConstVal v = c.Init.Kind == ExprKind.Embed ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
+    ConstVal v = IsEmbedExpr(c.Init) ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
     // enumerators of imported C enums are written as integers
     v = ConstConvert(cg, v, t, c.Init.Loc, cg.Files.Get(entry.File).IsPrelude);
     entry.State = 2;

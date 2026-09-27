@@ -190,12 +190,21 @@ foreach (var entry in ages.Entries())
 > same elements as the original. Start one with `.Create()` if you're going to hand out copies of it before adding
 > anything — an empty `new List<T>()` isn't connected to its copies yet.
 
-## `HashSet<T>` and `StringBuilder`
+## `HashSet<T>`, `Stack<T>`, `Queue<T>` and `StringBuilder`
 
 ```csharp
 var seen = HashSet<int>.Create();
 if (seen.Add(id))
     Console.WriteLine("new");
+
+var undo = Stack<string>.Create();     // last in, first out
+undo.Push("move");
+string last = undo.Pop();              // panics when empty; TryPop() gives an Optional<string>
+
+var jobs = Queue<Job>.Create();        // first in, first out
+jobs.Enqueue(job);
+while (jobs.TryDequeue() is Job next)
+    Run(next);
 
 var sb = StringBuilder.Create();
 sb.Append("x = ");
