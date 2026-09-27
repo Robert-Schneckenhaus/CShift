@@ -675,40 +675,81 @@ void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
 }
 
 // && and ||: the right side only runs if it can change the result.
+// a && b, a || b: the right side only runs if it can change the result. A chain of the same operator (a || b || c ...)
+// is written in a loop with one join block instead of by recursion, so that its length does not use up the stack.
 Value EmitLogical(Compiler cg, Expr e)
 {
     var ir = cg.Ir;
     var b = cg.Tree.GetBinary(e);
     bool isAnd = b.Op == BinOp.LogAnd;
-    Value l = EmitCondition(cg, b.Lhs);
-    string lhsEnd = ir.CurrentBlock();
-    string rhsLabel = ir.NewLabel(isAnd ? "and.rhs" : "or.rhs");
+    var chain = List<Expr>.Create(); // e and the same operators on its left side, outermost first
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary && cg.Tree.GetBinary(leftmost).Op == b.Op)
+    {
+        chain.Add(leftmost);
+        leftmost = cg.Tree.GetBinary(leftmost).Lhs;
+    }
+    string current = EmitCondition(cg, leftmost).V;
     string endLabel = ir.NewLabel(isAnd ? "and.end" : "or.end");
-    if (isAnd)
-        ir.CondBr(l.V, rhsLabel, endLabel);
-    else
-        ir.CondBr(l.V, endLabel, rhsLabel);
+    var incoming = StringBuilder.Create();
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        var step = cg.Tree.GetBinary(chain.Get(i));
+        string fromBlock = ir.CurrentBlock();
+        string rhsLabel = ir.NewLabel(isAnd ? "and.rhs" : "or.rhs");
+        if (isAnd)
+            ir.CondBr(current, rhsLabel, endLabel);
+        else
+            ir.CondBr(current, endLabel, rhsLabel);
+        incoming.Append("[ " + (isAnd ? "false" : "true") + ", %" + fromBlock + " ], ");
 
-    ir.SetBlock(rhsLabel);
-    int mark = cg.Fn[0].Temps.Count();
-    Value r = EmitCondition(cg, b.Rhs);
-    FlushTemps(cg, mark, true);
-    string rhsEnd = ir.CurrentBlock();
+        ir.SetBlock(rhsLabel);
+        int mark = cg.Fn[0].Temps.Count();
+        current = EmitCondition(cg, step.Rhs).V;
+        FlushTemps(cg, mark, true);
+    }
+    string lastBlock = ir.CurrentBlock();
     ir.Br(endLabel);
-
     ir.SetBlock(endLabel);
-    string incoming = "[ " + (isAnd ? "false" : "true") + ", %" + lhsEnd + " ], [ " + r.V + ", %" + rhsEnd + " ]";
-    return MakeBool(cg, ir.Phi("i1", incoming));
+    incoming.Append("[ " + current + ", %" + lastBlock + " ]");
+    return MakeBool(cg, ir.Phi("i1", incoming.ToString()));
 }
 
+// a op b. A left-deep chain (a + b + c + ..., as long string concatenations are) is written in a loop instead of by
+// recursion, so that its length does not use up the stack; the order and every step are the same as with recursion.
 Value EmitBinary(Compiler cg, Expr e)
 {
     var b = cg.Tree.GetBinary(e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
         return EmitLogical(cg, e);
-    Value l = EmitRValue(cg, b.Lhs);
-    Value r = EmitRValue(cg, b.Rhs);
-    switch (b.Op)
+    var chain = List<Expr>.Create(); // e and the binary expressions on its left side, outermost first
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary)
+    {
+        var lb = cg.Tree.GetBinary(leftmost);
+        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr)
+            break;
+        chain.Add(leftmost);
+        leftmost = lb.Lhs;
+    }
+    SourceLoc outer = cg.St[0].Loc;
+    Value l = EmitRValue(cg, leftmost);
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        Expr step = chain.Get(i);
+        var sb = cg.Tree.GetBinary(step);
+        Value r = EmitRValue(cg, sb.Rhs);
+        if (step.Loc.Line > 0)
+            cg.St[0].Loc = step.Loc;
+        l = EmitBinaryStep(cg, sb.Op, l, r, step.Loc);
+    }
+    cg.St[0].Loc = outer;
+    return l;
+}
+
+Value EmitBinaryStep(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
+{
+    switch (op)
     {
     case BinOp.Eq:
     case BinOp.Ne:
@@ -716,9 +757,9 @@ Value EmitBinary(Compiler cg, Expr e)
     case BinOp.Gt:
     case BinOp.Le:
     case BinOp.Ge:
-        return EmitCompare(cg, b.Op, l, r, e.Loc);
+        return EmitCompare(cg, op, l, r, loc);
     default:
-        return EmitArithmetic(cg, b.Op, l, r, e.Loc);
+        return EmitArithmetic(cg, op, l, r, loc);
     }
 }
 
