@@ -31,7 +31,7 @@ bool IsThreadSafeType(Compiler cg, int t)
     var kind = types.Kind(t);
     if (kind == TypeKind.Bool || kind == TypeKind.Int || kind == TypeKind.Char || kind == TypeKind.Float || kind == TypeKind.Enum)
         return true;
-    if (kind == TypeKind.SharedPtr || kind == TypeKind.Optional)
+    if (kind == TypeKind.SharedPtr || kind == TypeKind.Optional || kind == TypeKind.Fixed)
         return IsThreadSafeType(cg, types.Elem(t));
     if (kind == TypeKind.Union)
     {

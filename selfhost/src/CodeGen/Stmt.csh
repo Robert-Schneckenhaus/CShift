@@ -88,6 +88,7 @@ string ZeroValue(Compiler cg, int t)
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
+    case TypeKind.Fixed:
         return "zeroinitializer";
     default: return "null";
     }

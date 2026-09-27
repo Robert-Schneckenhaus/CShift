@@ -101,4 +101,17 @@ GeoCallback geo_get_doubler(void); /* returns a C function */
 void geo_canvas_set_callback(GeoCanvas* canvas, GeoCallback cb);
 int geo_canvas_fire(GeoCanvas* canvas, int v);
 
+/* C arrays in structs are Fixed<T, N> in CShift (nested arrays nest) */
+typedef struct GeoMatrix
+{
+    char name[8];
+    float m[16];
+    int grid[2][3];
+    int tail;
+} GeoMatrix;
+
+void geo_matrix_identity(GeoMatrix* matrix);
+float geo_matrix_trace(const GeoMatrix* matrix);
+int geo_matrix_grid_sum(const GeoMatrix* matrix);
+
 #endif

@@ -33,7 +33,8 @@ enum TypeKind : int32
     Slice,       // Slice<T>: a view of part of an array { owner block, data, length }
     StringSlice, // a view of part of a string (read-only), same layout
     Collection,  // [a, b] before it is converted to the type it is used as
-    ReadOnlySlice // a read-only view of part of an array, same layout as Slice
+    ReadOnlySlice, // a read-only view of part of an array, same layout as Slice
+    Fixed          // Fixed<T, N>: N elements of T stored inline (a value like a struct; Elem, Count)
 }
 
 struct TypeInfo
@@ -47,6 +48,7 @@ struct TypeInfo
     int[] Params;      // Function: parameter types
     int Decl;          // Struct / Enum / Interface: index of its info in the compiler
     int Code;          // Error: the error enum of Error<T, E> (0: plain int codes); ErrorLit: see ErrorLitOf
+    int Count;         // Fixed: the number of elements
     int Arc;           // cache for NeedsArc: -1 unknown, 0 no, 1 yes
 }
 
@@ -148,6 +150,8 @@ struct TypeContext
     int Decl(int t) { return Infos.Get(t - 1).Decl; }
     int[] Params(int t) { return Infos.Get(t - 1).Params; }
     int Code(int t) { return Infos.Get(t - 1).Code; }
+    int Count(int t) { return Infos.Get(t - 1).Count; }
+    bool IsFixed(int t) { return Kind(t) == TypeKind.Fixed; }
 
     bool IsVoid(int t) { return Kind(t) == TypeKind.Void; }
     bool IsBool(int t) { return Kind(t) == TypeKind.Bool; }
@@ -237,6 +241,19 @@ struct TypeContext
 
     int OptionalOf(int elem) { return Derived(TypeKind.Optional, "Optional<" + Name(elem) + ">", elem); }
     int SliceOf(int elem) { return Derived(TypeKind.Slice, "Slice<" + Name(elem) + ">", elem); }
+    int FixedOf(int elem, int count)
+    {
+        string name = "Fixed<" + Name(elem) + ", " + count.ToString() + ">";
+        var found = Interned.TryGet(name);
+        if (found is int existing)
+            return existing;
+        int t = Derived(TypeKind.Fixed, name, elem);
+        var info = Infos.Get(t - 1);
+        info.Count = count;
+        Infos.Set(t - 1, info);
+        return t;
+    }
+
     int ReadOnlySliceOf(int elem) { return Derived(TypeKind.ReadOnlySlice, "ReadOnlySlice<" + Name(elem) + ">", elem); }
     int SharedPtrOf(int elem) { return Derived(TypeKind.SharedPtr, "SharedPtr<" + Name(elem) + ">", elem); }
     int CFunctionOf(int function) { return Derived(TypeKind.CFunction, Name(function) + " (C function pointer)", function); }

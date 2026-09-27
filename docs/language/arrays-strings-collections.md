@@ -37,11 +37,45 @@ int[] all = [..a, ..s, 6];             // ..x spreads an array, a slice or a col
 int[] none = [];
 var inferred = [1.5, 2.0];             // no type to become: an array of the first element's type (double[])
 Process([1, 2, 3]);                    // as an argument, the parameter's type decides
+Optional<int[]> Find() { return [1, 2]; }   // Optional<T> / Error<T>: the T is built, then wrapped
 ```
 
 An array or slice is built with one allocation of exactly the right length (spreads included). The elements convert
 to the element type like in an assignment. `new int[n]` (a zeroed array of a given length) and
 `new int[] { 1, 2, 3 }` still work.
+
+### Fixed-size arrays: `Fixed<T, N>`
+
+`int[]` is always a heap array. For small buffers of a known size there is `Fixed<T, N>`: N elements stored
+**inline** - in the variable (on the stack) or inside the struct that has the field. No allocation, no reference
+count:
+
+```csharp
+Fixed<int, 16> buffer;                        // 16 zeros
+buffer[3] = 7;
+buffer[^1] = 9;                               // ^n counts from the end
+Fixed<float, 16> matrix = [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1];
+
+struct Vertex
+{
+    Fixed<float, 3> Pos;                      // 12 bytes inside the struct
+}
+
+const int Slots = 4;
+Fixed<string, Slots> names = ["a", "b", "c", "d"];   // the size can be an integer constant
+```
+
+* **A value, like a struct:** assigning, passing and returning copy all elements, so nothing can refer to a Fixed
+  after it is gone. Pass big ones as `ref` / `const ref` to avoid the copy.
+* **Never mixed up with heap arrays:** there is no implicit conversion in either direction. `f.ToArray()` copies into a
+  new `T[]`; `Fixed<int, 4> f = [..heapArray];` copies in (the length is checked when the program runs).
+* **Checked:** a collection expression must have exactly N elements; a constant index outside `0..N-1` is a compile
+  error, any other index is checked when the program runs.
+* `Length` is a constant, `foreach` works, and so do `Fixed` of structs, `Fixed` of `Fixed`, `Fixed` in lists,
+  `Optional<Fixed<T, N>>` and generic parameters (`T First<T>(Fixed<T, 2> pair)`).
+* A `Fixed` of plain values can be a `thread` parameter (it is copied like any value).
+* C arrays in structs (`float m[16]`, `int grid[2][3]`) are imported as `Fixed<float32, 16>` and
+  `Fixed<Fixed<int32, 3>, 2>` ([C interop](ffi-and-interop.md)).
 
 ## Strings
 

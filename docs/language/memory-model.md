@@ -14,6 +14,9 @@ var b = a;
 b.X = 99;   // a.X is still 1
 ```
 
+Fixed-size arrays ([`Fixed<T, N>`](arrays-strings-collections.md#fixed-size-arrays-fixedt-n)) are values too: their
+elements are stored inline and copied along.
+
 ## 2. Managed dynamic data uses ARC
 
 Arrays, strings, and the built-in containers (`List<T>`, `Dictionary<K,V>`, …) have reference semantics and are

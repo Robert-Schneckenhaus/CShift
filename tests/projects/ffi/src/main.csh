@@ -152,6 +152,18 @@ int Main()
         t.Check(doubler != null && doubler(21) == 42, "C function pointer called from CShift");
     }
 
+    // C arrays in structs: Fixed<T, N>, laid out exactly like in C
+    var matrix = default(Geo.GeoMatrix);
+    Geo.geo_matrix_identity(ref matrix);
+    t.Check(matrix.m.Length == 16 && matrix.m[5] == 1.0f && matrix.m[1] == 0.0f && matrix.name[0] == 'I', "C arrays filled by C");
+    matrix.m[15] = 3.0f;
+    matrix.grid[1][2] = 7;
+    matrix.grid[0][0] = 2;
+    matrix.tail = 100;
+    t.Check(Geo.geo_matrix_trace(matrix) == 6.0f, "Fixed field read by C");
+    t.Check(Geo.geo_matrix_grid_sum(matrix) == 109, "nested Fixed and the field after it");
+    t.Check(sizeof(Geo.GeoMatrix) == 100, "struct with arrays has the C size");
+
     if (t.Failed == 0)
         Console.WriteLine("ffi ok");
     return t.Failed;

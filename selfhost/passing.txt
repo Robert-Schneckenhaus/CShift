@@ -1,6 +1,7 @@
 arc_stress.csh
 builtins.csh
 collection_expressions.csh
+collection_results.csh
 console_stderr.csh
 const_default.csh
 const_eval.csh
@@ -71,6 +72,15 @@ err_error_pattern_type.csh
 err_error_void_condition.csh
 err_extern_struct.csh
 err_fallthrough.csh
+err_fixed_args.csh
+err_fixed_const_ref.csh
+err_fixed_count.csh
+err_fixed_from_array.csh
+err_fixed_index.csh
+err_fixed_size.csh
+err_fixed_size_variable.csh
+err_fixed_thread_string.csh
+err_fixed_to_array.csh
 err_foreach_struct.csh
 err_function_call_args.csh
 err_function_instance_method.csh
@@ -113,6 +123,7 @@ err_nested_if.csh
 err_nested_loop.csh
 err_no_main.csh
 err_no_overload.csh
+err_number_type.csh
 err_optional_condition.csh
 err_optional_ternary.csh
 err_private_field.csh
@@ -156,6 +167,8 @@ error_enum.csh
 error_pattern.csh
 error_void.csh
 exit_code.csh
+fixed_arrays.csh
+fixed_thread.csh
 function_pointers.csh
 globals.csh
 interface_params.csh
@@ -176,6 +189,8 @@ panic_bounds.csh
 panic_dictionary_key.csh
 panic_divzero.csh
 panic_empty_union.csh
+panic_fixed_index.csh
+panic_fixed_spread.csh
 panic_list_index.csh
 panic_min_div.csh
 panic_multiply.csh

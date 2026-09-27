@@ -25,6 +25,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed)) |
 | Constant slices: `const ReadOnlySlice<int> P = [2, 3, ..Q];`, indexing/slicing/`Length` in constants | ✔ (self-hosted, [constants](constants-and-globals.md#constant-slices)) |
 | Collection expressions: `[a, b, ..c]` as `T[]`, `Slice<T>`, `List<T>`, `HashSet<T>` or any struct with `Create()`/`Add(T)` | ✔ (self-hosted, [collection expressions](arrays-strings-collections.md#collection-expressions)) |
+| `Fixed<T, N>`: fixed-size arrays stored inline (values: on the stack, inside structs), C arrays in structs imported as `Fixed` | ✔ (self-hosted, [fixed-size arrays](arrays-strings-collections.md#fixed-size-arrays-fixedt-n)) |
 | Slices: `a[i..j]`, `a[..j]`, `a[i..]`, `a[^n]`; views `Slice<T>`, `ReadOnlySlice<T>` and `StringSlice` (no copy, `ToString()`/`ToArray()` copy) | ✔ (self-hosted, [slices](arrays-strings-collections.md#slices)) |
 | Error enums (`error E { ... }`), `error(E.X)`, typed results `Error<T, E>` / `E<T>`, `is E code`, `case E.X:` | ✔ (self-hosted, [error handling](error-handling.md#error-enums-typed-error-codes)) |
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |

@@ -552,6 +552,8 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     var node = tree.GetType(TypeRef { Id = refType });
     var types = cg.Types;
 
+    if (node.Kind == TypeRefKind.Number)
+        Fail(cg, node.Loc, "a number is not a type (a number is only the size in Fixed<T, N>)");
     if (node.Kind == TypeRefKind.Pointer)
         return types.PointerTo(ResolveType(cg, node.Elem.Id, file, env));
     if (node.Kind == TypeRefKind.Array)
@@ -597,6 +599,8 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
             Fail(cg, node.Loc, "'Slice' expects exactly one type argument (Slice<T>)");
         return types.SliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
     }
+    if (!found && node.Path.Length == 1 && dotted == "Fixed")
+        return ResolveFixedType(cg, node, file, env);
     if (!found && node.Path.Length == 1 && dotted == "Enum" && node.Args.Length == 1)
         Fail(cg, node.Loc, "'Enum<T>' is not a type; it gives facts about an enum: Enum<T>.Count, .Min, .Max, .Values, .Names");
     if (!found && node.Path.Length == 1 && dotted == "ReadOnlySlice")
@@ -749,7 +753,9 @@ string LlvmType(Compiler cg, int t)
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
-        return "{ ptr, ptr, i64 }"; // the block that owns the elements, the first element, the length (Slices.csh)
+        return "{ ptr, ptr, i64 }";
+    case TypeKind.Fixed:
+        return "[" + types.Count(t).ToString() + " x " + LlvmType(cg, types.Elem(t)) + "]"; // the block that owns the elements, the first element, the length (Slices.csh)
     default:
         return "ptr"; // string, pointer, array, null
     }
@@ -777,6 +783,7 @@ bool NeedsArc(Compiler cg, int t)
         r = true;
         break;
     case TypeKind.Optional:
+    case TypeKind.Fixed:
         r = NeedsArc(cg, info.Elem);
         break;
     case TypeKind.Struct:

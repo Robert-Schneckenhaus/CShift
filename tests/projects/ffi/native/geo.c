@@ -165,3 +165,25 @@ GeoCallback geo_get_doubler(void) { return doubler; }
 
 void geo_canvas_set_callback(GeoCanvas* canvas, GeoCallback cb) { canvas->callback = cb; }
 int geo_canvas_fire(GeoCanvas* canvas, int v) { return canvas->callback ? canvas->callback(v) : -1; }
+
+void geo_matrix_identity(GeoMatrix* matrix)
+{
+    for (int i = 0; i < 16; i++)
+        matrix->m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+    matrix->name[0] = 'I';
+    matrix->name[1] = 0;
+}
+
+float geo_matrix_trace(const GeoMatrix* matrix)
+{
+    return matrix->m[0] + matrix->m[5] + matrix->m[10] + matrix->m[15];
+}
+
+int geo_matrix_grid_sum(const GeoMatrix* matrix)
+{
+    int sum = matrix->tail;
+    for (int r = 0; r < 2; r++)
+        for (int c = 0; c < 3; c++)
+            sum += matrix->grid[r][c];
+    return sum;
+}

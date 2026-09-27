@@ -40,7 +40,13 @@ bool IsCollectionBuilder(Compiler cg, int t)
 int CollectionConversionCost(Compiler cg, int to)
 {
     var types = cg.Types;
-    if (types.IsArray(to) || types.IsElemSlice(to) || IsCollectionBuilder(cg, to))
+    // Optional<T> and Error<T> take a collection that T takes (one step more)
+    if (types.IsResultLike(to))
+    {
+        int inner = types.IsVoid(types.Elem(to)) ? -1 : CollectionConversionCost(cg, types.Elem(to));
+        return inner < 0 ? -1 : inner + 1;
+    }
+    if (types.IsArray(to) || types.IsElemSlice(to) || types.IsFixed(to) || IsCollectionBuilder(cg, to))
         return 2;
     return -1;
 }
@@ -74,8 +80,10 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
     var n = cg.Tree.GetCollection(e);
     if (to != 0 && types.IsStruct(to))
         return EmitCollectionBuilder(cg, n, to, loc);
+    if (to != 0 && types.IsFixed(to))
+        return EmitFixedCollection(cg, e, n, to, loc);
     if (to != 0 && !types.IsArray(to) && !types.IsElemSlice(to))
-        Fail(cg, loc, "a collection expression cannot become '" + types.Name(to) + "' (only arrays, Slice<T>, ReadOnlySlice<T> and structs with Create() and Add())");
+        Fail(cg, loc, "a collection expression cannot become '" + types.Name(to) + "' (only arrays, Slice<T>, ReadOnlySlice<T>, Fixed<T, N> and structs with Create() and Add())");
 
     // the items, left to right: owned element values, and for ..c the part of c to copy
     int elem = to == 0 ? 0 : types.Elem(to);
@@ -99,7 +107,8 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
             offsets[i] = types.IsArray(src.Type) ? "0" : SliceOffset(cg, src.Type, parts);
             continue;
         }
-        Value v = SettleCollection(cg, EmitRValue(cg, item));
+        // with a known element type an inner [..] takes it ([[1, 2], [3]] as int[][]); otherwise it becomes an array
+        Value v = elem != 0 ? EmitRValue(cg, item) : SettleCollection(cg, EmitRValue(cg, item));
         if (elem == 0)
         {
             var k = types.Kind(v.Type);

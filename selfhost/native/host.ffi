@@ -769,6 +769,18 @@
       "retOut": true
     },
     {
+      "name": "ClangArraySize",
+      "returns": "int64",
+      "params": [
+        {
+          "name": "t",
+          "type": "CXType",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_array_size"
+    },
+    {
       "name": "ExecutablePath",
       "returns": "string",
       "params": [],

@@ -349,7 +349,15 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     if (IsUnionType(cg, to) && UnionMemberIndex(cg, to, from) >= 0)
         return UnionFromMember(cg, v, to, UnionMemberIndex(cg, to, from));
     if (types.Kind(from) == TypeKind.Collection)
+    {
+        // [..] as Optional<T> / Error<T>: build the T, then wrap it like any other value
+        if (types.IsResultLike(to))
+        {
+            string payload = Consume(cg, ConvertValue(cg, v, types.Elem(to), loc));
+            return Rvalue(to, MakeSome(cg, to, payload), NeedsArc(cg, to));
+        }
         return EmitCollection(cg, v.CollectionNode, to, loc);
+    }
     if (types.Kind(from) == TypeKind.Lambda)
     {
         if (!types.IsFunction(to))
@@ -370,11 +378,15 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
             hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
                    ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
         if (types.Kind(from) == TypeKind.Collection)
-            hint = " (a collection expression becomes an array, a Slice<T>, a ReadOnlySlice<T>, or a struct with 'static Create()' and 'Add(T)')";
+            hint = " (a collection expression becomes an array, a Slice<T>, a ReadOnlySlice<T>, a Fixed<T, N>, or a struct with 'static Create()' and 'Add(T)')";
         if (types.IsStringSlice(from) && types.IsString(to))
             hint = " (a slice is a view; copy it with .ToString())";
         if (types.IsElemSlice(from) && types.IsArray(to))
             hint = " (a slice is a view; copy it with .ToArray())";
+        if (types.IsFixed(from) && (types.IsArray(to) || types.IsSlice(to)))
+            hint = " (a Fixed<T, N> is a value stored inline; copy it into a heap array with .ToArray())";
+        if (types.IsFixed(to) && (types.IsArray(from) || types.IsSlice(from)))
+            hint = " (copy the elements into the Fixed with a collection expression: [..values])";
         if (types.IsReadOnlySlice(from) && types.Kind(to) == TypeKind.Slice)
             hint = " (a ReadOnlySlice cannot become writable; copy it with .ToArray())";
         if (IsErrorEnum(cg, from) && types.IsResultLike(to))

@@ -86,7 +86,7 @@ struct TypeRef
 // Types
 // ---------------------------------------------------------------------------
 
-enum TypeRefKind : int32 { Named, Pointer, Array }
+enum TypeRefKind : int32 { Named, Pointer, Array, Number } // Number: the size of Fixed<T, 16> (Path[0] = digits)
 
 struct TypeRefNode
 {
@@ -660,6 +660,8 @@ struct Ast
             return TypeToString(node.Elem) + "*";
         case TypeRefKind.Array:
             return TypeToString(node.Elem) + "[]";
+        case TypeRefKind.Number:
+            return node.Path[0];
         default:
             var sb = StringBuilder.Create();
             for (var i = 0; i < node.Path.Length; i += 1)

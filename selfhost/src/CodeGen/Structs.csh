@@ -495,6 +495,8 @@ Value EmitMember(Compiler cg, Expr e)
         string len = cg.Ir.Call("i64", "@__cs_len", "ptr " + o.V);
         return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
     }
+    if (types.IsFixed(t) && m.Name == "Length")
+        return ConstInt(cg, types.I32, (int64)types.Count(t)); // a constant: the number of elements is part of the type
     if (types.IsSlice(t) && m.Name == "Length")
     {
         Value o = ToRValue(cg, obj);

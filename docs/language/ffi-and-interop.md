@@ -19,7 +19,8 @@ link "m";   // link against a system library (here, libm)
 
 For a real library, hand-writing every declaration doesn't scale. `using Name from "header.h";` imports a C header's
 functions, structs, enums and constants as a namespace, with the types mapped automatically (`const char*` →
-`string`, `size_t` → `nuint`, a pointer parameter → `ref T`, and so on):
+`string`, `size_t` → `nuint`, a pointer parameter → `ref T`, an array in a struct (`float m[16]`) →
+[`Fixed<float32, 16>`](arrays-strings-collections.md#fixed-size-arrays-fixedt-n), and so on):
 
 ```csharp
 using Zlib from "zlib.h";
