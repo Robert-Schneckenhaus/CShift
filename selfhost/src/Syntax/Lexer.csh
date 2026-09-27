@@ -472,8 +472,11 @@ struct Lexer
                 tokens.Add(Token { Kind = anyHole ? TokenKind.InterpMid : TokenKind.InterpStart, Loc = textLoc, Text = text.ToString() });
                 text.Clear();
                 anyHole = true;
-                // the tokens of the hole, up to the matching '}'
+                // the tokens of the hole, up to the matching '}'; at the top level of the hole, ",8" (alignment) and
+                // ":F2" (format) end the expression, unless the ':' belongs to 'a ? b : c'
                 int depth = 0;
+                int nesting = 0;       // ( and [
+                int questions = 0;     // '?' at the top level that still wait for their ':'
                 int first = tokens.Count();
                 while (true)
                 {
@@ -483,6 +486,13 @@ struct Lexer
                     char h = Peek(0);
                     if (h == '}' && depth == 0)
                         break;
+                    if (depth == 0 && nesting == 0 && tokens.Count() > first &&
+                        ((h == ',' && AlignmentFollows()) || (h == ':' && questions == 0)))
+                    {
+                        var format = try LexHoleFormat();
+                        tokens.Add(format);
+                        break;
+                    }
                     if (h == '$' && Peek(1) == '"')
                     {
                         try LexInterpolated(tokens);
@@ -504,6 +514,14 @@ struct Lexer
                         depth += 1;
                     else if (tok.Kind == TokenKind.RBrace)
                         depth -= 1;
+                    else if (tok.Kind == TokenKind.LParen || tok.Kind == TokenKind.LBracket)
+                        nesting += 1;
+                    else if (tok.Kind == TokenKind.RParen || tok.Kind == TokenKind.RBracket)
+                        nesting -= 1;
+                    else if (tok.Kind == TokenKind.Question && depth == 0 && nesting == 0)
+                        questions += 1;
+                    else if (tok.Kind == TokenKind.Colon && depth == 0 && nesting == 0 && questions > 0)
+                        questions -= 1;
                     tokens.Add(tok);
                 }
                 if (tokens.Count() == first)
@@ -525,6 +543,61 @@ struct Lexer
         }
         tokens.Add(Token { Kind = anyHole ? TokenKind.InterpEnd : TokenKind.StringLit, Loc = anyHole ? textLoc : start, Text = text.ToString() });
         return;
+    }
+
+    // True if the ',' at the current position starts an alignment: ", -12" followed by ':' or '}'.
+    bool AlignmentFollows()
+    {
+        int i = 1;
+        while (Peek(i) == ' ')
+            i += 1;
+        if (Peek(i) == '-')
+            i += 1;
+        if (!Char.IsDigit(Peek(i)))
+            return false;
+        while (Char.IsDigit(Peek(i)))
+            i += 1;
+        while (Peek(i) == ' ')
+            i += 1;
+        return Peek(i) == ':' || Peek(i) == '}';
+    }
+
+    // ",-8:F2" at the end of a hole, up to (not including) the '}': an InterpFormat token.
+    Error<Token> LexHoleFormat()
+    {
+        SourceLoc loc = Here();
+        int64 alignment = 0;
+        if (Peek(0) == ',')
+        {
+            Advance();
+            while (Peek(0) == ' ')
+                Advance();
+            bool negative = Peek(0) == '-';
+            if (negative)
+                Advance();
+            while (Char.IsDigit(Peek(0)))
+            {
+                alignment = alignment * 10 + (int64)((int)Advance() - (int)'0');
+                if (alignment > 1000000)
+                    return error("the alignment of an interpolation hole is too large", loc.Pack());
+            }
+            if (negative)
+                alignment = -alignment;
+            while (Peek(0) == ' ')
+                Advance();
+        }
+        var format = StringBuilder.Create();
+        if (Peek(0) == ':')
+        {
+            Advance();
+            while (!AtEnd() && Peek(0) != '}' && Peek(0) != '"' && Peek(0) != '\n')
+                format.Append(Advance());
+            if (Peek(0) != '}')
+                return error("expected '}' after the format of an interpolation hole", Here().Pack());
+            if (format.Length() == 0)
+                return error("empty format after ':' in an interpolated string", loc.Pack());
+        }
+        return Token { Kind = TokenKind.InterpFormat, Loc = loc, Text = format.ToString(), IntValue = unchecked((uint64)alignment) };
     }
 
     Error<Token> LexChar()

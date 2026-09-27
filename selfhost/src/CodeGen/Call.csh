@@ -830,6 +830,76 @@ Value EmitExtensionCall(Compiler cg, string ns, bool hasSelf, Value self, string
 // Builtin methods of strings, numbers, bool and char
 // ---------------------------------------------------------------------------
 
+// number.ToString("F2"): NumberFormat.FormatInt/FormatUInt/FormatFloat of the standard library (stdlib/numberformat.csh).
+// A format written as a string literal is checked now.
+Value EmitFormatNumber(Compiler cg, Value obj, Arg format, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    Value v = ToRValue(cg, obj);
+    int t = v.Type;
+    bool floating = types.IsFloat(t);
+    if (!format.Source.IsNull() && format.Source.Kind == ExprKind.StringLit)
+    {
+        string why = CheckNumberFormat(cg.Tree.GetStringLit(format.Source).Value, floating);
+        if (why.Length > 0)
+            Fail(cg, format.Source.Loc, why);
+    }
+    var args = new Arg[3];
+    string function;
+    if (floating)
+    {
+        function = "FormatFloat";
+        string wide = types.Bits(t) == 32 ? ir.Cast("fpext", "float", v.V, "double") : v.V;
+        args[0] = Arg { V = Rvalue(types.F64, wide, false) };
+        args[1] = Arg { V = MakeBool(cg, types.Bits(t) == 32 ? "true" : "false") };
+    }
+    else
+    {
+        bool isSigned = types.IsSigned(t);
+        function = isSigned ? "FormatInt" : "FormatUInt";
+        string wide = types.Bits(t) == 64 ? v.V : ir.Cast(isSigned ? "sext" : "zext", LlvmType(cg, t), v.V, "i64");
+        args[0] = Arg { V = Rvalue(isSigned ? types.I64 : types.U64, wide, false) };
+        args[1] = Arg { V = ConstInt(cg, types.I32, (int64)types.Bits(t)) };
+    }
+    args[2] = format;
+    bool found = false;
+    Value r = EmitExtensionCall(cg, "NumberFormat", false, Value { }, function, args, loc, ref found);
+    if (!found)
+        Fail(cg, loc, "number formats need the standard library (NumberFormat." + function + " is missing)");
+    return r;
+}
+
+// "" if the text is a number format (a letter and up to two digits) for this kind of number, otherwise why not. The
+// same rules as NumberFormat.Check in the standard library.
+string CheckNumberFormat(string format, bool floating)
+{
+    bool valid = format.Length >= 1 && format.Length <= 3;
+    char letter = valid ? format[0] : ' ';
+    for (var i = 1; valid && i < format.Length; i += 1)
+        valid = format[i] >= '0' && format[i] <= '9';
+    if (valid)
+    {
+        switch (letter)
+        {
+        case 'D': case 'd': case 'X': case 'x': case 'B': case 'b':
+        case 'F': case 'f': case 'N': case 'n': case 'E': case 'e': case 'P': case 'p':
+            break;
+        case 'G': case 'g':
+            valid = format.Length == 1;
+            break;
+        default:
+            valid = false;
+            break;
+        }
+    }
+    if (!valid)
+        return "'" + format + "' is not a number format (D, X, B, F, N, E, P or G, optionally followed by up to two digits; G takes none)";
+    if (floating && (letter == 'D' || letter == 'd' || letter == 'X' || letter == 'x' || letter == 'B' || letter == 'b'))
+        return "the number format '" + format + "' is only for integers";
+    return "";
+}
+
 void ExpectArgs(Compiler cg, Arg[] args, int n, string type, string method, SourceLoc loc)
 {
     if (args.Length != n)
@@ -853,6 +923,10 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
     var ir = cg.Ir;
     int t = obj.Type;
     string tname = types.Name(t);
+
+    if (method == "ToString" && args.Length == 1 && !types.IsNumeric(t) &&
+        (types.IsString(t) || types.IsStringSlice(t) || types.IsBool(t) || types.IsChar(t) || types.IsEnum(t)))
+        Fail(cg, loc, "a number format (like ':F2' or ToString(\"F2\")) is only for numbers, not for '" + tname + "'");
 
     if (types.IsSharedPtr(t))
     {
@@ -979,6 +1053,8 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
     {
         if (method == "ToString")
         {
+            if (args.Length == 1 && types.IsNumeric(t))
+                return EmitFormatNumber(cg, obj, args[0], loc);
             ExpectArgs(cg, args, 0, tname, method, loc);
             return Rvalue(types.String, EmitToString(cg, obj, loc), true);
         }

@@ -46,6 +46,9 @@ empty), `TryPop()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = top), 
 `Peek()` (both panic when empty), `TryDequeue()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = front),
 `Contains(v)`, `Clear()`, `ToArray()` (front first). `foreach` goes from the front to the back. Both are handles to
 shared storage, like `List`.
+**Number formats** (`numberformat.csh`) — `x.ToString("F2")`, `$"{x,8:F2}"`: `D`, `X`, `B`, `F`, `N`, `E`, `P`, `G`
+with up to two digits, see [number formats](language/arrays-strings-collections.md#number-formats-and-alignment).
+`NumberFormat.Check(format, floatingPoint)` tells why a format is not valid (`""` if it is).
 **`Process.Run("command")`** runs a command line through the shell and returns its exit code; `RunCapture("command")`
 also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
 (`Optional<string>`); `IsWindows()` reports the platform.

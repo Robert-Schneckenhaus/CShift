@@ -28,7 +28,7 @@ the git log.
 
 ## Standard library
 
-- [ ] Streams, `Stack`/`Queue`, date and time, number formatting options (`ToString("F2")`), more encodings.
+- [ ] Streams, date and time, more encodings.
 - [ ] `Directory`: deleting, moving; `File`: moving, timestamps.
 
 ## Ideas (not started)

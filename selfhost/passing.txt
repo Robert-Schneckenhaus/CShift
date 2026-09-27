@@ -127,6 +127,9 @@ err_nested_if.csh
 err_nested_loop.csh
 err_no_main.csh
 err_no_overload.csh
+err_number_format.csh
+err_number_format_float.csh
+err_number_format_string.csh
 err_number_type.csh
 err_optional_condition.csh
 err_optional_ternary.csh
@@ -188,6 +191,7 @@ main_try.csh
 main_void.csh
 misc_features.csh
 native_int.csh
+number_formats.csh
 panic_array_copy.csh
 panic_bounds.csh
 panic_custom_location.csh
@@ -205,6 +209,7 @@ panic_negative_array.csh
 panic_negative_index.csh
 panic_null_array.csh
 panic_null_function.csh
+panic_number_format.csh
 panic_output_kept.csh
 panic_overflow.csh
 panic_slice_index.csh
