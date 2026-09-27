@@ -79,6 +79,22 @@ unchecked
 }
 ```
 
+A panic prints its reason and where it happened, then ends the program with exit code 101. An index check also
+shows the index and the length. When a function of the standard library rejects its arguments (`List.Get` with an
+index out of range, `Dictionary.Get` with a missing key, ...), the panic also shows where the program called it:
+
+```text
+panic: array index out of range (index 5, length 3)
+  at src/Game/World.csh:482:21 in World.GetTile
+
+panic: List index out of range (index 4, count 2)
+  at stdlib/list.csh:58:30 in System.List<int32>.Get
+  called from src/Game/Party.csh:77:31 in Party.Member
+```
+
+The same goes for `Environment.Panic("message")`. The path is the one the compiler was given; in a project it is
+relative to the project folder.
+
 ## Operators
 
 Arithmetic (`+ - * / %`), comparison (`== != < > <= >=`), logic (`&& || !`), bitwise (`& | ^ ~ << >>`), and the usual

@@ -92,7 +92,7 @@ Value EmitFixedElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     }
     string addr = FixedAddress(cg, obj);
     string i = SliceBound(cg, index, fromEnd, n.ToString());
-    EmitPanicIf(cg, ir.ICmp("uge", "i64", i, n.ToString()), "fixed array index out of range");
+    EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i, n.ToString()), "fixed array index out of range", i, n.ToString());
     string p = ir.Gep(LlvmType(cg, elem), addr, "i64 " + i);
     if (!obj.IsLValue)
         return Rvalue(elem, ir.Load(LlvmType(cg, elem), p), false);

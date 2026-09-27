@@ -21,6 +21,9 @@ string RuntimeGlobals(bool windows, bool arcStats)
 {
     string text =
         "@.cs.panic = private constant [11 x i8] c\"panic: %s\\0A\\00\"\n" +
+        "@.cs.panic.at = private constant [9 x i8] c\"  at %s\\0A\\00\"\n" +
+        "@.cs.panic.from = private constant [18 x i8] c\"  called from %s\\0A\\00\"\n" +
+        "@.cs.panic.index = private constant [37 x i8] c\"panic: %s (index %lld, length %lld)\\0A\\00\"\n" +
         "@.cs.empty = private constant [1 x i8] zeroinitializer\n" +
         "@.cs.oom = private constant [14 x i8] c\"out of memory\\00\"\n" +
         "@.cs.line = private constant [6 x i8] c\"%.*s\\0A\\00\"\n" +
@@ -68,6 +71,25 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     // panic: prints "panic: <message>" to stderr and exits with code 101
     text += "define internal void @__cs_panic(ptr %msg) noinline noreturn {\nentry:\n" + StderrLoad(windows) +
             "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic, ptr %msg)\n" +
+            "  call void @exit(i32 101)\n  unreachable\n}\n\n";
+
+    // A failed check in the program: "panic: <message>", the line "  at <file:line:column in Function>" and, for a check
+    // inside a library function that reports its caller, "  called from <call site>" (null: none).
+    text += "define internal void @__cs_panic_where(ptr %err, ptr %where, ptr %caller) {\nentry:\n" +
+            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.at, ptr %where)\n" +
+            "  %known = icmp ne ptr %caller, null\n" +
+            "  br i1 %known, label %called, label %done\n" +
+            "called:\n  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.from, ptr %caller)\n  br label %done\n" +
+            "done:\n  ret void\n}\n\n";
+    text += "define internal void @__cs_panic_at(ptr %msg, ptr %where, ptr %caller) noinline noreturn {\nentry:\n" + StderrLoad(windows) +
+            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic, ptr %msg)\n" +
+            "  call void @__cs_panic_where(ptr %err, ptr %where, ptr %caller)\n" +
+            "  call void @exit(i32 101)\n  unreachable\n}\n\n";
+    // ... and for an index: "panic: <message> (index i, length n)"
+    text += "define internal void @__cs_panic_index(ptr %msg, i64 %index, i64 %length, ptr %where, ptr %caller) noinline noreturn {\nentry:\n" +
+            StderrLoad(windows) +
+            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.index, ptr %msg, i64 %index, i64 %length)\n" +
+            "  call void @__cs_panic_where(ptr %err, ptr %where, ptr %caller)\n" +
             "  call void @exit(i32 101)\n  unreachable\n}\n\n";
 
     // alloc(payload size, length): a zeroed block with reference count 1

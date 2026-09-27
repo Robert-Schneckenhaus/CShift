@@ -423,6 +423,7 @@ struct FuncDecl
     bool IsStatic;
     bool IsVariadic;
     bool IsThread;        // 'thread' function: only callable through 'start', runs on its own OS thread
+    bool CallsPanic;      // the body calls Environment.Panic (a library function then reports where it was called from)
     // FFI (imported C functions)
     string Symbol;
     bool RetCString;

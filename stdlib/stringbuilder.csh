@@ -81,7 +81,7 @@ struct StringBuilder
     char Get(int index)
     {
         if (index < 0 || index >= Length())
-            Environment.Panic("StringBuilder index out of range");
+            Environment.Panic("StringBuilder index out of range (index " + index.ToString() + ", length " + Length().ToString() + ")");
         return (char)_state[0].Data[index];
     }
 
@@ -98,7 +98,7 @@ struct StringBuilder
         if (_state == null || start >= _state[0].Length)
             return "";
         if (start < 0)
-            Environment.Panic("StringBuilder index out of range");
+            Environment.Panic("StringBuilder index out of range (index " + start.ToString() + ")");
         return string.FromBytes(_state[0].Data, start, _state[0].Length - start);
     }
 
@@ -106,7 +106,7 @@ struct StringBuilder
     void Truncate(int length)
     {
         if (length < 0 || length > Length())
-            Environment.Panic("StringBuilder length out of range");
+            Environment.Panic("StringBuilder length out of range (length " + length.ToString() + ", current length " + Length().ToString() + ")");
         if (_state != null)
             _state[0].Length = length;
     }

@@ -111,7 +111,8 @@ Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc lo
         HoldTemp(cg, whole);
         string length = ArrayLength(cg, whole.V);
         string fromStart = SliceBound(cg, index, true, length);
-        EmitPanicIf(cg, ir.ICmp("uge", "i64", fromStart, length), types.IsArray(obj.Type) ? "array index out of range" : "string index out of range");
+        EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", fromStart, length), types.IsArray(obj.Type) ? "array index out of range" : "string index out of range",
+                         fromStart, length);
         string first = DataPtr(cg, whole.V);
         if (types.IsString(obj.Type))
             return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", first, "i64 " + fromStart)), false);
@@ -131,7 +132,7 @@ Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc lo
         Value arr = ToRValue(cg, obj);
         HoldTemp(cg, arr);
         string len = ArrayLength(cg, arr.V);
-        EmitPanicIf(cg, ir.ICmp("uge", "i64", i64v, len), types.IsArray(t) ? "array index out of range" : "string index out of range");
+        EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i64v, len), types.IsArray(t) ? "array index out of range" : "string index out of range", i64v, len);
         string data = DataPtr(cg, arr.V);
         if (types.IsString(t))
             return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", data, "i64 " + i64v)), false);

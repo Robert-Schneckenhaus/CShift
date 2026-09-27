@@ -186,12 +186,15 @@ misc_features.csh
 native_int.csh
 panic_array_copy.csh
 panic_bounds.csh
+panic_custom_location.csh
 panic_dictionary_key.csh
 panic_divzero.csh
 panic_empty_union.csh
 panic_fixed_index.csh
 panic_fixed_spread.csh
+panic_library_caller.csh
 panic_list_index.csh
+panic_location.csh
 panic_min_div.csh
 panic_multiply.csh
 panic_negative_array.csh

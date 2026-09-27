@@ -123,7 +123,18 @@ void EmitFunctionBody(Compiler cg, int instance)
         string pty = IsInterfaceType(cg, fi.ParamTypes[i]) ? "{ ptr, ptr }" : (fi.ParamRefs[i] != 0 ? "ptr" : AbiParam(cg, fi.ParamTypes[i]));
         sb.Append(pty + " %arg$" + i.ToString());
     }
-    ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + fi.LlvmName + "(" + sb.ToString() + ")");
+    // a library function that can panic: the body gets the call site as a hidden last parameter (ReportsCaller), and
+    // the plain entry point forwards to it without one
+    bool reports = ReportsCaller(cg, fi);
+    string bodyName = fi.LlvmName;
+    if (reports)
+    {
+        EmitCallerForwarder(cg, fi, sb.ToString());
+        bodyName = CallerEntryName(fi.LlvmName);
+        sb.Append((sb.Length() > 0 ? ", " : "") + "ptr %caller.arg");
+        cg.Fn[0].CallerArg = "%caller.arg";
+    }
+    ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + bodyName + "(" + sb.ToString() + ")");
     PushScope(cg);
 
     if (fi.HasThis)
@@ -186,6 +197,19 @@ void EmitFunctionBody(Compiler cg, int instance)
     ir.EndFunction();
 }
 
+// The plain entry point of a function that reports its caller: calls name.at without a call site.
+void EmitCallerForwarder(Compiler cg, FuncInfo fi, string parameters)
+{
+    string ret = AbiReturn(cg, fi.Ret);
+    // the parameters are passed on as they are ("type %name"), plus no call site
+    string args = parameters + (parameters.Length > 0 ? ", " : "") + "ptr null";
+    string call = "call " + ret + " " + CallerEntryName(fi.LlvmName) + "(" + args + ")";
+    // 'ret' takes the plain type ("zeroext i1" -> "i1")
+    string plain = ret.StartsWith("zeroext ") || ret.StartsWith("signext ") ? ret.Substring(8) : ret;
+    string body = ret == "void" ? "  " + call + "\n  ret void\n" : "  %r = " + call + "\n  ret " + plain + " %r\n";
+    cg.Ir.AppendFunctionText("define internal " + ret + " " + fi.LlvmName + "(" + parameters + ") {\nentry:\n" + body + "}\n\n");
+}
+
 void EmitBlock(Compiler cg, Stmt block, bool newScope)
 {
     var b = cg.Tree.GetBlock(block);
@@ -212,6 +236,8 @@ void EmitBlock(Compiler cg, Stmt block, bool newScope)
 void EmitStmt(Compiler cg, Stmt s)
 {
     cg.Ir.EnsureInsertPoint();
+    if (s.Loc.Line > 0)
+        cg.St[0].Loc = s.Loc;
     switch (s.Kind)
     {
     case StmtKind.Block: EmitBlock(cg, s, true); break;

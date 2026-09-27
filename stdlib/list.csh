@@ -55,14 +55,14 @@ struct List<T>
     T Get(int index)
     {
         if (index < 0 || index >= Count())
-            Environment.Panic("List index out of range");
+            Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
         return _state[0].Items[index];
     }
 
     void Set(int index, T value)
     {
         if (index < 0 || index >= Count())
-            Environment.Panic("List index out of range");
+            Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
         _state[0].Items[index] = value;
     }
 
@@ -83,7 +83,7 @@ struct List<T>
     void Insert(int index, T value)
     {
         if (index < 0 || index > Count())
-            Environment.Panic("List index out of range");
+            Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
         _Grow(Count() + 1);
         int count = _state[0].Count;
         Array.Copy(_state[0].Items, index, _state[0].Items, index + 1, count - index);
@@ -94,7 +94,7 @@ struct List<T>
     void RemoveAt(int index)
     {
         if (index < 0 || index >= Count())
-            Environment.Panic("List index out of range");
+            Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
         int count = _state[0].Count;
         Array.Copy(_state[0].Items, index + 1, _state[0].Items, index, count - index - 1);
         _state[0].Items[count - 1] = default(T);

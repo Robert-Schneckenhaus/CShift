@@ -10,7 +10,19 @@ using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
 
+// Every expression is written through here: the current location is the expression's own while it (and the checks
+// after its operands) is written.
 Value EmitExpr(Compiler cg, Expr e)
+{
+    SourceLoc outer = cg.St[0].Loc;
+    if (e.Loc.Line > 0)
+        cg.St[0].Loc = e.Loc;
+    Value v = EmitExprKind(cg, e);
+    cg.St[0].Loc = outer;
+    return v;
+}
+
+Value EmitExprKind(Compiler cg, Expr e)
 {
     switch (e.Kind)
     {
@@ -246,7 +258,61 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
 // Checks that stop the program
 // ---------------------------------------------------------------------------
 
-// Continues normally unless 'cond' is true: then the program panics with the message.
+// Where a panic happens, as a C string: "path:line:column in Function" (the current location, see EmitExpr). The path
+// is the one the compiler was given; in a project it is relative to the project folder.
+string PanicWhere(Compiler cg)
+{
+    SourceLoc loc = cg.St[0].Loc;
+    string where = "";
+    if (loc.Line > 0 && loc.File >= 0 && loc.File < cg.Diag.Files.Count())
+    {
+        string path = cg.Diag.Files.Get(loc.File);
+        string project = cg.St[0].ProjectDir;
+        if (project.Length > 0 && project != "." && path.Length > project.Length + 1 && path.StartsWith(project) &&
+            (path[project.Length] == '/' || path[project.Length] == '\\'))
+            path = path.Substring(project.Length + 1);
+        where = path + ":" + loc.Line.ToString() + ":" + loc.Col.ToString();
+    }
+    int fn = cg.Fn.Length > 0 ? cg.Fn[0].Func : -1;
+    if (fn >= 0 && fn < cg.Instances.Count())
+        where += (where.Length > 0 ? " in " : "in ") + cg.Instances.Get(fn).Name;
+    return cg.Ir.CString(where.Length > 0 ? where : "unknown location");
+}
+
+// True while a function of the standard library is written.
+bool InLibrary(Compiler cg)
+{
+    if (cg.Fn.Length == 0)
+        return false;
+    int file = cg.Fn[0].File;
+    return file >= 0 && file < cg.Files.Count() && cg.Files.Get(file).IsPrelude;
+}
+
+// A function of the standard library that calls Environment.Panic reports where the program called it: it has a second
+// entry point (name.at) with the call site as a hidden last parameter. The plain entry point (for function values,
+// method tables and the library itself) passes no call site.
+bool ReportsCaller(Compiler cg, FuncInfo fi)
+{
+    var d = cg.Funcs.Get(fi.Entry).Decl;
+    return d.CallsPanic && !d.IsExtern && !d.IsThread && !d.Body.IsNull() && cg.Files.Get(fi.File).IsPrelude;
+}
+
+string CallerEntryName(string llvmName)
+{
+    if (llvmName.EndsWith("\""))
+        return llvmName.Substring(0, llvmName.Length - 1) + ".at\"";
+    return llvmName + ".at";
+}
+
+// The call site this function was given (a C string), or null.
+string CallerOperand(Compiler cg)
+{
+    if (cg.Fn.Length == 0 || cg.Fn[0].CallerArg == null || cg.Fn[0].CallerArg.Length == 0)
+        return "null";
+    return cg.Fn[0].CallerArg;
+}
+
+// Continues normally unless 'cond' is true: then the program panics with the message and where it happened.
 void EmitPanicIf(Compiler cg, string cond, string message)
 {
     var ir = cg.Ir;
@@ -254,7 +320,21 @@ void EmitPanicIf(Compiler cg, string cond, string message)
     string okLabel = ir.NewLabel("cont");
     ir.CondBr(cond, failLabel, okLabel);
     ir.SetBlock(failLabel);
-    ir.Call("void", "@__cs_panic", "ptr " + ir.CString(message));
+    ir.Call("void", "@__cs_panic_at", "ptr " + ir.CString(message) + ", ptr " + PanicWhere(cg) + ", ptr " + CallerOperand(cg));
+    ir.Unreachable();
+    ir.SetBlock(okLabel);
+}
+
+// Like EmitPanicIf for an index check: the message also shows the index and the length (both i64).
+void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, string length)
+{
+    var ir = cg.Ir;
+    string failLabel = ir.NewLabel("panic");
+    string okLabel = ir.NewLabel("cont");
+    ir.CondBr(cond, failLabel, okLabel);
+    ir.SetBlock(failLabel);
+    ir.Call("void", "@__cs_panic_index", "ptr " + ir.CString(message) + ", i64 " + index + ", i64 " + length + ", ptr " + PanicWhere(cg) +
+                                          ", ptr " + CallerOperand(cg));
     ir.Unreachable();
     ir.SetBlock(okLabel);
 }
@@ -595,40 +675,81 @@ void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
 }
 
 // && and ||: the right side only runs if it can change the result.
+// a && b, a || b: the right side only runs if it can change the result. A chain of the same operator (a || b || c ...)
+// is written in a loop with one join block instead of by recursion, so that its length does not use up the stack.
 Value EmitLogical(Compiler cg, Expr e)
 {
     var ir = cg.Ir;
     var b = cg.Tree.GetBinary(e);
     bool isAnd = b.Op == BinOp.LogAnd;
-    Value l = EmitCondition(cg, b.Lhs);
-    string lhsEnd = ir.CurrentBlock();
-    string rhsLabel = ir.NewLabel(isAnd ? "and.rhs" : "or.rhs");
+    var chain = List<Expr>.Create(); // e and the same operators on its left side, outermost first
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary && cg.Tree.GetBinary(leftmost).Op == b.Op)
+    {
+        chain.Add(leftmost);
+        leftmost = cg.Tree.GetBinary(leftmost).Lhs;
+    }
+    string current = EmitCondition(cg, leftmost).V;
     string endLabel = ir.NewLabel(isAnd ? "and.end" : "or.end");
-    if (isAnd)
-        ir.CondBr(l.V, rhsLabel, endLabel);
-    else
-        ir.CondBr(l.V, endLabel, rhsLabel);
+    var incoming = StringBuilder.Create();
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        var step = cg.Tree.GetBinary(chain.Get(i));
+        string fromBlock = ir.CurrentBlock();
+        string rhsLabel = ir.NewLabel(isAnd ? "and.rhs" : "or.rhs");
+        if (isAnd)
+            ir.CondBr(current, rhsLabel, endLabel);
+        else
+            ir.CondBr(current, endLabel, rhsLabel);
+        incoming.Append("[ " + (isAnd ? "false" : "true") + ", %" + fromBlock + " ], ");
 
-    ir.SetBlock(rhsLabel);
-    int mark = cg.Fn[0].Temps.Count();
-    Value r = EmitCondition(cg, b.Rhs);
-    FlushTemps(cg, mark, true);
-    string rhsEnd = ir.CurrentBlock();
+        ir.SetBlock(rhsLabel);
+        int mark = cg.Fn[0].Temps.Count();
+        current = EmitCondition(cg, step.Rhs).V;
+        FlushTemps(cg, mark, true);
+    }
+    string lastBlock = ir.CurrentBlock();
     ir.Br(endLabel);
-
     ir.SetBlock(endLabel);
-    string incoming = "[ " + (isAnd ? "false" : "true") + ", %" + lhsEnd + " ], [ " + r.V + ", %" + rhsEnd + " ]";
-    return MakeBool(cg, ir.Phi("i1", incoming));
+    incoming.Append("[ " + current + ", %" + lastBlock + " ]");
+    return MakeBool(cg, ir.Phi("i1", incoming.ToString()));
 }
 
+// a op b. A left-deep chain (a + b + c + ..., as long string concatenations are) is written in a loop instead of by
+// recursion, so that its length does not use up the stack; the order and every step are the same as with recursion.
 Value EmitBinary(Compiler cg, Expr e)
 {
     var b = cg.Tree.GetBinary(e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
         return EmitLogical(cg, e);
-    Value l = EmitRValue(cg, b.Lhs);
-    Value r = EmitRValue(cg, b.Rhs);
-    switch (b.Op)
+    var chain = List<Expr>.Create(); // e and the binary expressions on its left side, outermost first
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary)
+    {
+        var lb = cg.Tree.GetBinary(leftmost);
+        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr)
+            break;
+        chain.Add(leftmost);
+        leftmost = lb.Lhs;
+    }
+    SourceLoc outer = cg.St[0].Loc;
+    Value l = EmitRValue(cg, leftmost);
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        Expr step = chain.Get(i);
+        var sb = cg.Tree.GetBinary(step);
+        Value r = EmitRValue(cg, sb.Rhs);
+        if (step.Loc.Line > 0)
+            cg.St[0].Loc = step.Loc;
+        l = EmitBinaryStep(cg, sb.Op, l, r, step.Loc);
+    }
+    cg.St[0].Loc = outer;
+    return l;
+}
+
+Value EmitBinaryStep(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
+{
+    switch (op)
     {
     case BinOp.Eq:
     case BinOp.Ne:
@@ -636,9 +757,9 @@ Value EmitBinary(Compiler cg, Expr e)
     case BinOp.Gt:
     case BinOp.Le:
     case BinOp.Ge:
-        return EmitCompare(cg, b.Op, l, r, e.Loc);
+        return EmitCompare(cg, op, l, r, loc);
     default:
-        return EmitArithmetic(cg, b.Op, l, r, e.Loc);
+        return EmitArithmetic(cg, op, l, r, loc);
     }
 }
 
