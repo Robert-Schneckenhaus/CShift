@@ -7,7 +7,6 @@ const_default.csh
 const_eval.csh
 const_slices.csh
 consts.csh
-embed.csh
 embed_file.csh
 embed_wildcard.csh
 enum_meta.csh

@@ -88,11 +88,7 @@ The design document leaves a number of things open; these are the decisions that
 * **Methods on `const ref` objects** operate on a copy (like C#'s `in`), so the read-only guarantee holds.
 * **Built in** (generated directly by the compiler as IR, no runtime library): `Console.Write/WriteLine`,
   `Memory.Allocate/Free`, `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`,
-  `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue`,
-  `EmbedText("file")`/`EmbedNames("folder", ".ext")`/`EmbedTexts("folder", ".ext")` (files are embedded into the
-  program at compile time; paths are relative to the source file, and only string literals are accepted as
-  arguments; unlike `embed`, they also drop `\r`; replaced by `embed("folder/*.ext")`/`embed_filenames(...)` and
-  removed in the next release). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
+  `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue` (files are embedded with the keywords `embed`/`embed_filenames`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.
 * **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums,
