@@ -25,6 +25,9 @@ struct SourceLoc
 }
 
 // Collects the names of the source files and counts errors. Copies share the same state (like List<T>).
+// The number of errors after which the compiler stops.
+const int MaxErrors = 50;
+
 struct Diagnostics
 {
     List<string> Files;
@@ -51,11 +54,16 @@ struct Diagnostics
         return _errors[0] > 0;
     }
 
-    // Prints "file:line:col: error: text" to stderr.
+    // Prints "file:line:col: error: text" to stderr. After MaxErrors errors the compiler stops.
     void ReportAt(SourceLoc loc, string message)
     {
         _errors[0] += 1;
         Console.WriteErrorLine(Location(loc) + "error: " + message);
+        if (_errors[0] >= MaxErrors)
+        {
+            Console.WriteErrorLine("error: too many errors (" + MaxErrors.ToString() + "), stopping");
+            Environment.Exit(1);
+        }
     }
 
     // Reports a failed Error<T> whose code was created with SourceLoc.Pack().

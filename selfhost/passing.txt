@@ -138,6 +138,8 @@ err_read_only_slice_convert.csh
 err_read_only_slice_thread.csh
 err_read_only_slice_write.csh
 err_ref_missing.csh
+err_several_errors.csh
+err_several_methods.csh
 err_slice_copy.csh
 err_slice_readonly.csh
 err_slice_thread.csh
@@ -157,6 +159,7 @@ err_thread_instance_method.csh
 err_thread_ref_param.csh
 err_thread_shared_string.csh
 err_thread_unsafe_param.csh
+err_too_many_errors.csh
 err_try_on_optional.csh
 err_try_outside_error.csh
 err_type_mismatch.csh

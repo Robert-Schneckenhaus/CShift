@@ -49,14 +49,17 @@ The file-by-file tour is in [selfhost/README.md](../selfhost/README.md). In shor
 | `selfhost/src/Syntax` | lexer, syntax tree (arenas of nodes, handles), parser, token/tree dumps |
 | `selfhost/src/Sema` | the type table: types are interned integers |
 | `selfhost/src/Emit` | the IR writer (text) |
+| `selfhost/src/Check` | the checker: names and types of every function body before code generation, so that one run reports all errors ([semantic pass](semantic-pass.md)) |
 | `selfhost/src/CodeGen` | declarations, type resolution, generics (monomorphization), expressions, calls, statements, ARC, `Error<T>`/`Optional<T>`, threads, lambdas, interface parameters, sum types, the constant evaluator, the runtime as IR |
 | `selfhost/src/Driver` | command line, `cshift.json`, finding clang and the bundled toolchain, `.ffi` files and the header import |
 | `selfhost/native` | `host.c`: libclang (loaded at run time), the path of the executable, reading the embedded toolchain |
 | `stdlib/` | the standard library, in CShift, embedded into the compiler |
 
-There is no separate type-checking pass: checking and code generation happen in one walk over the syntax tree
-(generic bodies are walked again for every instantiation, like C++ templates). A separate semantic pass is on the
-[to-do list](../Todo.md). The compiler stops at the first error.
+Before code generation, the checker (`selfhost/src/Check`) walks every function body of the program and reports all
+the errors it finds, continuing after each one; the decisions (result types, conversions, overloads) are functions
+that it shares with code generation (`CodeGen/Rules.csh`). It is being built step by step into a full semantic pass,
+see [semantic-pass.md](semantic-pass.md): what it does not check yet is still checked by code generation, which stops
+at its first error. Generic bodies are walked again for every instantiation, like C++ templates.
 
 **Reference counting:** variables, fields and array elements own a reference; intermediate results carry a "+1" that
 is taken over when stored or released at the end of the statement. Arguments are passed borrowed; the called function

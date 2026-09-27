@@ -7,6 +7,7 @@ using System;
 using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
+using CShift.Check;
 
 // Generates the module for everything that was added with AddUnit and returns its text.
 string CompileProgram(Compiler cg, string triple)
@@ -47,6 +48,9 @@ string CompileProgram(Compiler cg, string triple)
             continue;
         GetStructType(cg, s, new int[0], se.Decl.Loc);
     }
+
+    // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).
+    CheckProgram(cg);
 
     // 2. Plain (non-generic, non-method, non-extern) functions of the program are always generated; Main is the entry point.
     int main = -1;

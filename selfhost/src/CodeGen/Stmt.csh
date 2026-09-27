@@ -304,22 +304,10 @@ void EmitVarDecl(Compiler cg, Stmt s)
         if (d.Init.IsNull())
             Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "': 'var' needs an initializer");
         init = SettleCollection(cg, init); // var a = [1, 2]: an int[]
-        t = init.Type;
-        if (types.Kind(t) == TypeKind.MethodGroup)
-        {
-            // 'var f = Square;' has the function type of Square if the name has a single meaning.
-            t = GroupFunctionType(cg, init);
-            if (t == 0)
-                Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from the function name '" + init.GroupName +
-                                "' (it is overloaded, generic or not a plain function); declare an Action/Func type");
-        }
-        if (IsInterfaceType(cg, t))
-            Fail(cg, s.Loc, "'" + d.Name + "' cannot hold the interface parameter: an interface is only a 'ref'/'const ref' parameter");
-        if (types.Kind(t) == TypeKind.Lambda)
-            Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from a lambda; declare it with its Action/Func type");
-        var k = types.Kind(t);
-        if (k == TypeKind.Null || k == TypeKind.ErrorLit || k == TypeKind.Void)
-            Fail(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from '" + types.Name(t) + "'");
+        string why = "";
+        t = VarTypeFromInit(cg, init, d.Name, ref why);
+        if (t == 0)
+            Fail(cg, s.Loc, why);
     }
 
     if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)

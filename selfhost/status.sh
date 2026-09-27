@@ -27,7 +27,11 @@ for file in "$ROOT"/tests/cases/*.csh; do
     rm -f "$exe"
     if "$CSHC" -O0 --arc-stats "${CC_ARGS[@]}" "$file" -o "$exe" > "$TMP/c.out" 2> "$TMP/c.err"; then compiled=1; else compiled=0; fi
     if [ -n "$want_error" ]; then
-        if [ $compiled -eq 0 ] && grep -qF -- "$want_error" "$TMP/c.err"; then pass+=("$name"); continue; fi
+        all=1
+        while IFS= read -r text; do
+            [ -n "$text" ] && ! grep -qF -- "$text" "$TMP/c.err" && all=0
+        done < <(directives "$file" expect-error)
+        if [ $compiled -eq 0 ] && [ $all -eq 1 ]; then pass+=("$name"); continue; fi
         if grep -q "cshc does not support" "$TMP/c.err"; then unsupported+=("$name"); else fail+=("$name"); fi
         continue
     fi

@@ -437,6 +437,9 @@ Value EmitArithmetic(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     var ir = cg.Ir;
     Value l = ToRValue(cg, l0);
     Value r = ToRValue(cg, r0);
+    string why = "";
+    if (ArithmeticType(cg, op, l, r, ref why) == 0)
+        Fail(cg, loc, why);
 
     // String concatenation (the other operand may be any primitive).
     if (op == BinOp.Add && (types.IsString(l.Type) || types.IsString(r.Type)))
@@ -514,6 +517,9 @@ Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     Value l = ToRValue(cg, l0);
     Value r = ToRValue(cg, r0);
     bool isEq = op == BinOp.Eq || op == BinOp.Ne;
+    string why = "";
+    if (CompareType(cg, op, l, r, ref why) == 0)
+        Fail(cg, loc, why);
 
     // A function name compared with a function value takes the function's type.
     if (types.Kind(l.Type) == TypeKind.MethodGroup && types.IsFunction(r.Type))
@@ -647,10 +653,9 @@ string IntPredicate(BinOp op, bool isSigned)
 Value EmitCondition(Compiler cg, Expr e)
 {
     Value v = EmitRValue(cg, e);
-    if (cg.Types.IsBool(v.Type))
-        return v;
-    RejectAmbiguousCondition(cg, v.Type, e.Loc);
-    Fail(cg, e.Loc, "a condition must be of type 'bool', not '" + cg.Types.Name(v.Type) + "' (there is no implicit conversion to bool)");
+    string why = ConditionError(cg, v.Type);
+    if (why.Length > 0)
+        Fail(cg, e.Loc, why);
     return v;
 }
 
@@ -658,21 +663,9 @@ Value EmitCondition(Compiler cg, Expr e)
 // says it: 'x is error e' / 'x is T v' for a result, 'x is T v' / 'x == null' for an optional value.
 void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
 {
-    var types = cg.Types;
-    if (types.IsError(t))
-    {
-        int inner = types.Elem(t);
-        string succeeded = "";
-        if (types.IsOptional(inner))
-            succeeded = ", 'is " + types.Name(types.Elem(inner)) + " v' (succeeded with a value) or 'is " + types.Name(inner) +
-                        " o' (succeeded)";
-        else if (!types.IsVoid(inner))
-            succeeded = " or 'is " + types.Name(inner) + " v' (succeeded)";
-        Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition; test it with 'is error e' (failed)" + succeeded);
-    }
-    if (types.IsOptional(t))
-        Fail(cg, loc, "'" + types.Name(t) + "' cannot be used as a condition; test it with 'is " + types.Name(types.Elem(t)) +
-                          " v' (has a value) or '== null' / '!= null'");
+    string why = AmbiguousConditionError(cg, t);
+    if (why.Length > 0)
+        Fail(cg, loc, why);
 }
 
 // && and ||: the right side only runs if it can change the result.
@@ -779,23 +772,11 @@ Value EmitUnary(Compiler cg, Expr e)
     case UnOp.Plus:
     {
         Value v = EmitRValue(cg, u.Operand);
+        string why = "";
+        if (UnaryResult(cg, u.Op, v, ref why).Type == 0)
+            Fail(cg, e.Loc, why);
         if (v.HasLit && u.Op == UnOp.Neg)
-        {
-            if (v.LitIsFloat)
-            {
-                Value f = Rvalue(v.Type, FloatConstant(cg, v.Type, -v.LitFloat), false);
-                f.HasLit = true;
-                f.LitIsFloat = true;
-                f.LitFloat = -v.LitFloat;
-                return f;
-            }
-            int64 n = -v.LitInt;
-            int t = (n >= -2147483648 && n <= 2147483647) ? types.I32 : types.I64;
-            Value r = ConstInt(cg, t, n);
-            r.HasLit = true;
-            r.LitInt = n;
-            return r;
-        }
+            return NegateLiteral(cg, v);
         if (!types.IsNumeric(v.Type))
             Fail(cg, e.Loc, "unary '-' cannot be applied to '" + types.Name(v.Type) + "'");
         int pt = types.IsFloat(v.Type) ? v.Type : PromoteTypes(cg, v.Type, v.Type, e.Loc);
@@ -811,6 +792,9 @@ Value EmitUnary(Compiler cg, Expr e)
     case UnOp.Not:
     {
         Value v = EmitRValue(cg, u.Operand);
+        string why = "";
+        if (UnaryResult(cg, u.Op, v, ref why).Type == 0)
+            Fail(cg, e.Loc, why);
         if (types.IsBool(v.Type))
             return MakeBool(cg, ir.Bin("xor", "i1", v.V, "true"));
         RejectAmbiguousCondition(cg, v.Type, e.Loc);
@@ -820,6 +804,9 @@ Value EmitUnary(Compiler cg, Expr e)
     case UnOp.BitNot:
     {
         Value v = EmitRValue(cg, u.Operand);
+        string why = "";
+        if (UnaryResult(cg, u.Op, v, ref why).Type == 0)
+            Fail(cg, e.Loc, why);
         if (types.IsEnum(v.Type))
             return Rvalue(v.Type, ir.Bin("xor", LlvmType(cg, v.Type), v.V, "-1"), false);
         if (!types.IsIntegral(v.Type))
@@ -963,22 +950,10 @@ Value EmitConditional(Compiler cg, Expr e)
     var elseTemps = TakeTemps(cg, baseCount);
 
     // The common type.
-    int t;
-    if (a.Type == b.Type)
-        t = a.Type;
-    else if (ConversionCost(cg, a, b.Type) >= 0 && (ConversionCost(cg, b, a.Type) < 0 || a.HasLit))
-        t = b.Type;
-    else if (ConversionCost(cg, b, a.Type) >= 0)
-        t = a.Type;
-    else
-    {
-        Fail(cg, e.Loc, "the branches of '?:' have incompatible types '" + types.Name(a.Type) + "' and '" + types.Name(b.Type) + "'");
-        t = a.Type;
-    }
-    if (types.Kind(t) == TypeKind.Null)
-        Fail(cg, e.Loc, "cannot infer the type of a conditional expression with only null");
-    if (types.IsVoid(t))
-        Fail(cg, e.Loc, "conditional branches cannot be void");
+    string why = "";
+    int t = ConditionalType(cg, a, b, ref why);
+    if (t == 0)
+        Fail(cg, e.Loc, why);
 
     // The then branch: its code, then the conversion, the temporaries and the jump to the end.
     ir.AppendCode(thenCode);
