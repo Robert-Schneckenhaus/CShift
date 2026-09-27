@@ -117,7 +117,9 @@ void CheckIf(Compiler cg, Stmt s)
 {
     var n = cg.Tree.GetIf(s);
     bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
-    if (!guard)
+    if (guard)
+        cg.GuardIs = n.Cond.Index;
+    else
         PushScope(cg);
     CheckCondition(cg, n.Cond);
     int bound = cg.Fn[0].Vars.Count() - 1;
@@ -212,6 +214,12 @@ void CheckReturn(Compiler cg, Stmt s)
     var types = cg.Types;
     var n = cg.Tree.GetReturn(s);
     int rt = cg.Fn[0].RetType;
+    if (types.IsUnknown(rt))
+    {
+        if (!n.Value.IsNull())
+            CheckExpr(cg, n.Value); // in a lambda
+        return;
+    }
     if (!n.Value.IsNull())
     {
         if (types.IsVoid(rt))
