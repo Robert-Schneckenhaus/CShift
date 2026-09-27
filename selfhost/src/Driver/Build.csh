@@ -249,8 +249,8 @@ int Cshc(string[] args)
 // The version: selfhost/version/version.txt, read when cshc is compiled (the release workflow writes it).
 string CshcVersion()
 {
-    var texts = EmbedTexts("../../version", ".txt");
-    return texts.Length > 0 ? texts[0].Trim().ToString() : "dev";
+    const ReadOnlySlice<string> Texts = embed("../../version/version*.txt");
+    return Texts.Length > 0 ? Texts[0].Trim().ToString() : "dev";
 }
 
 // The C compiler that is used as linker driver, to compile generated C code and to find libclang: --cc, then
@@ -426,11 +426,9 @@ int Build(BuildOptions o)
     // Without --stdlib the copy that is embedded in cshc is used (src/Driver/EmbeddedStdlib.csh).
     if (o.Stdlib.Length == 0)
     {
-        string[] names = EmbeddedStdlibNames();
-        string[] texts = EmbeddedStdlibTexts();
-        for (var i = 0; i < names.Length; i += 1)
-            AddSourceText(cg, diag, tree, "<stdlib>/" + names[i], texts[i], true, o.Imports);
-        cg.St[0].StdlibLoaded = names.Length > 0;
+        for (var i = 0; i < EmbeddedStdlibNames.Length; i += 1)
+            AddSourceText(cg, diag, tree, "<stdlib>/" + EmbeddedStdlibNames[i], EmbeddedStdlibTexts[i], true, o.Imports);
+        cg.St[0].StdlibLoaded = EmbeddedStdlibNames.Length > 0;
     }
     else if (o.Stdlib != "-")
     {

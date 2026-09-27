@@ -137,9 +137,8 @@ on that.
 **Built into the compiler** (no library code): `Console.Write/WriteLine/WriteError/WriteErrorLine`,
 `Memory.Allocate/Free` (`unsafe`), `Memory.CopyForThread(v)` (a copy that shares no reference count: strings get new
 blocks), `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `string.FromCStr` (`unsafe`), `ToString()`,
-`CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`, `EmbedText`/`EmbedNames`/`EmbedTexts`
-(files embedded at compile time; replaced by [`embed`/`embed_filenames`](language/constants-and-globals.md#embedded-files-embed-and-embed_filenames)
-and removed in the next release).
+`CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`. Files are embedded
+at compile time with the keywords [`embed`/`embed_filenames`](language/constants-and-globals.md#embedded-files-embed-and-embed_filenames).
 
 **Writing library code:** `stdlib/` is compiled by the compiler of the same commit, so it may use every language
 feature; only the compiler's own sources are limited to the stage 0 release. See [compiler.md](compiler.md).

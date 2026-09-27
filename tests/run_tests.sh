@@ -201,7 +201,7 @@ if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
 else
     work="$TMP/selfhost"
     cp -r "$DIR/../selfhost" "$work"
-    cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by EmbedTexts (../../../stdlib from selfhost/src/Driver)
+    cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by embed (../../../stdlib from selfhost/src/Driver)
     if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
         report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
     else
