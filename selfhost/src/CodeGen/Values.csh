@@ -333,6 +333,37 @@ Value AdaptLiteral(Compiler cg, Value v, int to)
     return v;
 }
 
+// "" if the value converts implicitly to 'to', otherwise the message (with a hint for the usual mistakes). The checker
+// and ConvertValue use it.
+string ConversionError(Compiler cg, Value v, int to)
+{
+    var types = cg.Types;
+    int from = v.Type;
+    if (from == to || ConversionCost(cg, v, to) >= 0)
+        return "";
+    string hint = "";
+    if (types.IsNumeric(from) && types.IsNumeric(to))
+        hint = " (an explicit cast is required)";
+    if (types.IsError(to) && types.Code(to) != 0 && (types.Kind(from) == TypeKind.ErrorLit || types.IsError(from)))
+        hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
+               ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
+    if (types.Kind(from) == TypeKind.Collection)
+        hint = " (a collection expression becomes an array, a Slice<T>, a ReadOnlySlice<T>, a Fixed<T, N>, or a struct with 'static Create()' and 'Add(T)')";
+    if (types.IsStringSlice(from) && types.IsString(to))
+        hint = " (a slice is a view; copy it with .ToString())";
+    if (types.IsElemSlice(from) && types.IsArray(to))
+        hint = " (a slice is a view; copy it with .ToArray())";
+    if (types.IsFixed(from) && (types.IsArray(to) || types.IsSlice(to)))
+        hint = " (a Fixed<T, N> is a value stored inline; copy it into a heap array with .ToArray())";
+    if (types.IsFixed(to) && (types.IsArray(from) || types.IsSlice(from)))
+        hint = " (copy the elements into the Fixed with a collection expression: [..values])";
+    if (types.IsReadOnlySlice(from) && types.Kind(to) == TypeKind.Slice)
+        hint = " (a ReadOnlySlice cannot become writable; copy it with .ToArray())";
+    if (IsErrorEnum(cg, from) && types.IsResultLike(to))
+        hint = " (an error code is not a value: write 'return error(" + types.Name(from) + ".Member);')";
+    return "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint;
+}
+
 Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
 {
     var types = cg.Types;
@@ -369,30 +400,9 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     if (types.Kind(from) == TypeKind.MethodGroup)
         return ConvertGroup(cg, v, to, loc);
 
-    if (ConversionCost(cg, v, to) < 0)
-    {
-        string hint = "";
-        if (types.IsNumeric(from) && types.IsNumeric(to))
-            hint = " (an explicit cast is required)";
-        if (types.IsError(to) && types.Code(to) != 0 && (types.Kind(from) == TypeKind.ErrorLit || types.IsError(from)))
-            hint = " (the error code must be a value of " + types.Name(types.Code(to)) + ": error(\"...\", " + types.Name(types.Code(to)) +
-                   ".Member) or error(" + types.Name(types.Code(to)) + ".Member))";
-        if (types.Kind(from) == TypeKind.Collection)
-            hint = " (a collection expression becomes an array, a Slice<T>, a ReadOnlySlice<T>, a Fixed<T, N>, or a struct with 'static Create()' and 'Add(T)')";
-        if (types.IsStringSlice(from) && types.IsString(to))
-            hint = " (a slice is a view; copy it with .ToString())";
-        if (types.IsElemSlice(from) && types.IsArray(to))
-            hint = " (a slice is a view; copy it with .ToArray())";
-        if (types.IsFixed(from) && (types.IsArray(to) || types.IsSlice(to)))
-            hint = " (a Fixed<T, N> is a value stored inline; copy it into a heap array with .ToArray())";
-        if (types.IsFixed(to) && (types.IsArray(from) || types.IsSlice(from)))
-            hint = " (copy the elements into the Fixed with a collection expression: [..values])";
-        if (types.IsReadOnlySlice(from) && types.Kind(to) == TypeKind.Slice)
-            hint = " (a ReadOnlySlice cannot become writable; copy it with .ToArray())";
-        if (IsErrorEnum(cg, from) && types.IsResultLike(to))
-            hint = " (an error code is not a value: write 'return error(" + types.Name(from) + ".Member);')";
-        Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
-    }
+    string conversionError = ConversionError(cg, v, to);
+    if (conversionError.Length > 0)
+        Fail(cg, loc, conversionError);
 
     if (v.HasLit)
     {
@@ -462,6 +472,16 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
 // The type of an arithmetic result when two numeric types meet (C# rules).
 int PromoteTypes(Compiler cg, int a, int b, SourceLoc loc)
 {
+    string why = "";
+    int t = PromoteTypesOrError(cg, a, b, ref why);
+    if (t == 0)
+        Fail(cg, loc, why);
+    return t;
+}
+
+// PromoteTypes for the checker: 0 and the message instead of an error.
+int PromoteTypesOrError(Compiler cg, int a, int b, ref string why)
+{
     var types = cg.Types;
     if (types.IsFloat(a) || types.IsFloat(b))
     {
@@ -476,7 +496,9 @@ int PromoteTypes(Compiler cg, int a, int b, SourceLoc loc)
     {
         int pa = types.IsNative(a) ? types.IntType(types.Bits(a), types.IsSigned(a)) : a;
         int pb = types.IsNative(b) ? types.IntType(types.Bits(b), types.IsSigned(b)) : b;
-        int r = PromoteTypes(cg, pa, pb, loc);
+        int r = PromoteTypesOrError(cg, pa, pb, ref why);
+        if (r == 0)
+            return 0;
         int native = types.IsNative(a) ? a : b;
         int other = native == a ? b : a;
         int plainNative = types.IsNative(native) ? types.IntType(types.Bits(native), types.IsSigned(native)) : native;
@@ -492,7 +514,10 @@ int PromoteTypes(Compiler cg, int a, int b, SourceLoc loc)
     {
         int other = x == types.U64 ? y : x;
         if (types.IsSigned(other))
-            Fail(cg, loc, "operator cannot mix 'uint64' and signed types, use an explicit cast");
+        {
+            why = "operator cannot mix 'uint64' and signed types, use an explicit cast";
+            return 0;
+        }
         return types.U64;
     }
     return types.I64; // int64, or int32 mixed with uint32

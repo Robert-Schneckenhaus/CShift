@@ -24,8 +24,13 @@ selfhost/
 │   │   └── Types.csh        the type table: types are integers (ids), interned types compare with ==
 │   ├── Emit/                namespace CShift.Emit
 │   │   └── IrWriter.csh     writes LLVM IR as text (blocks, instructions, constants, declarations)
+│   ├── Check/               namespace CShift.Check: the checker (docs/semantic-pass.md)
+│   │   ├── Checker.csh      checks every function body of the program before code generation, continues after errors
+│   │   ├── CheckStmt.csh    statements and scopes (the same scopes as code generation)
+│   │   └── CheckExpr.csh    expressions: Values without code; unknown type for what is not checked yet
 │   └── CodeGen/             namespace CShift.CodeGen
 │       ├── Compiler.csh     compiler state, declarations, type resolution, function instances (CodeGen.cpp)
+│       ├── Rules.csh        decisions shared by the checker and code generation (operator types, conditions, ...)
 │       ├── Values.csh       values, reference counting, conversions (the first half of CodeGenExpr.cpp)
 │       ├── Expr.csh         expressions (CodeGenExpr.cpp)
 │       ├── Call.csh         calls, overload resolution, Console/Environment (CodeGenCall.cpp)

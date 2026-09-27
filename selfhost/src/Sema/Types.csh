@@ -34,7 +34,8 @@ enum TypeKind : int32
     StringSlice, // a view of part of a string (read-only), same layout
     Collection,  // [a, b] before it is converted to the type it is used as
     ReadOnlySlice, // a read-only view of part of an array, same layout as Slice
-    Fixed          // Fixed<T, N>: N elements of T stored inline (a value like a struct; Elem, Count)
+    Fixed,         // Fixed<T, N>: N elements of T stored inline (a value like a struct; Elem, Count)
+    Unknown        // the checker (selfhost/src/Check): not known yet, or the expression had an error
 }
 
 struct TypeInfo
@@ -68,6 +69,7 @@ struct TypeContext
     int Lambda;
     int StringSlice;
     int Collection;
+    int Unknown;
     int I8;
     int I16;
     int I32;
@@ -110,6 +112,7 @@ struct TypeContext
         tc.SetNative(tc.Nuint);
         tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
         tc.Collection = tc.Add(TypeKind.Collection, "collection", 0, false);
+        tc.Unknown = tc.Add(TypeKind.Unknown, "?", 0, false);
         tc.StringSlice = tc.Add(TypeKind.StringSlice, "StringSlice", 0, false);
         var ss = tc.Infos.Get(tc.StringSlice - 1);
         ss.Elem = tc.Char;
@@ -174,6 +177,7 @@ struct TypeContext
     bool IsSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.StringSlice || k == TypeKind.ReadOnlySlice; } // any view
     bool IsElemSlice(int t) { var k = Kind(t); return k == TypeKind.Slice || k == TypeKind.ReadOnlySlice; } // a view of array elements
     bool IsReadOnlySlice(int t) { return Kind(t) == TypeKind.ReadOnlySlice; }
+    bool IsUnknown(int t) { return t == Unknown; }
     bool IsStringSlice(int t) { return Kind(t) == TypeKind.StringSlice; }
     bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 

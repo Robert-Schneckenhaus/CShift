@@ -81,6 +81,16 @@ int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, boo
 // Chooses the function that matches the arguments best. Candidates are indices in Compiler.Funcs.
 int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name)
 {
+    string why = "";
+    int instance = TryResolveOverload(cg, candidates, args, explicitTypeArgs, loc, name, ref why);
+    if (instance < 0)
+        Fail(cg, loc, why);
+    return instance;
+}
+
+// ResolveOverload for the checker: -1 and the message instead of an error.
+int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name, ref string why)
+{
     var best = -1;
     int bestCost = 0;
     bool ambiguous = false;
@@ -176,10 +186,14 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] expli
         sb.Append(")'");
         if (reason.Length > 0)
             sb.Append(": " + reason);
-        Fail(cg, loc, sb.ToString());
+        why = sb.ToString();
+        return -1;
     }
     if (ambiguous)
-        Fail(cg, loc, "the call to '" + name + "' is ambiguous");
+    {
+        why = "the call to '" + name + "' is ambiguous";
+        return -1;
+    }
     return best;
 }
 

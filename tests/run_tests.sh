@@ -11,7 +11,7 @@
 #   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
 #      checks pass and no heap block is leaked (--arc-stats).
 #   2. tests/cases/*.csh                   -> small programs with expectations in comments:
-#        // expect-error:  <text>   compilation must fail and print <text>
+#        // expect-error:  <text>   compilation must fail and print <text> (several lines: all of them)
 #        // expect-exit:   <n>      exit code of the program (default 0)
 #        // expect-stdout: <text>   stdout contains <text>   (may be repeated)
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
@@ -100,10 +100,17 @@ for file in "$DIR"/cases/*.csh; do
     if [ -n "$expected_error" ]; then
         if "$COMPILER" $OPT "${CC_ARGS[@]}" "$file" -o "$TMP/case.exe" 2> "$TMP/case.err" > /dev/null; then
             report_fail "$name" "compilation succeeded but an error was expected"
-        elif ! grep -qF -- "$expected_error" "$TMP/case.err"; then
-            report_fail "$name" "expected error '$expected_error', got: $(head -n 3 "$TMP/case.err" | tr '\n' ' ')"
         else
-            report_ok "$name"
+            missing=""
+            while IFS= read -r text; do
+                [ -z "$text" ] && continue
+                grep -qF -- "$text" "$TMP/case.err" || missing="$text"
+            done < <(directives "$file" expect-error)
+            if [ -n "$missing" ]; then
+                report_fail "$name" "expected error '$missing', got: $(head -n 3 "$TMP/case.err" | tr '\n' ' ')"
+            else
+                report_ok "$name"
+            fi
         fi
         continue
     fi

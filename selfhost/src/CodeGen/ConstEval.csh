@@ -1074,8 +1074,13 @@ bool IsEmbedExpr(Expr e)
 
 void FailEmbedPlace(Compiler cg, SourceLoc loc)
 {
-    Fail(cg, loc, "embed(...) and embed_filenames(...) can only be the whole initializer of a constant: " +
-        "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\");");
+    Fail(cg, loc, EmbedPlaceError());
+}
+
+string EmbedPlaceError()
+{
+    return "embed(...) and embed_filenames(...) can only be the whole initializer of a constant: " +
+           "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\");";
 }
 
 // True if the name has a wildcard ('*': any characters, '?': one character).
