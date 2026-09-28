@@ -151,6 +151,14 @@ void EmitSwitch(Compiler cg, Stmt s)
 // then shows every switch that has to handle it. (A switch over an Error<T, E> without code labels is not checked.)
 void CheckExhaustive(Compiler cg, int st, List<int> members, List<string> values, bool failureCovered, SourceLoc loc)
 {
+    string why = ExhaustiveError(cg, st, members, values, failureCovered);
+    if (why.Length > 0)
+        Fail(cg, loc, why);
+}
+
+// "" if the switch names every case (see CheckExhaustive), otherwise the message; shared with the checker.
+string ExhaustiveError(Compiler cg, int st, List<int> members, List<string> values, bool failureCovered)
+{
     var types = cg.Types;
     var missing = List<string>.Create();
     string what = "";
@@ -178,11 +186,11 @@ void CheckExhaustive(Compiler cg, int st, List<int> members, List<string> values
         what = types.IsEnum(st) ? "enum '" + types.Name(st) + "'" : "the error codes of '" + types.Name(st) + "'";
     }
     if (missing.Count() == 0)
-        return;
+        return "";
     string names = "";
     for (var i = 0; i < missing.Count(); i += 1)
         names += (i > 0 ? ", " : "") + "'" + missing.Get(i) + "'";
-    Fail(cg, loc, "the switch over " + what + " does not handle " + names + "; add the case" + (missing.Count() > 1 ? "s" : "") +
-                  " or 'default:'");
+    return "the switch over " + what + " does not handle " + names + "; add the case" + (missing.Count() > 1 ? "s" : "") +
+           " or 'default:'";
 }
 
