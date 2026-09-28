@@ -234,9 +234,21 @@ else
     report_ok "cshiftc check"
 fi
 # The VS Code extension (vscode-extension/test): its logic and its connection to the editor, with this cshiftc.
+# Under MSYS2/Git Bash node is a Windows program: it may not be in PATH, and it needs Windows paths.
+NODE=""
 if command -v node > /dev/null 2>&1; then
-    if CSHIFTC="$COMPILER" node --test "$DIR/../vscode-extension/test/lib.test.js" "$DIR/../vscode-extension/test/extension.test.js" \
-        > "$TMP/ext.out" 2>&1; then
+    NODE="node"
+elif [ -x "/c/Program Files/nodejs/node.exe" ]; then
+    NODE="/c/Program Files/nodejs/node.exe"
+fi
+EXT_TESTS="$DIR/../vscode-extension/test"
+EXT_COMPILER="$COMPILER"
+if command -v cygpath > /dev/null 2>&1; then
+    EXT_TESTS="$(cygpath -w "$EXT_TESTS")"
+    EXT_COMPILER="$(cygpath -w "$COMPILER")"
+fi
+if [ -n "$NODE" ]; then
+    if CSHIFTC="$EXT_COMPILER" "$NODE" --test "$EXT_TESTS/lib.test.js" "$EXT_TESTS/extension.test.js" > "$TMP/ext.out" 2>&1; then
         report_ok "vscode extension"
     else
         report_fail "vscode extension" "$(grep -E '^not ok|Error|expected|actual' "$TMP/ext.out" | head -n 6 | tr '\n' ' ')"
