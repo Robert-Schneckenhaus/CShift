@@ -13,6 +13,7 @@ using System;
 using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
+using CShift.Check;
 
 // ---------------------------------------------------------------------------
 // Registered declarations. A declaration is referred to by its index in the compiler's list.
@@ -142,6 +143,8 @@ struct ScopeVar
     bool ResetOnCleanup; // zero the slot after releasing (pattern variables)
     bool IsConstant;     // a local constant: no variable, its value is ConstValue
     ConstVal ConstValue;
+    SourceLoc Loc;       // the checker: where it is declared (for the symbol index)
+    bool IsParam;
 }
 
 struct TempRelease
@@ -192,6 +195,8 @@ struct LambdaCapture
 struct CgState
 {
     bool Recovering;      // declarations and the checker: some errors are reported and the compiler goes on (Recover)
+    bool FrontEndOnly;    // 'cshiftc check'/'query': stop after the checker (report its errors, generate nothing)
+    bool Indexing;        // ... and record the names it resolves (Compiler.Index)
     int SyntaxErrors;     // errors of the lexer and the parser (the compiler stops after parsing then)
     bool Muted;           // the checker reports nothing (the body of a lambda whose result type is inferred)
     string MutedError;    // ... the first error it did not report
@@ -261,6 +266,7 @@ struct Compiler
     int GuardIs;                    // the 'x is not T v' that is the whole condition of the current 'if' (-1: none)
     HashSet<int> TrampolinesQueued;
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
+    List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
 
     static Compiler Create(Ast tree, Diagnostics diag, bool windows)
     {
@@ -309,6 +315,7 @@ struct Compiler
         cg.GuardIs = -1;
         cg.TrampolinesQueued = HashSet<int>.Create();
         cg.CheckedCollections = Dictionary<int, Value[]>.Create();
+        cg.Index = List<IndexEntry>.Create();
         return cg;
     }
 }
@@ -697,6 +704,8 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         return types.Unknown;
     }
 
+    if (cg.St[0].Indexing)
+        IndexTypeName(cg, node.Loc, dotted.Length, entry, dotted);
     var typeArgs = new int[node.Args.Length];
     for (var i = 0; i < node.Args.Length; i += 1)
         typeArgs[i] = ResolveValueType(cg, node.Args[i].Id, file, env);

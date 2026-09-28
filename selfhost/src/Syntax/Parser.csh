@@ -1417,7 +1417,7 @@ struct Parser
             {
                 bool arrow = Check(TokenKind.Arrow);
                 Advance();
-                var m = MemberExpr { Object = expr, ViaArrow = arrow };
+                var m = MemberExpr { Object = expr, ViaArrow = arrow, NameLoc = Cur().Loc };
                 m.Name = try ExpectIdent("member name");
                 m.TypeArgs = new TypeRef[0];
                 if (Check(TokenKind.Lt))

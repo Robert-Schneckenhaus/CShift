@@ -140,6 +140,7 @@ struct MemberExpr
 {
     Expr Object;
     string Name;
+    SourceLoc NameLoc; // where the name after '.' is written
     TypeRef[] TypeArgs;
     bool ViaArrow; // p->x
 }

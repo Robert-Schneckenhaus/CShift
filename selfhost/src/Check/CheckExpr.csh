@@ -122,10 +122,14 @@ Value CheckName(Compiler cg, Expr e)
     var n = cg.Tree.GetName(e);
     Value v = LookupVariable(cg, n.Name);
     if (!v.IsNone())
+    {
+        IndexLocal(cg, e.Loc, n.Name);
         return v;
+    }
     int owner = CurrentOwner(cg);
     if (owner != 0 && FindField(cg, owner, n.Name).Found)
     {
+        IndexField(cg, e.Loc, owner, n.Name);
         if (cg.Fn[0].ThisSlot.Length == 0)
         {
             CheckError(cg, e.Loc, "'this' is not available in a static context");
@@ -135,10 +139,16 @@ Value CheckName(Compiler cg, Expr e)
     }
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
     if (c >= 0)
+    {
+        IndexConst(cg, e.Loc, n.Name.Length, c);
         return EmitConst(cg, c, e.Loc);
+    }
     int g = LookupGlobal(cg, cg.Fn[0].File, n.Name);
     if (g >= 0)
+    {
+        IndexGlobal(cg, e.Loc, n.Name.Length, g);
         return GlobalUse(cg, g);
+    }
     if ((owner != 0 && MethodCandidates(cg, owner, n.Name).Length > 0) || FreeCandidates(cg, cg.Fn[0].File, n.Name).Length > 0)
         return UnknownValue(cg); // a function name as a value: converted by code generation for now
     if (!cg.St[0].StdlibLoaded && IsStdlibName(n.Name))
@@ -235,14 +245,19 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
         return UnknownValue(cg);
     }
     if (!known)
+    {
+        IndexCandidates(cg, call.Callee.Loc, n.Name.Length, cands);
         return UnknownValue(cg);
+    }
     string why = "";
     int instance = CheckOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name, ref why);
     if (instance < 0)
     {
+        IndexCandidates(cg, call.Callee.Loc, n.Name.Length, cands);
         ReportIf(cg, e.Loc, why);
         return UnknownValue(cg);
     }
+    IndexFunction(cg, call.Callee.Loc, n.Name.Length, instance);
     if (IsThreadInstance(cg, instance))
     {
         if (!viaStart)
@@ -535,7 +550,10 @@ Value CheckIs(Compiler cg, Expr e)
         }
     }
     if (n.BindName.Length > 0)
+    {
         DeclareVar(cg, n.BindName, bound, "%v");
+        NoteVar(cg, e.Loc, false);
+    }
     return boolean;
 }
 
@@ -555,7 +573,10 @@ void CheckLambdaBody(Compiler cg, Expr e)
     cg.Fn[0].Loops = List<LoopCtx>.Create();
     PushScope(cg);
     foreach (var p in l.Params)
+    {
         DeclareVar(cg, p.Name, p.Type.IsNull() ? cg.Types.Unknown : DeclTypeOf(cg, p.Type), "%p");
+        NoteVar(cg, p.Loc, true);
+    }
     if (!l.Block.IsNull())
         CheckBlock(cg, l.Block, true);
     else

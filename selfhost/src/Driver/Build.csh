@@ -4,6 +4,8 @@
 //     cshc build [project] [options]              build a project (cshift.json)
 //     cshc run   [project] [options]              build and run a project
 //     cshc new   <directory>                      create a new project
+//     cshc check [project | files] [options]      report the errors, generate nothing
+//     cshc query --at <file> <line> <col> [...]   the name at a position, as JSON (for the VS Code extension)
 //
 // The code generator writes LLVM IR as text; clang optimizes it, generates the object code and links.
 
@@ -12,6 +14,7 @@ namespace CShift.Driver;
 using System;
 using CShift.Syntax;
 using CShift.CodeGen;
+using CShift.Check;
 
 struct BuildOptions
 {
@@ -37,10 +40,17 @@ struct BuildOptions
     List<string> ApiPaths;      // --ffi-api=<text>
     bool FromProject;
     string ProjectName;
+    string Mode;                // "" (build), "check" or "query": the front end only
+    string AtFile;              // query: the position
+    int AtLine;
+    int AtCol;
+    Dictionary<string, string> Overlays; // the full path of a source -> a file with its current (unsaved) text
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "" };
+        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
+                               AtFile = "" };
+        o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
         o.Libs = List<string>.Create();
@@ -59,7 +69,10 @@ void PrintUsage()
         "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n" +
         "       cshiftc build [project] [options]              build a project (cshift.json)\n" +
         "       cshiftc run   [project] [options]              build and run a project\n" +
-        "       cshiftc new   <directory>                      create a new project\n\n" +
+        "       cshiftc new   <directory>                      create a new project\n" +
+        "       cshiftc check [project | files] [options]      report the errors, generate nothing\n" +
+        "       cshiftc query --at <file> <line> <col> [project | files] [--overlay <file> <text file>]\n" +
+        "                                                      the name at a position (hover, definition) as JSON\n\n" +
         "'project' is a directory containing cshift.json or the path of a project file;\n" +
         "without it cshift.json is searched in the current directory and its parents.\n\n" +
         "options:\n" +
@@ -117,6 +130,18 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         }
         else if (a == "--no-stdlib")
             o.Stdlib = "-";
+        else if (a == "--at" && i + 3 < args.Length)
+        {
+            o.AtFile = args[i + 1];
+            o.AtLine = (int)ParseNumber(args[i + 2]);
+            o.AtCol = (int)ParseNumber(args[i + 3]);
+            i += 3;
+        }
+        else if (a == "--overlay" && i + 2 < args.Length)
+        {
+            o.Overlays.Set(SamePath(args[i + 1]), args[i + 2]);
+            i += 2;
+        }
         else if (a == "-c")
             o.ObjectOnly = true;
         else if (a == "--emit-llvm")
@@ -172,7 +197,7 @@ int Cshc(string[] args)
     var o = BuildOptions.Create();
     string command = "compile";
     int first = 0;
-    if (args[0] == "build" || args[0] == "run" || args[0] == "new")
+    if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query")
     {
         command = args[0];
         first = 1;
@@ -196,6 +221,45 @@ int Cshc(string[] args)
         }
         Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  cshc run");
         return 0;
+    }
+
+    if (command == "check" || command == "query")
+    {
+        o.Mode = command;
+        if (command == "query" && o.AtFile.Length == 0)
+        {
+            Console.WriteErrorLine("error: 'query' needs --at <file> <line> <col>");
+            return 2;
+        }
+        // single files, or a project like 'build' (the project of the queried file if none is named)
+        bool files = o.Inputs.Count() > 0 && o.Inputs.Get(0).EndsWith(".csh");
+        if (!files)
+        {
+            string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : (command == "query" ? ProjectAbove(o.AtFile) : "");
+            var found = LoadProject(location, o.Target);
+            if (found is Project p)
+            {
+                o.FromProject = true;
+                o.ProjectDir = p.Dir;
+                o.Inputs = p.Sources;
+                if (o.Target.Length == 0)
+                    o.Target = p.Target;
+                foreach (var l in p.IncludePaths)
+                    o.IncludePaths.Insert(0, l);
+                foreach (var l in p.Defines)
+                    o.Defines.Insert(0, l);
+                foreach (var l in p.ApiPaths)
+                    o.ApiPaths.Insert(0, l);
+            }
+            else if (command == "query" && o.Inputs.Count() == 0)
+                o.Inputs.Add(o.AtFile); // a file without a project
+            else
+            {
+                Console.WriteErrorLine("error: " + found.Message);
+                return 1;
+            }
+        }
+        return Build(o);
     }
 
     if (command == "build" || command == "run")
@@ -442,13 +506,31 @@ int Build(BuildOptions o)
     }
     foreach (var path in o.Inputs)
     {
+        // the text in the editor, if it is not saved (query/check from the VS Code extension)
+        var overlay = o.Overlays.TryGet(SamePath(path));
+        if (overlay is string overlayFile)
+        {
+            var text = ReadSource(overlayFile);
+            if (text is string overlayText)
+            {
+                AddSourceText(cg, diag, tree, path, overlayText, false, o.Imports);
+                continue;
+            }
+            return 1;
+        }
         if (!AddSource(cg, diag, tree, path, false, o.Imports))
             return 1;
     }
+    cg.St[0].FrontEndOnly = o.Mode.Length > 0;
+    cg.St[0].Indexing = o.Mode == "query";
     // after a syntax error the tree is not complete; errors of the declarations (a name defined twice) are reported
     // together with the others (docs/semantic-pass.md)
     if (cg.St[0].SyntaxErrors > 0)
+    {
+        if (o.Mode == "query")
+            Console.WriteLine("{}");
         return 1;
+    }
 
     // ---- FFI: C headers imported with "using Name from "header.h";" ----
     var shimSources = List<string>.Create();
@@ -491,6 +573,13 @@ int Build(BuildOptions o)
 
     string triple = o.Target;
     string ir = CompileProgram(cg, triple);
+    if (o.Mode == "check")
+        return diag.HasErrors() ? 1 : 0;
+    if (o.Mode == "query")
+    {
+        Console.WriteLine(QueryAnswer(cg, diag, o));
+        return 0;
+    }
 
     // ---- output files ----
     string first = o.Inputs.Get(0);
@@ -646,4 +735,71 @@ void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string 
     foreach (var imp in unit.Imports)
         imports.Add(FfiImport { Name = imp.Name, Header = imp.Header, SourcePath = path, Loc = imp.Loc });
     AddUnit(cg, unit);
+}
+
+// ---------------------------------------------------------------------------
+// check / query (the VS Code extension)
+// ---------------------------------------------------------------------------
+
+// A path in the form in which two names of the same file compare equal (full, '/' separators; lower case on Windows).
+string SamePath(string path)
+{
+    string full = Path.GetFullPath(path);
+    return Process.IsWindows() ? full.ToLower() : full;
+}
+
+// The cshift.json in the folder of the file or the nearest folder above it ("" if there is none: the file alone).
+string ProjectAbove(string file)
+{
+    string dir = Path.GetDirectory(Path.GetFullPath(file));
+    for (var level = 0; level < 64 && dir.Length > 0; level += 1)
+    {
+        string candidate = Path.Combine(dir, "cshift.json");
+        if (File.Exists(candidate))
+            return candidate;
+        string parent = Path.GetDirectory(dir);
+        if (parent == dir)
+            break;
+        dir = parent;
+    }
+    return "-"; // no project: LoadProject fails and the file is checked alone
+}
+
+// The number in the text (0 if it is none).
+int64 ParseNumber(string text)
+{
+    int64 n = 0;
+    foreach (var c in text)
+    {
+        if (c < '0' || c > '9')
+            return 0;
+        n = n * 10 + (int64)((int)c - 48);
+    }
+    return n;
+}
+
+// The JSON answer of 'cshiftc query': {"hover": "...", "definition": {"file": "...", "line": n, "col": n}} for the name
+// at the position, {} if there is none. The definition is left out when it is not in a file (the embedded standard
+// library, a builtin).
+string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
+{
+    string target = SamePath(o.AtFile);
+    int file = -1;
+    for (var i = 0; i < diag.Files.Count(); i += 1)
+    {
+        string name = diag.Files.Get(i);
+        if (!name.StartsWith("<") && SamePath(name) == target)
+            file = i;
+    }
+    if (file < 0)
+        return "{}";
+    int found = FindIndexEntry(cg, file, o.AtLine, o.AtCol);
+    if (found < 0)
+        return "{}";
+    var e = cg.Index.Get(found);
+    string answer = "{\"hover\": " + JsonString(e.Hover);
+    if (e.Def.Line > 0 && e.Def.File >= 0 && e.Def.File < diag.Files.Count() && !diag.Files.Get(e.Def.File).StartsWith("<"))
+        answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
+                  e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
+    return answer + "}";
 }

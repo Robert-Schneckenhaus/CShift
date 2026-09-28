@@ -67,8 +67,9 @@ void CheckProgram(Compiler program)
     int globals = ir.S[0].Global;
     ir.S[0] = saved;
     ir.S[0].Global = globals;
-    // also for the errors of the declarations: the program is not generated after an error
-    if (cg.Diag.ErrorCount() > 0)
+    // also for the errors of the declarations: the program is not generated after an error ('check'/'query' go on to
+    // answer and set the exit code themselves)
+    if (cg.Diag.ErrorCount() > 0 && !cg.St[0].FrontEndOnly)
         Environment.Exit(1);
 }
 
@@ -122,6 +123,7 @@ void CheckFunction(Compiler cg, int instance)
             cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = "%p", IsRef = true, IsConst = fi.ParamRefs[i] == 2 });
         else
             DeclareVar(cg, name, pt, "%p");
+        NoteVar(cg, d.Params[i].Loc, true);
     }
     cg.Fn[0].Live = true;
     CheckBlock(cg, d.Body, true);

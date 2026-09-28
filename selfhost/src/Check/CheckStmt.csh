@@ -206,6 +206,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
+        NoteVar(cg, s.Loc, false);
         var vars = cg.Fn[0].Vars;
         var constVar = vars.Get(vars.Count() - 1);
         constVar.IsConstant = true;
@@ -243,6 +244,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
     else if (!d.Init.IsNull())
         CheckConversion(cg, init, t, d.Init.Loc);
     DeclareVar(cg, d.Name, t, "%v");
+    NoteVar(cg, s.Loc, false);
 }
 
 // Reports if the value does not convert implicitly to the type (see ConvertValue).
@@ -293,8 +295,8 @@ void CheckReturn(Compiler cg, Stmt s)
         CheckError(cg, s.Loc, "a return value of type '" + types.Name(rt) + "' is required");
 }
 
-// foreach: the loop variable has the element type (see EmitForeach); structs with Count() and Get(int) are left to
-// code generation for now.
+// foreach: the loop variable has the element type (see EmitForeach): of an array, a string, a slice, a Fixed or the
+// result of Get(int) of a struct with Count() and Get(int).
 void CheckForeach(Compiler cg, Stmt s)
 {
     var types = cg.Types;
@@ -302,7 +304,9 @@ void CheckForeach(Compiler cg, Stmt s)
     Value it = SettleChecked(cg, CheckRValue(cg, n.Iterable));
     int coll = it.Type;
     int elem = types.Unknown;
-    if (!types.IsUnknown(coll) && types.Kind(coll) != TypeKind.Collection && !types.IsStruct(coll))
+    if (types.IsStruct(coll))
+        elem = ForeachStructElem(cg, coll, n.Iterable.Loc);
+    else if (!types.IsUnknown(coll) && types.Kind(coll) != TypeKind.Collection)
     {
         if (!types.IsArray(coll) && !types.IsString(coll) && !types.IsSlice(coll) && !types.IsFixed(coll))
             CheckError(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N> or a struct with Count() and Get(int), not '" +
@@ -321,6 +325,7 @@ void CheckForeach(Compiler cg, Stmt s)
             CheckConversion(cg, Lvalue(elem, "%e", true), varType, s.Loc);
     }
     DeclareVar(cg, n.Name, varType, "%v");
+    NoteVar(cg, s.Loc, false);
     bool reached = cg.Fn[0].Live;
     cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = "continue", ScopeDepth = outerDepth });
     CheckStmt(cg, n.Body);
@@ -427,6 +432,7 @@ void CheckSwitch(Compiler cg, Stmt s)
                     bound = pt;
             }
             DeclareVar(cg, label.PatName, bound, "%v");
+            NoteVar(cg, label.Loc, false);
         }
         foreach (var st2 in section.Body)
             CheckStmt(cg, st2);
@@ -463,4 +469,37 @@ void CheckPatternLabel(Compiler cg, int st, CaseLabel label)
     }
     if (!(types.IsResultLike(st) && types.Elem(st) == pt))
         CheckError(cg, label.Loc, "pattern type '" + types.Name(pt) + "' does not match the switch subject of type '" + types.Name(st) + "'");
+}
+
+// The element type of 'foreach' over a struct: the result of its Get(int), with an 'int Count()' (see
+// EmitForeachStruct); unknown after an error.
+int ForeachStructElem(Compiler cg, int coll, SourceLoc loc)
+{
+    var types = cg.Types;
+    string needs = "'foreach' over struct '" + types.Name(coll) + "' needs the methods 'int Count()' and 'T Get(int index)'";
+    var countCands = MethodCandidates(cg, coll, "Count");
+    var getCands = MethodCandidates(cg, coll, "Get");
+    if (countCands.Length == 0 || getCands.Length == 0)
+    {
+        CheckError(cg, loc, needs);
+        return types.Unknown;
+    }
+    string why = "";
+    int countInstance = TryResolveOverload(cg, countCands, new Arg[0], new int[0], loc, "Count", ref why);
+    if (ReportIf(cg, loc, why))
+        return types.Unknown;
+    var probe = new Arg[1];
+    probe[0] = Arg { V = ConstInt(cg, types.I32, 0) };
+    int getInstance = TryResolveOverload(cg, getCands, probe, new int[0], loc, "Get", ref why);
+    if (ReportIf(cg, loc, why))
+        return types.Unknown;
+    var countFn = cg.Instances.Get(countInstance);
+    var getFn = cg.Instances.Get(getInstance);
+    if (!countFn.HasThis || !getFn.HasThis || countFn.Ret != types.I32 || types.IsVoid(getFn.Ret) ||
+        getFn.ParamTypes[0] != types.I32 || getFn.ParamRefs[0] != 0)
+    {
+        CheckError(cg, loc, needs);
+        return types.Unknown;
+    }
+    return getFn.Ret;
 }
