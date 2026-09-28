@@ -445,7 +445,9 @@ int Build(BuildOptions o)
         if (!AddSource(cg, diag, tree, path, false, o.Imports))
             return 1;
     }
-    if (diag.HasErrors())
+    // after a syntax error the tree is not complete; errors of the declarations (a name defined twice) are reported
+    // together with the others (docs/semantic-pass.md)
+    if (cg.St[0].SyntaxErrors > 0)
         return 1;
 
     // ---- FFI: C headers imported with "using Name from "header.h";" ----
@@ -637,8 +639,10 @@ void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string 
 {
     int file = diag.AddFile(path);
     var lexer = Lexer.Create(source, file, diag);
+    int before = diag.ErrorCount();
     var parser = Parser.Create(lexer.Tokenize(), diag, tree);
     var unit = parser.ParseUnit(prelude);
+    cg.St[0].SyntaxErrors += diag.ErrorCount() - before;
     foreach (var imp in unit.Imports)
         imports.Add(FfiImport { Name = imp.Name, Header = imp.Header, SourcePath = path, Loc = imp.Loc });
     AddUnit(cg, unit);

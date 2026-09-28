@@ -69,12 +69,14 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     var se = cg.Structs.Get(entry);
     var decl = se.Decl;
     if (args.Length != decl.TypeParams.Length)
-        Fail(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
+        return RecoverType(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
+    if (HasUnknownType(cg, args))
+        return types.Unknown; // List<Foo> with an unknown Foo (reported where it is written)
 
     foreach (var a in args)
     {
         if (IsInterfaceType(cg, a))
-            Fail(cg, loc, "an interface cannot be a type argument ('" + cg.Types.Name(a) + "'); an interface is only a 'ref'/'const ref' parameter");
+            return RecoverType(cg, loc, "an interface cannot be a type argument ('" + cg.Types.Name(a) + "'); an interface is only a 'ref'/'const ref' parameter");
     }
     string key = Qualified(cg, se.File, decl.Name) + TypeArgsSuffix(cg, args);
     var existing = cg.StructTypes.TryGet(key);
@@ -157,9 +159,12 @@ void LayoutStruct(Compiler cg, int index)
         if (types.IsStruct(b))
         {
             if (i != 0)
-                Fail(cg, bnode.Loc, "the base struct must be listed first");
+                Recover(cg, bnode.Loc, "the base struct must be listed first");
             if (GetStructInfo(cg, b).LayoutInProgress)
-                Fail(cg, bnode.Loc, "cyclic struct inheritance");
+            {
+                Recover(cg, bnode.Loc, "cyclic struct inheritance");
+                continue;
+            }
             si.Base = b;
         }
         else if (types.Kind(b) == TypeKind.Interface)
@@ -170,9 +175,9 @@ void LayoutStruct(Compiler cg, int index)
             grown[si.Interfaces.Length] = b;
             si.Interfaces = grown;
         }
-        else
+        else if (!types.IsUnknown(b))
         {
-            Fail(cg, bnode.Loc, "'" + types.Name(b) + "' is neither a struct nor an interface");
+            Recover(cg, bnode.Loc, "'" + types.Name(b) + "' is neither a struct nor an interface");
         }
     }
     if (si.Base != 0)
@@ -183,17 +188,23 @@ void LayoutStruct(Compiler cg, int index)
     {
         int ft = ResolveValueType(cg, f.Type.Id, se.File, si.Env);
         if (types.IsVoid(ft))
-            Fail(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
+            ft = RecoverType(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
+        // a field declared twice, or hiding an inherited one, is reported and left out
+        bool twice = false;
         for (var k = 0; k < fields.Count(); k += 1)
         {
             if (fields.Get(k).Name == f.Name)
-                Fail(cg, f.Loc, "field '" + f.Name + "' is declared twice");
+                twice = true;
         }
-        if (si.Base != 0)
+        if (twice)
         {
-            var inherited = FindField(cg, si.Base, f.Name);
-            if (inherited.Found)
-                Fail(cg, f.Loc, "field '" + f.Name + "' hides an inherited field");
+            Recover(cg, f.Loc, "field '" + f.Name + "' is declared twice");
+            continue;
+        }
+        if (si.Base != 0 && FindField(cg, si.Base, f.Name).Found)
+        {
+            Recover(cg, f.Loc, "field '" + f.Name + "' hides an inherited field");
+            continue;
         }
         fields.Add(FieldInfo { Name = f.Name, Type = ft, Index = elems.Count(), IsPrivate = f.Name.Length > 0 && f.Name[0] == '_' });
         elems.Add(LlvmType(cg, ft));

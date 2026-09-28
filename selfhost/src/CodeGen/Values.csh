@@ -234,6 +234,9 @@ int ConversionCost(Compiler cg, Value v, int to)
     int from = v.Type;
     if (from == to)
         return 0;
+    // the checker: a value of the unknown type, or a parameter of it (an error reported before), fits anything
+    if (types.IsUnknown(from) || types.IsUnknown(to))
+        return 0;
 
     if (v.HasLit)
     {

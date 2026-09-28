@@ -49,8 +49,16 @@ string CompileProgram(Compiler cg, string triple)
         GetStructType(cg, s, new int[0], se.Decl.Loc);
     }
 
+    // ... and every union (members, interfaces)
+    for (var u = 0; u < cg.Unions.Count(); u += 1)
+    {
+        if (!cg.Files.Get(cg.Unions.Get(u).File).IsPrelude)
+            GetUnionType(cg, u, cg.Unions.Get(u).Decl.Loc);
+    }
+
     // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).
     CheckProgram(cg);
+    cg.St[0].Recovering = false;
 
     // 2. Plain (non-generic, non-method, non-extern) functions of the program are always generated; Main is the entry point.
     int main = -1;

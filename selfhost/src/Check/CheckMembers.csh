@@ -37,8 +37,15 @@ bool ReportIf(Compiler cg, SourceLoc loc, string message)
 {
     if (message.Length == 0)
         return false;
-    CheckError(cg, loc, message);
+    if (message != AlreadyReported())
+        CheckError(cg, loc, message);
     return true;
+}
+
+// The reason of a decision that failed because of an error reported before (an unknown type): not reported again.
+string AlreadyReported()
+{
+    return "(already reported)";
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +208,8 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
                 return UnknownValue(cg);
             }
             int st = GetStructType(cg, entry.Index, ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object)), e.Loc);
+            if (types.IsUnknown(st))
+                return UnknownValue(cg); // List<Foo>.Create() with an unknown Foo
             var scands = MethodCandidates(cg, st, m.Name);
             if (scands.Length == 0)
             {

@@ -193,8 +193,11 @@ struct TypeContext
         }
     }
 
+    // A type made of the unknown type is unknown (the checker reports the error once, where the type is written).
     int Derived(TypeKind kind, string name, int elem)
     {
+        if (elem == Unknown)
+            return Unknown;
         var found = Interned.TryGet(name);
         if (found is int existing)
             return existing;
@@ -214,6 +217,8 @@ struct TypeContext
     {
         if (code == 0)
             return ErrorOf(elem);
+        if (elem == Unknown || code == Unknown)
+            return Unknown;
         string name = "Error<" + Name(elem) + ", " + Name(code) + ">";
         var found = Interned.TryGet(name);
         if (found is int existing)
@@ -247,6 +252,8 @@ struct TypeContext
     int SliceOf(int elem) { return Derived(TypeKind.Slice, "Slice<" + Name(elem) + ">", elem); }
     int FixedOf(int elem, int count)
     {
+        if (elem == Unknown)
+            return Unknown;
         string name = "Fixed<" + Name(elem) + ", " + count.ToString() + ">";
         var found = Interned.TryGet(name);
         if (found is int existing)
@@ -265,6 +272,13 @@ struct TypeContext
     // Action<params> for a void result, Func<params, ret> otherwise.
     int FunctionOf(int[] parameters, int ret)
     {
+        if (ret == Unknown)
+            return Unknown;
+        foreach (var p in parameters)
+        {
+            if (p == Unknown)
+                return Unknown;
+        }
         string name = IsVoid(ret) ? "Action" : "Func";
         if (parameters.Length > 0 || !IsVoid(ret))
         {

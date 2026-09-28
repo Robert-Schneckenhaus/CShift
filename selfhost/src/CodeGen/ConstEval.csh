@@ -19,7 +19,9 @@ using System.Native;
 
 extern "C" int snprintf(char* buffer, uint64 size, char* format, ...);
 
-enum ConstKind : int32 { Int, Float, Bool, String, Slice }
+// Unknown: the value of a constant whose type or initializer had an error (reported once); everything computed from it is
+// unknown too, and nothing about it is reported.
+enum ConstKind : int32 { Int, Float, Bool, String, Slice, Unknown }
 
 struct ConstVal
 {
@@ -274,9 +276,16 @@ ConstVal ConstAdaptLiteral(Compiler cg, ConstVal v, int to)
 }
 
 // The implicit conversion of a value to a type (the counterpart of ConvertValue).
+ConstVal ConstUnknown(Compiler cg)
+{
+    return ConstVal { Kind = ConstKind.Unknown, Type = cg.Types.Unknown };
+}
+
 ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allowEnumInt)
 {
     var types = cg.Types;
+    if (v.Kind == ConstKind.Unknown || types.IsUnknown(to))
+        return ConstUnknown(cg);
     int from = v.Type;
     if (from == to)
         return v;
@@ -336,6 +345,8 @@ string ConstToText(Compiler cg, ConstVal v)
 {
     switch (v.Kind)
     {
+    case ConstKind.Unknown:
+        return "?";
     case ConstKind.String:
         return v.S;
     case ConstKind.Bool:
@@ -374,6 +385,8 @@ Value ConstToValue(Compiler cg, ConstVal v)
     Value r;
     switch (v.Kind)
     {
+    case ConstKind.Unknown:
+        return Rvalue(types.Unknown, "", false);
     case ConstKind.Int:
         r = ConstInt(cg, v.Type, (int64)ConstPattern(v, 64));
         break;
@@ -655,6 +668,8 @@ ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc
 bool IsConstantType(Compiler cg, int t)
 {
     var types = cg.Types;
+    if (types.IsUnknown(t))
+        return true; // reported where the type is written
     if (types.IsReadOnlySlice(t))
         return IsConstantElementType(cg, types.Elem(t));
     return IsConstantElementType(cg, t);
@@ -678,8 +693,8 @@ void FailConstantType(Compiler cg, SourceLoc loc, int t)
 
 ConstVal ConstNotConstant(Compiler cg, ConstScope sc)
 {
-    Fail(cg, sc.DeclLoc, "the initializer of " + sc.What + " must be a constant expression (literals, operators, other constants)");
-    return ConstVal { };
+    Recover(cg, sc.DeclLoc, "the initializer of " + sc.What + " must be a constant expression (literals, operators, other constants)");
+    return ConstUnknown(cg);
 }
 
 ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
@@ -792,6 +807,8 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         for (var i = 0; i < n.Items.Length; i += 1)
         {
             ConstVal item = ConstEval(cg, n.Items[i], sc);
+            if (item.Kind == ConstKind.Unknown)
+                return item;
             if (!n.Spread[i])
             {
                 if (item.Kind == ConstKind.Slice)
@@ -809,9 +826,14 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     {
         var ix = tree.GetIndex(e);
         ConstVal obj = ConstEval(cg, ix.Object, sc);
+        if (obj.Kind == ConstKind.Unknown)
+            return obj;
         if (obj.Kind != ConstKind.Slice)
             return ConstNotConstant(cg, sc);
-        int i = ConstIndex(cg, ConstEval(cg, ix.Index, sc), ix.FromEnd, obj.Items.Length, ix.Index.Loc);
+        ConstVal index = ConstEval(cg, ix.Index, sc);
+        if (index.Kind == ConstKind.Unknown)
+            return index;
+        int i = ConstIndex(cg, index, ix.FromEnd, obj.Items.Length, ix.Index.Loc);
         if (i < 0 || i >= obj.Items.Length)
             Fail(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + obj.Items.Length.ToString() + " elements)");
         return obj.Items[i];
@@ -820,11 +842,17 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     {
         var n = tree.GetSlice(e);
         ConstVal obj = ConstEval(cg, n.Object, sc);
+        if (obj.Kind == ConstKind.Unknown)
+            return obj;
         if (obj.Kind != ConstKind.Slice)
             return ConstNotConstant(cg, sc);
         int length = obj.Items.Length;
-        int start = n.Start.IsNull() ? 0 : ConstIndex(cg, ConstEval(cg, n.Start, sc), n.StartFromEnd, length, n.Start.Loc);
-        int end = n.End.IsNull() ? length : ConstIndex(cg, ConstEval(cg, n.End, sc), n.EndFromEnd, length, n.End.Loc);
+        ConstVal startValue = n.Start.IsNull() ? ConstMakeInt(types.I32, false, 0ul, false) : ConstEval(cg, n.Start, sc);
+        ConstVal endValue = n.End.IsNull() ? ConstMakeInt(types.I32, false, (uint64)length, false) : ConstEval(cg, n.End, sc);
+        if (startValue.Kind == ConstKind.Unknown || endValue.Kind == ConstKind.Unknown)
+            return ConstUnknown(cg);
+        int start = n.Start.IsNull() ? 0 : ConstIndex(cg, startValue, n.StartFromEnd, length, n.Start.Loc);
+        int end = n.End.IsNull() ? length : ConstIndex(cg, endValue, n.EndFromEnd, length, n.End.Loc);
         if (start < 0 || start > end || end > length)
             Fail(cg, e.Loc, "slice range " + start.ToString() + ".." + end.ToString() + " is out of bounds (the constant slice has " +
                             length.ToString() + " elements)");
@@ -839,6 +867,8 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         if (u.Op == UnOp.Deref || u.Op == UnOp.AddrOf)
             return ConstNotConstant(cg, sc);
         ConstVal v = ConstEval(cg, u.Operand, sc);
+        if (v.Kind == ConstKind.Unknown)
+            return v;
         switch (u.Op)
         {
         case UnOp.Neg:
@@ -897,17 +927,23 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         {
             // the right side is only evaluated if it can change the result
             ConstVal l = ConstEval(cg, b.Lhs, sc);
+            if (l.Kind == ConstKind.Unknown)
+                return l;
             if (!types.IsBool(l.Type))
                 Fail(cg, b.Lhs.Loc, "a condition must be of type 'bool', not '" + types.Name(l.Type) + "' (there is no implicit conversion to bool)");
             if (b.Op == BinOp.LogAnd ? !l.B : l.B)
                 return l;
             ConstVal r = ConstEval(cg, b.Rhs, sc);
+            if (r.Kind == ConstKind.Unknown)
+                return r;
             if (!types.IsBool(r.Type))
                 Fail(cg, b.Rhs.Loc, "a condition must be of type 'bool', not '" + types.Name(r.Type) + "' (there is no implicit conversion to bool)");
             return r;
         }
         ConstVal lhs = ConstEval(cg, b.Lhs, sc);
         ConstVal rhs = ConstEval(cg, b.Rhs, sc);
+        if (lhs.Kind == ConstKind.Unknown || rhs.Kind == ConstKind.Unknown)
+            return ConstUnknown(cg);
         switch (b.Op)
         {
         case BinOp.Eq:
@@ -926,6 +962,8 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         var c = tree.GetCast(e);
         int to = ResolveValueType(cg, c.Type.Id, sc.File, sc.Env);
         ConstVal v = ConstEval(cg, c.Operand, sc);
+        if (v.Kind == ConstKind.Unknown || types.IsUnknown(to))
+            return ConstUnknown(cg);
         int from = v.Type;
         if (from == to)
             return v;
@@ -945,6 +983,8 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
     case ExprKind.SizeOf:
     {
         int t = ResolveValueType(cg, tree.GetSizeOf(e).Type.Id, sc.File, sc.Env);
+        if (types.IsUnknown(t))
+            return ConstUnknown(cg);
         if (types.IsVoid(t))
             Fail(cg, e.Loc, "sizeof(void) is not defined");
         return ConstMakeInt(types.I32, false, (uint64)TypeLayout(cg, t).Size, false);
@@ -975,6 +1015,8 @@ int ConstIndex(Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
 ConstVal ConstLength(Compiler cg, ConstVal v, SourceLoc loc)
 {
     var types = cg.Types;
+    if (v.Kind == ConstKind.Unknown)
+        return v;
     if (v.Kind == ConstKind.Slice)
         return ConstMakeInt(types.I32, false, (uint64)v.Items.Length, false);
     if (v.Kind == ConstKind.String)
@@ -1253,7 +1295,8 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
     if (!IsConstantType(cg, t))
         FailConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
-    ConstVal v = IsEmbedExpr(c.Init) ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
+    // with an unknown type the initializer is still checked; the value is unknown (ConstConvert)
+    ConstVal v = IsEmbedExpr(c.Init) && !cg.Types.IsUnknown(t) ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
     // enumerators of imported C enums are written as integers
     v = ConstConvert(cg, v, t, c.Init.Loc, cg.Files.Get(entry.File).IsPrelude);
     entry.State = 2;
@@ -1268,6 +1311,8 @@ int64 ConstEvalEnumMember(Compiler cg, Expr init, EnumInfo known, int file, stri
 {
     var sc = ConstScope { File = file, HasEnum = true, Enum = known, What = "enum member '" + memberName + "'", DeclLoc = loc, Env = NoEnv() };
     ConstVal v = ConstEval(cg, init, sc);
+    if (v.Kind == ConstKind.Unknown)
+        return 0;
     if (v.Kind != ConstKind.Int)
         Fail(cg, loc, "the value of enum member '" + memberName + "' must be an integer constant");
     if (!ConstFits(cg, v, known.Base))

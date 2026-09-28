@@ -32,10 +32,11 @@ struct Diagnostics
 {
     List<string> Files;
     int[] _errors;
+    HashSet<string> _reported; // "location message": the same error at the same place is printed once
 
     static Diagnostics Create()
     {
-        return Diagnostics { Files = List<string>.Create(), _errors = new int[1] };
+        return Diagnostics { Files = List<string>.Create(), _errors = new int[1], _reported = HashSet<string>.Create() };
     }
 
     int AddFile(string name)
@@ -54,11 +55,15 @@ struct Diagnostics
         return _errors[0] > 0;
     }
 
-    // Prints "file:line:col: error: text" to stderr. After MaxErrors errors the compiler stops.
+    // Prints "file:line:col: error: text" to stderr (once: a declaration that is looked at twice reports its error
+    // once). After MaxErrors errors the compiler stops.
     void ReportAt(SourceLoc loc, string message)
     {
+        string text = Location(loc) + "error: " + message;
+        if (!_reported.Add(text))
+            return;
         _errors[0] += 1;
-        Console.WriteErrorLine(Location(loc) + "error: " + message);
+        Console.WriteErrorLine(text);
         if (_errors[0] >= MaxErrors)
         {
             Console.WriteErrorLine("error: too many errors (" + MaxErrors.ToString() + "), stopping");

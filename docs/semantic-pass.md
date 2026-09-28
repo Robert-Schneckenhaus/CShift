@@ -44,10 +44,24 @@ not know yet has the unknown type.
 
 **The unknown type** (`TypeKind.Unknown`) is never shown to the user. The checker gives it to every expression it
 cannot type yet and to every expression that had an error; an operation with an unknown operand has an unknown result
-and reports nothing.
+and reports nothing. A type name that does not exist is the unknown type too, wherever it is written (a field, a
+parameter, a constant, a global, a local variable, a type argument): a type made of it (`Foo[]`, `List<Foo>`,
+`Func<Foo, int>`) is unknown, a value converts to and from it, and a constant of it has an unknown value
+(`ConstKind.Unknown`). A message of the checker that would name the unknown type is left out, and the same message at
+the same place is printed once.
 
-**Errors that still stop the compiler.** Everything that is not moved into the checker yet still fails in code
-generation or in the declaration checks, as before; the errors reported until then have been printed. The number of
+**Declarations.** The declarations are registered and checked before the checker runs, in a mode in which their errors
+are reported and the compiler goes on (`Recover`, while `CgState.Recovering` is set, from the start until the checker
+has run): names defined twice (the first one stays), types that cannot be resolved (`RecoverType`: unknown names,
+wrong type arguments, `void` where a value is needed; the type is unknown), fields declared twice or hiding an
+inherited one (left out), struct bases, enum bases and members, union members and interfaces, parameters, `thread`
+signatures, the size of `Fixed<T, N>`, constant initializers that are not constant. Every struct and union of the
+program is checked, also if nothing uses it. The checker then runs as well, and the compiler stops after it if anything
+was reported; only a syntax error stops it right after parsing. Code generation after the checker never sees the
+unknown type; there `Recover` ends the compiler like `Fail`.
+
+**Errors that still stop the compiler.** Everything that is not moved into the checker or `Recover` yet still fails
+in code generation or in the declaration checks, as before; the errors reported until then have been printed. The number of
 errors is limited (50); after that the compiler stops.
 
 ## Steps
@@ -57,7 +71,7 @@ errors is limited (50); after that the compiler stops.
 | 1 | Unknown type, error limit, the checker for statements and scopes, names, literals, operators, assignments, conditions, variable declarations, `return`, calls of functions and methods by name, fields | done |
 | 2 | Member calls of every kind (static, namespaces, builtins like `Console`, strings, arrays), `new`, struct initializers, indexing and slices | done |
 | 3 | Patterns (`is`, `switch`), unions, `Error<T>`/`Optional<T>`/`try`, lambdas and collection expressions, casts, interfaces, threads | done: `is`, `switch` labels, patterns and exhaustiveness, `try`, `error(...)`, casts, calls through interfaces and unions, the bodies of lambdas, missing returns and fall-through (structural reachability), collection expressions (element types, spreads, `Fixed<T, N>` sizes, builder structs, also as arguments), `start` and `Thread.Cancelled`. The signatures of `thread` functions are checked with the other declarations (step 4); that a thread does not reach a global variable needs the call graph of the generated code (step 5) |
-| 4 | Declarations with recovery: constants, globals, struct fields and signatures (also of `thread` functions) report and continue | |
+| 4 | Declarations with recovery: constants, globals, struct fields and signatures (also of `thread` functions) report and continue | done: see *Declarations* above. Errors in the value of a constant (overflow, a division by zero, a wrong operand) and in the initializers of globals still stop the compiler; they move into the checker with step 5 |
 | 5 | Code generation reads the checker's results (types, chosen overloads, conversions) and its own checks go away | |
 | 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | |
 | 7 | Tooling on top of the checker's results | |

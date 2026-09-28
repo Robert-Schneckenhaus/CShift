@@ -45,9 +45,16 @@ Value GlobalValue(Compiler cg, int index)
     {
         int t = ResolveValueType(cg, g.Decl.Type.Id, g.File, NoEnv());
         if (types.IsVoid(t))
-            Fail(cg, g.Decl.Loc, "variable '" + g.Name + "' cannot have type 'void'");
+            t = RecoverType(cg, g.Decl.Loc, "variable '" + g.Name + "' cannot have type 'void'");
         if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)
-            Fail(cg, g.Decl.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");
+            t = RecoverType(cg, g.Decl.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");
+        if (types.IsUnknown(t))
+        {
+            g.Type = t; // reported where the type is written; code that uses the global is not checked further
+            g.Var = "@\"global." + g.Name + "\"";
+            cg.Globals.Set(index, g);
+            return Lvalue(t, g.Var, false);
+        }
         g.Type = t;
         g.Var = "@\"global." + g.Name + "\"";
         cg.Globals.Set(index, g);
@@ -243,8 +250,10 @@ void EmitGlobalsInit(Compiler cg)
         if (g.Decl.Init.IsNull())
             continue;
         cg.Fn[0].File = g.File;
-        PushScope(cg); // the scope of pattern variables in the initializer
         Value target = GlobalValue(cg, i);
+        if (cg.Types.IsUnknown(target.Type))
+            continue; // the type had an error (reported); the program is not generated
+        PushScope(cg); // the scope of pattern variables in the initializer
         var current = cg.Globals.Get(i);
         cg.St[0].CurrentInit = i;
         cg.St[0].InitActive = true;
