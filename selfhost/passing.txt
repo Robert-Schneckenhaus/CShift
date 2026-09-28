@@ -147,6 +147,7 @@ err_several_methods.csh
 err_several_paths.csh
 err_several_results.csh
 err_several_switch.csh
+err_several_threads.csh
 err_slice_copy.csh
 err_slice_readonly.csh
 err_slice_thread.csh

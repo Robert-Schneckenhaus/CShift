@@ -74,7 +74,16 @@ Value CheckMember(Compiler cg, Expr e)
         {
             bool isTypeName = LookupTypeDecl(cg, file, dotted, ref entry);
             if (isTypeName && dotted == "Thread" && m.Name == "Cancelled" && entry.Kind == DeclKind.Struct)
-                return UnknownValue(cg);
+            {
+                // see EmitThreadCancelled; a lambda belongs to the function it is written in
+                var fi = cg.Instances.Get(cg.Fn[0].Func);
+                if (fi.Entry < 0 || !cg.Funcs.Get(fi.Entry).Decl.IsThread)
+                {
+                    CheckError(cg, e.Loc, "'Thread.Cancelled' can only be used inside a 'thread' function");
+                    return UnknownValue(cg);
+                }
+                return Rvalue(types.Bool, "", false);
+            }
             if (isTypeName && entry.Kind == DeclKind.Enum)
             {
                 int et = GetEnumType(cg, entry.Index);
