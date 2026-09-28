@@ -178,6 +178,7 @@ struct FnState
     List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
     string EnvType;                    // the LLVM type of the environment
     string CallerArg;                  // a library function that reports its caller: the parameter with the call site
+    bool Live;                         // the checker: the current statement can be reached (structurally)
 }
 
 struct LambdaCapture
