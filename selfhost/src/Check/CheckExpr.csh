@@ -345,6 +345,80 @@ Value CheckBinary(Compiler cg, Expr e)
     return l;
 }
 
+// ---------------------------------------------------------------------------
+// Target-typed integer arithmetic (see ArithmeticFrame in CodeGen/Rules.csh and EmitExprAs)
+// ---------------------------------------------------------------------------
+
+// An expression used as a value of 'target'.
+Value CheckExprAs(Compiler cg, Expr e, int target)
+{
+    int frame = ArithmeticFrame(cg, target);
+    if (frame == 0 || !IsFramable(cg, e))
+        return CheckExpr(cg, e);
+    return CheckFramed(cg, e, frame);
+}
+
+// An operand of a framed expression (see EmitFramed).
+Value CheckFramed(Compiler cg, Expr e, int frame)
+{
+    if (!IsFramable(cg, e))
+        return CheckRValue(cg, e);
+    if (e.Kind == ExprKind.Unchecked)
+        return CheckFramed(cg, cg.Tree.GetUnchecked(e).Operand, frame);
+    if (e.Kind == ExprKind.Unary)
+    {
+        var u = cg.Tree.GetUnary(e);
+        Value operand = CheckFramed(cg, u.Operand, frame);
+        if (u.Op == UnOp.Neg && operand.HasLit)
+            return NegateLiteral(cg, operand);
+        if (FramedUnaryType(cg, u.Op, operand, frame) == frame)
+            return Rvalue(frame, "", false);
+        string why = "";
+        Value r = UnaryResult(cg, u.Op, operand, ref why);
+        if (r.Type == 0)
+        {
+            CheckError(cg, e.Loc, why);
+            return UnknownValue(cg);
+        }
+        return r;
+    }
+    var chain = List<Expr>.Create();
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary && IsFramable(cg, leftmost))
+    {
+        chain.Add(leftmost);
+        leftmost = cg.Tree.GetBinary(leftmost).Lhs;
+    }
+    Value l = CheckFramed(cg, leftmost, frame);
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        Expr step = chain.Get(i);
+        var sb = cg.Tree.GetBinary(step);
+        Value r = CheckFramed(cg, sb.Rhs, frame);
+        l = CheckFramedStep(cg, sb.Op, l, r, frame, step.Loc);
+    }
+    return l;
+}
+
+// l op r in the frame if both fit, otherwise by the usual rules (see EmitFramedStep).
+Value CheckFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
+{
+    bool folded = false;
+    Value lit = FoldLiterals(cg, op, l, r, ref folded);
+    if (folded)
+        return lit;
+    if (FramedArithmeticType(cg, op, l, r, frame) == frame)
+        return Rvalue(frame, "", false);
+    string why = "";
+    int t = ArithmeticType(cg, op, l, r, ref why);
+    if (t == 0)
+    {
+        CheckError(cg, loc, why);
+        return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
 // target = value, target op= value (see EmitAssign). Elements of arrays, slices and Fixed values are checked; indexers
 // (x[k] = v on a struct) and string elements are left to code generation for now.
 Value CheckAssign(Compiler cg, Expr e)
@@ -397,21 +471,36 @@ Value CheckAssign(Compiler cg, Expr e)
         CheckExpr(cg, a.Value);
         return UnknownValue(cg);
     }
-    Value rhs = CheckRValue(cg, a.Value);
     if (a.HasOp)
     {
+        // see EmitCompound
         Value cur = target;
         cur.IsLValue = false;
         cur.IsConst = false;
-        string why = "";
-        int res = ArithmeticType(cg, a.Op, cur, rhs, ref why);
-        if (res == 0)
-            CheckError(cg, e.Loc, why);
-        else if (res != target.Type && !(types.IsNumeric(res) && types.IsNumeric(target.Type)))
-            CheckConversion(cg, Rvalue(res, "", false), target.Type, e.Loc);
+        int frame = ArithmeticFrame(cg, target.Type);
+        Value res;
+        if (frame != 0 && types.IsIntegral(target.Type))
+            res = CheckFramedStep(cg, a.Op, cur, CheckFramed(cg, a.Value, frame), frame, e.Loc);
+        else
+        {
+            Value rhs = CheckRValue(cg, a.Value);
+            string why = "";
+            int rt = ArithmeticType(cg, a.Op, cur, rhs, ref why);
+            if (rt == 0)
+                CheckError(cg, e.Loc, why);
+            res = rt == 0 ? UnknownValue(cg) : Rvalue(rt, "", false);
+        }
+        if (!IsUnknown(cg, res) && res.Type != target.Type && !(types.IsNumeric(res.Type) && types.IsNumeric(target.Type)))
+            CheckConversion(cg, res, target.Type, e.Loc);
     }
     else
+    {
+        Value rhs = CheckExprAs(cg, a.Value, target.Type);
+        rhs.IsLValue = false;
+        rhs.IsConst = false;
+        rhs.IsRefArg = false;
         CheckConversion(cg, rhs, target.Type, a.Value.Loc);
+    }
     return Lvalue(target.Type, target.V, false);
 }
 

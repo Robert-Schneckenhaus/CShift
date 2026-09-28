@@ -411,7 +411,7 @@ Value EmitStructInit(Compiler cg, Expr e)
             Fail(cg, f.Loc, "field '" + f.Name + "' is private to '" + types.Name(p.Owner) + "'");
         if (!seen.Add(f.Name))
             Fail(cg, f.Loc, "field '" + f.Name + "' is initialized twice");
-        Value v = ConvertValue(cg, EmitRValue(cg, f.Value), p.Type, f.Value.Loc);
+        Value v = ConvertValue(cg, ToRValue(cg, EmitExprAs(cg, f.Value, p.Type)), p.Type, f.Value.Loc);
         agg = ir.InsertValue(ty, agg, LlvmType(cg, p.Type), Consume(cg, v), IndexList(p.Indices));
     }
     return Rvalue(t, agg, NeedsArc(cg, t));

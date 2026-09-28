@@ -59,7 +59,7 @@ Value EmitNewArray(Compiler cg, Expr e)
         string arr = AllocArray(cg, elem, n.Init.Length.ToString());
         for (var i = 0; i < n.Init.Length; i += 1)
         {
-            Value v = ConvertValue(cg, EmitRValue(cg, n.Init[i]), elem, n.Init[i].Loc);
+            Value v = ConvertValue(cg, ToRValue(cg, EmitExprAs(cg, n.Init[i], elem)), elem, n.Init[i].Loc);
             string owned = Consume(cg, v);
             string slot = ir.Gep(elemIr, DataPtr(cg, arr), "i64 " + i.ToString());
             ir.Store(elemIr, owned, slot);

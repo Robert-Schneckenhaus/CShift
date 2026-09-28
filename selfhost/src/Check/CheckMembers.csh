@@ -728,7 +728,7 @@ Value CheckNewArray(Compiler cg, Expr e)
         if (!n.Size.IsNull() && (n.Size.Kind != ExprKind.IntLit || (int64)cg.Tree.GetIntLit(n.Size).Value != n.Init.Length))
             CheckError(cg, e.Loc, "the array size must match the number of initializers");
         foreach (var item in n.Init)
-            CheckConversion(cg, CheckRValue(cg, item), elem, item.Loc);
+            CheckConversion(cg, CheckExprAs(cg, item, elem), elem, item.Loc);
     }
     else
     {
@@ -775,7 +775,7 @@ Value CheckStructInit(Compiler cg, Expr e)
         else if (!seen.Add(f.Name))
             why = "field '" + f.Name + "' is initialized twice";
         ReportIf(cg, f.Loc, why);
-        Value v = CheckRValue(cg, f.Value);
+        Value v = why.Length == 0 ? CheckExprAs(cg, f.Value, p.Type) : CheckRValue(cg, f.Value);
         if (why.Length == 0)
             CheckConversion(cg, v, p.Type, f.Value.Loc);
     }

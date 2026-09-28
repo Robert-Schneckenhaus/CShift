@@ -285,7 +285,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
         if (!IsConstantType(cg, t))
             t = RecoverConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
-        ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
+        ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEvalAs(cg, d.Init, sc, t), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
         var constVars = cg.Fn[0].Vars;
         var constVar = constVars.Get(constVars.Count() - 1);
@@ -298,7 +298,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
 
     Value init = Value { };
     if (!d.Init.IsNull())
-        init = EmitExpr(cg, d.Init);
+        init = t != 0 ? EmitExprAs(cg, d.Init, t) : EmitExpr(cg, d.Init);
     if (t == 0)
     {
         if (d.Init.IsNull())
@@ -528,7 +528,7 @@ void EmitReturn(Compiler cg, Stmt s)
     {
         if (types.IsVoid(rt))
             Fail(cg, s.Loc, "a void function cannot return a value");
-        Value v = EmitExpr(cg, n.Value);
+        Value v = EmitExprAs(cg, n.Value, rt);
         Value cv = ConvertValue(cg, v, rt, n.Value.Loc);
         string rv = Consume(cg, cv);
         FlushTemps(cg, 0, true);

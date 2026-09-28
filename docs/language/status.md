@@ -35,7 +35,8 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (value, read-only alias, alias) | ✔ |
 | Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |
-| Checked integer arithmetic (overflow, division by zero, array/string bounds → panic), `unchecked` | ✔ |
+| Checked integer arithmetic (overflow, division by zero, array/string bounds → panic), `unchecked`, `--unchecked` | ✔ |
+| Integer arithmetic in the target type (`uint8 r = a + 1;` without a cast) | ✔ ([basics](basics.md#integer-arithmetic-and-the-target-type)) |
 | Operators and precedence like C# (without `++`/`--`), `?:`, casts, `sizeof` | ✔ |
 | `if`/`while`/`do`/`for`/`foreach` (arrays, strings)/`switch`/`break`/`continue`/`return` | ✔ |
 | Function overloading | ✔ |

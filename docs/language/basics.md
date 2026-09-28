@@ -106,6 +106,42 @@ Arithmetic (`+ - * / %`), comparison (`== != < > <= >=`), logic (`&& || !`), bit
 compound assignments (`+= -= *= /= %= &= |= ^= <<= >>=`) all work as in C#, with the same precedence. There is no
 `++`/`--`; write `i += 1` instead. The conditional operator `cond ? a : b` is available.
 
+### Integer arithmetic and the target type
+
+Unlike C#, arithmetic on small integers does not need a cast when its result goes into a variable of the same type:
+
+```csharp
+uint8 a = 200;
+uint8 b = 50;
+uint8 sum = a + b;          // fine: computed in uint8 (250)
+uint8 next = a + 1;         // fine: the literal 1 fits uint8
+int32 area = a * b;         // computed in int32: 10000, no overflow in uint8
+int64 big = count * 1000;   // an int32 count: computed in int64
+```
+
+The rule: when an arithmetic expression (`+ - * / % & | ^ << >>`, unary `-` and `~`) is used as a value of an
+integer type T — the type of a declared variable, the target of an assignment or compound assignment, a return value,
+a field in `S { F = ... }`, an array element in `new T[] { ... }`, a constant — it is computed in T, provided that
+every operand converts to T implicitly. A literal counts by its value (`10` fits `uint8`, `300` does not, `-1` fits
+only signed types), two literals are combined when the program is compiled (`uint8 x = 1 + 2;`). Integers with and
+without a sign fit a signed type that is larger than both (`int16 d = a + n;` with `uint8 a` and `int8 n`).
+
+If an operand does not fit T, or there is no target type at all, the usual rules apply and the small types are
+widened to `int32`, like in C#:
+
+```csharp
+var v = a + b;              // int32: no target type
+Console.WriteLine((a + b).ToString());   // int32 too
+if (a + b > 255) { }        // int32: a comparison has no target type
+uint8 bad = a + someInt32;  // error: int32 does not fit uint8, cast it
+uint8 alsoBad = a + n;      // error: uint8 + int8 needs int16
+int64 mixed = someUInt64 + someInt64;    // error: uint64 and a signed type need a cast
+```
+
+The computation is checked in T like all integer arithmetic: `uint8 r = a + b;` with `a = 200, b = 100` ends the
+program with an overflow panic (see above; `--unchecked` makes it wrap around). A compound assignment whose value is
+wider than the target (`int16 x; x += someInt32;`) narrows the result, which is checked as well.
+
 Only `bool` can be used as a condition — there's no implicit conversion from `int`, a pointer, `Error<T>` or `Optional<T>` to
 `bool`:
 

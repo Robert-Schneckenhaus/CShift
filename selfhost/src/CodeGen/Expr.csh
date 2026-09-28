@@ -770,25 +770,8 @@ Value EmitUnary(Compiler cg, Expr e)
         return EmitAddressOf(cg, e, u.Operand);
     case UnOp.Neg:
     case UnOp.Plus:
-    {
-        Value v = EmitRValue(cg, u.Operand);
-        string why = "";
-        if (UnaryResult(cg, u.Op, v, ref why).Type == 0)
-            Fail(cg, e.Loc, why);
-        if (v.HasLit && u.Op == UnOp.Neg)
-            return NegateLiteral(cg, v);
-        if (!types.IsNumeric(v.Type))
-            Fail(cg, e.Loc, "unary '-' cannot be applied to '" + types.Name(v.Type) + "'");
-        int pt = types.IsFloat(v.Type) ? v.Type : PromoteTypes(cg, v.Type, v.Type, e.Loc);
-        Value c = ConvertValue(cg, v, pt, e.Loc);
-        if (u.Op == UnOp.Plus)
-            return c;
-        if (types.IsFloat(pt))
-            return Rvalue(pt, ir.Bin("fsub", LlvmType(cg, pt), FloatConstant(cg, pt, -0.0), c.V), false);
-        if (!types.IsSigned(pt))
-            Fail(cg, e.Loc, "unary '-' cannot be applied to unsigned type '" + types.Name(pt) + "'");
-        return Rvalue(pt, EmitIntOp(cg, BinOp.Sub, "0", c.V, pt), false);
-    }
+    case UnOp.BitNot:
+        return EmitUnaryOn(cg, u.Op, EmitRValue(cg, u.Operand), e.Loc);
     case UnOp.Not:
     {
         Value v = EmitRValue(cg, u.Operand);
@@ -801,24 +784,157 @@ Value EmitUnary(Compiler cg, Expr e)
         Fail(cg, e.Loc, "operator '!' cannot be applied to '" + types.Name(v.Type) + "'");
         return v;
     }
-    case UnOp.BitNot:
-    {
-        Value v = EmitRValue(cg, u.Operand);
-        string why = "";
-        if (UnaryResult(cg, u.Op, v, ref why).Type == 0)
-            Fail(cg, e.Loc, why);
-        if (types.IsEnum(v.Type))
-            return Rvalue(v.Type, ir.Bin("xor", LlvmType(cg, v.Type), v.V, "-1"), false);
-        if (!types.IsIntegral(v.Type))
-            Fail(cg, e.Loc, "operator '~' cannot be applied to '" + types.Name(v.Type) + "'");
-        int pt = PromoteTypes(cg, v.Type, v.Type, e.Loc);
-        Value c = ConvertValue(cg, v, pt, e.Loc);
-        return Rvalue(pt, ir.Bin("xor", LlvmType(cg, pt), c.V, "-1"), false);
-    }
     default:
         Fail(cg, e.Loc, "cshc does not support pointers yet");
         return Value { };
     }
+}
+
+// -v, +v, ~v on a value (see EmitUnary).
+Value EmitUnaryOn(Compiler cg, UnOp op, Value v, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    string why = "";
+    if (UnaryResult(cg, op, v, ref why).Type == 0)
+        Fail(cg, loc, why);
+    if (op == UnOp.BitNot)
+    {
+        if (types.IsEnum(v.Type))
+            return Rvalue(v.Type, ir.Bin("xor", LlvmType(cg, v.Type), v.V, "-1"), false);
+        if (!types.IsIntegral(v.Type))
+            Fail(cg, loc, "operator '~' cannot be applied to '" + types.Name(v.Type) + "'");
+        int bt = PromoteTypes(cg, v.Type, v.Type, loc);
+        Value bc = ConvertValue(cg, v, bt, loc);
+        return Rvalue(bt, ir.Bin("xor", LlvmType(cg, bt), bc.V, "-1"), false);
+    }
+    if (v.HasLit && op == UnOp.Neg)
+        return NegateLiteral(cg, v);
+    if (!types.IsNumeric(v.Type))
+        Fail(cg, loc, "unary '-' cannot be applied to '" + types.Name(v.Type) + "'");
+    int pt = types.IsFloat(v.Type) ? v.Type : PromoteTypes(cg, v.Type, v.Type, loc);
+    Value c = ConvertValue(cg, v, pt, loc);
+    if (op == UnOp.Plus)
+        return c;
+    if (types.IsFloat(pt))
+        return Rvalue(pt, ir.Bin("fsub", LlvmType(cg, pt), FloatConstant(cg, pt, -0.0), c.V), false);
+    if (!types.IsSigned(pt))
+        Fail(cg, loc, "unary '-' cannot be applied to unsigned type '" + types.Name(pt) + "'");
+    return Rvalue(pt, EmitIntOp(cg, BinOp.Sub, "0", c.V, pt), false);
+}
+
+// ---------------------------------------------------------------------------
+// Target-typed integer arithmetic (see ArithmeticFrame in Rules.csh)
+// ---------------------------------------------------------------------------
+
+// An expression used as a value of 'target': integer arithmetic is computed in the target type where its operands
+// allow; everything else is EmitExpr.
+Value EmitExprAs(Compiler cg, Expr e, int target)
+{
+    int frame = ArithmeticFrame(cg, target);
+    if (frame == 0 || !IsFramable(cg, e))
+        return EmitExpr(cg, e);
+    return EmitFramed(cg, e, frame);
+}
+
+// The value of an operand of a framed expression.
+Value EmitFramed(Compiler cg, Expr e, int frame)
+{
+    if (!IsFramable(cg, e))
+        return EmitRValue(cg, e);
+    SourceLoc outer = cg.St[0].Loc;
+    if (e.Loc.Line > 0)
+        cg.St[0].Loc = e.Loc;
+    Value v;
+    if (e.Kind == ExprKind.Unchecked)
+    {
+        bool old = cg.Fn[0].Checked;
+        cg.Fn[0].Checked = false;
+        v = EmitFramed(cg, cg.Tree.GetUnchecked(e).Operand, frame);
+        cg.Fn[0].Checked = old;
+    }
+    else if (e.Kind == ExprKind.Unary)
+    {
+        var u = cg.Tree.GetUnary(e);
+        Value operand = EmitFramed(cg, u.Operand, frame);
+        if (u.Op == UnOp.Neg && operand.HasLit)
+            v = NegateLiteral(cg, operand);
+        else if (FramedUnaryType(cg, u.Op, operand, frame) == frame)
+        {
+            Value c = ConvertValue(cg, AdaptLiteral(cg, operand, frame), frame, e.Loc);
+            string res = u.Op == UnOp.Neg ? EmitIntOp(cg, BinOp.Sub, "0", c.V, frame) : cg.Ir.Bin("xor", LlvmType(cg, frame), c.V, "-1");
+            v = Rvalue(frame, res, false);
+        }
+        else
+            v = EmitUnaryOn(cg, u.Op, operand, e.Loc);
+    }
+    else
+    {
+        // a left-deep chain (a + b + c ...) in a loop, like EmitBinary
+        var chain = List<Expr>.Create();
+        Expr leftmost = e;
+        while (leftmost.Kind == ExprKind.Binary && IsFramable(cg, leftmost))
+        {
+            chain.Add(leftmost);
+            leftmost = cg.Tree.GetBinary(leftmost).Lhs;
+        }
+        v = EmitFramed(cg, leftmost, frame);
+        for (var i = chain.Count() - 1; i >= 0; i -= 1)
+        {
+            Expr step = chain.Get(i);
+            var sb = cg.Tree.GetBinary(step);
+            Value r = EmitFramed(cg, sb.Rhs, frame);
+            if (step.Loc.Line > 0)
+                cg.St[0].Loc = step.Loc;
+            v = EmitFramedStep(cg, sb.Op, v, r, frame, step.Loc);
+        }
+    }
+    cg.St[0].Loc = outer;
+    return v;
+}
+
+// l op r in the frame if both fit, otherwise by the usual rules (EmitArithmetic).
+Value EmitFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
+{
+    bool folded = false;
+    Value lit = FoldLiterals(cg, op, l, r, ref folded);
+    if (folded)
+        return lit;
+    if (FramedArithmeticType(cg, op, l, r, frame) != frame)
+        return EmitArithmetic(cg, op, l, r, loc);
+    Value lc = ConvertValue(cg, AdaptLiteral(cg, l, frame), frame, loc);
+    if (op == BinOp.Shl || op == BinOp.Shr)
+        return Rvalue(frame, EmitIntOp(cg, op, lc.V, NumericConvert(cg, r.V, r.Type, frame), frame), false);
+    Value rc = ConvertValue(cg, AdaptLiteral(cg, r, frame), frame, loc);
+    return Rvalue(frame, EmitIntOp(cg, op, lc.V, rc.V, frame), false);
+}
+
+// target op= value: the result in the type of the target. A wider result (target = int16, value = int32) is narrowed;
+// in checked code a value that does not fit is an overflow.
+Value EmitCompound(Compiler cg, BinOp op, Value cur, Expr value, SourceLoc loc)
+{
+    var types = cg.Types;
+    int frame = ArithmeticFrame(cg, cur.Type);
+    Value res;
+    if (frame != 0 && types.IsIntegral(cur.Type))
+        res = EmitFramedStep(cg, op, cur, EmitFramed(cg, value, frame), frame, loc);
+    else
+        res = EmitArithmetic(cg, op, cur, EmitRValue(cg, value), loc);
+    if (res.Type == cur.Type || !types.IsNumeric(res.Type) || !types.IsNumeric(cur.Type))
+        return res;
+    return Rvalue(cur.Type, EmitNarrow(cg, res.V, res.Type, cur.Type), false);
+}
+
+// A number converted to another number type; between integer types checked (overflow panic) where the function is.
+string EmitNarrow(Compiler cg, string v, int from, int to)
+{
+    var types = cg.Types;
+    string n = NumericConvert(cg, v, from, to);
+    if (!cg.Fn[0].Checked || !types.IsIntegral(from) || !types.IsIntegral(to) || types.IsChar(from) || types.IsChar(to))
+        return n;
+    string back = NumericConvert(cg, n, to, from);
+    EmitPanicIf(cg, cg.Ir.ICmp("ne", LlvmType(cg, from), back, v), "integer overflow");
+    return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -853,11 +969,7 @@ Value EmitAssign(Compiler cg, Expr e)
                 Value cur = EmitMethodCallOn(cg, holder, "Get", getArgs, new int[0], e.Loc);
                 HoldTemp(cg, cur);
                 cur.Owned = false;
-                Value rhs = EmitRValue(cg, a.Value);
-                Value res = EmitArithmetic(cg, a.Op, cur, rhs, e.Loc);
-                if (res.Type != cur.Type && types.IsNumeric(res.Type) && types.IsNumeric(cur.Type))
-                    res = Rvalue(cur.Type, NumericConvert(cg, res.V, res.Type, cur.Type), false);
-                newValue = res;
+                newValue = EmitCompound(cg, a.Op, cur, a.Value, e.Loc);
             }
             else
                 newValue = EmitRValue(cg, a.Value);
@@ -899,19 +1011,12 @@ Value EmitAssign(Compiler cg, Expr e)
     Value val;
     if (a.HasOp)
     {
-        Value cur = ToRValue(cg, target);
-        Value rhs = EmitRValue(cg, a.Value);
-        Value res = EmitArithmetic(cg, a.Op, cur, rhs, e.Loc);
-        if (res.Type == target.Type)
-            val = res;
-        else if (types.IsNumeric(res.Type) && types.IsNumeric(target.Type))
-            val = Rvalue(target.Type, NumericConvert(cg, res.V, res.Type, target.Type), false);
-        else
-            val = ConvertValue(cg, res, target.Type, e.Loc);
+        Value res = EmitCompound(cg, a.Op, ToRValue(cg, target), a.Value, e.Loc);
+        val = res.Type == target.Type ? res : ConvertValue(cg, res, target.Type, e.Loc);
     }
     else
     {
-        Value rhs = EmitRValue(cg, a.Value);
+        Value rhs = ToRValue(cg, EmitExprAs(cg, a.Value, target.Type));
         val = ConvertValue(cg, rhs, target.Type, a.Value.Loc);
     }
 

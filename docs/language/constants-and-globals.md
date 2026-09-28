@@ -19,7 +19,8 @@ function) has no storage — its value is inlined wherever it's used, and assign
 constant may be used before its own declaration in the file, and is checked even if nothing ever uses it.
 
 **The compiler evaluates every constant at compile time**, following the exact same rules the generated code would
-use at run time (literal types, promotion of small integers, checked arithmetic, shifts, comparisons, casts that
+use at run time (literal types, the target type or promotion of small integers (see
+[basics](basics.md#integer-arithmetic-and-the-target-type)), checked arithmetic, shifts, comparisons, casts that
 saturate floating-point values, string concatenation). The difference is that overflow, division by zero, and
 similar problems are reported as **compile errors**, not runtime panics:
 

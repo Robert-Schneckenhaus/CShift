@@ -341,3 +341,130 @@ int VarTypeFromInit(Compiler cg, Value init, string name, ref string why)
     }
     return t;
 }
+
+// ---------------------------------------------------------------------------
+// Target-typed integer arithmetic (docs/language/basics.md, "Integer arithmetic and the target type"): an arithmetic
+// expression that is used as a value of an integer type T (a typed variable, an assignment, a return value, a field,
+// an array element) is computed in T when all its operands convert to T implicitly (literals by their value), instead
+// of in int32 for the small types. Without such a target (var, a comparison, an argument) the usual rules apply.
+// The checker (CheckExprAs) and code generation (EmitExprAs) use the same rules.
+// ---------------------------------------------------------------------------
+
+// The integer type arithmetic is computed in when its result becomes a 'target' (the T of an Optional<T>/Error<T>);
+// 0: none.
+int ArithmeticFrame(Compiler cg, int target)
+{
+    var types = cg.Types;
+    if (target == 0 || types.IsUnknown(target))
+        return 0;
+    if (types.IsResultLike(target))
+        target = types.Elem(target);
+    if (target == 0 || types.Kind(target) != TypeKind.Int || types.IsNative(target))
+        return 0;
+    return target;
+}
+
+// Expressions that are computed in the frame: + - * / % & | ^ << >>, unary - and ~, and unchecked(...) around them.
+bool IsFramable(Compiler cg, Expr e)
+{
+    switch (e.Kind)
+    {
+    case ExprKind.Binary:
+    {
+        var op = cg.Tree.GetBinary(e).Op;
+        return op == BinOp.Add || op == BinOp.Sub || op == BinOp.Mul || op == BinOp.Div || op == BinOp.Rem ||
+               op == BinOp.BitAnd || op == BinOp.BitOr || op == BinOp.BitXor || op == BinOp.Shl || op == BinOp.Shr;
+    }
+    case ExprKind.Unary:
+    {
+        var op = cg.Tree.GetUnary(e).Op;
+        return op == UnOp.Neg || op == UnOp.BitNot;
+    }
+    case ExprKind.Unchecked:
+        return IsFramable(cg, cg.Tree.GetUnchecked(e).Operand);
+    default:
+        return false;
+    }
+}
+
+// An operand fits the frame: an integer (not an enum) that converts to it implicitly.
+bool FitsFrame(Compiler cg, Value v, int frame)
+{
+    var types = cg.Types;
+    if (!types.IsIntegral(v.Type))
+        return false;
+    return ConversionError(cg, v, frame).Length == 0;
+}
+
+// l op r computed in the frame: the frame if both operands fit (the count of a shift need not), 0 otherwise (the usual
+// rules apply).
+int FramedArithmeticType(Compiler cg, BinOp op, Value l, Value r, int frame)
+{
+    if (frame == 0 || !FitsFrame(cg, l, frame))
+        return 0;
+    if (op == BinOp.Shl || op == BinOp.Shr)
+        return cg.Types.IsIntegral(r.Type) ? frame : 0;
+    return FitsFrame(cg, r, frame) ? frame : 0;
+}
+
+// -v and ~v computed in the frame (- only in a signed one): the frame, or 0.
+int FramedUnaryType(Compiler cg, UnOp op, Value v, int frame)
+{
+    if (frame == 0 || !FitsFrame(cg, v, frame))
+        return 0;
+    if (op == UnOp.Neg && !cg.Types.IsSigned(frame))
+        return 0;
+    return frame;
+}
+
+// An integer literal (it still adapts to the type it is used with, like NegateLiteral).
+Value IntLiteralValue(Compiler cg, int64 n)
+{
+    var types = cg.Types;
+    int t = (n >= -2147483648 && n <= 2147483647) ? types.I32 : types.I64;
+    Value r = ConstInt(cg, t, n);
+    r.HasLit = true;
+    r.LitInt = n;
+    return r;
+}
+
+// Two integer literals in a framed expression are combined when the program is compiled (uint8 x = 1 + 2 is 3, and
+// 200 + 100 is 300, which does not fit uint8: an error, not an overflow when the program runs). 'folded' tells whether
+// they were (both literals of moderate size, no division by zero).
+Value FoldLiterals(Compiler cg, BinOp op, Value l, Value r, ref bool folded)
+{
+    folded = false;
+    if (!l.HasLit || !r.HasLit || l.LitIsFloat || r.LitIsFloat)
+        return l;
+    int64 limit = 2147483647;
+    int64 a = l.LitInt;
+    int64 b = r.LitInt;
+    if (a > limit || a < -limit || b > limit || b < -limit)
+        return l;
+    int64 n;
+    switch (op)
+    {
+    case BinOp.Add: n = a + b; break;
+    case BinOp.Sub: n = a - b; break;
+    case BinOp.Mul: n = a * b; break;
+    case BinOp.Div:
+    case BinOp.Rem:
+        if (b == 0)
+            return l;
+        n = op == BinOp.Div ? a / b : a % b;
+        break;
+    case BinOp.BitAnd: n = a & b; break;
+    case BinOp.BitOr: n = a | b; break;
+    case BinOp.BitXor: n = a ^ b; break;
+    case BinOp.Shl:
+    case BinOp.Shr:
+        if (b < 0 || b > 31 || a < 0)
+            return l;
+        n = op == BinOp.Shl ? a << (int)b : a >> (int)b;
+        break;
+    default:
+        return l;
+    }
+    folded = true;
+    return IntLiteralValue(cg, n);
+}
