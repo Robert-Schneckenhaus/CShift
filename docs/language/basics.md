@@ -79,6 +79,11 @@ unchecked
 }
 ```
 
+`unchecked { ... }` and `unchecked(expr)` switch the check off for a block or an expression. To switch it off for a
+whole program, compile with `--unchecked` (it applies to the files given to the compiler) or put `"unchecked": true`
+into `cshift.json` (the whole project). Division by zero and array/string bounds stay checked either way, and so does
+the standard library.
+
 A panic prints its reason and where it happened, then ends the program with exit code 101. An index check also
 shows the index and the length. When a function of the standard library rejects its arguments (`List.Get` with an
 index out of range, `Dictionary.Get` with a missing key, ...), the panic also shows where the program called it:

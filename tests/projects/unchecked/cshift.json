@@ -1,0 +1,6 @@
+{
+	"name": "unchecked",
+	"sources": ["src"],
+	"output": "out/unchecked",
+	"unchecked": true
+}

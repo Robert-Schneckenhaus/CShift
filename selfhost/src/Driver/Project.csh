@@ -1,7 +1,8 @@
 // Projects: the file cshift.json (port of compiler/src/Project.cpp).
 //
 //   { "name": "demo", "version": "0.1.0", "type": "executable", "sources": ["src"], "output": "bin/demo",
-//     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "" }
+//     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "",
+//     "unchecked": false }
 //
 // Only "name" is required. Paths are relative to the project file.
 
@@ -27,6 +28,7 @@ struct Project
     List<string> Defines;
     List<string> ApiPaths;
     string Target;               // target triple, "" = host
+    bool Unchecked;              // integer overflow wraps instead of a panic
 }
 
 bool ValidProjectName(string name)
@@ -210,7 +212,7 @@ Error<Project> LoadProject(string location, string target)
     p.LibraryPaths = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms" };
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -242,6 +244,14 @@ Error<Project> LoadProject(string location, string target)
             return error(file + ": 'optimize' must be an integer from 0 to 3");
         p.Optimize = (int)json.Text(opt)[0] - 48;
         p.HasOptimize = true;
+    }
+
+    int uncheckedNode = json.Get(root, "unchecked");
+    if (uncheckedNode >= 0)
+    {
+        if (json.KindOf(uncheckedNode) != JsonKind.Bool)
+            return error(file + ": 'unchecked' must be true or false");
+        p.Unchecked = json.Nodes.Get(uncheckedNode).Flag;
     }
 
     bool present = false;

@@ -16,6 +16,7 @@
 #        // expect-stdout: <text>   stdout contains <text>   (may be repeated)
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
 #        // arc-ignore              skip the leak check
+#        // options:       <args>   extra compiler options (e.g. --unchecked)
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
@@ -98,9 +99,10 @@ echo "== cases/"
 for file in "$DIR"/cases/*.csh; do
     name="$(basename "$file")"
     expected_error="$(directives "$file" expect-error | head -n 1)"
+    options="$(directives "$file" options | head -n 1)"
 
     if [ -n "$expected_error" ]; then
-        if "$COMPILER" $OPT "${CC_ARGS[@]}" "$file" -o "$TMP/case.exe" 2> "$TMP/case.err" > /dev/null; then
+        if "$COMPILER" $OPT $options "${CC_ARGS[@]}" "$file" -o "$TMP/case.exe" 2> "$TMP/case.err" > /dev/null; then
             report_fail "$name" "compilation succeeded but an error was expected"
         else
             missing=""
@@ -117,7 +119,7 @@ for file in "$DIR"/cases/*.csh; do
         continue
     fi
 
-    if ! "$COMPILER" $OPT "${CC_ARGS[@]}" --arc-stats "$file" -o "$TMP/case.exe" 2> "$TMP/case.err"; then
+    if ! "$COMPILER" $OPT $options "${CC_ARGS[@]}" --arc-stats "$file" -o "$TMP/case.exe" 2> "$TMP/case.err"; then
         report_fail "$name" "compilation failed: $(head -n 3 "$TMP/case.err" | tr '\n' ' ')"
         continue
     fi

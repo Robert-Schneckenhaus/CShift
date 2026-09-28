@@ -32,6 +32,7 @@ struct BuildOptions
     bool Run;
     bool Verbose;
     bool ArcStats;
+    bool Unchecked;             // --unchecked: integer overflow wraps instead of a panic
     List<string> Libs;          // -l<name>
     List<string> LibFiles;      // .a/.o/.lib files for the linker
     List<string> LibPaths;      // -L<dir>
@@ -90,6 +91,7 @@ void PrintUsage()
         "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n" +
         "  file.a, file.o   libraries and object files are passed to the linker\n" +
         "  --run            run the program after building\n" +
+        "  --unchecked      integer overflow wraps around instead of ending the program with a panic\n" +
         "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
         "  -v               verbose output\n" +
         "  --version        print the version\n" +
@@ -148,6 +150,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.EmitLlvm = true;
         else if (a == "--arc-stats")
             o.ArcStats = true;
+        else if (a == "--unchecked")
+            o.Unchecked = true;
         else if (a == "--run")
             o.Run = true;
         else if (a == "-v")
@@ -242,6 +246,7 @@ int Cshc(string[] args)
                 o.FromProject = true;
                 o.ProjectDir = p.Dir;
                 o.Inputs = p.Sources;
+                o.Unchecked = o.Unchecked || p.Unchecked;
                 if (o.Target.Length == 0)
                     o.Target = p.Target;
                 foreach (var l in p.IncludePaths)
@@ -272,6 +277,7 @@ int Cshc(string[] args)
             o.ProjectName = project.Name;
             o.ProjectDir = project.Dir;
             o.Inputs = project.Sources;
+            o.Unchecked = o.Unchecked || project.Unchecked;
             if (o.Output.Length == 0)
                 o.Output = project.Output;
             if (!o.OptimizeGiven && project.HasOptimize)
@@ -483,6 +489,7 @@ int Build(BuildOptions o)
     var tree = Ast.Create();
     var cg = Compiler.Create(tree, diag, windows);
     cg.St[0].ArcStats = o.ArcStats;
+    cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
 
