@@ -141,7 +141,7 @@ void LayoutExplicitStruct(Compiler cg, int index)
         var f = decl.Fields[order[i]];
         int ft = ResolveValueType(cg, f.Type.Id, se.File, si.Env);
         if (types.IsVoid(ft))
-            Fail(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
+            ft = RecoverType(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
         if (types.IsFunction(ft))
             ft = types.CFunctionOf(ft); // C stores a plain function pointer
         var l = TypeLayout(cg, ft);

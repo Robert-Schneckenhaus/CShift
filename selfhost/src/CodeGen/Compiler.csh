@@ -190,6 +190,7 @@ struct LambdaCapture
 struct CgState
 {
     bool Recovering;      // declarations and the checker: some errors are reported and the compiler goes on (Recover)
+    int SyntaxErrors;     // errors of the lexer and the parser (the compiler stops after parsing then)
     int MainFunc;         // index in Compiler.Instances + 1, 0 = none
     int WorkHead;         // next entry of the work queue
     bool Windows;
@@ -263,6 +264,7 @@ struct Compiler
         cg.Ir = IrWriter.Create();
         cg.St = new CgState[1];
         cg.St[0].Windows = windows;
+        cg.St[0].Recovering = true; // until the checker has run (CompileProgram)
         cg.St[0].ProjectDir = "";
         cg.Fn = new FnState[1];
         cg.Files = List<FileContext>.Create();
@@ -311,13 +313,21 @@ void Fail(Compiler cg, SourceLoc loc, string message)
     Environment.Exit(1);
 }
 
+// A type that cannot be resolved: Recover, and the type is unknown.
+int RecoverType(Compiler cg, SourceLoc loc, string message)
+{
+    Recover(cg, loc, message);
+    return cg.Types.Unknown;
+}
+
 // An error after which the declarations and the checker go on (with the unknown type, docs/semantic-pass.md); the
 // program is not generated then. During code generation (after the checker) it ends the compiler like Fail.
 void Recover(Compiler cg, SourceLoc loc, string message)
 {
     if (!cg.St[0].Recovering)
         Fail(cg, loc, message);
-    cg.Diag.ReportAt(loc, message);
+    if (!message.Contains("'?'")) // a message about the unknown type follows from an error reported before
+        cg.Diag.ReportAt(loc, message);
 }
 
 // ---------------------------------------------------------------------------
@@ -405,7 +415,8 @@ void AddUnit(Compiler cg, CompilationUnit unit)
         string q = Qualified(cg, file, c.Name);
         if (cg.ConstDecls.ContainsKey(q) || cg.GlobalDecls.ContainsKey(q))
         {
-            Fail(cg, c.Loc, "constant '" + q + "' is already defined");
+            Recover(cg, c.Loc, "constant '" + q + "' is already defined");
+            continue;
         }
         cg.Consts.Add(ConstEntry { Decl = c, File = file });
         cg.ConstDecls.Set(q, cg.Consts.Count() - 1);
@@ -415,7 +426,10 @@ void AddUnit(Compiler cg, CompilationUnit unit)
         var g = unit.Globals.Get(i);
         string q = Qualified(cg, file, g.Name);
         if (cg.ConstDecls.ContainsKey(q) || cg.GlobalDecls.ContainsKey(q))
-            Fail(cg, g.Loc, "'" + q + "' is already defined");
+        {
+            Recover(cg, g.Loc, "'" + q + "' is already defined");
+            continue;
+        }
         cg.Globals.Add(GlobalEntry { Decl = g, File = file, Name = q });
         cg.GlobalDecls.Set(q, cg.Globals.Count() - 1);
     }
@@ -427,7 +441,10 @@ void AddTypeDecl(Compiler cg, int file, string name, SourceLoc loc, TypeDeclEntr
 {
     string q = Qualified(cg, file, name);
     if (cg.TypeDecls.ContainsKey(q))
-        Fail(cg, loc, "type '" + q + "' is already defined");
+    {
+        Recover(cg, loc, "type '" + q + "' is already defined"); // the first one stays
+        return;
+    }
     cg.TypeDecls.Set(q, entry);
 }
 
@@ -554,7 +571,7 @@ int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int>
     if (cg.Types.Kind(t) == TypeKind.Interface)
     {
         var node = cg.Tree.GetType(TypeRef { Id = refType });
-        Fail(cg, node.Loc, "interface '" + cg.Types.Name(t) + "' can only be the type of a 'ref' or 'const ref' parameter or a generic " +
+        return RecoverType(cg, node.Loc, "interface '" + cg.Types.Name(t) + "' can only be the type of a 'ref' or 'const ref' parameter or a generic " +
                                "constraint (a value of it would need a hidden allocation)");
     }
     return t;
@@ -579,14 +596,14 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     var types = cg.Types;
 
     if (node.Kind == TypeRefKind.Number)
-        Fail(cg, node.Loc, "a number is not a type (a number is only the size in Fixed<T, N>)");
+        return RecoverType(cg, node.Loc, "a number is not a type (a number is only the size in Fixed<T, N>)");
     if (node.Kind == TypeRefKind.Pointer)
         return types.PointerTo(ResolveType(cg, node.Elem.Id, file, env));
     if (node.Kind == TypeRefKind.Array)
     {
         int elem = ResolveValueType(cg, node.Elem.Id, file, env);
         if (types.IsVoid(elem))
-            Fail(cg, node.Loc, "arrays of 'void' are not allowed");
+            return RecoverType(cg, node.Loc, "arrays of 'void' are not allowed");
         return types.ArrayOf(elem);
     }
 
@@ -603,7 +620,7 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         if (p != 0)
         {
             if (node.Args.Length > 0)
-                Fail(cg, node.Loc, "type '" + dotted + "' is not generic");
+                return RecoverType(cg, node.Loc, "type '" + dotted + "' is not generic");
             return p;
         }
     }
@@ -622,29 +639,29 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     if (!found && node.Path.Length == 1 && dotted == "Slice")
     {
         if (node.Args.Length != 1)
-            Fail(cg, node.Loc, "'Slice' expects exactly one type argument (Slice<T>)");
+            return RecoverType(cg, node.Loc, "'Slice' expects exactly one type argument (Slice<T>)");
         return types.SliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
     }
     if (!found && node.Path.Length == 1 && dotted == "Fixed")
         return ResolveFixedType(cg, node, file, env);
     if (!found && node.Path.Length == 1 && dotted == "Enum" && node.Args.Length == 1)
-        Fail(cg, node.Loc, "'Enum<T>' is not a type; it gives facts about an enum: Enum<T>.Count, .Min, .Max, .Values, .Names");
+        return RecoverType(cg, node.Loc, "'Enum<T>' is not a type; it gives facts about an enum: Enum<T>.Count, .Min, .Max, .Values, .Names");
     if (!found && node.Path.Length == 1 && dotted == "ReadOnlySlice")
     {
         if (node.Args.Length != 1)
-            Fail(cg, node.Loc, "'ReadOnlySlice' expects exactly one type argument (ReadOnlySlice<T>)");
+            return RecoverType(cg, node.Loc, "'ReadOnlySlice' expects exactly one type argument (ReadOnlySlice<T>)");
         return types.ReadOnlySliceOf(ResolveValueType(cg, node.Args[0].Id, file, env));
     }
     if (!found && node.Path.Length == 1 && dotted == "StringSlice")
     {
         if (node.Args.Length != 0)
-            Fail(cg, node.Loc, "'StringSlice' is not generic");
+            return RecoverType(cg, node.Loc, "'StringSlice' is not generic");
         return types.StringSlice;
     }
     if (!found && node.Path.Length == 1 && dotted == "SharedPtr")
     {
         if (node.Args.Length != 1)
-            Fail(cg, node.Loc, "'SharedPtr' expects exactly one type argument");
+            return RecoverType(cg, node.Loc, "'SharedPtr' expects exactly one type argument");
         return types.SharedPtrOf(ResolveValueType(cg, node.Args[0].Id, file, env));
     }
     if (!found && node.Path.Length == 1 && (dotted == "Error" || dotted == "Optional"))
@@ -654,19 +671,19 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
             // Error<T, E>: the error code is a value of the error enum E
             int code = ResolveType(cg, node.Args[1].Id, file, env);
             if (!IsErrorEnum(cg, code))
-                Fail(cg, cg.Tree.GetType(node.Args[1]).Loc, "the second type argument of 'Error' must be an error enum " +
+                return RecoverType(cg, cg.Tree.GetType(node.Args[1]).Loc, "the second type argument of 'Error' must be an error enum " +
                                                             "('error Name { ... }'), not '" + types.Name(code) + "'");
             return ResultType(cg, "Error", ResolveValueType(cg, node.Args[0].Id, file, env), code, node.Loc);
         }
         if (node.Args.Length != 1)
-            Fail(cg, node.Loc, "'" + dotted + "' expects exactly one type argument" +
+            return RecoverType(cg, node.Loc, "'" + dotted + "' expects exactly one type argument" +
                                (dotted == "Error" ? " (or two: Error<T, E> with an error enum E)" : ""));
         return ResultType(cg, dotted, ResolveValueType(cg, node.Args[0].Id, file, env), 0, node.Loc);
     }
     if (!found && node.Path.Length == 1 && (dotted == "Action" || dotted == "Func"))
         return ResolveFunctionType(cg, node, dotted, file, env);
     if (!found && node.Path.Length == 1 && !cg.St[0].StdlibLoaded && IsStdlibName(dotted))
-        Fail(cg, node.Loc, "cshc does not support the standard library yet ('" + dotted + "')");
+        return RecoverType(cg, node.Loc, "cshc does not support the standard library yet ('" + dotted + "')");
     if (!found)
     {
         Recover(cg, node.Loc, "unknown type '" + tree.TypeToString(TypeRef { Id = refType }) + "'");
@@ -685,14 +702,14 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
         if (typeArgs.Length == 1 && IsErrorEnum(cg, enumType))
             return ResultType(cg, "Error", typeArgs[0], enumType, node.Loc);
         if (typeArgs.Length > 0)
-            Fail(cg, node.Loc, "enum '" + dotted + "' is not generic" +
+            return RecoverType(cg, node.Loc, "enum '" + dotted + "' is not generic" +
                                (IsErrorEnum(cg, enumType) ? " (an error enum takes one type argument: " + dotted + "<T>)" : ""));
         return enumType;
     }
     if (entry.Kind == DeclKind.Union)
     {
         if (typeArgs.Length > 0)
-            Fail(cg, node.Loc, "union '" + dotted + "' is not generic");
+            return RecoverType(cg, node.Loc, "union '" + dotted + "' is not generic");
         return GetUnionType(cg, entry.Index, node.Loc);
     }
     return GetInterfaceType(cg, entry.Index, typeArgs, node.Loc);
@@ -706,13 +723,13 @@ int ResultType(Compiler cg, string kind, int inner, int code, SourceLoc loc)
     // Error<Optional<T>> is allowed (a lookup that can fail or find nothing); other nestings are ambiguous ('null',
     // 'is' and 'try' would not know which level they mean).
     if (types.IsResultLike(inner) && !(kind == "Error" && types.IsOptional(inner)))
-        Fail(cg, loc, "Error<T> and Optional<T> cannot be nested (" + shown + "); only Error<Optional<T>> is allowed");
+        return RecoverType(cg, loc, "Error<T> and Optional<T> cannot be nested (" + shown + "); only Error<Optional<T>> is allowed");
     // Error<void> is a result without a payload (success or error); Optional<void> makes no sense.
     if (types.IsVoid(inner) && kind != "Error")
-        Fail(cg, loc, kind + "<void> is not supported");
+        return RecoverType(cg, loc, kind + "<void> is not supported");
     // an error code is not a result value: Error<E> would read like a failure
     if (kind == "Error" && IsErrorEnum(cg, inner))
-        Fail(cg, loc, "an error enum cannot be the value of a result (" + shown + "); did you mean " +
+        return RecoverType(cg, loc, "an error enum cannot be the value of a result (" + shown + "); did you mean " +
                       types.Name(inner) + "<T> (Error<T, " + types.Name(inner) + ">)?");
     return kind == "Error" ? types.ErrorOf(inner, code) : types.OptionalOf(inner);
 }
@@ -724,7 +741,7 @@ int ResolveFunctionType(Compiler cg, TypeRefNode node, string dotted, int file, 
     var types = cg.Types;
     bool isAction = dotted == "Action";
     if (!isAction && node.Args.Length == 0)
-        Fail(cg, node.Loc, "'Func' needs at least the result type: Func<TResult>, Func<TArg, TResult>, ...");
+        return RecoverType(cg, node.Loc, "'Func' needs at least the result type: Func<TResult>, Func<TArg, TResult>, ...");
     var parameters = List<int>.Create();
     int ret = types.Void;
     for (var i = 0; i < node.Args.Length; i += 1)
@@ -733,16 +750,16 @@ int ResolveFunctionType(Compiler cg, TypeRefNode node, string dotted, int file, 
         if (!isAction && i + 1 == node.Args.Length)
         {
             if (types.IsVoid(t))
-                Fail(cg, node.Loc, "use 'Action' for functions without a result, not Func<..., void>");
+                return RecoverType(cg, node.Loc, "use 'Action' for functions without a result, not Func<..., void>");
             ret = t;
             break;
         }
         if (types.IsVoid(t))
-            Fail(cg, node.Loc, "a function parameter cannot have type 'void'");
+            return RecoverType(cg, node.Loc, "a function parameter cannot have type 'void'");
         parameters.Add(t);
     }
     if (parameters.Count() > 8)
-        Fail(cg, node.Loc, "'" + dotted + "' supports at most 8 parameters");
+        return RecoverType(cg, node.Loc, "'" + dotted + "' supports at most 8 parameters");
     return types.FunctionOf(parameters.ToArray(), ret);
 }
 
@@ -891,7 +908,7 @@ void EnsureSignature(Compiler cg, int instance)
         var p = d.Params[i];
         int t = ResolveParamType(cg, p, fi.File, fi.Env);
         if (cg.Types.IsVoid(t))
-            Fail(cg, p.Loc, "parameter '" + p.Name + "' cannot have type 'void'");
+            t = RecoverType(cg, p.Loc, "parameter '" + p.Name + "' cannot have type 'void'");
         paramTypes[i] = t;
         paramRefs[i] = (int)p.Ref;
     }
@@ -905,17 +922,18 @@ void EnsureSignature(Compiler cg, int instance)
         {
             int t = paramTypes[i];
             if (paramRefs[i] == 0 && (cg.Types.IsStruct(t) || cg.Types.IsResultLike(t)))
-                Fail(cg, d.Loc, "extern function '" + d.Name + "': passing '" + cg.Types.Name(t) + "' by value to C is not supported, pass a pointer instead");
+                Recover(cg, d.Loc, "extern function '" + d.Name + "': passing '" + cg.Types.Name(t) + "' by value to C is not supported, pass a pointer instead");
         }
         if (!d.RetOut && (cg.Types.IsStruct(fi.Ret) || cg.Types.IsResultLike(fi.Ret)))
-            Fail(cg, d.Loc, "extern function '" + d.Name + "': returning '" + cg.Types.Name(fi.Ret) + "' by value from C is not supported, use a pointer instead");
+            Recover(cg, d.Loc, "extern function '" + d.Name + "': returning '" + cg.Types.Name(fi.Ret) + "' by value from C is not supported, use a pointer instead");
     }
     if (d.IsThread)
         CheckThreadSignature(cg, fi);
     fi.SignatureResolved = true;
     fi.LlvmName = FunctionSymbol(cg, fi);
-    if (!d.IsExtern && !cg.Symbols.Add(fi.LlvmName))
-        Fail(cg, d.Loc, "function '" + fi.LlvmName.Substring(2, fi.LlvmName.Length - 3) + "' is already defined");
+    // (with a parameter of the unknown type the name says nothing: F(?) of F(Foo) and F(Bar))
+    if (!d.IsExtern && !HasUnknownType(cg, paramTypes) && !cg.Symbols.Add(fi.LlvmName))
+        Recover(cg, d.Loc, "function '" + fi.LlvmName.Substring(2, fi.LlvmName.Length - 3) + "' is already defined");
     cg.Instances.Set(instance, fi);
 }
 

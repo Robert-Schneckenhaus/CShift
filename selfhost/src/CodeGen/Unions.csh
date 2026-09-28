@@ -52,7 +52,7 @@ int GetUnionType(Compiler cg, int index, SourceLoc loc)
     if (ue.Type != 0)
     {
         if (GetUnionInfo(cg, ue.Type).InProgress)
-            Fail(cg, ue.Decl.Loc, "union '" + ue.Decl.Name + "' contains itself");
+            return RecoverType(cg, ue.Decl.Loc, "union '" + ue.Decl.Name + "' contains itself");
         return ue.Type;
     }
     var decl = ue.Decl;
@@ -79,14 +79,14 @@ int GetUnionType(Compiler cg, int index, SourceLoc loc)
         var mloc = cg.Tree.GetType(decl.Members[i]).Loc;
         var kind = types.Kind(m);
         if (kind == TypeKind.Void || kind == TypeKind.Null)
-            Fail(cg, mloc, "'" + types.Name(m) + "' cannot be a member of a union");
+            m = RecoverType(cg, mloc, "'" + types.Name(m) + "' cannot be a member of a union");
         for (var k = 0; k < i; k += 1)
         {
-            if (members[k] == m)
-                Fail(cg, mloc, "'" + types.Name(m) + "' is a member of union '" + decl.Name + "' twice");
+            if (members[k] == m && !types.IsUnknown(m))
+                Recover(cg, mloc, "'" + types.Name(m) + "' is a member of union '" + decl.Name + "' twice");
         }
         if (IsUnionType(cg, m) && GetUnionInfo(cg, m).InProgress)
-            Fail(cg, mloc, "union '" + decl.Name + "' contains itself");
+            m = RecoverType(cg, mloc, "union '" + decl.Name + "' contains itself");
         members[i] = m;
         var l = TypeLayout(cg, m);
         if (l.Size > size)
@@ -111,11 +111,14 @@ int GetUnionType(Compiler cg, int index, SourceLoc loc)
         int iface = ResolveType(cg, decl.Interfaces[i].Id, ue.File, NoEnv());
         var iloc = cg.Tree.GetType(decl.Interfaces[i]).Loc;
         if (!IsInterfaceType(cg, iface))
-            Fail(cg, iloc, "'" + types.Name(iface) + "' is not an interface");
+        {
+            Recover(cg, iloc, "'" + types.Name(iface) + "' is not an interface");
+            iface = types.Unknown;
+        }
         foreach (var m in members)
         {
-            if (!types.IsStruct(m) || !StructImplements(cg, m, iface))
-                Fail(cg, iloc, "'" + types.Name(m) + "' does not implement '" + types.Name(iface) + "', so union '" + decl.Name + "' cannot list it");
+            if (!types.IsUnknown(iface) && !types.IsUnknown(m) && (!types.IsStruct(m) || !StructImplements(cg, m, iface)))
+                Recover(cg, iloc, "'" + types.Name(m) + "' does not implement '" + types.Name(iface) + "', so union '" + decl.Name + "' cannot list it");
         }
         interfaces[i] = iface;
     }

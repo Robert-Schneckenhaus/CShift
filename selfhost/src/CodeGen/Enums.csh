@@ -92,11 +92,14 @@ int GetEnumType(Compiler cg, int entry)
         var known = EnumInfo { Names = names.ToArray(), Values = values.ToArray(), Base = b };
         int64 v = m.Value.IsNull() ? next : ConstEvalEnumMember(cg, m.Value, known, ee.File, m.Name, m.Loc);
         if (decl.IsError && v == 0)
-            Fail(cg, m.Loc, "error code '" + m.Name + "' cannot be 0: code 0 means \"no specific code\" (error codes count from 1)");
+            Recover(cg, m.Loc, "error code '" + m.Name + "' cannot be 0: code 0 means \"no specific code\" (error codes count from 1)");
         if (m.Value.IsNull() && !FitsInt(v, types.Bits(b), types.IsSigned(b)))
-            Fail(cg, m.Loc, "enum value " + v.ToString() + " does not fit into " + types.Name(b));
+            Recover(cg, m.Loc, "enum value " + v.ToString() + " does not fit into " + types.Name(b));
         if (FindEnumMember(known, m.Name) >= 0)
-            Fail(cg, m.Loc, "enum member '" + m.Name + "' is declared twice");
+        {
+            Recover(cg, m.Loc, "enum member '" + m.Name + "' is declared twice");
+            continue;
+        }
         names.Add(m.Name);
         values.Add(v);
         next = v + 1;

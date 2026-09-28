@@ -139,6 +139,7 @@ err_read_only_slice_thread.csh
 err_read_only_slice_write.csh
 err_ref_missing.csh
 err_several_collections.csh
+err_several_declarations.csh
 err_several_errors.csh
 err_several_interfaces.csh
 err_several_lambdas.csh

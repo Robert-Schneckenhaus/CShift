@@ -133,23 +133,23 @@ void CheckThreadSignature(Compiler cg, FuncInfo fi)
 {
     var d = cg.Funcs.Get(fi.Entry).Decl;
     if (d.TypeParams.Length > 0)
-        Fail(cg, d.Loc, "a 'thread' function cannot be generic");
+        Recover(cg, d.Loc, "a 'thread' function cannot be generic");
     if (d.IsVariadic)
-        Fail(cg, d.Loc, "a 'thread' function cannot be variadic");
+        Recover(cg, d.Loc, "a 'thread' function cannot be variadic");
     if (fi.Owner != 0 && !d.IsStatic)
-        Fail(cg, d.Loc, "'thread' can only be used on a free function or a static method, not an instance method (it cannot see 'this')");
+        Recover(cg, d.Loc, "'thread' can only be used on a free function or a static method, not an instance method (it cannot see 'this')");
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {
         var p = d.Params[i];
         int t = fi.ParamTypes[i];
         if (fi.ParamRefs[i] != 0)
-            Fail(cg, p.Loc, "a 'thread' function parameter cannot be 'ref' or 'const ref' ('" + p.Name + "')");
+            Recover(cg, p.Loc, "a 'thread' function parameter cannot be 'ref' or 'const ref' ('" + p.Name + "')");
         if (!IsThreadTransferable(cg, t))
         {
             // the reason is only named when it is a string that would be shared (containers show their internals)
             string part = ThreadUnsafePart(cg, t, false);
             string why = part == "string" ? " ('string' is reference-counted without atomics and cannot be shared with another thread)" : "";
-            Fail(cg, p.Loc, "a 'thread' function parameter must be a value type, a string or a SharedPtr<T> of a thread-safe type, not '" +
+            Recover(cg, p.Loc, "a 'thread' function parameter must be a value type, a string or a SharedPtr<T> of a thread-safe type, not '" +
                                 cg.Types.Name(t) + "' (parameter '" + p.Name + "')" + why);
         }
     }

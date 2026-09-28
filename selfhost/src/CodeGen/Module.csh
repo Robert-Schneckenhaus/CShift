@@ -12,7 +12,6 @@ using CShift.Check;
 // Generates the module for everything that was added with AddUnit and returns its text.
 string CompileProgram(Compiler cg, string triple)
 {
-    cg.St[0].Recovering = true;
     // 1. Check 'using' directives.
     for (var i = 0; i < cg.Files.Count(); i += 1)
     {
@@ -48,6 +47,13 @@ string CompileProgram(Compiler cg, string triple)
         if (cg.Files.Get(se.File).IsPrelude || se.Decl.TypeParams.Length > 0)
             continue;
         GetStructType(cg, s, new int[0], se.Decl.Loc);
+    }
+
+    // ... and every union (members, interfaces)
+    for (var u = 0; u < cg.Unions.Count(); u += 1)
+    {
+        if (!cg.Files.Get(cg.Unions.Get(u).File).IsPrelude)
+            GetUnionType(cg, u, cg.Unions.Get(u).Decl.Loc);
     }
 
     // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).

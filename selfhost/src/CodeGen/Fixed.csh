@@ -18,16 +18,23 @@ int ResolveFixedType(Compiler cg, TypeRefNode node, int file, Dictionary<string,
 {
     var types = cg.Types;
     if (node.Args.Length != 2)
-        Fail(cg, node.Loc, "'Fixed' expects an element type and a number of elements, e.g. Fixed<int, 16>");
+        return RecoverType(cg, node.Loc, "'Fixed' expects an element type and a number of elements, e.g. Fixed<int, 16>");
     if (cg.Tree.GetType(node.Args[0]).Kind == TypeRefKind.Number)
-        Fail(cg, node.Loc, "the first type argument of 'Fixed' is the element type, e.g. Fixed<int, 16>");
+        return RecoverType(cg, node.Loc, "the first type argument of 'Fixed' is the element type, e.g. Fixed<int, 16>");
     int elem = ResolveValueType(cg, node.Args[0].Id, file, env);
     if (types.IsVoid(elem))
-        Fail(cg, node.Loc, "a Fixed of 'void' is not allowed");
+        return RecoverType(cg, node.Loc, "a Fixed of 'void' is not allowed");
     int count = FixedCount(cg, node.Args[1], file);
     if (count == 0)
         return types.Unknown;
     return types.FixedOf(elem, count);
+}
+
+// An N of Fixed<T, N> that is not valid: Recover, and 0 (the Fixed type is unknown).
+int RecoverCount(Compiler cg, SourceLoc loc, string message)
+{
+    Recover(cg, loc, message);
+    return 0;
 }
 
 // The N of Fixed<T, N>: a number or the name of an integer constant, between 1 and MaxFixedCount.
@@ -49,21 +56,21 @@ int FixedCount(Compiler cg, TypeRef arg, int file)
         string dotted = string.Join(".", node.Path);
         int c = LookupConst(cg, file, dotted);
         if (c < 0)
-            Fail(cg, node.Loc, "the size of Fixed<T, N> must be a number or an integer constant, not '" + dotted + "'");
+            return RecoverCount(cg, node.Loc, "the size of Fixed<T, N> must be a number or an integer constant, not '" + dotted + "'");
         ConstVal v = ConstEvalDecl(cg, c);
         if (v.Kind == ConstKind.Unknown)
             return 0; // Fixed<T, N> is unknown (ResolveFixedType)
         if (v.Kind != ConstKind.Int || !types.IsIntegral(v.Type) || types.IsEnum(v.Type))
-            Fail(cg, node.Loc, "the size of Fixed<T, N> must be an integer constant, but '" + dotted + "' is '" + types.Name(v.Type) + "'");
+            return RecoverCount(cg, node.Loc, "the size of Fixed<T, N> must be an integer constant, but '" + dotted + "' is '" + types.Name(v.Type) + "'");
         value = v.Mag;
         negative = v.Neg && v.Mag != 0;
     }
     else
     {
-        Fail(cg, node.Loc, "the size of Fixed<T, N> must be a number or an integer constant");
+        return RecoverCount(cg, node.Loc, "the size of Fixed<T, N> must be a number or an integer constant");
     }
     if (negative || value < 1ul || value > (uint64)MaxFixedCount)
-        Fail(cg, node.Loc, "the size of Fixed<T, N> must be between 1 and " + MaxFixedCount.ToString());
+        return RecoverCount(cg, node.Loc, "the size of Fixed<T, N> must be between 1 and " + MaxFixedCount.ToString());
     return (int)value;
 }
 
