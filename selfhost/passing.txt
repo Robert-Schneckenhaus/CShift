@@ -138,6 +138,7 @@ err_read_only_slice_convert.csh
 err_read_only_slice_thread.csh
 err_read_only_slice_write.csh
 err_ref_missing.csh
+err_several_collections.csh
 err_several_errors.csh
 err_several_interfaces.csh
 err_several_lambdas.csh
@@ -146,6 +147,7 @@ err_several_methods.csh
 err_several_paths.csh
 err_several_results.csh
 err_several_switch.csh
+err_several_threads.csh
 err_slice_copy.csh
 err_slice_readonly.csh
 err_slice_thread.csh
