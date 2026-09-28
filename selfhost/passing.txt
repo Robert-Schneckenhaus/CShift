@@ -142,6 +142,7 @@ err_several_collections.csh
 err_several_constants.csh
 err_several_declarations.csh
 err_several_errors.csh
+err_several_generics.csh
 err_several_interfaces.csh
 err_several_lambdas.csh
 err_several_members.csh
@@ -191,6 +192,7 @@ exit_code.csh
 fixed_arrays.csh
 fixed_thread.csh
 function_pointers.csh
+generics_checked_once.csh
 globals.csh
 interface_params.csh
 is_not.csh

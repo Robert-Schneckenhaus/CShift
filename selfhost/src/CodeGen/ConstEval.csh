@@ -1061,7 +1061,8 @@ ConstVal ConstConvertSlice(Compiler cg, ConstVal v, int to, SourceLoc loc)
     return ConstVal { Kind = ConstKind.Slice, Type = to, Items = items };
 }
 
-// The enum of Enum<T> (the object of Enum<T>.Count and so on), or 0 if the expression is something else.
+// The enum of Enum<T> (the object of Enum<T>.Count and so on; the unknown type in the checker's generic bodies), or 0
+// if the expression is something else.
 int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
 {
     if (e.Kind != ExprKind.Name)
@@ -1073,7 +1074,7 @@ int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
     if (LookupTypeDecl(cg, file, "Enum", ref entry))
         return 0; // a type of the program that is called Enum
     int t = ResolveValueType(cg, n.TypeArgs[0].Id, file, env);
-    if (!cg.Types.IsEnum(t))
+    if (!cg.Types.IsEnum(t) && !cg.Types.IsUnknown(t)) // unknown: a generic body the checker checks once
         Fail(cg, e.Loc, "Enum<T> needs an enum type, not '" + cg.Types.Name(t) + "'");
     return t;
 }
@@ -1082,6 +1083,8 @@ int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
 ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
 {
     var types = cg.Types;
+    if (types.IsUnknown(et))
+        return ConstUnknown(cg);
     var info = GetEnumInfo(cg, et);
     int n = info.Values.Length;
     bool isSigned = ConstSignedType(cg, types.Elem(et));

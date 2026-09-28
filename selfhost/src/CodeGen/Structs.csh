@@ -28,6 +28,7 @@ struct StructInfo
     bool LayoutInProgress;
     bool Opaque;                      // an incomplete C type: only usable through pointers
     string IrName;                    // %"Name"
+    bool UnknownBase;                 // the base struct is the unknown type (the checker's instance of a generic struct)
 }
 
 // A function that a call may refer to: the function and, for methods, the struct it belongs to.
@@ -83,6 +84,43 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     if (existing is int found)
         return found;
 
+    int t = CreateStructType(cg, entry, args, key);
+    int index = types.Info(t).Decl;
+    CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
+    if ((key.StartsWith("System.Mutex<") || key.StartsWith("System.MutexGuard<")) && cg.Files.Get(se.File).IsPrelude &&
+        !IsThreadTransferable(cg, args[0]))
+        Fail(cg, loc, "Mutex<T> needs a value that can be copied between threads (numbers, strings, SharedPtr<T> of thread-safe " +
+                          "values, and Optional<T>/Error<T>/structs of them), not '" + types.Name(args[0]) + "'");
+    cg.PendingVerify.Add(t);
+
+    // The methods of a struct of the program are always generated.
+    if (!cg.Files.Get(se.File).IsPrelude)
+        cg.PendingMethods.Add(t);
+    InstantiateStructMethods(cg);
+    return t;
+}
+
+// The instance of a generic struct that the checker checks its methods with: every type parameter is the unknown type
+// (docs/semantic-pass.md). It has fields (with unknown types where they use a type parameter), but it is never verified
+// against its interfaces or constraints and its methods are never generated.
+int GetCheckingStructType(Compiler cg, int entry)
+{
+    var se = cg.Structs.Get(entry);
+    var args = new int[se.Decl.TypeParams.Length];
+    for (var i = 0; i < args.Length; i += 1)
+        args[i] = cg.Types.Unknown;
+    string key = Qualified(cg, se.File, se.Decl.Name) + TypeArgsSuffix(cg, args);
+    var existing = cg.StructTypes.TryGet(key);
+    if (existing is int found)
+        return found;
+    return CreateStructType(cg, entry, args, key);
+}
+
+// A new struct type for the arguments: its information and layout.
+int CreateStructType(Compiler cg, int entry, int[] args, string key)
+{
+    var types = cg.Types;
+    var decl = cg.Structs.Get(entry).Decl;
     int t = types.Add(TypeKind.Struct, key, 0, false);
     var info = StructInfo { Entry = entry, Name = key, Type = t, IrName = "%\"" + key + "\"" };
     info.Env = Dictionary<string, int>.Create();
@@ -99,17 +137,6 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     cg.St[0].LayoutDepth += 1;
     LayoutStruct(cg, index);
     cg.St[0].LayoutDepth -= 1;
-    CheckConstraints(cg, decl.Constraints, cg.StructInfos.Get(index).Env, se.File, decl.Loc);
-    if ((key.StartsWith("System.Mutex<") || key.StartsWith("System.MutexGuard<")) && cg.Files.Get(se.File).IsPrelude &&
-        !IsThreadTransferable(cg, args[0]))
-        Fail(cg, loc, "Mutex<T> needs a value that can be copied between threads (numbers, strings, SharedPtr<T> of thread-safe " +
-                          "values, and Optional<T>/Error<T>/structs of them), not '" + types.Name(args[0]) + "'");
-    cg.PendingVerify.Add(t);
-
-    // The methods of a struct of the program are always generated.
-    if (!cg.Files.Get(se.File).IsPrelude)
-        cg.PendingMethods.Add(t);
-    InstantiateStructMethods(cg);
     return t;
 }
 
@@ -175,7 +202,11 @@ void LayoutStruct(Compiler cg, int index)
             grown[si.Interfaces.Length] = b;
             si.Interfaces = grown;
         }
-        else if (!types.IsUnknown(b))
+        else if (types.IsUnknown(b))
+        {
+            si.UnknownBase = true;
+        }
+        else
         {
             Recover(cg, bnode.Loc, "'" + types.Name(b) + "' is neither a struct nor an interface");
         }
