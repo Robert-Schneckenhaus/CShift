@@ -326,7 +326,7 @@ void Recover(Compiler cg, SourceLoc loc, string message)
 {
     if (!cg.St[0].Recovering)
         Fail(cg, loc, message);
-    if (!message.Contains("'?'")) // a message about the unknown type follows from an error reported before
+    if (!message.Contains(UnknownTypeName)) // a message about the unknown type follows from an error reported before
         cg.Diag.ReportAt(loc, message);
 }
 

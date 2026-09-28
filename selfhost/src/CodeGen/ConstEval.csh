@@ -281,6 +281,13 @@ ConstVal ConstUnknown(Compiler cg)
     return ConstVal { Kind = ConstKind.Unknown, Type = cg.Types.Unknown };
 }
 
+// An error in a constant expression: Recover, and the value is unknown.
+ConstVal ConstError(Compiler cg, SourceLoc loc, string message)
+{
+    Recover(cg, loc, message);
+    return ConstUnknown(cg);
+}
+
 ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allowEnumInt)
 {
     var types = cg.Types;
@@ -295,7 +302,7 @@ ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allow
     if (allowEnumInt && types.IsEnum(to) && v.Kind == ConstKind.Int && !types.IsEnum(from))
     {
         if (!ConstFits(cg, v, types.Elem(to)))
-            Fail(cg, loc, "enum value " + ConstDecimal(v) + " does not fit into " + types.Name(types.Elem(to)));
+            return ConstError(cg, loc, "enum value " + ConstDecimal(v) + " does not fit into " + types.Name(types.Elem(to)));
         return ConstFromPattern(cg, to, ConstPattern(v, 64));
     }
     if (ConversionCost(cg, ConstProbe(v), to) < 0)
@@ -303,7 +310,7 @@ ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allow
         string hint = "";
         if (types.IsNumeric(from) && types.IsNumeric(to))
             hint = " (an explicit cast is required)";
-        Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
+        return ConstError(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint);
     }
     if (v.HasLit)
     {
@@ -313,7 +320,7 @@ ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allow
     }
     if (types.IsNumeric(from) && types.IsNumeric(to))
         return ConstNumericConvert(cg, v, to);
-    Fail(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'");
+    return ConstError(cg, loc, "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'");
     return v;
 }
 
@@ -437,9 +444,9 @@ Value ConstSliceValue(Compiler cg, ConstVal v)
 // Operators
 // ---------------------------------------------------------------------------
 
-void ConstOverflow(Compiler cg, SourceLoc loc, int t)
+ConstVal ConstOverflow(Compiler cg, SourceLoc loc, int t)
 {
-    Fail(cg, loc, "integer overflow in a constant expression (the value does not fit into " + cg.Types.Name(t) + ")");
+    return ConstError(cg, loc, "integer overflow in a constant expression (the value does not fit into " + cg.Types.Name(t) + ")");
 }
 
 ConstVal ConstIntOp(Compiler cg, BinOp op, ConstVal l, ConstVal r, int t, SourceLoc loc)
@@ -468,16 +475,16 @@ ConstVal ConstIntOp(Compiler cg, BinOp op, ConstVal l, ConstVal r, int t, Source
             result.Mag = sum.Mag;
         }
         if (!ok || !ConstFits(cg, result, t))
-            ConstOverflow(cg, loc, t);
+            return ConstOverflow(cg, loc, t);
         return result;
     }
     case BinOp.Div:
     case BinOp.Rem:
     {
         if (r.Mag == 0)
-            Fail(cg, loc, "division by zero in constant expression");
+            return ConstError(cg, loc, "division by zero in constant expression");
         if (sgn && l.Neg && l.Mag == (1ul << (bits - 1)) && r.Neg && r.Mag == 1)
-            ConstOverflow(cg, loc, t); // the smallest value divided by -1
+            return ConstOverflow(cg, loc, t); // the smallest value divided by -1
         uint64 q = l.Mag / r.Mag;
         uint64 rem = l.Mag % r.Mag;
         if (op == BinOp.Div)
@@ -532,7 +539,7 @@ ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc l
     var r = r0;
 
     if (l.Kind == ConstKind.Slice || r.Kind == ConstKind.Slice)
-        Fail(cg, loc, "operator '" + BinOpText(op) + "' cannot be applied to '" + types.Name(l.Type) + "' and '" + types.Name(r.Type) + "'");
+        return ConstError(cg, loc, "operator '" + BinOpText(op) + "' cannot be applied to '" + types.Name(l.Type) + "' and '" + types.Name(r.Type) + "'");
 
     // String concatenation (the other operand may be any primitive).
     if (op == BinOp.Add && (types.IsString(l.Type) || types.IsString(r.Type)))
@@ -551,13 +558,13 @@ ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc l
     }
 
     if (!types.IsNumeric(l.Type) || !types.IsNumeric(r.Type))
-        Fail(cg, loc, "operator '" + BinOpText(op) + "' cannot be applied to '" + types.Name(l.Type) + "' and '" + types.Name(r.Type) + "'");
+        return ConstError(cg, loc, "operator '" + BinOpText(op) + "' cannot be applied to '" + types.Name(l.Type) + "' and '" + types.Name(r.Type) + "'");
 
     // Shifts: the result has the (promoted) type of the left operand.
     if (op == BinOp.Shl || op == BinOp.Shr)
     {
         if (!types.IsIntegral(l.Type) || !types.IsIntegral(r.Type))
-            Fail(cg, loc, "shift operators require integer operands");
+            return ConstError(cg, loc, "shift operators require integer operands");
         int st = PromoteTypes(cg, l.Type, l.Type, loc);
         ConstVal lv = ConstConvert(cg, l.HasLit ? ConstAdaptLiteral(cg, l, st) : l, st, loc, false);
         return ConstIntOp(cg, op, lv, r, st, loc);
@@ -594,7 +601,7 @@ ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc l
             res = lc.F % rc.F;
             break;
         default:
-            Fail(cg, loc, "bit operations are not defined for floating point values");
+            return ConstError(cg, loc, "bit operations are not defined for floating point values");
             break;
         }
         return ConstMakeFloat(cg, t, res, false);
@@ -625,7 +632,7 @@ ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc
     if (types.IsString(l.Type) && types.IsString(r.Type))
     {
         if (!isEq)
-            Fail(cg, loc, "strings can only be compared with '==' and '!='");
+            return ConstError(cg, loc, "strings can only be compared with '==' and '!='");
         return ConstMakeBool(cg, (l.S == r.S) == (op == BinOp.Eq));
     }
 
@@ -640,14 +647,14 @@ ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc
         if (types.IsBool(l.Type))
         {
             if (!isEq)
-                Fail(cg, loc, "bool values can only be compared with '==' and '!='");
+                return ConstError(cg, loc, "bool values can only be compared with '==' and '!='");
             return ConstMakeBool(cg, (l.B == r.B) == (op == BinOp.Eq));
         }
         return ConstDecide(cg, op, ConstOrder(l, r));
     }
 
     if (!types.IsNumeric(l.Type) || !types.IsNumeric(r.Type))
-        Fail(cg, loc, "cannot compare '" + types.Name(l.Type) + "' with '" + types.Name(r.Type) + "'");
+        return ConstError(cg, loc, "cannot compare '" + types.Name(l.Type) + "' with '" + types.Name(r.Type) + "'");
 
     int t = PromoteTypes(cg, l.Type, r.Type, loc);
     ConstVal lc = ConstConvert(cg, l, t, loc, false);
@@ -681,14 +688,14 @@ bool IsConstantElementType(Compiler cg, int t)
     return types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
 }
 
-// The error for a constant of a type that cannot be constant; arrays and slices get a hint.
-void FailConstantType(Compiler cg, SourceLoc loc, int t)
+// The error for a constant of a type that cannot be constant (arrays and slices get a hint); the type is unknown then.
+int RecoverConstantType(Compiler cg, SourceLoc loc, int t)
 {
     var types = cg.Types;
     if ((types.IsArray(t) || types.Kind(t) == TypeKind.Slice) && IsConstantElementType(cg, types.Elem(t)))
-        Fail(cg, loc, "a constant cannot be '" + types.Name(t) + "' (its elements could be changed); use 'const ReadOnlySlice<" +
+        return RecoverType(cg, loc, "a constant cannot be '" + types.Name(t) + "' (its elements could be changed); use 'const ReadOnlySlice<" +
                       types.Name(types.Elem(t)) + ">'");
-    Fail(cg, loc, "constants can only be numbers, bool, char, string, enum values or a ReadOnlySlice<T> of them");
+    return RecoverType(cg, loc, "constants can only be numbers, bool, char, string, enum values or a ReadOnlySlice<T> of them");
 }
 
 ConstVal ConstNotConstant(Compiler cg, ConstScope sc)
@@ -792,7 +799,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             var info = GetEnumInfo(cg, et);
             int member = FindEnumMember(info, m.Name);
             if (member < 0)
-                Fail(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
+                return ConstError(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
             return ConstFromPattern(cg, et, (uint64)info.Values[member]);
         }
         if (m.Name == "Length")
@@ -812,12 +819,12 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             if (!n.Spread[i])
             {
                 if (item.Kind == ConstKind.Slice)
-                    Fail(cg, n.Items[i].Loc, "a constant slice cannot contain slices");
+                    return ConstError(cg, n.Items[i].Loc, "a constant slice cannot contain slices");
                 items.Add(item);
                 continue;
             }
             if (item.Kind != ConstKind.Slice)
-                Fail(cg, n.Items[i].Loc, "'..' in a constant spreads a constant slice, not '" + types.Name(item.Type) + "'");
+                return ConstError(cg, n.Items[i].Loc, "'..' in a constant spreads a constant slice, not '" + types.Name(item.Type) + "'");
             items.AddRange(item.Items);
         }
         return ConstVal { Kind = ConstKind.Slice, Type = types.Collection, Items = items.ToArray() };
@@ -834,8 +841,10 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         if (index.Kind == ConstKind.Unknown)
             return index;
         int i = ConstIndex(cg, index, ix.FromEnd, obj.Items.Length, ix.Index.Loc);
+        if (i == ConstBadIndex())
+            return ConstUnknown(cg);
         if (i < 0 || i >= obj.Items.Length)
-            Fail(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + obj.Items.Length.ToString() + " elements)");
+            return ConstError(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + obj.Items.Length.ToString() + " elements)");
         return obj.Items[i];
     }
     case ExprKind.Slice:
@@ -853,8 +862,10 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             return ConstUnknown(cg);
         int start = n.Start.IsNull() ? 0 : ConstIndex(cg, startValue, n.StartFromEnd, length, n.Start.Loc);
         int end = n.End.IsNull() ? length : ConstIndex(cg, endValue, n.EndFromEnd, length, n.End.Loc);
+        if (start == ConstBadIndex() || end == ConstBadIndex())
+            return ConstUnknown(cg);
         if (start < 0 || start > end || end > length)
-            Fail(cg, e.Loc, "slice range " + start.ToString() + ".." + end.ToString() + " is out of bounds (the constant slice has " +
+            return ConstError(cg, e.Loc, "slice range " + start.ToString() + ".." + end.ToString() + " is out of bounds (the constant slice has " +
                             length.ToString() + " elements)");
         var part = new ConstVal[end - start];
         for (var i = start; i < end; i += 1)
@@ -887,7 +898,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
                 return ConstMakeInt(fits32 ? types.I32 : types.I64, neg, v.Mag, true);
             }
             if (!types.IsNumeric(v.Type))
-                Fail(cg, e.Loc, "unary '-' cannot be applied to '" + types.Name(v.Type) + "'");
+                return ConstError(cg, e.Loc, "unary '-' cannot be applied to '" + types.Name(v.Type) + "'");
             int t = types.IsFloat(v.Type) ? v.Type : PromoteTypes(cg, v.Type, v.Type, e.Loc);
             ConstVal c = ConstConvert(cg, v, t, e.Loc, false);
             if (u.Op == UnOp.Plus)
@@ -895,14 +906,14 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             if (types.IsFloat(t))
                 return ConstMakeFloat(cg, t, -c.F, false);
             if (!types.IsSigned(t))
-                Fail(cg, e.Loc, "unary '-' cannot be applied to unsigned type '" + types.Name(t) + "'");
+                return ConstError(cg, e.Loc, "unary '-' cannot be applied to unsigned type '" + types.Name(t) + "'");
             return ConstIntOp(cg, BinOp.Sub, ConstMakeInt(t, false, 0ul, false), c, t, e.Loc);
         }
         case UnOp.Not:
         {
             if (types.IsBool(v.Type))
                 return ConstMakeBool(cg, !v.B);
-            Fail(cg, e.Loc, "operator '!' cannot be applied to '" + types.Name(v.Type) + "'");
+            return ConstError(cg, e.Loc, "operator '!' cannot be applied to '" + types.Name(v.Type) + "'");
             return v;
         }
         case UnOp.BitNot:
@@ -910,7 +921,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             if (types.IsEnum(v.Type))
                 return ConstFromPattern(cg, v.Type, ~ConstPattern(v, types.Bits(v.Type)));
             if (!types.IsIntegral(v.Type))
-                Fail(cg, e.Loc, "operator '~' cannot be applied to '" + types.Name(v.Type) + "'");
+                return ConstError(cg, e.Loc, "operator '~' cannot be applied to '" + types.Name(v.Type) + "'");
             int t = PromoteTypes(cg, v.Type, v.Type, e.Loc);
             ConstVal c = ConstConvert(cg, v, t, e.Loc, false);
             return ConstFromPattern(cg, t, ~ConstPattern(c, types.Bits(t)));
@@ -930,14 +941,14 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
             if (l.Kind == ConstKind.Unknown)
                 return l;
             if (!types.IsBool(l.Type))
-                Fail(cg, b.Lhs.Loc, "a condition must be of type 'bool', not '" + types.Name(l.Type) + "' (there is no implicit conversion to bool)");
+                return ConstError(cg, b.Lhs.Loc, "a condition must be of type 'bool', not '" + types.Name(l.Type) + "' (there is no implicit conversion to bool)");
             if (b.Op == BinOp.LogAnd ? !l.B : l.B)
                 return l;
             ConstVal r = ConstEval(cg, b.Rhs, sc);
             if (r.Kind == ConstKind.Unknown)
                 return r;
             if (!types.IsBool(r.Type))
-                Fail(cg, b.Rhs.Loc, "a condition must be of type 'bool', not '" + types.Name(r.Type) + "' (there is no implicit conversion to bool)");
+                return ConstError(cg, b.Rhs.Loc, "a condition must be of type 'bool', not '" + types.Name(r.Type) + "' (there is no implicit conversion to bool)");
             return r;
         }
         ConstVal lhs = ConstEval(cg, b.Lhs, sc);
@@ -974,10 +985,10 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         if (fromNumeric && toNumeric)
         {
             if (types.IsEnum(from) && types.IsFloat(to))
-                Fail(cg, e.Loc, "cannot cast an enum to a floating point type");
+                return ConstError(cg, e.Loc, "cannot cast an enum to a floating point type");
             return ConstNumericConvert(cg, v, to);
         }
-        Fail(cg, e.Loc, "cannot cast '" + types.Name(from) + "' to '" + types.Name(to) + "'");
+        return ConstError(cg, e.Loc, "cannot cast '" + types.Name(from) + "' to '" + types.Name(to) + "'");
         return v;
     }
     case ExprKind.SizeOf:
@@ -986,7 +997,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         if (types.IsUnknown(t))
             return ConstUnknown(cg);
         if (types.IsVoid(t))
-            Fail(cg, e.Loc, "sizeof(void) is not defined");
+            return ConstError(cg, e.Loc, "sizeof(void) is not defined");
         return ConstMakeInt(types.I32, false, (uint64)TypeLayout(cg, t).Size, false);
     }
     default:
@@ -999,12 +1010,21 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
 // Constant slices and Enum<T>
 // ---------------------------------------------------------------------------
 
+// The index of ConstIndex after an error (reported): the result is unknown.
+int ConstBadIndex()
+{
+    return -2147483647;
+}
+
 // An index or a range bound of a constant slice (^n counts from the end). Values that do not fit are reported as -1.
 int ConstIndex(Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
 {
     var types = cg.Types;
     if (v.Kind != ConstKind.Int || !types.IsIntegral(v.Type) || types.IsEnum(v.Type))
-        Fail(cg, loc, "an index must be an integer, not '" + types.Name(v.Type) + "'");
+    {
+        Recover(cg, loc, "an index must be an integer, not '" + types.Name(v.Type) + "'");
+        return ConstBadIndex();
+    }
     if (v.Mag > 0x7FFFFFFFul)
         return -1;
     int i = v.Neg ? -(int)v.Mag : (int)v.Mag;
@@ -1021,7 +1041,7 @@ ConstVal ConstLength(Compiler cg, ConstVal v, SourceLoc loc)
         return ConstMakeInt(types.I32, false, (uint64)v.Items.Length, false);
     if (v.Kind == ConstKind.String)
         return ConstMakeInt(types.I32, false, (uint64)v.S.Length, false);
-    Fail(cg, loc, "'" + types.Name(v.Type) + "' has no member 'Length'");
+    return ConstError(cg, loc, "'" + types.Name(v.Type) + "' has no member 'Length'");
     return v;
 }
 
@@ -1032,7 +1052,7 @@ ConstVal ConstConvertSlice(Compiler cg, ConstVal v, int to, SourceLoc loc)
     if (!types.IsReadOnlySlice(to) || (v.Type != types.Collection && types.Elem(v.Type) != types.Elem(to)))
     {
         string hint = types.IsArray(to) || types.Kind(to) == TypeKind.Slice ? " (a constant slice is read-only; copy it with .ToArray())" : "";
-        Fail(cg, loc, "cannot implicitly convert '" + types.Name(v.Type) + "' to '" + types.Name(to) + "'" + hint);
+        return ConstError(cg, loc, "cannot implicitly convert '" + types.Name(v.Type) + "' to '" + types.Name(to) + "'" + hint);
     }
     int elem = types.Elem(to);
     var items = new ConstVal[v.Items.Length];
@@ -1073,7 +1093,7 @@ ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
     case "Max":
     {
         if (n == 0)
-            Fail(cg, loc, "enum '" + types.Name(et) + "' has no members, so it has no " + what);
+            return ConstError(cg, loc, "enum '" + types.Name(et) + "' has no members, so it has no " + what);
         int64 best = info.Values[0];
         for (var i = 1; i < n; i += 1)
         {
@@ -1101,7 +1121,7 @@ ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
     default:
         break;
     }
-    Fail(cg, loc, "Enum<" + types.Name(et) + "> has no member '" + what + "' (only Count, Min, Max, Values and Names)");
+    return ConstError(cg, loc, "Enum<" + types.Name(et) + "> has no member '" + what + "' (only Count, Min, Max, Values and Names)");
     return ConstVal { };
 }
 
@@ -1259,7 +1279,7 @@ ConstVal ConstEmbed(Compiler cg, Expr init, int t)
     if (!HasWildcard(pattern))
     {
         if (!types.IsString(t))
-            Fail(cg, init.Loc, word + "(\"" + pattern + "\") gives a string, so the constant must be 'const string', not '" + types.Name(t) +
+            return ConstError(cg, init.Loc, word + "(\"" + pattern + "\") gives a string, so the constant must be 'const string', not '" + types.Name(t) +
                 "' (a pattern with '*' or '?' gives a ReadOnlySlice<string>)");
         string path = EmbedPath(cg, word, pattern, init.Loc);
         string value = wantNames ? Path.GetFileName(path) : EmbedRead(cg, word, path, init.Loc);
@@ -1267,7 +1287,7 @@ ConstVal ConstEmbed(Compiler cg, Expr init, int t)
     }
     int sliceType = types.ReadOnlySliceOf(types.String);
     if (t != sliceType)
-        Fail(cg, init.Loc, word + "(\"" + pattern + "\") gives the files that match, so the constant must be 'const ReadOnlySlice<string>', not '" +
+        return ConstError(cg, init.Loc, word + "(\"" + pattern + "\") gives the files that match, so the constant must be 'const ReadOnlySlice<string>', not '" +
             types.Name(t) + "'");
     string folder = "";
     var names = EmbedMatches(cg, word, pattern, init.Loc, ref folder);
@@ -1288,12 +1308,12 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
     if (entry.State == 2)
         return entry.Value;
     if (entry.State == 1)
-        Fail(cg, c.Loc, "constant '" + c.Name + "' depends on itself");
+        return ConstError(cg, c.Loc, "constant '" + c.Name + "' depends on itself");
     entry.State = 1;
     cg.Consts.Set(index, entry);
     int t = ResolveValueType(cg, c.Type.Id, entry.File, NoEnv());
     if (!IsConstantType(cg, t))
-        FailConstantType(cg, c.Loc, t);
+        t = RecoverConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
     // with an unknown type the initializer is still checked; the value is unknown (ConstConvert)
     ConstVal v = IsEmbedExpr(c.Init) && !cg.Types.IsUnknown(t) ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
@@ -1314,8 +1334,14 @@ int64 ConstEvalEnumMember(Compiler cg, Expr init, EnumInfo known, int file, stri
     if (v.Kind == ConstKind.Unknown)
         return 0;
     if (v.Kind != ConstKind.Int)
-        Fail(cg, loc, "the value of enum member '" + memberName + "' must be an integer constant");
+    {
+        Recover(cg, loc, "the value of enum member '" + memberName + "' must be an integer constant");
+        return 0;
+    }
     if (!ConstFits(cg, v, known.Base))
-        Fail(cg, loc, "enum value " + ConstDecimal(v) + " does not fit into " + cg.Types.Name(known.Base));
+    {
+        Recover(cg, loc, "enum value " + ConstDecimal(v) + " does not fit into " + cg.Types.Name(known.Base));
+        return 0;
+    }
     return (int64)ConstPattern(v, 64);
 }

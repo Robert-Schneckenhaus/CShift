@@ -53,6 +53,10 @@ struct TypeInfo
     int Arc;           // cache for NeedsArc: -1 unknown, 0 no, 1 yes
 }
 
+// The name of the unknown type (the checker, docs/semantic-pass.md). It is never shown: a message that contains it
+// follows from an error that was reported before and is left out.
+const string UnknownTypeName = "(unknown type)";
+
 struct TypeContext
 {
     List<TypeInfo> Infos;
@@ -112,7 +116,7 @@ struct TypeContext
         tc.SetNative(tc.Nuint);
         tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
         tc.Collection = tc.Add(TypeKind.Collection, "collection", 0, false);
-        tc.Unknown = tc.Add(TypeKind.Unknown, "?", 0, false);
+        tc.Unknown = tc.Add(TypeKind.Unknown, UnknownTypeName, 0, false);
         tc.StringSlice = tc.Add(TypeKind.StringSlice, "StringSlice", 0, false);
         var ss = tc.Infos.Get(tc.StringSlice - 1);
         ss.Elem = tc.Char;
