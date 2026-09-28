@@ -62,7 +62,12 @@ int GetEnumType(Compiler cg, int entry)
 
     int b = decl.IsError ? types.I32 : ResolveType(cg, decl.Base.Id, ee.File, NoEnv());
     if (!types.IsInt(b))
-        Fail(cg, cg.Tree.GetType(decl.Base).Loc, "enum base type must be an integer type");
+    {
+        // reported, and the enum goes on as an int32 enum
+        if (!types.IsUnknown(b))
+            Recover(cg, cg.Tree.GetType(decl.Base).Loc, "enum base type must be an integer type");
+        b = types.I32;
+    }
 
     int t = types.Add(TypeKind.Enum, key, types.Bits(b), types.IsSigned(b));
     var info = EnumInfo { Entry = entry, Name = key, Type = t, Base = b, IsError = decl.IsError };

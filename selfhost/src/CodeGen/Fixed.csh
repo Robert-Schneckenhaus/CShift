@@ -24,7 +24,10 @@ int ResolveFixedType(Compiler cg, TypeRefNode node, int file, Dictionary<string,
     int elem = ResolveValueType(cg, node.Args[0].Id, file, env);
     if (types.IsVoid(elem))
         Fail(cg, node.Loc, "a Fixed of 'void' is not allowed");
-    return types.FixedOf(elem, FixedCount(cg, node.Args[1], file));
+    int count = FixedCount(cg, node.Args[1], file);
+    if (count == 0)
+        return types.Unknown;
+    return types.FixedOf(elem, count);
 }
 
 // The N of Fixed<T, N>: a number or the name of an integer constant, between 1 and MaxFixedCount.
@@ -48,6 +51,8 @@ int FixedCount(Compiler cg, TypeRef arg, int file)
         if (c < 0)
             Fail(cg, node.Loc, "the size of Fixed<T, N> must be a number or an integer constant, not '" + dotted + "'");
         ConstVal v = ConstEvalDecl(cg, c);
+        if (v.Kind == ConstKind.Unknown)
+            return 0; // Fixed<T, N> is unknown (ResolveFixedType)
         if (v.Kind != ConstKind.Int || !types.IsIntegral(v.Type) || types.IsEnum(v.Type))
             Fail(cg, node.Loc, "the size of Fixed<T, N> must be an integer constant, but '" + dotted + "' is '" + types.Name(v.Type) + "'");
         value = v.Mag;

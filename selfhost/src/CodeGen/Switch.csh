@@ -167,6 +167,8 @@ string ExhaustiveError(Compiler cg, int st, List<int> members, List<string> valu
         var info = GetUnionInfo(cg, st);
         for (var i = 0; i < info.Members.Length; i += 1)
         {
+            if (types.IsUnknown(info.Members[i]))
+                return ""; // a member with an unknown type (reported): the cases cannot be counted
             if (!members.Contains(i))
                 missing.Add(types.Name(info.Members[i]));
         }

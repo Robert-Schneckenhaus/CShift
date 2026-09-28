@@ -189,6 +189,7 @@ struct LambdaCapture
 
 struct CgState
 {
+    bool Recovering;      // declarations and the checker: some errors are reported and the compiler goes on (Recover)
     int MainFunc;         // index in Compiler.Instances + 1, 0 = none
     int WorkHead;         // next entry of the work queue
     bool Windows;
@@ -308,6 +309,15 @@ void Fail(Compiler cg, SourceLoc loc, string message)
 {
     cg.Diag.ReportAt(loc, message);
     Environment.Exit(1);
+}
+
+// An error after which the declarations and the checker go on (with the unknown type, docs/semantic-pass.md); the
+// program is not generated then. During code generation (after the checker) it ends the compiler like Fail.
+void Recover(Compiler cg, SourceLoc loc, string message)
+{
+    if (!cg.St[0].Recovering)
+        Fail(cg, loc, message);
+    cg.Diag.ReportAt(loc, message);
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +560,17 @@ int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int>
     return t;
 }
 
+// True if one of the types is the unknown type (an error was reported where it was written).
+bool HasUnknownType(Compiler cg, int[] list)
+{
+    foreach (var t in list)
+    {
+        if (cg.Types.IsUnknown(t))
+            return true;
+    }
+    return false;
+}
+
 // Resolves a type as written in the source. 'refType' is a TypeRef id. 'env' maps type parameters to types (may be null).
 int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
@@ -647,7 +668,10 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
     if (!found && node.Path.Length == 1 && !cg.St[0].StdlibLoaded && IsStdlibName(dotted))
         Fail(cg, node.Loc, "cshc does not support the standard library yet ('" + dotted + "')");
     if (!found)
-        Fail(cg, node.Loc, "unknown type '" + tree.TypeToString(TypeRef { Id = refType }) + "'");
+    {
+        Recover(cg, node.Loc, "unknown type '" + tree.TypeToString(TypeRef { Id = refType }) + "'");
+        return types.Unknown;
+    }
 
     var typeArgs = new int[node.Args.Length];
     for (var i = 0; i < node.Args.Length; i += 1)

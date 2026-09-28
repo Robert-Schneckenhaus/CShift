@@ -240,7 +240,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
     int instance = CheckOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name, ref why);
     if (instance < 0)
     {
-        CheckError(cg, e.Loc, why);
+        ReportIf(cg, e.Loc, why);
         return UnknownValue(cg);
     }
     if (IsThreadInstance(cg, instance))
@@ -411,7 +411,7 @@ Value CheckCast(Compiler cg, Expr e)
     int from = v.Type;
     if (from == to)
         return v;
-    if (types.IsUnknown(from) || types.IsPointer(from) || types.IsPointer(to) || ConversionCost(cg, v, to) >= 0)
+    if (types.IsUnknown(from) || types.IsUnknown(to) || types.IsPointer(from) || types.IsPointer(to) || ConversionCost(cg, v, to) >= 0)
         return Rvalue(to, "", false);
     bool fromNumeric = types.IsInt(from) || types.IsChar(from) || types.IsEnum(from) || types.IsFloat(from);
     bool toNumeric = types.IsInt(to) || types.IsChar(to) || types.IsEnum(to) || types.IsFloat(to);

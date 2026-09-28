@@ -184,6 +184,11 @@ Value CheckCollectionBuilder(Compiler cg, CollectionExpr n, Value[] items, int t
 // EmitDirectCall).
 int CheckOverload(Compiler cg, Candidate[] cands, Arg[] args, int[] typeArgs, SourceLoc loc, string name, ref string why)
 {
+    if (HasUnknownType(cg, typeArgs))
+    {
+        why = AlreadyReported(); // Foo<Bar>(...) with an unknown Bar
+        return -1;
+    }
     int instance = TryResolveOverload(cg, cands, args, typeArgs, loc, name, ref why);
     if (instance < 0 || why.Length > 0)
         return instance;

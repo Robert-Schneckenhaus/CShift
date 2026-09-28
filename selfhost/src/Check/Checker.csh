@@ -15,7 +15,7 @@ using CShift.Emit;
 using CShift.CodeGen;
 
 // Checks the bodies of the program's functions and methods (not the standard library, not generic ones yet). Stops
-// the compiler if it found errors.
+// the compiler if it or the declarations before it found errors.
 void CheckProgram(Compiler program)
 {
     var cg = program;
@@ -33,7 +33,6 @@ void CheckProgram(Compiler program)
     cg.Ir = ir;
     cg.Fn = new FnState[1];
 
-    int errors = cg.Diag.ErrorCount();
     for (var entry = 0; entry < cg.Funcs.Count(); entry += 1)
     {
         var fe = cg.Funcs.Get(entry);
@@ -55,13 +54,17 @@ void CheckProgram(Compiler program)
     int globals = ir.S[0].Global;
     ir.S[0] = saved;
     ir.S[0].Global = globals;
-    if (cg.Diag.ErrorCount() > errors)
+    // also for the errors of the declarations: the program is not generated after an error
+    if (cg.Diag.ErrorCount() > 0)
         Environment.Exit(1);
 }
 
-// Reports an error; the checker continues.
+// Reports an error; the checker continues. A message that names the unknown type follows from an error that was
+// reported before (where the type is written), so it is left out.
 void CheckError(Compiler cg, SourceLoc loc, string message)
 {
+    if (message.Contains("'?'"))
+        return;
     cg.Diag.ReportAt(loc, message);
 }
 

@@ -12,6 +12,7 @@ using CShift.Check;
 // Generates the module for everything that was added with AddUnit and returns its text.
 string CompileProgram(Compiler cg, string triple)
 {
+    cg.St[0].Recovering = true;
     // 1. Check 'using' directives.
     for (var i = 0; i < cg.Files.Count(); i += 1)
     {
@@ -51,6 +52,7 @@ string CompileProgram(Compiler cg, string triple)
 
     // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).
     CheckProgram(cg);
+    cg.St[0].Recovering = false;
 
     // 2. Plain (non-generic, non-method, non-extern) functions of the program are always generated; Main is the entry point.
     int main = -1;

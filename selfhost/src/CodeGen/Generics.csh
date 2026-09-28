@@ -59,6 +59,8 @@ int GetInterfaceType(Compiler cg, int entry, int[] args, SourceLoc loc)
     var decl = ie.Decl;
     if (args.Length != decl.TypeParams.Length)
         Fail(cg, loc, "interface '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
+    if (HasUnknownType(cg, args))
+        return types.Unknown;
     string key = Qualified(cg, ie.File, decl.Name) + TypeArgsSuffix(cg, args);
     var existing = cg.InterfaceTypes.TryGet(key);
     if (existing is int found)

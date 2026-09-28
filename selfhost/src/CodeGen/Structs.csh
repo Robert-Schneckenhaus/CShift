@@ -70,6 +70,8 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
     var decl = se.Decl;
     if (args.Length != decl.TypeParams.Length)
         Fail(cg, loc, "struct '" + decl.Name + "' expects " + decl.TypeParams.Length.ToString() + " type argument(s), got " + args.Length.ToString());
+    if (HasUnknownType(cg, args))
+        return types.Unknown; // List<Foo> with an unknown Foo (reported where it is written)
 
     foreach (var a in args)
     {
