@@ -1,10 +1,10 @@
 {
 	"name": "cshift",
 	"displayName": "CShift",
-	"description": "Syntax highlighting, snippets and language settings for CShift (.csh), a native C#-like systems language.",
-	"version": "0.3.1",
+	"description": "CShift (.csh): syntax highlighting, snippets, the errors of the program, hover information and go to definition (with cshiftc).",
+	"version": "0.4.0",
 	"publisher": "pyrdacor",
-	"license": "UNLICENSED",
+	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/Robert-Schneckenhaus/CShift"
@@ -14,12 +14,18 @@
 	},
 	"categories": [
 		"Programming Languages",
-		"Snippets"
+		"Snippets",
+		"Linters"
 	],
 	"keywords": [
 		"cshift",
 		"csh",
 		"systems language"
+	],
+	"main": "./extension.js",
+	"activationEvents": [
+		"onLanguage:cshift",
+		"workspaceContains:**/cshift.json"
 	],
 	"contributes": {
 		"languages": [
@@ -58,7 +64,10 @@
 			{
 				"name": "cshiftc",
 				"owner": "cshift",
-				"fileLocation": ["autoDetect", "${workspaceFolder}"],
+				"fileLocation": [
+					"autoDetect",
+					"${workspaceFolder}"
+				],
 				"pattern": {
 					"regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
 					"file": 1,
@@ -68,6 +77,33 @@
 					"message": 5
 				}
 			}
-		]
+		],
+		"commands": [
+			{
+				"command": "cshift.checkProgram",
+				"title": "CShift: Check the program of the current file"
+			}
+		],
+		"configuration": {
+			"title": "CShift",
+			"properties": {
+				"cshift.compilerPath": {
+					"type": "string",
+					"default": "",
+					"description": "The cshiftc used for errors, hover and go to definition (0.11 or later). Empty: 'cshiftc' from PATH."
+				},
+				"cshift.checkWhileTyping": {
+					"type": "boolean",
+					"default": true,
+					"description": "Check the program while typing (after a short pause), not only when a file is opened or saved."
+				},
+				"cshift.checkDelay": {
+					"type": "number",
+					"default": 700,
+					"minimum": 100,
+					"description": "The pause in milliseconds after typing before the program is checked."
+				}
+			}
+		}
 	}
 }

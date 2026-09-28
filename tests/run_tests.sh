@@ -18,6 +18,8 @@
 #        // arc-ignore              skip the leak check
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
+#   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
+#      VS Code extension (vscode-extension/test, if node is installed).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -197,6 +199,50 @@ if "$COMPILER" new "$TMP/fresh" > /dev/null 2> "$TMP/proj.err" &&
     report_ok "cshiftc new"
 else
     report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
+fi
+
+# --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------
+#   tests/query/*.csh: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
+#   contains <text> (the file alone is the program). "cshiftc check" reports the errors of a program and generates
+#   nothing: exit code 1 with the messages, 0 for a correct program.
+echo "== query/"
+for f in "$DIR"/query/*.csh; do
+    [ -f "$f" ] || continue
+    name="query $(basename "$f")"
+    problem=""
+    while IFS= read -r line; do
+        pos="${line%% => *}"
+        want="${line#* => }"
+        qline="${pos%% *}"
+        qcol="${pos##* }"
+        got="$("$COMPILER" query --at "$f" "$qline" "$qcol" "$f" 2> /dev/null | tr -d '\r')"
+        case "$got" in
+            *"$want"*) ;;
+            *) problem="at $qline:$qcol expected '$want', got: $got"; break ;;
+        esac
+    done < <(directives "$f" "query")
+    if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
+done
+printf 'int Main()\n{\n    int x = "a";\n    return y;\n}\n' > "$TMP/check_bad.csh"
+if "$COMPILER" check "$TMP/check_bad.csh" > /dev/null 2> "$TMP/check.err"; then
+    report_fail "cshiftc check" "a program with errors passed"
+elif ! grep -q "check_bad.csh:3:13: error: cannot implicitly convert" "$TMP/check.err" || ! grep -q "check_bad.csh:4:12: error: undefined name 'y'" "$TMP/check.err"; then
+    report_fail "cshiftc check" "missing errors: $(tr '\n' ' ' < "$TMP/check.err")"
+elif ! "$COMPILER" check "$DIR/query/names.csh" > /dev/null 2> "$TMP/check.err" || [ -e "$DIR/query/names" ]; then
+    report_fail "cshiftc check" "a correct program failed or an output was written: $(head -n 3 "$TMP/check.err" | tr '\n' ' ')"
+else
+    report_ok "cshiftc check"
+fi
+# The VS Code extension (vscode-extension/test): its logic and its connection to the editor, with this cshiftc.
+if command -v node > /dev/null 2>&1; then
+    if CSHIFTC="$COMPILER" node --test "$DIR/../vscode-extension/test/lib.test.js" "$DIR/../vscode-extension/test/extension.test.js" \
+        > "$TMP/ext.out" 2>&1; then
+        report_ok "vscode extension"
+    else
+        report_fail "vscode extension" "$(grep -E '^not ok|Error|expected|actual' "$TMP/ext.out" | head -n 6 | tr '\n' ' ')"
+    fi
+else
+    echo "vscode extension: skipped (node not found)"
 fi
 
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------

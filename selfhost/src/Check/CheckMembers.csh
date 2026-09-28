@@ -96,21 +96,31 @@ Value CheckMember(Compiler cg, Expr e)
                 int et = GetEnumType(cg, entry.Index);
                 var einfo = GetEnumInfo(cg, et);
                 int member = FindEnumMember(einfo, m.Name);
+                IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, types.Name(et));
                 if (member < 0)
                 {
                     CheckError(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
                     return UnknownValue(cg);
                 }
+                IndexEnumMember(cg, m.NameLoc, m.Name.Length, entry.Index, et, member);
                 return ConstInt(cg, et, einfo.Values[member]);
             }
             if (isTypeName || IsNamespace(cg, file, dotted))
             {
+                if (isTypeName)
+                    IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, dotted);
                 int c = LookupConst(cg, file, dotted + "." + m.Name);
                 if (c >= 0)
+                {
+                    IndexConst(cg, m.NameLoc, m.Name.Length, c);
                     return EmitConst(cg, c, e.Loc);
+                }
                 int g = LookupGlobal(cg, file, dotted + "." + m.Name);
                 if (g >= 0)
+                {
+                    IndexGlobal(cg, m.NameLoc, m.Name.Length, g);
                     return GlobalUse(cg, g);
+                }
                 // Type.Method or Namespace.Function as a value: converted by code generation for now
                 if (isTypeName && entry.Kind == DeclKind.Struct)
                     return UnknownValue(cg);
@@ -132,7 +142,10 @@ Value CheckMember(Compiler cg, Expr e)
         return UnknownValue(cg);
     }
     if (types.IsStruct(t))
+    {
+        IndexField(cg, m.NameLoc, t, m.Name);
         return CheckField(cg, obj, m.Name, e.Loc);
+    }
     if (m.Name == "Length" && (types.IsString(t) || types.IsArray(t) || types.IsSlice(t)))
         return Rvalue(types.I32, "", false);
     if (m.Name == "Length" && types.IsFixed(t))
@@ -210,6 +223,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             int st = GetStructType(cg, entry.Index, ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object)), e.Loc);
             if (types.IsUnknown(st))
                 return UnknownValue(cg); // List<Foo>.Create() with an unknown Foo
+            IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, types.Name(st));
             var scands = MethodCandidates(cg, st, m.Name);
             if (scands.Length == 0)
             {
@@ -222,6 +236,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             int instance = CheckOverload(cg, scands, targs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
             if (ReportIf(cg, e.Loc, why))
                 return UnknownValue(cg);
+            IndexFunction(cg, m.NameLoc, m.Name.Length, instance);
             var fi = cg.Instances.Get(instance);
             if (fi.HasThis)
             {
@@ -251,6 +266,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             int instance = CheckOverload(cg, ncands, nargs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
             if (ReportIf(cg, e.Loc, why))
                 return UnknownValue(cg);
+            IndexFunction(cg, m.NameLoc, m.Name.Length, instance);
             return CheckThreadUse(cg, instance, viaStart, "the 'thread' function '" + dotted + "." + m.Name + "' must be prefixed with 'start'",
                                   dotted + "." + m.Name, e.Loc);
         }
@@ -302,7 +318,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
     }
     if (!types.IsStruct(t))
         return CheckBuiltinMethod(cg, obj, m.Name, args, known, e.Loc);
-    return CheckMethodCallOn(cg, obj, m.Name, args, known, ResolveTypeArgs(cg, m.TypeArgs), e.Loc);
+    return CheckMethodCallOnAt(cg, obj, m.Name, args, known, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.NameLoc);
 }
 
 // A 'thread' function is only called with 'start', and 'start' only calls 'thread' functions (see EmitMemberCall).
@@ -337,6 +353,12 @@ Value CheckResolvedCall(Compiler cg, Candidate[] cands, Arg[] args, bool known, 
 // obj.Method(args) for a struct value (see EmitMethodCallOn).
 Value CheckMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc)
 {
+    return CheckMethodCallOnAt(cg, obj, name, args, known, typeArgs, loc, SourceLoc { });
+}
+
+// ... with the place of the method's name for the symbol index (Line 0: not indexed).
+Value CheckMethodCallOnAt(Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc, SourceLoc nameLoc)
+{
     var types = cg.Types;
     var cands = MethodCandidates(cg, obj.Type, name);
     if (cands.Length == 0)
@@ -345,11 +367,18 @@ Value CheckMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, bool kn
         return UnknownValue(cg);
     }
     if (!known)
+    {
+        IndexCandidates(cg, nameLoc, name.Length, cands);
         return UnknownValue(cg);
+    }
     string why = "";
     int instance = CheckOverload(cg, cands, args, typeArgs, loc, name, ref why);
     if (ReportIf(cg, loc, why))
+    {
+        IndexCandidates(cg, nameLoc, name.Length, cands);
         return UnknownValue(cg);
+    }
+    IndexFunction(cg, nameLoc, name.Length, instance);
     var fi = cg.Instances.Get(instance);
     if (!fi.HasThis)
     {

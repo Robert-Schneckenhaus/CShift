@@ -78,6 +78,14 @@ their type parameters (`Max<T>`, `Box<T>.Get`).
 the function's state and with scratch IR buffers, and it reports nothing (`CgState.Muted`); if the body has an error, the
 message of the failed inference names it.
 
+**Tooling.** `cshiftc check` runs the front end (declarations and the checker, `CgState.FrontEndOnly`) and reports the
+errors without generating anything. `cshiftc query --at <file> <line> <col>` does the same with the symbol index
+(`CgState.Indexing`, `Check/Index.csh`): every name the checker resolves (locals, parameters, fields, constants,
+globals, functions and methods, types, enum members) is recorded with its place, the place of its declaration and a
+hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
+"col"}}`). `--overlay <file> <text file>` replaces a source with the unsaved text of an editor. Columns count bytes
+(UTF-8), like the error messages.
+
 **Errors that still stop the compiler.** Everything that is not moved into the checker or `Recover` yet still fails
 in code generation or in the declaration checks, as before; the errors reported until then have been printed. The number of
 errors is limited (50); after that the compiler stops.
@@ -92,7 +100,7 @@ errors is limited (50); after that the compiler stops.
 | 4 | Declarations with recovery: constants, globals, struct fields and signatures (also of `thread` functions) report and continue | done: see *Declarations* above |
 | 5 | Code generation reads the checker's results (types, chosen overloads, conversions) and its own checks go away | in progress: the initializers of globals are checked by the checker (and generated after it), errors in constant values recover (`ConstError`: the value is unknown) |
 | 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | in progress: generic bodies are checked once (see *Generic bodies*), type arguments are inferred from lambdas (see *Lambdas*); checking against the constraints follows |
-| 7 | Tooling on top of the checker's results | |
+| 7 | Tooling on top of the checker's results | in progress: `cshiftc check` and `cshiftc query` with the symbol index (see *Tooling*), used by the VS Code extension for errors, hover and go to definition; outline, references and completion can follow |
 
 Tests: a case can list several `// expect-error:` lines; all of them must be in the compiler's output
 (`tests/cases/err_several_*.csh`).

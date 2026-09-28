@@ -17,6 +17,8 @@
 # directory the first time it actually needs the toolchain (linking, or a C header import).
 #   cshift-<version>-windows-x64-standalone.exe
 #   cshift-<version>-linux-x64-standalone
+#
+# And the VS Code extension (vscode-extension/): cshift-vscode-<version>.vsix
 
 name: release
 
@@ -264,6 +266,17 @@ jobs:
           path: assets
           merge-multiple: true
 
+      # The VS Code extension (vscode-extension/): packaged as cshift-vscode-<version>.vsix
+      - uses: actions/checkout@v5
+        with:
+          path: source
+      - name: Package the VS Code extension
+        shell: bash
+        run: |
+          cp source/LICENSE source/vscode-extension/LICENSE
+          cd source/vscode-extension
+          npx --yes @vscode/vsce package --allow-missing-repository -o "$GITHUB_WORKSPACE/assets/cshift-vscode-$VERSION.vsix"
+
       - name: Publish
         shell: bash
         run: |
@@ -289,6 +302,10 @@ jobs:
           |---|---|
           | Windows 10/11, x64 | \`cshift-$VERSION-windows-x64-standalone.exe\` |
           | Linux (Ubuntu 22.04+ and other glibc distributions), x64 | \`cshift-$VERSION-linux-x64-standalone\` |
+
+          **VS Code extension:** \`cshift-vscode-$VERSION.vsix\` (highlighting, snippets, the errors of the program, hover
+          and go to definition). Install it with \`code --install-extension cshift-vscode-$VERSION.vsix\` and set
+          \`cshift.compilerPath\` to this cshiftc if it is not in \`PATH\`.
 
           Built from commit ${GITHUB_SHA} on branch \`${GITHUB_REF_NAME}\`.
           EOF

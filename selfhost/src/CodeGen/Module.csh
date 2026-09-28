@@ -56,6 +56,8 @@ string CompileProgram(Compiler cg, string triple)
 
     // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).
     CheckProgram(cg);
+    if (cg.St[0].FrontEndOnly)
+        return ""; // 'cshiftc check'/'query': the errors are reported, nothing is generated
     cg.St[0].Recovering = false;
     EmitGlobalsInit(cg); // after the checker: their errors are reported with the others
 

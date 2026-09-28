@@ -134,6 +134,8 @@ cshiftc [options] file.csh [more.csh ...]      compile files into one program
 cshiftc new hello                              a new project: hello/cshift.json, hello/src/main.csh
 cshiftc run hello                              build and run (without an argument: the cshift.json here or above)
 cshiftc build                                  build only  ->  bin/<name>[.exe]
+cshiftc check                                  report all errors, generate nothing (fast; used by the editor)
+cshiftc query --at file.csh 12 8               the name at a position (hover, definition) as JSON
 ```
 
 `cshiftc --help` lists the options (`-o`, `-O0..-O3`, `--target`, `--cc`, `-l`/`-L`/`-I`/`-D`, `--emit-llvm`,
@@ -147,8 +149,9 @@ tasks: [demo-minifb/](demo-minifb/) (a MiniFB window) and [demo-opengl/](demo-op
 
 ## VS Code
 
-The `vscode-extension/` folder has an extension for `.csh` files (syntax highlighting, snippets, brackets/comments) —
-see [vscode-extension/README.md](vscode-extension/README.md).
+The `vscode-extension/` folder has an extension for `.csh` files: syntax highlighting and snippets, the errors of the
+program while you type, hover information and go to definition (from `cshiftc check`/`query`). Every release has it as
+`cshift-vscode-<version>.vsix` — see [vscode-extension/README.md](vscode-extension/README.md).
 
 ## Tests
 
