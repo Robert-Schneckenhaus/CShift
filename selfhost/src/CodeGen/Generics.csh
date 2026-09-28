@@ -11,6 +11,7 @@ using System;
 using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
+using CShift.Check;
 
 struct InterfaceInfo
 {
@@ -327,6 +328,7 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
     var fe = cg.Funcs.Get(c.Entry);
     var d = fe.Decl;
     var bound = new int[d.TypeParams.Length];
+    cg.St[0].LambdaError = "";
     for (var i = 0; i < d.Params.Length && i < args.Length; i += 1)
     {
         int actual = args[i].V.Type;
@@ -341,12 +343,91 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
         if (!Unify(cg, d.Params[i].Type, actual, d.TypeParams, fe.File, bound))
             return false;
     }
+    InferFromLambdas(cg, c, args, bound);
     foreach (var b in bound)
     {
         if (b == 0)
             return false;
     }
     result = bound;
+    return true;
+}
+
+// A lambda passed as a Func<..., R> gives R once its parameter types are known (from the other arguments or other
+// lambdas): the type of its body (LambdaResultType), as in list.Select(x => x.Name). Repeats while a lambda binds a
+// type parameter that another lambda needs.
+void InferFromLambdas(Compiler cg, Candidate c, Arg[] args, int[] bound)
+{
+    var types = cg.Types;
+    var fe = cg.Funcs.Get(c.Entry);
+    var d = fe.Decl;
+    var entry = TypeDeclEntry { };
+    bool progress = true;
+    while (progress)
+    {
+        progress = false;
+        for (var i = 0; i < d.Params.Length && i < args.Length; i += 1)
+        {
+            if (types.Kind(args[i].V.Type) != TypeKind.Lambda)
+                continue;
+            var node = cg.Tree.GetType(d.Params[i].Type);
+            if (node.Kind != TypeRefKind.Named || node.Path.Length != 1 || node.Path[0] != "Func" || node.Args.Length == 0 ||
+                LookupTypeDecl(cg, fe.File, "Func", ref entry))
+                continue;
+            int n = node.Args.Length;
+            if (IsPatternBound(cg, node.Args[n - 1], d.TypeParams, bound))
+                continue; // nothing left to learn from this lambda
+            // the parameter types of the lambda, with the type parameters bound so far (and those of the owner)
+            var env = Dictionary<string, int>.Create();
+            if (c.Owner != 0)
+            {
+                foreach (var kv in GetStructInfo(cg, c.Owner).Env.Entries())
+                    env.Set(kv.Key, kv.Value);
+            }
+            for (var k = 0; k < d.TypeParams.Length; k += 1)
+            {
+                if (bound[k] != 0)
+                    env.Set(d.TypeParams[k], bound[k]);
+            }
+            var paramTypes = new int[n - 1];
+            bool ready = true;
+            for (var k = 0; k < n - 1; k += 1)
+            {
+                if (!IsPatternBound(cg, node.Args[k], d.TypeParams, bound))
+                    ready = false;
+                else
+                    paramTypes[k] = ResolveValueType(cg, node.Args[k].Id, fe.File, env);
+            }
+            if (!ready)
+                continue;
+            int r = LambdaResultType(cg, args[i].V.LambdaNode, paramTypes);
+            if (r == 0 || types.IsVoid(r))
+                continue;
+            if (Unify(cg, node.Args[n - 1], r, d.TypeParams, fe.File, bound) && IsPatternBound(cg, node.Args[n - 1], d.TypeParams, bound))
+                progress = true;
+        }
+    }
+}
+
+// True if every type parameter that occurs in the type as written is bound.
+bool IsPatternBound(Compiler cg, TypeRef pattern, string[] tparams, int[] bound)
+{
+    var node = cg.Tree.GetType(pattern);
+    if (node.Kind == TypeRefKind.Pointer || node.Kind == TypeRefKind.Array)
+        return IsPatternBound(cg, node.Elem, tparams, bound);
+    if (node.Kind == TypeRefKind.Named && node.Path.Length == 1 && node.Args.Length == 0)
+    {
+        for (var i = 0; i < tparams.Length; i += 1)
+        {
+            if (tparams[i] == node.Path[0])
+                return bound[i] != 0;
+        }
+    }
+    foreach (var a in node.Args)
+    {
+        if (!IsPatternBound(cg, a, tparams, bound))
+            return false;
+    }
     return true;
 }
 

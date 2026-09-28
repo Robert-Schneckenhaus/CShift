@@ -112,6 +112,7 @@ err_interp_struct.csh
 err_is_not_binding.csh
 err_is_not_unassigned.csh
 err_lambda_assign_capture.csh
+err_lambda_inference.csh
 err_lambda_param_type.csh
 err_lambda_params.csh
 err_lambda_var.csh
@@ -193,6 +194,7 @@ fixed_arrays.csh
 fixed_thread.csh
 function_pointers.csh
 generics_checked_once.csh
+generics_lambda_inference.csh
 globals.csh
 interface_params.csh
 is_not.csh

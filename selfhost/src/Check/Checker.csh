@@ -78,6 +78,12 @@ void CheckError(Compiler cg, SourceLoc loc, string message)
 {
     if (message.Contains(UnknownTypeName))
         return;
+    if (cg.St[0].Muted)
+    {
+        if (cg.St[0].MutedError.Length == 0)
+            cg.St[0].MutedError = message;
+        return;
+    }
     cg.Diag.ReportAt(loc, message);
 }
 

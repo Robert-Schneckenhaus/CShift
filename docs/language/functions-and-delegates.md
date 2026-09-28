@@ -106,7 +106,9 @@ counted like strings).
   to C panics.
 * Lambdas cannot be passed to `thread` functions (`Action`/`Func` are not thread-transferable); a thread can create
   its own. A lambda in a `thread` function may not use global variables either.
-* For generic functions, a lambda argument does not help to infer the type arguments: write them
-  (`Map<string>(x => x.ToString())`).
+* For generic functions, a lambda passed as a `Func<..., TResult>` gives `TResult` once its parameter types are known
+  from the other arguments: `list.Select(x => x.Name)` is `Select<string>`, `Map(2, x => x + 1)` is `Map<int, int>`.
+  The result is the type of the lambda's expression, or of the first `return x` of its block. Where the parameter
+  types cannot be known that way, write the type arguments (`Map<int, string>(...)`).
 
 Next: [Arrays, strings and collections](arrays-strings-collections.md).

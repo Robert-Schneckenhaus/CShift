@@ -272,8 +272,10 @@ void CheckReturn(Compiler cg, Stmt s)
     int rt = cg.Fn[0].RetType;
     if (types.IsUnknown(rt))
     {
-        if (!n.Value.IsNull())
-            CheckExpr(cg, n.Value); // in a lambda
+        // in a lambda; the first return gives the result type if it is inferred (LambdaResultType)
+        int t = n.Value.IsNull() ? types.Void : CheckRValue(cg, n.Value).Type;
+        if (cg.Fn[0].CollectReturns && cg.Fn[0].LambdaReturn == 0)
+            cg.Fn[0].LambdaReturn = t;
         return;
     }
     if (!n.Value.IsNull())
