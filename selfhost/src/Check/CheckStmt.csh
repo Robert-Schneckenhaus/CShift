@@ -333,6 +333,12 @@ void CheckSwitch(Compiler cg, Stmt s)
     int st = subj.Type;
     bool known = !types.IsUnknown(st);
     bool hasDefault = false;
+    // what the labels cover, for the exhaustiveness check (as in EmitSwitch); allKnown is false if a label could not
+    // be followed, and then the check is left to code generation
+    var coveredMembers = List<int>.Create();
+    var coveredValues = List<string>.Create();
+    bool failureCovered = false;
+    bool allKnown = known;
     for (var i = 0; i < n.Sections.Length; i += 1)
     {
         foreach (var label in n.Sections[i].Labels)
@@ -347,13 +353,40 @@ void CheckSwitch(Compiler cg, Stmt s)
             if (!label.PatType.IsNull())
             {
                 if (known)
+                {
                     CheckPatternLabel(cg, st, label);
+                    bool isError = false;
+                    string ignored = "";
+                    int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref ignored);
+                    if (pt == 0)
+                        allKnown = false;
+                    else if (isError || IsErrorEnum(cg, pt))
+                        failureCovered = true;
+                    else if (IsUnionType(cg, st) && UnionMemberIndex(cg, st, pt) >= 0)
+                        coveredMembers.Add(UnionMemberIndex(cg, st, pt));
+                    else
+                        allKnown = false; // an error in the label: the coverage is not checked
+                }
             }
             else if (known && types.IsError(st) && types.Code(st) != 0)
-                CheckConversion(cg, CheckRValue(cg, label.Value), types.Code(st), label.Loc);
+            {
+                Value cv = CheckRValue(cg, label.Value);
+                CheckConversion(cg, cv, types.Code(st), label.Loc);
+                if (cv.Type == types.Code(st) && cv.V.Length > 0)
+                    coveredValues.Add(cv.V);
+                else
+                    allKnown = false;
+            }
             else
             {
                 Value lv = CheckRValue(cg, label.Value);
+                if (types.IsEnum(st))
+                {
+                    if (lv.Type == st && lv.V.Length > 0)
+                        coveredValues.Add(lv.V);
+                    else
+                        allKnown = false;
+                }
                 if (known && !IsUnknown(cg, lv))
                 {
                     string why = types.IsEnum(st) ? ConversionError(cg, lv, st) : "";
@@ -364,6 +397,8 @@ void CheckSwitch(Compiler cg, Stmt s)
             }
         }
     }
+    if (!hasDefault && allKnown)
+        ReportIf(cg, s.Loc, ExhaustiveError(cg, st, coveredMembers, coveredValues, failureCovered));
     bool reached = cg.Fn[0].Live;
     cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = "", ScopeDepth = ScopeCount(cg) });
     foreach (var section in n.Sections)
