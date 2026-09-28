@@ -14,8 +14,8 @@ using CShift.Sema;
 using CShift.Emit;
 using CShift.CodeGen;
 
-// Checks the bodies of the program's functions and methods (not the standard library, not generic ones yet). Stops
-// the compiler if it or the declarations before it found errors.
+// Checks the bodies of the program's functions and methods (not the standard library; generic ones once, see below).
+// Stops the compiler if it or the declarations before it found errors.
 void CheckProgram(Compiler program)
 {
     var cg = program;
@@ -39,7 +39,7 @@ void CheckProgram(Compiler program)
     {
         var fe = cg.Funcs.Get(entry);
         var d = fe.Decl;
-        if (cg.Files.Get(fe.File).IsPrelude || d.IsExtern || d.Body.IsNull() || d.TypeParams.Length > 0)
+        if (cg.Files.Get(fe.File).IsPrelude || d.IsExtern || d.Body.IsNull())
             continue;
         int owner = 0;
         var ownerEnv = NoEnv();
@@ -47,11 +47,22 @@ void CheckProgram(Compiler program)
         {
             var se = cg.Structs.Get(fe.OwnerStruct);
             if (se.Decl.TypeParams.Length > 0)
-                continue;
-            owner = GetStructType(cg, fe.OwnerStruct, new int[0], se.Decl.Loc);
+            {
+                // a method of a generic struct: checked once, with the checker's instance of the struct
+                owner = GetCheckingStructType(cg, fe.OwnerStruct);
+                if (GetStructInfo(cg, owner).UnknownBase)
+                    continue; // its inherited fields are not known (a generic base)
+            }
+            else
+                owner = GetStructType(cg, fe.OwnerStruct, new int[0], se.Decl.Loc);
             ownerEnv = GetStructInfo(cg, owner).Env;
         }
-        CheckFunction(cg, GetFuncInstance(cg, entry, owner, ownerEnv, new int[0], d.Loc));
+        // a generic function is checked once: its type parameters are the unknown type, so what depends on them is left
+        // to each instantiation (code generation), and everything else is checked here
+        var typeArgs = new int[d.TypeParams.Length];
+        for (var i = 0; i < typeArgs.Length; i += 1)
+            typeArgs[i] = cg.Types.Unknown;
+        CheckFunction(cg, GetFuncInstance(cg, entry, owner, ownerEnv, typeArgs, d.Loc));
     }
     int globals = ir.S[0].Global;
     ir.S[0] = saved;
@@ -110,7 +121,7 @@ void CheckFunction(Compiler cg, int instance)
     CheckBlock(cg, d.Body, true);
     // falling off the end (see EmitFunctionBody): the end is reached for sure, so code generation reaches it too
     if (cg.Fn[0].Live && !cg.Types.IsVoid(fi.Ret) && !IsVoidResult(cg, fi.Ret))
-        CheckError(cg, d.Loc, "not all code paths of '" + fi.Name + "' return a value");
+        CheckError(cg, d.Loc, "not all code paths of '" + DisplayName(cg, instance) + "' return a value");
     PopScope(cg, false);
     cg.Ir.EndFunction();
 }
@@ -139,4 +150,28 @@ void CheckGlobalInitializers(Compiler cg)
         PopScope(cg, false);
         cg.Ir.EndFunction();
     }
+}
+
+// The name of a function instance in messages. The checker's instances of generic functions and of the methods of
+// generic structs show their type parameters ('Max<T>', 'Box<T>.Get'), not the unknown type.
+string DisplayName(Compiler cg, int instance)
+{
+    var fi = cg.Instances.Get(instance);
+    if (!fi.Name.Contains(UnknownTypeName))
+        return fi.Name;
+    var d = cg.Funcs.Get(fi.Entry).Decl;
+    string name = d.Name + TypeParamList(d.TypeParams);
+    if (fi.Owner != 0)
+    {
+        var sd = cg.Structs.Get(GetStructInfo(cg, fi.Owner).Entry).Decl;
+        name = sd.Name + TypeParamList(sd.TypeParams) + "." + name;
+    }
+    return name;
+}
+
+string TypeParamList(string[] names)
+{
+    if (names.Length == 0)
+        return "";
+    return "<" + string.Join(", ", names) + ">";
 }

@@ -162,9 +162,9 @@ tests/run_tests.sh [path/to/cshiftc]      # or .\build.ps1 -Test
 
 ## Known limitations
 
-* The compiler reports all the errors of a run (up to 50) from its semantic pass ([docs/semantic-pass.md](docs/semantic-pass.md)),
-  but generic bodies are only checked when they are instantiated, and a few errors (a missing `embed` file, some in
-  code generation) still end the run.
+* The compiler reports all the errors of a run (up to 50) from its semantic pass ([docs/semantic-pass.md](docs/semantic-pass.md)).
+  Generic bodies are checked once, but what depends on a type parameter only when they are instantiated, and a few
+  errors (a missing `embed` file, some in code generation) still end the run.
 * Reference counts of strings, arrays and containers are not atomic: threads get copies of strings, and share values
   only through `SharedPtr<T>` and `Mutex<T>` (whose values must be copyable between threads, so no containers yet).
 * Lambdas capture read-only copies; generic type arguments are not inferred from lambdas.

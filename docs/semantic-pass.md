@@ -62,6 +62,15 @@ program is checked, also if nothing uses it. The checker then runs as well, and 
 was reported; only a syntax error stops it right after parsing. Code generation after the checker never sees the
 unknown type; there `Recover` ends the compiler like `Fail`.
 
+**Generic bodies.** Every generic function and every method of a generic struct of the program is checked once, also
+if nothing instantiates it: its type parameters are the unknown type. What depends on a type parameter (a call of a
+method of `T`, `==` on `T`, a conversion to `T`) is not checked there but when the body is instantiated (code
+generation, as before); everything else is (names, the other types, missing returns, ...). A method of a generic
+struct is checked with the checker's own instance of the struct (`GetCheckingStructType`: the type arguments are the
+unknown type), which is never verified against constraints or interfaces and whose methods are never generated; a
+generic struct with a generic base struct is left to its instantiations for now. Messages name these functions with
+their type parameters (`Max<T>`, `Box<T>.Get`).
+
 **Errors that still stop the compiler.** Everything that is not moved into the checker or `Recover` yet still fails
 in code generation or in the declaration checks, as before; the errors reported until then have been printed. The number of
 errors is limited (50); after that the compiler stops.
@@ -75,7 +84,7 @@ errors is limited (50); after that the compiler stops.
 | 3 | Patterns (`is`, `switch`), unions, `Error<T>`/`Optional<T>`/`try`, lambdas and collection expressions, casts, interfaces, threads | done: `is`, `switch` labels, patterns and exhaustiveness, `try`, `error(...)`, casts, calls through interfaces and unions, the bodies of lambdas, missing returns and fall-through (structural reachability), collection expressions (element types, spreads, `Fixed<T, N>` sizes, builder structs, also as arguments), `start` and `Thread.Cancelled`. The signatures of `thread` functions are checked with the other declarations (step 4); that a thread does not reach a global variable needs the call graph of the generated code (step 5) |
 | 4 | Declarations with recovery: constants, globals, struct fields and signatures (also of `thread` functions) report and continue | done: see *Declarations* above |
 | 5 | Code generation reads the checker's results (types, chosen overloads, conversions) and its own checks go away | in progress: the initializers of globals are checked by the checker (and generated after it), errors in constant values recover (`ConstError`: the value is unknown) |
-| 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | |
+| 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | in progress: generic bodies are checked once (see *Generic bodies*); the constraints and the inference from lambdas follow |
 | 7 | Tooling on top of the checker's results | |
 
 Tests: a case can list several `// expect-error:` lines; all of them must be in the compiler's output

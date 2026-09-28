@@ -931,8 +931,9 @@ void EnsureSignature(Compiler cg, int instance)
         CheckThreadSignature(cg, fi);
     fi.SignatureResolved = true;
     fi.LlvmName = FunctionSymbol(cg, fi);
-    // (with a parameter of the unknown type the name says nothing: F(?) of F(Foo) and F(Bar))
-    if (!d.IsExtern && !HasUnknownType(cg, paramTypes) && !cg.Symbols.Add(fi.LlvmName))
+    // (with a parameter or type argument of the unknown type the name says nothing: F(?) of F(Foo) and F(Bar), the
+    // checker's instances of generic functions)
+    if (!d.IsExtern && !HasUnknownType(cg, paramTypes) && !fi.Name.Contains(UnknownTypeName) && !cg.Symbols.Add(fi.LlvmName))
         Recover(cg, d.Loc, "function '" + fi.LlvmName.Substring(2, fi.LlvmName.Length - 3) + "' is already defined");
     cg.Instances.Set(instance, fi);
 }

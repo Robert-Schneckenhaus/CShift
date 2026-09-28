@@ -135,6 +135,8 @@ void CheckConstraints(Compiler cg, Constraint[] constraints, Dictionary<string, 
             actual = found;
         else
             Fail(cg, loc, "constraint refers to unknown type parameter '" + c.Param + "'");
+        if (types.IsUnknown(actual))
+            continue; // a generic body that the checker checks once (docs/semantic-pass.md)
         foreach (var b in c.Bounds)
         {
             int iface = ResolveType(cg, b.Id, file, env);
