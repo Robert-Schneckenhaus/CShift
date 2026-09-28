@@ -253,6 +253,7 @@ struct Compiler
     List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
     int GuardIs;                    // the 'x is not T v' that is the whole condition of the current 'if' (-1: none)
     HashSet<int> TrampolinesQueued;
+    Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
 
     static Compiler Create(Ast tree, Diagnostics diag, bool windows)
     {
@@ -297,6 +298,7 @@ struct Compiler
         cg.PendingTrampolines = List<int>.Create();
         cg.GuardIs = -1;
         cg.TrampolinesQueued = HashSet<int>.Create();
+        cg.CheckedCollections = Dictionary<int, Value[]>.Create();
         return cg;
     }
 }

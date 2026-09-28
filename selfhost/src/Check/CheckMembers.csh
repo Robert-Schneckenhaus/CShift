@@ -106,9 +106,9 @@ Value CheckMember(Compiler cg, Expr e)
         }
     }
 
-    Value obj = CheckExpr(cg, m.Object);
+    Value obj = SettleChecked(cg, CheckExpr(cg, m.Object)); // [1, 2].Length: an array
     int t = obj.Type;
-    if (types.IsUnknown(t) || m.ViaArrow || types.Kind(t) == TypeKind.Collection)
+    if (types.IsUnknown(t) || m.ViaArrow)
         return UnknownValue(cg);
     if (types.IsPointer(t))
     {
@@ -201,7 +201,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             if (!known)
                 return UnknownValue(cg);
             string why = "";
-            int instance = TryResolveOverload(cg, scands, targs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
+            int instance = CheckOverload(cg, scands, targs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
             if (ReportIf(cg, e.Loc, why))
                 return UnknownValue(cg);
             var fi = cg.Instances.Get(instance);
@@ -230,7 +230,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             if (!known)
                 return UnknownValue(cg);
             string why = "";
-            int instance = TryResolveOverload(cg, ncands, nargs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
+            int instance = CheckOverload(cg, ncands, nargs, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.Name, ref why);
             if (ReportIf(cg, e.Loc, why))
                 return UnknownValue(cg);
             return CheckThreadUse(cg, instance, viaStart, "the 'thread' function '" + dotted + "." + m.Name + "' must be prefixed with 'start'",
@@ -245,7 +245,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         CheckArgs(cg, call.Args, ref known);
         return UnknownValue(cg);
     }
-    Value obj = CheckExpr(cg, m.Object);
+    Value obj = SettleChecked(cg, CheckExpr(cg, m.Object));
     int t = obj.Type;
     if (types.IsPointer(t) && !m.ViaArrow)
     {
@@ -263,7 +263,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
     }
     var args = CheckArgs(cg, call.Args, ref known);
-    if (types.IsUnknown(t) || m.ViaArrow || types.Kind(t) == TypeKind.Collection || (IsCallableType(cg, t) && m.Name == "Invoke"))
+    if (types.IsUnknown(t) || m.ViaArrow || (IsCallableType(cg, t) && m.Name == "Invoke"))
         return UnknownValue(cg);
     if (types.Kind(t) == TypeKind.Interface)
         return CheckInterfaceCall(cg, t, m.Name, args, known, e.Loc);
@@ -310,7 +310,7 @@ Value CheckResolvedCall(Compiler cg, Candidate[] cands, Arg[] args, bool known, 
     if (!known)
         return UnknownValue(cg);
     string why = "";
-    int instance = TryResolveOverload(cg, cands, args, typeArgs, loc, name, ref why);
+    int instance = CheckOverload(cg, cands, args, typeArgs, loc, name, ref why);
     if (ReportIf(cg, loc, why))
         return UnknownValue(cg);
     return Rvalue(cg.Instances.Get(instance).Ret, "", false);
@@ -329,7 +329,7 @@ Value CheckMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, bool kn
     if (!known)
         return UnknownValue(cg);
     string why = "";
-    int instance = TryResolveOverload(cg, cands, args, typeArgs, loc, name, ref why);
+    int instance = CheckOverload(cg, cands, args, typeArgs, loc, name, ref why);
     if (ReportIf(cg, loc, why))
         return UnknownValue(cg);
     var fi = cg.Instances.Get(instance);
@@ -572,9 +572,9 @@ Value CheckIndex(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetIndex(e);
-    Value obj = CheckExpr(cg, n.Object);
+    Value obj = SettleChecked(cg, CheckExpr(cg, n.Object));
     int t = obj.Type;
-    if (types.IsUnknown(t) || types.Kind(t) == TypeKind.Collection)
+    if (types.IsUnknown(t))
     {
         CheckExpr(cg, n.Index);
         return UnknownValue(cg);
@@ -644,9 +644,9 @@ Value CheckSliceExpr(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetSlice(e);
-    Value obj = CheckRValue(cg, n.Object);
+    Value obj = SettleChecked(cg, CheckRValue(cg, n.Object));
     int sliceType = types.Unknown;
-    if (!IsUnknown(cg, obj) && types.Kind(obj.Type) != TypeKind.Collection)
+    if (!IsUnknown(cg, obj))
     {
         sliceType = SliceTypeOf(cg, obj.Type);
         if (sliceType == 0)

@@ -92,6 +92,7 @@ Value CheckExpr(Compiler cg, Expr e)
         return o;
     }
     case ExprKind.Is: return CheckIs(cg, e);
+    case ExprKind.Collection: return CheckCollectionExpr(cg, e);
     case ExprKind.Lambda:
         CheckLambdaBody(cg, e);
         return UnknownValue(cg); // its type comes from the Action/Func it is converted to (code generation for now)
@@ -108,15 +109,10 @@ Value CheckExpr(Compiler cg, Expr e)
 // The parts of an expression that the checker does not type yet, so that the errors inside them are found.
 void CheckParts(Compiler cg, Expr e)
 {
-    var tree = cg.Tree;
     switch (e.Kind)
     {
-    case ExprKind.Collection:
-        foreach (var item in tree.GetCollection(e).Items)
-            CheckExpr(cg, item);
-        break;
     default:
-        break; // lambdas, sizeof, default(T), new T(): later steps
+        break; // sizeof, default(T), new T(): later steps
     }
 }
 
@@ -241,7 +237,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
     if (!known)
         return UnknownValue(cg);
     string why = "";
-    int instance = TryResolveOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name, ref why);
+    int instance = CheckOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name, ref why);
     if (instance < 0)
     {
         CheckError(cg, e.Loc, why);

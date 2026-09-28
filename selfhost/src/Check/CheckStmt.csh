@@ -230,6 +230,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
         }
         else
         {
+            init = SettleChecked(cg, init); // var a = [1, 2]: an int[]
             string why = "";
             t = VarTypeFromInit(cg, init, d.Name, ref why);
             if (t == 0)
@@ -251,8 +252,13 @@ void CheckConversion(Compiler cg, Value v, int to, SourceLoc loc)
     if (IsUnknown(cg, v) || types.IsUnknown(to))
         return;
     var k = types.Kind(v.Type);
-    // lambdas, function names and collection expressions are converted by code generation for now
-    if (k == TypeKind.Lambda || k == TypeKind.MethodGroup || k == TypeKind.Collection || types.IsCFunction(to))
+    if (k == TypeKind.Collection)
+    {
+        CheckCollectionAs(cg, v.CollectionNode, to, loc);
+        return;
+    }
+    // lambdas and function names are converted by code generation for now
+    if (k == TypeKind.Lambda || k == TypeKind.MethodGroup || types.IsCFunction(to))
         return;
     string why = ConversionError(cg, v, to);
     if (why.Length > 0)
@@ -291,7 +297,7 @@ void CheckForeach(Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var n = cg.Tree.GetForeach(s);
-    Value it = CheckRValue(cg, n.Iterable);
+    Value it = SettleChecked(cg, CheckRValue(cg, n.Iterable));
     int coll = it.Type;
     int elem = types.Unknown;
     if (!types.IsUnknown(coll) && types.Kind(coll) != TypeKind.Collection && !types.IsStruct(coll))
