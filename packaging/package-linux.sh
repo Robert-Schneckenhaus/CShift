@@ -24,6 +24,7 @@ mkdir -p "$dist/toolchain/bin" "$dist/toolchain/lib"
 # ---- the compiler and the documentation ----
 cp "$build/cshiftc" "$dist/"
 cp "$root/README.md" "$dist/"
+cp "$root/LICENSE" "$dist/"
 cp -r "$root/docs" "$dist/docs"
 cp "$root/packaging/README-release-linux.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"

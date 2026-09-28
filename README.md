@@ -169,3 +169,8 @@ tests/run_tests.sh [path/to/cshiftc]      # or .\build.ps1 -Test
 * Lambdas capture read-only copies; generic type arguments are not inferred from lambdas.
 * No debug information (DWARF/PDB), no streams, dates or number formatting options in the standard library.
 * More in [Todo.md](Todo.md).
+
+## License
+
+CShift (the compiler, the standard library and the documentation) is released under the [MIT License](LICENSE). The
+toolchain in the release archives (clang, lld, libclang and, on Windows, MinGW-w64) keeps its own licenses.
