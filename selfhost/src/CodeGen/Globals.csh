@@ -202,6 +202,22 @@ int BeginSyntheticFunction(Compiler cg, string name)
 int BeginSyntheticFunctionWith(Compiler cg, string header)
 {
     var types = cg.Types;
+    var f = FnState { Func = SyntheticInstance(cg), RetType = types.Void, Checked = true, File = 0, Env = NoEnv() };
+    f.Vars = List<ScopeVar>.Create();
+    f.ScopeStarts = List<int>.Create();
+    f.Temps = List<TempRelease>.Create();
+    f.Loops = List<LoopCtx>.Create();
+    cg.Fn[0] = f;
+    int mark = cg.Ir.Functions.Length();
+    cg.Ir.BeginFunction(header);
+    PushScope(cg);
+    return mark;
+}
+
+// The function instance that code outside of functions (the initializers of the globals) is written in.
+int SyntheticInstance(Compiler cg)
+{
+    var types = cg.Types;
     if (cg.St[0].InitInstance == 0)
     {
         // the function looks like a function without parameters to the code generator
@@ -213,16 +229,7 @@ int BeginSyntheticFunctionWith(Compiler cg, string header)
         cg.Instances.Add(info);
         cg.St[0].InitInstance = cg.Instances.Count();
     }
-    var f = FnState { Func = cg.St[0].InitInstance - 1, RetType = types.Void, Checked = true, File = 0, Env = NoEnv() };
-    f.Vars = List<ScopeVar>.Create();
-    f.ScopeStarts = List<int>.Create();
-    f.Temps = List<TempRelease>.Create();
-    f.Loops = List<LoopCtx>.Create();
-    cg.Fn[0] = f;
-    int mark = cg.Ir.Functions.Length();
-    cg.Ir.BeginFunction(header);
-    PushScope(cg);
-    return mark;
+    return cg.St[0].InitInstance - 1;
 }
 
 void EndSyntheticFunction(Compiler cg, int mark, bool keep)

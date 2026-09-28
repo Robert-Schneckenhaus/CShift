@@ -283,7 +283,7 @@ void EmitVarDecl(Compiler cg, Stmt s)
     {
         // a local constant has no storage: its value is computed now and inlined at every use
         if (!IsConstantType(cg, t))
-            FailConstantType(cg, s.Loc, t);
+            t = RecoverConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");

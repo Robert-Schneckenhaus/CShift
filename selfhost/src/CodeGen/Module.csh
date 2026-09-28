@@ -38,8 +38,6 @@ string CompileProgram(Compiler cg, string triple)
         if (!cg.Files.Get(cg.Globals.Get(gi).File).IsPrelude)
             GlobalValue(cg, gi);
     }
-    EmitGlobalsInit(cg);
-
     // Every struct of the program is checked (layout, bases), also if nothing uses it.
     for (var s = 0; s < cg.Structs.Count(); s += 1)
     {
@@ -59,6 +57,7 @@ string CompileProgram(Compiler cg, string triple)
     // The checker walks every function body of the program and reports all the errors it finds (docs/semantic-pass.md).
     CheckProgram(cg);
     cg.St[0].Recovering = false;
+    EmitGlobalsInit(cg); // after the checker: their errors are reported with the others
 
     // 2. Plain (non-generic, non-method, non-extern) functions of the program are always generated; Main is the entry point.
     int main = -1;

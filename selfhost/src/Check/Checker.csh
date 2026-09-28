@@ -33,6 +33,8 @@ void CheckProgram(Compiler program)
     cg.Ir = ir;
     cg.Fn = new FnState[1];
 
+    CheckGlobalInitializers(cg);
+
     for (var entry = 0; entry < cg.Funcs.Count(); entry += 1)
     {
         var fe = cg.Funcs.Get(entry);
@@ -63,7 +65,7 @@ void CheckProgram(Compiler program)
 // reported before (where the type is written), so it is left out.
 void CheckError(Compiler cg, SourceLoc loc, string message)
 {
-    if (message.Contains("'?'"))
+    if (message.Contains(UnknownTypeName))
         return;
     cg.Diag.ReportAt(loc, message);
 }
@@ -111,4 +113,30 @@ void CheckFunction(Compiler cg, int instance)
         CheckError(cg, d.Loc, "not all code paths of '" + fi.Name + "' return a value");
     PopScope(cg, false);
     cg.Ir.EndFunction();
+}
+
+// The initializers of the program's globals (see EmitGlobalsInit): each one in its own scope, converted to the type of
+// its global.
+void CheckGlobalInitializers(Compiler cg)
+{
+    for (var i = 0; i < cg.Globals.Count(); i += 1)
+    {
+        var g = cg.Globals.Get(i);
+        if (g.Decl.Init.IsNull() || cg.Files.Get(g.File).IsPrelude)
+            continue;
+        Value target = GlobalValue(cg, i);
+        var f = FnState { Func = SyntheticInstance(cg), RetType = cg.Types.Void, Checked = true, File = g.File, Env = NoEnv() };
+        f.Vars = List<ScopeVar>.Create();
+        f.ScopeStarts = List<int>.Create();
+        f.Temps = List<TempRelease>.Create();
+        f.Loops = List<LoopCtx>.Create();
+        f.ThisSlot = "";
+        f.Live = true;
+        cg.Fn[0] = f;
+        cg.Ir.BeginFunction("define void @check()");
+        PushScope(cg); // the scope of pattern variables in the initializer
+        CheckConversion(cg, CheckExpr(cg, g.Decl.Init), target.Type, g.Decl.Init.Loc);
+        PopScope(cg, false);
+        cg.Ir.EndFunction();
+    }
 }
