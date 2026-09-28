@@ -120,6 +120,8 @@ int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] ex
             else if (!InferTypeArgs(cg, cand, args, ref targs))
             {
                 reason = "cannot infer the type arguments, specify them explicitly (e.g. " + name + "<int>(...))";
+                if (cg.St[0].LambdaError.Length > 0)
+                    reason = "cannot infer the type arguments: the lambda has an error (" + cg.St[0].LambdaError + ")";
                 continue;
             }
         }

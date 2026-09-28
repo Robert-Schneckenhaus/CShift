@@ -167,7 +167,7 @@ tests/run_tests.sh [path/to/cshiftc]      # or .\build.ps1 -Test
   errors (a missing `embed` file, some in code generation) still end the run.
 * Reference counts of strings, arrays and containers are not atomic: threads get copies of strings, and share values
   only through `SharedPtr<T>` and `Mutex<T>` (whose values must be copyable between threads, so no containers yet).
-* Lambdas capture read-only copies; generic type arguments are not inferred from lambdas.
+* Lambdas capture read-only copies.
 * No debug information (DWARF/PDB), no streams, dates or number formatting options in the standard library.
 * More in [Todo.md](Todo.md).
 

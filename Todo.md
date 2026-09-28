@@ -5,12 +5,10 @@ the git log.
 
 ## Compiler
 
-- [ ] **A separate semantic pass** (in progress, see [docs/semantic-pass.md](docs/semantic-pass.md)). Steps 1 and 2
-      are done: the checker reports several errors per run for names, operators, assignments, conditions,
-      declarations, `return`, calls and members of every kind, indexing, slices, `new` and initializers. Next:
-      patterns, lambdas, declarations with recovery, then code generation reading the checker's results, generic
-      bodies checked once and inference from lambdas.
-- [ ] Generic type arguments are not inferred from lambdas (`list.Select<string>(x => ...)` needs the `<string>`).
+- [ ] **A separate semantic pass** (in progress, see [docs/semantic-pass.md](docs/semantic-pass.md)). One run reports
+      all the errors (up to 50) of the declarations, function bodies, global initializers and constant values;
+      generic bodies are checked once and type arguments are inferred from lambdas. Next: generic bodies against
+      their constraints, code generation reading the checker's results, tooling.
 - [ ] Closures capture read-only copies. Capturing by reference (shared, mutable boxes, like C#) would need boxed
       locals; decide whether that is wanted.
 - [ ] `Mutex<T>` and `SharedPtr<T>` for containers: `T` must be copyable between threads today (no `List<T>`,

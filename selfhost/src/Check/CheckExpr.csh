@@ -548,7 +548,9 @@ void CheckLambdaBody(Compiler cg, Expr e)
     int savedRet = cg.Fn[0].RetType;
     var savedLoops = cg.Fn[0].Loops;
     bool savedLive = cg.Fn[0].Live;
+    bool savedCollect = cg.Fn[0].CollectReturns;
     cg.Fn[0].Live = true;
+    cg.Fn[0].CollectReturns = false; // its returns are its own
     cg.Fn[0].RetType = cg.Types.Unknown;
     cg.Fn[0].Loops = List<LoopCtx>.Create();
     PushScope(cg);
@@ -562,4 +564,5 @@ void CheckLambdaBody(Compiler cg, Expr e)
     cg.Fn[0].RetType = savedRet;
     cg.Fn[0].Loops = savedLoops;
     cg.Fn[0].Live = savedLive;
+    cg.Fn[0].CollectReturns = savedCollect;
 }

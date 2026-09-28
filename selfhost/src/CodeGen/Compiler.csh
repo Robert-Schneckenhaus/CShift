@@ -179,6 +179,8 @@ struct FnState
     string EnvType;                    // the LLVM type of the environment
     string CallerArg;                  // a library function that reports its caller: the parameter with the call site
     bool Live;                         // the checker: the current statement can be reached (structurally)
+    bool CollectReturns;               // the checker: the body of a lambda whose result type is inferred (LambdaResultType)
+    int LambdaReturn;                  // ... the type of its first 'return x' (0: none yet)
 }
 
 struct LambdaCapture
@@ -191,6 +193,9 @@ struct CgState
 {
     bool Recovering;      // declarations and the checker: some errors are reported and the compiler goes on (Recover)
     int SyntaxErrors;     // errors of the lexer and the parser (the compiler stops after parsing then)
+    bool Muted;           // the checker reports nothing (the body of a lambda whose result type is inferred)
+    string MutedError;    // ... the first error it did not report
+    string LambdaError;   // the error in the body of a lambda that the inference of type arguments could not type
     int MainFunc;         // index in Compiler.Instances + 1, 0 = none
     int WorkHead;         // next entry of the work queue
     bool Windows;
@@ -266,6 +271,8 @@ struct Compiler
         cg.St[0].Windows = windows;
         cg.St[0].Recovering = true; // until the checker has run (CompileProgram)
         cg.St[0].ProjectDir = "";
+        cg.St[0].MutedError = "";
+        cg.St[0].LambdaError = "";
         cg.Fn = new FnState[1];
         cg.Files = List<FileContext>.Create();
         cg.Funcs = List<FuncEntry>.Create();
