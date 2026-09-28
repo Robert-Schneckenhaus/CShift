@@ -119,6 +119,14 @@ void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
     IndexAt(cg, at, length, d.Loc, sb.ToString());
 }
 
+// A member that the language provides (the Length of a string, array, slice or Fixed, the Message and Code of an error):
+// a hover, nowhere to go. Returns the value.
+Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string suffix)
+{
+    IndexAt(cg, m.NameLoc, m.Name.Length, SourceLoc { }, HoverType(cg, v.Type) + " " + cg.Types.Name(objType) + "." + m.Name + suffix);
+    return v;
+}
+
 // A call that was not resolved (an argument of unknown type, no matching overload): the function if there is only one
 // candidate and it is not generic.
 void IndexCandidates(Compiler cg, SourceLoc at, int length, Candidate[] cands)

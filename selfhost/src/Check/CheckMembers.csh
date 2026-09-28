@@ -147,13 +147,13 @@ Value CheckMember(Compiler cg, Expr e)
         return CheckField(cg, obj, m.Name, e.Loc);
     }
     if (m.Name == "Length" && (types.IsString(t) || types.IsArray(t) || types.IsSlice(t)))
-        return Rvalue(types.I32, "", false);
+        return IndexBuiltinMember(cg, m, t, Rvalue(types.I32, "", false), "");
     if (m.Name == "Length" && types.IsFixed(t))
-        return ConstInt(cg, types.I32, (int64)types.Count(t));
+        return IndexBuiltinMember(cg, m, t, ConstInt(cg, types.I32, (int64)types.Count(t)), " = " + types.Count(t).ToString());
     if (types.IsError(t) && m.Name == "Message")
-        return Rvalue(types.String, "", false);
+        return IndexBuiltinMember(cg, m, t, Rvalue(types.String, "", false), "");
     if (types.IsError(t) && m.Name == "Code")
-        return Rvalue(types.Code(t) != 0 ? types.Code(t) : types.I32, "", false);
+        return IndexBuiltinMember(cg, m, t, Rvalue(types.Code(t) != 0 ? types.Code(t) : types.I32, "", false), "");
     CheckError(cg, e.Loc, "type '" + types.Name(t) + "' has no member '" + m.Name + "'");
     return UnknownValue(cg);
 }
