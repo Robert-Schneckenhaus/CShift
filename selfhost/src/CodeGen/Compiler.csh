@@ -205,6 +205,7 @@ struct CgState
     int WorkHead;         // next entry of the work queue
     bool Windows;
     bool ArcStats;        // count heap blocks and print the balance at the end (--arc-stats)
+    bool Unchecked;       // integer arithmetic of the program is unchecked (--unchecked, "unchecked": true)
     string ProjectDir;    // the folder of the project file, for embed("file") ("" = not built from a project)
     SourceLoc Loc;        // the statement or expression that is being written (for the location of a panic)
     bool StdlibLoaded;    // the standard library was added as prelude
@@ -1023,4 +1024,13 @@ bool IsStdlibName(string name)
     return name == "List" || name == "Dictionary" || name == "HashSet" || name == "StringBuilder" || name == "KeyValuePair" ||
            name == "Encoding" || name == "Process" || name == "File" || name == "Math" || name == "Char" || name == "String" ||
            name == "IEquatable" || name == "IHashable" || name == "IComparable" || name == "IDisposable";
+}
+
+// Whether the integer arithmetic of a function in the file is checked (overflow panics): yes, unless the program is
+// compiled with --unchecked ("unchecked": true in cshift.json); the standard library stays checked.
+bool CheckedByDefault(Compiler cg, int file)
+{
+    if (!cg.St[0].Unchecked)
+        return true;
+    return file >= 0 && file < cg.Diag.Files.Count() && cg.Diag.Files.Get(file).StartsWith("<stdlib>");
 }

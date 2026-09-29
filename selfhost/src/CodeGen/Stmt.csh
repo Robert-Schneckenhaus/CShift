@@ -105,7 +105,7 @@ void EmitFunctionBody(Compiler cg, int instance)
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
 
-    var f = FnState { Func = instance, RetType = fi.Ret, Checked = true, File = fi.File, Env = fi.Env };
+    var f = FnState { Func = instance, RetType = fi.Ret, Checked = CheckedByDefault(cg, fi.File), File = fi.File, Env = fi.Env };
     f.Vars = List<ScopeVar>.Create();
     f.ScopeStarts = List<int>.Create();
     f.Temps = List<TempRelease>.Create();

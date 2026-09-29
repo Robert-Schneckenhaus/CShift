@@ -40,6 +40,11 @@
 			"default": 2,
 			"description": "Optimization level 0-3 (like -O0 ... -O3)."
 		},
+		"unchecked": {
+			"type": "boolean",
+			"default": false,
+			"description": "Integer overflow wraps around instead of ending the program with a panic (like --unchecked). Division by zero and index checks stay."
+		},
 		"links": {
 			"type": "array",
 			"items": { "type": "string" },

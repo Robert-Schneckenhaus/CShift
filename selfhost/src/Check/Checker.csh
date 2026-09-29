@@ -104,7 +104,7 @@ void CheckFunction(Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
-    var f = FnState { Func = instance, RetType = fi.Ret, Checked = true, File = fi.File, Env = fi.Env };
+    var f = FnState { Func = instance, RetType = fi.Ret, Checked = CheckedByDefault(cg, fi.File), File = fi.File, Env = fi.Env };
     f.Vars = List<ScopeVar>.Create();
     f.ScopeStarts = List<int>.Create();
     f.Temps = List<TempRelease>.Create();
@@ -144,7 +144,7 @@ void CheckGlobalInitializers(Compiler cg)
         if (g.Decl.Init.IsNull() || cg.Files.Get(g.File).IsPrelude)
             continue;
         Value target = GlobalValue(cg, i);
-        var f = FnState { Func = SyntheticInstance(cg), RetType = cg.Types.Void, Checked = true, File = g.File, Env = NoEnv() };
+        var f = FnState { Func = SyntheticInstance(cg), RetType = cg.Types.Void, Checked = CheckedByDefault(cg, g.File), File = g.File, Env = NoEnv() };
         f.Vars = List<ScopeVar>.Create();
         f.ScopeStarts = List<int>.Create();
         f.Temps = List<TempRelease>.Create();
