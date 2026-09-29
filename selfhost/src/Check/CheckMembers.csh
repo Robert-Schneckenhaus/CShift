@@ -109,6 +109,8 @@ Value CheckMember(Compiler cg, Expr e)
             {
                 if (isTypeName)
                     IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, dotted);
+                else
+                    IndexNamespace(cg, m.Object, dotted);
                 int c = LookupConst(cg, file, dotted + "." + m.Name);
                 if (c >= 0)
                 {
@@ -266,6 +268,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         if (IsNamespace(cg, file, dotted))
         {
             var ncands = FreeCandidates(cg, file, dotted + "." + m.Name);
+            IndexNamespace(cg, m.Object, dotted);
             var nargs = CheckArgsFor(cg, call.Args, ncands, ref known);
             if (ncands.Length == 0)
             {
@@ -304,6 +307,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         var fieldPath = FindField(cg, t, m.Name);
         if (fieldPath.Found && IsCallableType(cg, fieldPath.Type))
         {
+            IndexField(cg, m.NameLoc, t, m.Name); // a field with a function type, called like a method
             CheckArgs(cg, call.Args, ref known);
             return UnknownValue(cg);
         }

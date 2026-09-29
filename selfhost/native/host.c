@@ -377,6 +377,23 @@ void *host_clang_cursor_file(const CXCursor *c)
     return file;
 }
 
+/* The line and the column (bytes, from 1) where the cursor is (0 for none). */
+int32_t host_clang_cursor_line(const CXCursor *c)
+{
+    CXFile file = NULL;
+    unsigned line = 0, column = 0, offset = 0;
+    p_clang_getFileLocation(p_clang_getCursorLocation(*c), &file, &line, &column, &offset);
+    return (int32_t)line;
+}
+
+int32_t host_clang_cursor_column(const CXCursor *c)
+{
+    CXFile file = NULL;
+    unsigned line = 0, column = 0, offset = 0;
+    p_clang_getFileLocation(p_clang_getCursorLocation(*c), &file, &line, &column, &offset);
+    return (int32_t)column;
+}
+
 /* ---- tokens ---- */
 
 static CXToken *tokens;

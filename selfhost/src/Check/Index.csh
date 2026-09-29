@@ -85,12 +85,37 @@ void IndexField(Compiler cg, SourceLoc at, int structType, string name)
             if (f.Name == name)
             {
                 var p = FindField(cg, structType, name);
-                IndexAt(cg, at, name.Length, f.Loc, HoverType(cg, p.Type) + " " + si.Name + "." + name);
+                IndexAt(cg, at, name.Length, f.Loc, FieldHover(cg, p.Type, si.Name + "." + name));
                 return;
             }
         }
         s = si.Base;
     }
+}
+
+// A field in a hover; one with a function type (Action/Func, a C function pointer) shows as the signature it is
+// called with: "uint32 Gl.GlFunctions.CreateShader(uint32) (function pointer field)".
+string FieldHover(Compiler cg, int t, string qualified)
+{
+    var types = cg.Types;
+    bool c = types.IsCFunction(t);
+    int fn = c ? types.Elem(t) : t;
+    if (!types.IsFunction(fn))
+        return HoverType(cg, t) + " " + qualified;
+    var sb = StringBuilder.Create();
+    sb.Append(HoverType(cg, types.Elem(fn)));
+    sb.Append(' ');
+    sb.Append(qualified);
+    sb.Append('(');
+    int[] ps = types.Params(fn);
+    for (var i = 0; i < ps.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(HoverType(cg, ps[i]));
+    }
+    sb.Append(c ? ") (C function pointer field)" : ") (function field)");
+    return sb.ToString();
 }
 
 void IndexConst(Compiler cg, SourceLoc at, int length, int c)
@@ -151,6 +176,19 @@ Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string
 {
     IndexAt(cg, m.NameLoc, m.Name.Length, SourceLoc { }, HoverType(cg, v.Type) + " " + cg.Types.Name(objType) + "." + m.Name + suffix);
     return v;
+}
+
+// A namespace name as written before '.' (Math.PI, Glfw.glfwInit()); one imported from a C header also says which
+// and goes to it.
+void IndexNamespace(Compiler cg, Expr e, string name)
+{
+    if (!cg.St[0].Indexing || e.Kind != ExprKind.Name)
+        return;
+    var imported = cg.Imported.TryGet(name);
+    if (imported is ImportedNamespace ns)
+        IndexAt(cg, e.Loc, name.Length, ns.Loc, "namespace " + name + " (imported from \"" + ns.Header + "\")");
+    else
+        IndexAt(cg, e.Loc, name.Length, SourceLoc { }, "namespace " + name);
 }
 
 // A call of a function that the language provides (Console.WriteLine, x.ToString(), ...): its signature as it was
