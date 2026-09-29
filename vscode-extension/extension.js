@@ -5,7 +5,6 @@
 
 const vscode = require("vscode");
 const fs = require("fs");
-const path = require("path");
 const lib = require("./lib");
 
 let projectFiles = [];          // the cshift.json files of the workspace

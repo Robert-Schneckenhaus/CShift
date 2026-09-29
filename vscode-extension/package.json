@@ -2,8 +2,8 @@
 	"name": "cshift",
 	"displayName": "CShift",
 	"description": "CShift (.csh): syntax highlighting, snippets, the errors of the program, hover information and go to definition (with cshiftc).",
-	"version": "0.4.0",
-	"publisher": "pyrdacor",
+	"version": "0.13.0",
+	"publisher": "Robert Schneckenhaus",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
