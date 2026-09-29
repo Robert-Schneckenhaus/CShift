@@ -24,7 +24,8 @@ cshiftc prog.csh -lz   # single file
 
 1. The compiler parses the header with **libclang** and writes a **`.ffi` file** (JSON, easy to read) to
    `obj/ffi/<Name>.ffi` (relative to the project folder or the source file). It lists functions, structs, enums and
-   constants with their CShift types.
+   constants with their CShift types, and where each of them is written in the headers (`"files"`, and `"at":
+   [file, line, column]` per declaration, format 3), so errors and go to definition in an editor point into the header.
 2. The namespace's declarations are built from the `.ffi` file. The header is **only reparsed when something
    changed** (the content — an xxh3 hash — of the header and of every header that belongs to the API, the target,
    `-I`/`-D`, the format version). Otherwise the file is simply read, which costs milliseconds.

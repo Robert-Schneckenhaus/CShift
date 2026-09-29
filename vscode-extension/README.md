@@ -8,8 +8,11 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
 * **Hover**: the type of a variable, parameter, field or constant (also where it is declared), the signature of a
   function or method (also where it is declared, and of those the language provides, like `Console.WriteLine` or
   `x.ToString()`), what a type is (`struct Person`, `enum Color`, ...), the value of an enum member or constant. In a
-  generic function the types are shown as written (`ref T slot`).
-* **Go to definition** (F12, Ctrl+click) for the same names: into the file where they are declared.
+  generic function the types are shown as written (`ref T slot`). Namespaces show what they are (`namespace Math`,
+  `namespace Glfw (imported from "GLFW/glfw3.h")`), fields with a function type (also C function pointers) show the
+  signature they are called with.
+* **Go to definition** (F12, Ctrl+click) for the same names: into the file where they are declared; for a name
+  imported from a C header, into the header at the line it is declared in.
 * Syntax highlighting (keywords, types, generics, numbers with suffixes, strings, comments, `link`, `namespace`/`using`),
   bracket pairs, auto-indent, comment toggling, `// region` folding, snippets (`main`, `struct`, `fn`, `foreach`,
   `switch`, `try`, `ifis`, `dict`, …) and a schema for `cshift.json`.

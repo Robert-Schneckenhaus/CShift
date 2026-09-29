@@ -569,9 +569,13 @@ int Build(BuildOptions o)
         var prepared = PrepareFfi(imp, o, cacheDir);
         if (prepared is FfiFiles files)
         {
-            var loaded = LoadFfiUnit(files.FfiPath, imp.Name, diag, tree);
+            var headerLoc = SourceLoc { };
+            var loaded = LoadFfiUnit(files.FfiPath, imp.Name, diag, tree, ref headerLoc);
             if (loaded is CompilationUnit ffiUnit)
+            {
                 AddUnit(cg, ffiUnit);
+                cg.Imported.Set(imp.Name, ImportedNamespace { Header = imp.Header, Loc = headerLoc });
+            }
             else
             {
                 diag.ReportAt(imp.Loc, loaded.Message);

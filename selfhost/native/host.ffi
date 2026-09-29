@@ -549,6 +549,30 @@
       "symbol": "host_clang_cursor_file"
     },
     {
+      "name": "ClangCursorLine",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_line"
+    },
+    {
+      "name": "ClangCursorColumn",
+      "returns": "int32",
+      "params": [
+        {
+          "name": "c",
+          "type": "CXCursor",
+          "ref": "constref"
+        }
+      ],
+      "symbol": "host_clang_cursor_column"
+    },
+    {
       "name": "ClangTokenize",
       "returns": "int32",
       "params": [

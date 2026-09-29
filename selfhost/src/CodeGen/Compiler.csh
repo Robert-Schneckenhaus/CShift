@@ -131,6 +131,13 @@ Value Lvalue(int type, string addr, bool isConst)
 // The function being generated
 // ---------------------------------------------------------------------------
 
+// A namespace imported from a C header ("using Glfw from "GLFW/glfw3.h";").
+struct ImportedNamespace
+{
+    string Header;   // as written
+    SourceLoc Loc;   // the header file (Line 0: not known)
+}
+
 struct ScopeVar
 {
     string Name;
@@ -257,6 +264,7 @@ struct Compiler
     Dictionary<string, List<int>> FuncDecls;
     Dictionary<string, int> ConstDecls;
     HashSet<string> Namespaces;
+    Dictionary<string, ImportedNamespace> Imported; // "using X from header": X -> the header (for the symbol index)
     HashSet<string> Symbols;     // names of the generated functions (to find duplicates)
     List<string> Links;
 
@@ -306,6 +314,7 @@ struct Compiler
         cg.FuncDecls = Dictionary<string, List<int>>.Create();
         cg.ConstDecls = Dictionary<string, int>.Create();
         cg.Namespaces = HashSet<string>.Create();
+        cg.Imported = Dictionary<string, ImportedNamespace>.Create();
         cg.Symbols = HashSet<string>.Create();
         cg.Namespaces.Add("System");
         cg.Links = List<string>.Create();

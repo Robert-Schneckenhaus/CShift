@@ -234,6 +234,18 @@ for f in "$DIR"/query/*.csh; do
     done < <(directives "$f" "query")
     if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
 done
+# Names imported from a C header (the ffi project, copied and built in section 3): the hover of the namespace, and go
+# to definition goes to the line of the header the name is declared in.
+ffi_main="$TMP/proj_ffi/src/main.csh"
+if [ -f "$ffi_main" ]; then
+    problem=""
+    for q in "62 17|int32 Geo.geo_add(int32 a, int32 b)|\"line\": 41" "62 17|native/geo.h|\"col\": 5" "62 13|namespace Geo (imported from|geo.h" "55 17|const int32 GEO_VERSION = 3|\"line\": 7"; do
+        pos="${q%%|*}"; rest="${q#*|}"; want1="${rest%%|*}"; want2="${rest#*|}"
+        got="$("$COMPILER" query --at "$ffi_main" ${pos% *} ${pos#* } "$TMP/proj_ffi" 2> /dev/null | tr -d '\r')"
+        case "$got" in *"$want1"*"$want2"*|*"$want2"*"$want1"*) ;; *) problem="at $pos expected '$want1' and '$want2', got: $got"; break ;; esac
+    done
+    if [ -n "$problem" ]; then report_fail "query ffi" "$problem"; else report_ok "query ffi"; fi
+fi
 printf 'int Main()\n{\n    int x = "a";\n    return y;\n}\n' > "$TMP/check_bad.csh"
 if "$COMPILER" check "$TMP/check_bad.csh" > /dev/null 2> "$TMP/check.err"; then
     report_fail "cshiftc check" "a program with errors passed"

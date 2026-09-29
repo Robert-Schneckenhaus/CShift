@@ -39,7 +39,7 @@ struct FfiOptions
 // The format version of .ffi files. Files with another version are regenerated.
 int FfiFormat()
 {
-    return 2; // 2: function pointers are Action/Func types
+    return 3; // 2: function pointers are Action/Func types; 3: where each declaration is written in the header
 }
 
 List<string> FfiFlags(FfiOptions options)
@@ -156,8 +156,17 @@ Error<void> LoadLibclang(string clangExe)
 // The exported model
 // ---------------------------------------------------------------------------
 
+// Where a declaration is written: an index into the generator's Files, a line and a column (0: not known).
+struct FAt
+{
+    int File;
+    int Line;
+    int Col;
+}
+
 struct FField
 {
+    FAt At;
     string Name;
     string Type;
     int64 Offset;
@@ -165,6 +174,7 @@ struct FField
 
 struct FStruct
 {
+    FAt At;
     string Name;
     string Kind; // "struct" or "union"
     int64 Size;
@@ -181,12 +191,14 @@ struct FInt
 
 struct FMember
 {
+    FAt At;
     string Name;
     FInt Value;
 }
 
 struct FEnum
 {
+    FAt At;
     string Name;
     string Base;
     List<FMember> Members;
@@ -196,6 +208,7 @@ enum FConstKind : int32 { Integer, Float, Text }
 
 struct FConst
 {
+    FAt At;
     string Name;
     string Type;
     FConstKind Kind;
@@ -215,6 +228,7 @@ struct FParam
 
 struct FFunc
 {
+    FAt At;
     string Name;
     string Returns;
     List<FParam> Params;
@@ -245,6 +259,7 @@ struct MacroToken
 
 struct Macro
 {
+    FAt At;
     string Name;
     List<MacroToken> Body;
 }
@@ -258,6 +273,7 @@ struct IncludeDirective
 
 struct MacroProbe
 {
+    FAt At;
     string Name;
     bool HasUnsigned;
 }
@@ -317,6 +333,8 @@ struct FfiGenerator
     HashSet<string> FunctionNames;
     StringBuilder ShimText;
     string ClangVersion;
+    List<string> Files;                   // the headers declarations are written in (FAt.File)
+    Dictionary<string, int> FileIndexes;
 
     static FfiGenerator Create(string name, string header, string baseDir, FfiOptions options)
     {
@@ -343,6 +361,8 @@ struct FfiGenerator
         g.ConstantNames = HashSet<string>.Create();
         g.FunctionNames = HashSet<string>.Create();
         g.ShimText = StringBuilder.Create();
+        g.Files = List<string>.Create();
+        g.FileIndexes = Dictionary<string, int>.Create();
         return g;
     }
 
@@ -460,6 +480,41 @@ struct FfiGenerator
     bool IsApiCursor(Host.CXCursor c)
     {
         return IsApiFile(Host.ClangCursorFile(c));
+    }
+
+    // "at": [file, line, column] of a declaration (see FAt), when it is known.
+    static void WriteAt(ref JsonWriter w, FAt at)
+    {
+        if (at.Line <= 0)
+            return;
+        w.Key("at");
+        w.BeginArray();
+        w.Raw(at.File.ToString());
+        w.Raw(at.Line.ToString());
+        w.Raw(at.Col.ToString());
+        w.EndArray();
+    }
+
+    // Where the cursor is written (for go to definition in an editor).
+    FAt AtCursor(Host.CXCursor c)
+    {
+        void* file = Host.ClangCursorFile(c);
+        if (file == null)
+            return FAt { };
+        string name = Slashes(Host.ClangFileName(file));
+        if (name.Length == 0 || name == WrapperFile)
+            return FAt { };
+        name = Slashes(Path.GetFullPath(name)); // an editor opens it from anywhere
+        int index = Files.Count();
+        var known = FileIndexes.TryGet(name);
+        if (known is int existing)
+            index = existing;
+        else
+        {
+            Files.Add(name);
+            FileIndexes.Set(name, index);
+        }
+        return FAt { File = index, Line = Host.ClangCursorLine(c), Col = Host.ClangCursorColumn(c) };
     }
 
     // ---- types ----
@@ -834,6 +889,7 @@ struct FfiGenerator
             return;
         var def = Host.ClangCursorDefinition(decl);
         var s = FStruct { Name = name, Kind = Kind(decl) == (int)CxCursor.UnionDecl ? "union" : "struct", Align = 1 };
+        s.At = AtCursor(Host.ClangCursorIsNull(def) != 0 ? decl : def);
         s.Fields = List<FField>.Create();
         if (Host.ClangCursorIsNull(def) != 0)
         {
@@ -870,7 +926,7 @@ struct FfiGenerator
                 string ft = FieldTypeString(Host.ClangCursorType(field), ref why);
                 if (ft.Length == 0 || ft == "void")
                     continue; // long double, flexible array members, ... are padding
-                s.Fields.Add(FField { Name = fieldName, Type = ft, Offset = bits / 8 });
+                s.Fields.Add(FField { At = AtCursor(field), Name = fieldName, Type = ft, Offset = bits / 8 });
             }
         }
         Structs.Add(s);
@@ -888,7 +944,7 @@ struct FfiGenerator
         bool isUnsigned = baseType.StartsWith("uint");
         string name = EnumName(decl);
 
-        var e = FEnum { Name = name, Base = baseType };
+        var e = FEnum { At = AtCursor(def), Name = name, Base = baseType };
         e.Members = List<FMember>.Create();
         foreach (var member in Children(def))
         {
@@ -897,11 +953,11 @@ struct FfiGenerator
             string memberName = Host.ClangCursorSpelling(member);
             var value = FInt { IsUnsigned = isUnsigned };
             value.Value = isUnsigned ? unchecked((int64)Host.ClangEnumUnsignedValue(member)) : Host.ClangEnumValue(member);
-            e.Members.Add(FMember { Name = memberName, Value = value });
+            e.Members.Add(FMember { At = AtCursor(member), Name = memberName, Value = value });
 
             // C code uses the enumerators as plain constants.
             if (ConstantNames.Add(memberName))
-                Constants.Add(FConst { Name = memberName, Type = name.Length == 0 ? baseType : name, Kind = FConstKind.Integer, Integer = value, Text = "" });
+                Constants.Add(FConst { At = AtCursor(member), Name = memberName, Type = name.Length == 0 ? baseType : name, Kind = FConstKind.Integer, Integer = value, Text = "" });
         }
         if (name.Length > 0)
             Enums.Add(e);
@@ -922,7 +978,7 @@ struct FfiGenerator
             return;
         }
 
-        var f = FFunc { Name = name, Returns = "void", Symbol = "", CType = Host.ClangTypeSpelling(ft) };
+        var f = FFunc { At = AtCursor(c), Name = name, Returns = "void", Symbol = "", CType = Host.ClangTypeSpelling(ft) };
         f.Params = List<FParam>.Create();
         f.Variadic = Host.ClangIsVariadic(ft) != 0;
         bool needsShim = false;
@@ -1052,7 +1108,7 @@ struct FfiGenerator
                 body.Add(MacroToken { Kind = kind, Text = Host.ClangTokenSpelling(i) });
             }
             if (body.Count() > 0)
-                macros.Add(Macro { Name = name, Body = body });
+                macros.Add(Macro { At = AtCursor(c), Name = name, Body = body });
         }
         return macros;
     }
@@ -1063,6 +1119,7 @@ struct FfiGenerator
         foreach (var m in CollectMacros())
         {
             string name = m.Name;
+            FAt at = m.At;
             var body = m.Body;
             if (ConstantNames.Contains(name) || FunctionNames.Contains(name))
                 continue;
@@ -1110,7 +1167,7 @@ struct FfiGenerator
                 }
                 if (ok)
                 {
-                    Constants.Add(FConst { Name = name, Type = "string", Kind = FConstKind.Text, Text = text });
+                    Constants.Add(FConst { At = at, Name = name, Type = "string", Kind = FConstKind.Text, Text = text });
                     ConstantNames.Add(name);
                 }
                 continue;
@@ -1132,7 +1189,7 @@ struct FfiGenerator
                 var parsed = text.ParseDouble();
                 if (parsed is double number)
                 {
-                    Constants.Add(FConst { Name = name, Type = "float64", Kind = FConstKind.Float, Number = negative ? -number : number, Text = "" });
+                    Constants.Add(FConst { At = at, Name = name, Type = "float64", Kind = FConstKind.Float, Number = negative ? -number : number, Text = "" });
                     ConstantNames.Add(name);
                 }
                 continue;
@@ -1156,7 +1213,7 @@ struct FfiGenerator
                     candidate = false; // identifiers are other macros or enumerators
             }
             if (candidate)
-                probes.Add(MacroProbe { Name = name, HasUnsigned = hasUnsigned });
+                probes.Add(MacroProbe { At = at, Name = name, HasUnsigned = hasUnsigned });
         }
         if (probes.Count() == 0)
             return;
@@ -1187,7 +1244,7 @@ struct FfiGenerator
                     if (i < 0 || i >= probes.Count())
                         continue;
                     int64 v = Host.ClangEnumValue(c);
-                    var k = FConst { Name = probes.Get(i).Name, Kind = FConstKind.Integer, Text = "" };
+                    var k = FConst { At = probes.Get(i).At, Name = probes.Get(i).Name, Kind = FConstKind.Integer, Text = "" };
                     k.Integer.Value = v;
                     if (probes.Get(i).HasUnsigned && v >= 0 && v <= 4294967295)
                     {
@@ -1308,6 +1365,8 @@ struct FfiGenerator
         w.Text(Name);
         w.Key("header");
         w.Text(Header);
+        w.Key("headerPath");
+        w.Text(Slashes(Path.GetFullPath(MainHeaderPath)));
         w.Key("target");
         w.Text(Options.Target);
         w.Key("flags");
@@ -1335,6 +1394,12 @@ struct FfiGenerator
             w.Text(shimName);
         }
 
+        w.Key("files");
+        w.BeginArray();
+        foreach (var file in Files)
+            w.Text(file);
+        w.EndArray();
+
         w.Key("constants");
         w.BeginArray();
         foreach (var c in Constants)
@@ -1342,6 +1407,7 @@ struct FfiGenerator
             w.BeginObject();
             w.Key("name");
             w.Text(c.Name);
+            WriteAt(ref w, c.At);
             w.Key("type");
             w.Text(c.Type);
             w.Key("value");
@@ -1362,6 +1428,7 @@ struct FfiGenerator
             w.BeginObject();
             w.Key("name");
             w.Text(e.Name);
+            WriteAt(ref w, e.At);
             w.Key("base");
             w.Text(e.Base);
             w.Key("members");
@@ -1371,6 +1438,7 @@ struct FfiGenerator
                 w.BeginObject();
                 w.Key("name");
                 w.Text(m.Name);
+                WriteAt(ref w, m.At);
                 w.Key("value");
                 w.Raw(IntText(m.Value));
                 w.EndObject();
@@ -1387,6 +1455,7 @@ struct FfiGenerator
             w.BeginObject();
             w.Key("name");
             w.Text(s.Name);
+            WriteAt(ref w, s.At);
             w.Key("kind");
             w.Text(s.Kind);
             w.Key("size");
@@ -1402,6 +1471,7 @@ struct FfiGenerator
                 w.BeginObject();
                 w.Key("name");
                 w.Text(f.Name);
+                WriteAt(ref w, f.At);
                 w.Key("type");
                 w.Text(f.Type);
                 w.Key("offset");
@@ -1420,6 +1490,7 @@ struct FfiGenerator
             w.BeginObject();
             w.Key("name");
             w.Text(f.Name);
+            WriteAt(ref w, f.At);
             w.Key("returns");
             w.Text(f.Returns);
             w.Key("params");

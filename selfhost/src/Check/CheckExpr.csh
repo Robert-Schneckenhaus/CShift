@@ -224,6 +224,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
         var fieldPath = FindField(cg, owner, n.Name);
         if (fieldPath.Found && IsCallableType(cg, fieldPath.Type))
         {
+            IndexField(cg, call.Callee.Loc, owner, n.Name);
             CheckArgs(cg, call.Args, ref known);
             return UnknownValue(cg);
         }

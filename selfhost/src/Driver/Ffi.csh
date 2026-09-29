@@ -273,7 +273,31 @@ struct FfiBuilder
     }
 }
 
-Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag, Ast tree)
+// Where a declaration of the .ffi file is written ("at": [file, line, column] into "files", see FAt); 'fallback' when
+// the file does not say (a hand-written or older .ffi file).
+SourceLoc FfiAt(Json json, int node, int[] files, SourceLoc fallback)
+{
+    int at = json.Get(node, "at");
+    if (at < 0 || json.KindOf(at) != JsonKind.Array)
+        return fallback;
+    var items = json.Nodes.Get(at).Items;
+    if (items.Count() != 3)
+        return fallback;
+    var numbers = new int[3];
+    for (var i = 0; i < 3; i += 1)
+    {
+        var parsed = json.Text(items.Get(i)).ParseInt();
+        if (parsed is int n)
+            numbers[i] = n;
+        else
+            return fallback;
+    }
+    if (numbers[0] < 0 || numbers[0] >= files.Length || numbers[1] <= 0)
+        return fallback;
+    return SourceLoc { File = files[numbers[0]], Line = numbers[1], Col = numbers[2] > 0 ? numbers[2] : 1 };
+}
+
+Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag, Ast tree, ref SourceLoc headerLoc)
 {
     var read = File.ReadAllText(ffiPath);
     string text = "";
@@ -290,10 +314,22 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
         return error(ffiPath + ": invalid JSON: " + parsed.Message);
     if (json.KindOf(root) != JsonKind.Object)
         return error(ffiPath + ": the FFI file must contain a JSON object");
-    if (JsonInt(json, root, "format", -1) != 2)
-        return error(ffiPath + ": unsupported FFI format (expected 2)");
+    int64 format = JsonInt(json, root, "format", -1);
+    if (format != 2 && format != FfiFormat())
+        return error(ffiPath + ": unsupported FFI format (expected 2 or " + FfiFormat().ToString() + ")");
 
     int fileId = diag.AddFile(ffiPath);
+    // the headers the declarations are written in (format 3), for go to definition in an editor
+    var fileList = List<int>.Create();
+    int filesNode = json.Get(root, "files");
+    if (filesNode >= 0 && json.KindOf(filesNode) == JsonKind.Array)
+    {
+        foreach (var fv in json.Nodes.Get(filesNode).Items)
+            fileList.Add(diag.AddFile(json.KindOf(fv) == JsonKind.String ? json.Text(fv) : ffiPath));
+    }
+    int[] files = fileList.ToArray();
+    string headerPath = JsonString(json, root, "headerPath", "");
+    headerLoc = headerPath.Length > 0 ? SourceLoc { File = diag.AddFile(headerPath), Line = 1, Col = 1 } : SourceLoc { };
     var unit = CompilationUnit.Create(fileId, true); // library declarations are only compiled when they are used
     unit.File.Ns = name;
     var b = FfiBuilder { Diag = diag, Tree = tree, FfiPath = ffiPath, Loc = SourceLoc { File = fileId, Line = 1, Col = 1 }, Failed = new int[1] };
@@ -305,7 +341,7 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
         {
             if (json.KindOf(sv) != JsonKind.Object)
                 continue;
-            var s = StructDecl { Loc = b.Loc, Name = JsonString(json, sv, "name", ""), ExplicitLayout = true };
+            var s = StructDecl { Loc = FfiAt(json, sv, files, b.Loc), Name = JsonString(json, sv, "name", ""), ExplicitLayout = true };
             s.TypeParams = new string[0];
             s.Bases = new TypeRef[0];
             s.Constraints = new Constraint[0];
@@ -324,7 +360,7 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
                     string fname = JsonString(json, f, "name", "");
                     var type = b.MakeType(JsonString(json, f, "type", ""), "struct " + s.Name + "." + fname);
                     if (!type.IsNull())
-                        fields.Add(FieldDecl { Loc = b.Loc, Name = fname, Type = type, Offset = JsonInt(json, f, "offset", 0) });
+                        fields.Add(FieldDecl { Loc = FfiAt(json, f, files, b.Loc), Name = fname, Type = type, Offset = JsonInt(json, f, "offset", 0) });
                 }
             }
             s.Fields = fields.ToArray();
@@ -339,7 +375,7 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
         {
             if (json.KindOf(ev) != JsonKind.Object)
                 continue;
-            var e = EnumDecl { Loc = b.Loc, Name = JsonString(json, ev, "name", "") };
+            var e = EnumDecl { Loc = FfiAt(json, ev, files, b.Loc), Name = JsonString(json, ev, "name", "") };
             e.Base = b.MakeType(JsonString(json, ev, "base", ""), "enum " + e.Name);
             var members = List<EnumMember>.Create();
             int mv = json.Get(ev, "members");
@@ -349,7 +385,7 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
                 {
                     if (json.KindOf(m) != JsonKind.Object)
                         continue;
-                    var member = EnumMember { Loc = b.Loc, Name = JsonString(json, m, "name", "") };
+                    var member = EnumMember { Loc = FfiAt(json, m, files, b.Loc), Name = JsonString(json, m, "name", "") };
                     bool negative = false;
                     uint64 magnitude = 0;
                     if (JsonInteger(json, m, "value", ref negative, ref magnitude))
@@ -370,7 +406,7 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
         {
             if (json.KindOf(cv) != JsonKind.Object)
                 continue;
-            var c = ConstDecl { Loc = b.Loc, Name = JsonString(json, cv, "name", "") };
+            var c = ConstDecl { Loc = FfiAt(json, cv, files, b.Loc), Name = JsonString(json, cv, "name", "") };
             string typeName = JsonString(json, cv, "type", "");
             c.Type = b.MakeType(typeName, "constant " + c.Name);
             bool negative = false;
@@ -407,7 +443,8 @@ Error<CompilationUnit> LoadFfiUnit(string ffiPath, string name, Diagnostics diag
         {
             if (json.KindOf(fnode) != JsonKind.Object)
                 continue;
-            var f = FuncDecl { Loc = b.Loc, Name = JsonString(json, fnode, "name", ""), IsExtern = true, Owner = -1 };
+            var f = FuncDecl { Loc = FfiAt(json, fnode, files, b.Loc), Name = JsonString(json, fnode, "name", ""), IsExtern = true, Owner = -1 };
+            f.NameLoc = f.Loc;
             f.TypeParams = new string[0];
             f.Constraints = new Constraint[0];
             f.IsVariadic = JsonBool(json, fnode, "variadic");
