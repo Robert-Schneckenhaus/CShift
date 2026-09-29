@@ -1,8 +1,8 @@
 // The runtime of the generated programs, written as LLVM IR text and put into every module. There is no runtime
 // library: strings, reference counting and panics are IR helpers (like in the C++ compiler, CodeGenRuntime.cpp).
 //
-// A heap block (string or array) is { i64 refcount, i64 length, payload... }. String literals start with a huge
-// reference count and are never freed.
+// A heap block (string or array) is { size refcount, size length, payload... } (size: i64, or i32 on a 32-bit target,
+// see Emit/Target.csh). String literals start with a huge reference count and are never freed.
 
 namespace CShift.CodeGen;
 
@@ -17,7 +17,7 @@ string StderrLoad(bool windows)
     return "  %err = load ptr, ptr @stderr\n";
 }
 
-string RuntimeGlobals(bool windows, bool arcStats)
+string RuntimeGlobals(bool windows, bool arcStats, IrWriter ir)
 {
     string text =
         "@.cs.panic = private constant [11 x i8] c\"panic: %s\\0A\\00\"\n" +
@@ -31,12 +31,12 @@ string RuntimeGlobals(bool windows, bool arcStats)
         "@.cs.fmt.i64 = private constant [5 x i8] c\"%lld\\00\"\n" +
         "@.cs.fmt.u64 = private constant [5 x i8] c\"%llu\\00\"\n" +
         "@.cs.fmt.g = private constant [5 x i8] c\"%.*g\\00\"\n" +
-        "@.cs.true = private global { i64, i64, [5 x i8] } { i64 1152921504606846976, i64 4, [5 x i8] c\"true\\00\" }\n" +
-        "@.cs.false = private global { i64, i64, [6 x i8] } { i64 1152921504606846976, i64 5, [6 x i8] c\"false\\00\" }\n";
+        Sized("@.cs.true = private global { $S, $S, [5 x i8] } { $S $I, $S 4, [5 x i8] c\"true\\00\" }\n" +
+              "@.cs.false = private global { $S, $S, [6 x i8] } { $S $I, $S 5, [6 x i8] c\"false\\00\" }\n", ir);
     if (!windows)
         text += "@stderr = external global ptr\n";
     if (arcStats)
-        text += "@__cs_allocs = internal global i64 0\n@__cs_frees = internal global i64 0\n@__cs_threads = internal global i64 0\n" +
+        text += Sized("@__cs_allocs = internal global $S 0\n@__cs_frees = internal global $S 0\n@__cs_threads = internal global $S 0\n", ir) +
                 "@.cs.arc = private constant [40 x i8] c\"[arc] allocs=%lld frees=%lld live=%lld\\0A\\00\"\n";
     return text + "\n";
 }
@@ -53,17 +53,17 @@ string CDeclare(IrWriter ir, string name, string declaration)
 string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
 {
     string text =
-        CDeclare(ir, "calloc", "declare ptr @calloc(i64, i64)") +
+        CDeclare(ir, "calloc", "declare ptr @calloc($S, $S)") +
         CDeclare(ir, "free", "declare void @free(ptr)") +
         CDeclare(ir, "exit", "declare void @exit(i32)") +
-        CDeclare(ir, "memcmp", "declare i32 @memcmp(ptr, ptr, i64)") +
-        CDeclare(ir, "strlen", "declare i64 @strlen(ptr)") +
+        CDeclare(ir, "memcmp", "declare i32 @memcmp(ptr, ptr, $S)") +
+        CDeclare(ir, "strlen", "declare $S @strlen(ptr)") +
         CDeclare(ir, "printf", "declare i32 @printf(ptr, ...)") +
         CDeclare(ir, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)") +
-        CDeclare(ir, "snprintf", "declare i32 @snprintf(ptr, i64, ptr, ...)") +
+        CDeclare(ir, "snprintf", "declare i32 @snprintf(ptr, $S, ptr, ...)") +
         CDeclare(ir, "strtod", "declare double @strtod(ptr, ptr)") +
-        "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)\n" +
-        "declare void @llvm.memmove.p0.p0.i64(ptr, ptr, i64, i1)\n";
+        "declare void @llvm.memcpy.p0.p0.$S(ptr, ptr, $S, i1)\n" +
+        "declare void @llvm.memmove.p0.p0.$S(ptr, ptr, $S, i1)\n";
     if (windows)
         text += CDeclare(ir, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)");
     text += "\n";
@@ -93,82 +93,82 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  call void @exit(i32 101)\n  unreachable\n}\n\n";
 
     // alloc(payload size, length): a zeroed block with reference count 1
-    text += "define internal ptr @__cs_alloc(i64 %size, i64 %len) {\nentry:\n" +
-            "  %total = add i64 %size, 16\n" +
-            "  %p = call ptr @calloc(i64 1, i64 %total)\n" +
+    text += "define internal ptr @__cs_alloc($S %size, $S %len) {\nentry:\n" +
+            "  %total = add $S %size, $H\n" +
+            "  %p = call ptr @calloc($S 1, $S %total)\n" +
             "  %isnull = icmp eq ptr %p, null\n" +
             "  br i1 %isnull, label %oom, label %ok\n" +
             "oom:\n  call void @__cs_panic(ptr @.cs.oom)\n  unreachable\n" +
-            "ok:\n  store i64 1, ptr %p\n" +
-            (arcStats ? "  %n = atomicrmw add ptr @__cs_allocs, i64 1 monotonic\n" : "") +
-            "  %lenp = getelementptr i8, ptr %p, i64 8\n  store i64 %len, ptr %lenp\n  ret ptr %p\n}\n\n";
+            "ok:\n  store $S 1, ptr %p\n" +
+            (arcStats ? "  %n = atomicrmw add ptr @__cs_allocs, $S 1 monotonic\n" : "") +
+            "  %lenp = getelementptr i8, ptr %p, $S $P\n  store $S %len, ptr %lenp\n  ret ptr %p\n}\n\n";
 
-    text += "define internal i64 @__cs_len(ptr %s) {\nentry:\n" +
+    text += "define internal $S @__cs_len(ptr %s) {\nentry:\n" +
             "  %isnull = icmp eq ptr %s, null\n  br i1 %isnull, label %null, label %load\n" +
-            "load:\n  %lenp = getelementptr i8, ptr %s, i64 8\n  %len = load i64, ptr %lenp\n  ret i64 %len\n" +
-            "null:\n  ret i64 0\n}\n\n";
+            "load:\n  %lenp = getelementptr i8, ptr %s, $S $P\n  %len = load $S, ptr %lenp\n  ret $S %len\n" +
+            "null:\n  ret $S 0\n}\n\n";
 
     text += "define internal ptr @__cs_data(ptr %s) {\nentry:\n" +
-            "  %p = getelementptr i8, ptr %s, i64 16\n" +
+            "  %p = getelementptr i8, ptr %s, $S $H\n" +
             "  %isnull = icmp eq ptr %s, null\n" +
             "  %r = select i1 %isnull, ptr @.cs.empty, ptr %p\n  ret ptr %r\n}\n\n";
 
     text += "define internal void @__cs_retain(ptr %p) {\nentry:\n" +
             "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %inc\n" +
-            "inc:\n  %rc = load i64, ptr %p\n  %rc1 = add i64 %rc, 1\n  store i64 %rc1, ptr %p\n  br label %done\n" +
+            "inc:\n  %rc = load $S, ptr %p\n  %rc1 = add $S %rc, 1\n  store $S %rc1, ptr %p\n  br label %done\n" +
             "done:\n  ret void\n}\n\n";
 
     // release of a block without references inside (strings, arrays of plain values)
     text += "define internal void @__cs_release_flat(ptr %p) {\nentry:\n" +
             "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
-            "dec:\n  %rc = load i64, ptr %p\n  %rc1 = sub i64 %rc, 1\n  store i64 %rc1, ptr %p\n" +
-            "  %zero = icmp eq i64 %rc1, 0\n  br i1 %zero, label %free, label %done\n" +
+            "dec:\n  %rc = load $S, ptr %p\n  %rc1 = sub $S %rc, 1\n  store $S %rc1, ptr %p\n" +
+            "  %zero = icmp eq $S %rc1, 0\n  br i1 %zero, label %free, label %done\n" +
             "free:\n  call void @free(ptr %p)\n" +
-            (arcStats ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n" : "") +
+            (arcStats ? "  %f = atomicrmw add ptr @__cs_frees, $S 1 monotonic\n" : "") +
             "  br label %done\n" +
             "done:\n  ret void\n}\n\n";
 
     text += "define internal ptr @__cs_concat(ptr %a, ptr %b) {\nentry:\n" +
-            "  %la = call i64 @__cs_len(ptr %a)\n  %lb = call i64 @__cs_len(ptr %b)\n" +
-            "  %len = add i64 %la, %lb\n  %size = add i64 %len, 1\n" +
-            "  %r = call ptr @__cs_alloc(i64 %size, i64 %len)\n" +
-            "  %dst = getelementptr i8, ptr %r, i64 16\n" +
+            "  %la = call $S @__cs_len(ptr %a)\n  %lb = call $S @__cs_len(ptr %b)\n" +
+            "  %len = add $S %la, %lb\n  %size = add $S %len, 1\n" +
+            "  %r = call ptr @__cs_alloc($S %size, $S %len)\n" +
+            "  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  %da = call ptr @__cs_data(ptr %a)\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %da, i64 %la, i1 false)\n" +
-            "  %dst2 = getelementptr i8, ptr %dst, i64 %la\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %da, $S %la, i1 false)\n" +
+            "  %dst2 = getelementptr i8, ptr %dst, $S %la\n" +
             "  %db = call ptr @__cs_data(ptr %b)\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst2, ptr %db, i64 %lb, i1 false)\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst2, ptr %db, $S %lb, i1 false)\n" +
             "  ret ptr %r\n}\n\n";
 
     // substring(string, start, count): a new string; panics if the range is not inside the string
     text += "@.cs.substr = private constant [23 x i8] c\"substring out of range\\00\"\n" +
             "define internal ptr @__cs_substring(ptr %s, i32 %start, i32 %count) {\nentry:\n" +
-            "  %len = call i64 @__cs_len(ptr %s)\n" +
-            "  %a = sext i32 %start to i64\n  %n = sext i32 %count to i64\n" +
-            "  %neg1 = icmp slt i64 %a, 0\n  %neg2 = icmp slt i64 %n, 0\n  %neg = or i1 %neg1, %neg2\n" +
-            "  %end = add i64 %a, %n\n  %past = icmp sgt i64 %end, %len\n  %bad = or i1 %neg, %past\n" +
+            "  %len = call $S @__cs_len(ptr %s)\n" +
+            "  " + SizeFromI32(ir, "%a", "%start") + "  " + SizeFromI32(ir, "%n", "%count") +
+            "  %neg1 = icmp slt $S %a, 0\n  %neg2 = icmp slt $S %n, 0\n  %neg = or i1 %neg1, %neg2\n" +
+            "  %end = add $S %a, %n\n  %past = icmp sgt $S %end, %len\n  %bad = or i1 %neg, %past\n" +
             "  br i1 %bad, label %range, label %ok\n" +
             "range:\n  call void @__cs_panic(ptr @.cs.substr)\n  unreachable\n" +
-            "ok:\n  %size = add i64 %n, 1\n  %r = call ptr @__cs_alloc(i64 %size, i64 %n)\n" +
-            "  %d = call ptr @__cs_data(ptr %s)\n  %src = getelementptr i8, ptr %d, i64 %a\n" +
-            "  %dst = getelementptr i8, ptr %r, i64 16\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %src, i64 %n, i1 false)\n  ret ptr %r\n}\n\n";
+            "ok:\n  %size = add $S %n, 1\n  %r = call ptr @__cs_alloc($S %size, $S %n)\n" +
+            "  %d = call ptr @__cs_data(ptr %s)\n  %src = getelementptr i8, ptr %d, $S %a\n" +
+            "  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %src, $S %n, i1 false)\n  ret ptr %r\n}\n\n";
 
     text += "define internal i1 @__cs_streq(ptr %a, ptr %b) {\nentry:\n" +
-            "  %la = call i64 @__cs_len(ptr %a)\n  %lb = call i64 @__cs_len(ptr %b)\n" +
-            "  %same = icmp eq i64 %la, %lb\n  br i1 %same, label %cmp, label %ne\n" +
+            "  %la = call $S @__cs_len(ptr %a)\n  %lb = call $S @__cs_len(ptr %b)\n" +
+            "  %same = icmp eq $S %la, %lb\n  br i1 %same, label %cmp, label %ne\n" +
             "cmp:\n  %da = call ptr @__cs_data(ptr %a)\n  %db = call ptr @__cs_data(ptr %b)\n" +
-            "  %c = call i32 @memcmp(ptr %da, ptr %db, i64 %la)\n  %eq = icmp eq i32 %c, 0\n  ret i1 %eq\n" +
+            "  %c = call i32 @memcmp(ptr %da, ptr %db, $S %la)\n  %eq = icmp eq i32 %c, 0\n  ret i1 %eq\n" +
             "ne:\n  ret i1 false\n}\n\n";
 
     // print(string, newline)
     text += "define internal void @__cs_print(ptr %s, i1 %nl) {\nentry:\n" +
-            "  %len = call i64 @__cs_len(ptr %s)\n  %len32 = trunc i64 %len to i32\n" +
+            "  %len = call $S @__cs_len(ptr %s)\n  " + SizeToI32Line(ir, "%len32", "%len").Trim() + "\n" +
             "  %fmt = select i1 %nl, ptr @.cs.line, ptr @.cs.text\n" +
             "  %d = call ptr @__cs_data(ptr %s)\n" +
             "  call i32 (ptr, ...) @printf(ptr %fmt, i32 %len32, ptr %d)\n  ret void\n}\n\n";
     text += "define internal void @__cs_eprint(ptr %s, i1 %nl) {\nentry:\n" + StderrLoad(windows) +
-            "  %len = call i64 @__cs_len(ptr %s)\n  %len32 = trunc i64 %len to i32\n" +
+            "  %len = call $S @__cs_len(ptr %s)\n  " + SizeToI32Line(ir, "%len32", "%len").Trim() + "\n" +
             "  %fmt = select i1 %nl, ptr @.cs.line, ptr @.cs.text\n" +
             "  %d = call ptr @__cs_data(ptr %s)\n" +
             "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr %fmt, i32 %len32, ptr %d)\n  ret void\n}\n\n";
@@ -177,31 +177,31 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     text += "define internal ptr @__cs_from_cstr(ptr %p) {\nentry:\n" +
             "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %null, label %copy\n" +
             "null:\n  ret ptr null\n" +
-            "copy:\n  %len = call i64 @strlen(ptr %p)\n  %size = add i64 %len, 1\n" +
-            "  %r = call ptr @__cs_alloc(i64 %size, i64 %len)\n  %dst = getelementptr i8, ptr %r, i64 16\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %p, i64 %len, i1 false)\n  ret ptr %r\n}\n\n";
+            "copy:\n  %len = call $S @strlen(ptr %p)\n  %size = add $S %len, 1\n" +
+            "  %r = call ptr @__cs_alloc($S %size, $S %len)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %p, $S %len, i1 false)\n  ret ptr %r\n}\n\n";
 
     // make_args(argc, argv): the command line arguments without the program name as a string array
     text += "define internal ptr @__cs_make_args(i32 %argc, ptr %argv) {\nentry:\n" +
             "  %gt = icmp sgt i32 %argc, 1\n  %m = sub i32 %argc, 1\n  %c32 = select i1 %gt, i32 %m, i32 0\n" +
-            "  %count = sext i32 %c32 to i64\n  %bytes = mul i64 %count, 8\n" +
-            "  %arr = call ptr @__cs_alloc(i64 %bytes, i64 %count)\n" +
-            "  %data = getelementptr i8, ptr %arr, i64 16\n  br label %loop\n" +
-            "loop:\n  %i = phi i64 [ 0, %entry ], [ %next, %body ]\n" +
-            "  %more = icmp ult i64 %i, %count\n  br i1 %more, label %body, label %done\n" +
-            "body:\n  %j = add i64 %i, 1\n  %ap = getelementptr ptr, ptr %argv, i64 %j\n  %s = load ptr, ptr %ap\n" +
-            "  %len = call i64 @strlen(ptr %s)\n  %size = add i64 %len, 1\n" +
-            "  %str = call ptr @__cs_alloc(i64 %size, i64 %len)\n  %dst = getelementptr i8, ptr %str, i64 16\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %s, i64 %len, i1 false)\n" +
-            "  %ep = getelementptr ptr, ptr %data, i64 %i\n  store ptr %str, ptr %ep\n" +
-            "  %next = add i64 %i, 1\n  br label %loop\n" +
+            "  " + SizeFromI32(ir, "%count", "%c32").Trim() + "\n  %bytes = mul $S %count, $P\n" +
+            "  %arr = call ptr @__cs_alloc($S %bytes, $S %count)\n" +
+            "  %data = getelementptr i8, ptr %arr, $S $H\n  br label %loop\n" +
+            "loop:\n  %i = phi $S [ 0, %entry ], [ %next, %body ]\n" +
+            "  %more = icmp ult $S %i, %count\n  br i1 %more, label %body, label %done\n" +
+            "body:\n  %j = add $S %i, 1\n  %ap = getelementptr ptr, ptr %argv, $S %j\n  %s = load ptr, ptr %ap\n" +
+            "  %len = call $S @strlen(ptr %s)\n  %size = add $S %len, 1\n" +
+            "  %str = call ptr @__cs_alloc($S %size, $S %len)\n  %dst = getelementptr i8, ptr %str, $S $H\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %s, $S %len, i1 false)\n" +
+            "  %ep = getelementptr ptr, ptr %data, $S %i\n  store ptr %str, ptr %ep\n" +
+            "  %next = add $S %i, 1\n  br label %loop\n" +
             "done:\n  ret ptr %arr\n}\n\n";
 
     // number to string
-    text += FormatHelper("i64", "i64", "@.cs.fmt.i64");
-    text += FormatHelper("u64", "i64", "@.cs.fmt.u64");
-    text += RoundTripHelper("f64", 15, 17, false);
-    text += RoundTripHelper("f32", 6, 9, true);
+    text += FormatHelper(ir, "i64", "i64", "@.cs.fmt.i64");
+    text += FormatHelper(ir, "u64", "i64", "@.cs.fmt.u64");
+    text += RoundTripHelper(ir, "f64", 15, 17, false);
+    text += RoundTripHelper(ir, "f32", 6, 9, true);
 
     // --arc-stats: a joined thread may still be releasing its last references (Join returns when the thread function
     // has finished, the worker then drops its reference to the control block). Before the balance is printed, wait
@@ -210,18 +210,43 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
         text += CDeclare(ir, "usleep", "declare i32 @usleep(i32)") +
             "define internal void @__cs_arc_wait_threads() {\nentry:\n  br label %loop\n" +
             "loop:\n  %i = phi i32 [ 0, %entry ], [ %next, %wait ]\n" +
-            "  %running = load atomic i64, ptr @__cs_threads seq_cst, align 8\n" +
-            "  %none = icmp eq i64 %running, 0\n  br i1 %none, label %done, label %check\n" +
+            "  %running = load atomic $S, ptr @__cs_threads seq_cst, align $P\n" +
+            "  %none = icmp eq $S %running, 0\n  br i1 %none, label %done, label %check\n" +
             "check:\n  %more = icmp slt i32 %i, 500\n  br i1 %more, label %wait, label %done\n" +
             "wait:\n  %slept = call i32 @usleep(i32 1000)\n  %next = add i32 %i, 1\n  br label %loop\n" +
             "done:\n  ret void\n}\n\n";
-    return text;
+    return Sized(text, ir);
+}
+
+// The runtime's text for the target: $S is the type of sizes (i64 or i32), $P the size of a pointer, $H the size of a
+// block header, $I the reference count of an immortal block.
+string Sized(string text, IrWriter ir)
+{
+    var t = ir.Target;
+    return text.Replace("$S", t.SizeIr).Replace("$P", t.PtrBytes.ToString()).Replace("$H", t.HeaderBytes().ToString())
+               .Replace("$I", t.ImmortalCount());
+}
+
+// "dst = sext i32 src to <size>" (without the indentation), or a copy if sizes are 32 bits.
+string SizeFromI32(IrWriter ir, string dst, string src)
+{
+    if (ir.Target.SizeIr == "i32")
+        return dst + " = bitcast i32 " + src + " to i32\n";
+    return dst + " = sext i32 " + src + " to " + ir.Target.SizeIr + "\n";
+}
+
+// "dst = trunc <size> src to i32", or a copy if sizes are 32 bits.
+string SizeToI32Line(IrWriter ir, string dst, string src)
+{
+    if (ir.Target.SizeIr == "i32")
+        return dst + " = bitcast i32 " + src + " to i32\n";
+    return dst + " = trunc " + ir.Target.SizeIr + " " + src + " to i32\n";
 }
 
 // __cs_fmt_<name>(double): the shortest text that reads back as the same number ("%.<p>g" with the smallest precision p
 // from 'first' to 'last' for which strtod gives the value again; like C#'s "R"): 0.1 stays "0.1", 1.0 / 3.0 becomes
 // "0.3333333333333333". For float, the value is compared after rounding to float.
-string RoundTripHelper(string name, int first, int last, bool single)
+string RoundTripHelper(IrWriter ir, string name, int first, int last, bool single)
 {
     string text = "define internal ptr @__cs_fmt_" + name + "(double %v) {\nentry:\n  %buf = alloca [48 x i8]\n  br label %p" +
                   first.ToString() + "\n";
@@ -229,7 +254,7 @@ string RoundTripHelper(string name, int first, int last, bool single)
     {
         string ps = p.ToString();
         text += "p" + ps + ":\n" +
-                "  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 48, ptr @.cs.fmt.g, i32 " + ps + ", double %v)\n";
+                "  call i32 (ptr, $S, ptr, ...) @snprintf(ptr %buf, $S 48, ptr @.cs.fmt.g, i32 " + ps + ", double %v)\n";
         if (p == last)
         {
             text += "  br label %done\n";
@@ -243,20 +268,20 @@ string RoundTripHelper(string name, int first, int last, bool single)
             text += "  %same" + ps + " = fcmp oeq double %back" + ps + ", %v\n";
         text += "  br i1 %same" + ps + ", label %done, label %p" + (p + 1).ToString() + "\n";
     }
-    text += "done:\n  %n = call i64 @strlen(ptr %buf)\n  %size = add i64 %n, 1\n" +
-            "  %r = call ptr @__cs_alloc(i64 %size, i64 %n)\n  %dst = getelementptr i8, ptr %r, i64 16\n" +
-            "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %buf, i64 %n, i1 false)\n  ret ptr %r\n}\n\n";
+    text += "done:\n  %n = call $S @strlen(ptr %buf)\n  %size = add $S %n, 1\n" +
+            "  %r = call ptr @__cs_alloc($S %size, $S %n)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %buf, $S %n, i1 false)\n  ret ptr %r\n}\n\n";
     return text;
 }
 
 // __cs_fmt_<name>(argType): formats one number with snprintf into a new string.
-string FormatHelper(string name, string argType, string format)
+string FormatHelper(IrWriter ir, string name, string argType, string format)
 {
     return "define internal ptr @__cs_fmt_" + name + "(" + argType + " %v) {\nentry:\n" +
-           "  %n = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr " + format + ", " + argType + " %v)\n" +
-           "  %n64 = sext i32 %n to i64\n  %size = add i64 %n64, 1\n" +
-           "  %r = call ptr @__cs_alloc(i64 %size, i64 %n64)\n" +
-           "  %dst = getelementptr i8, ptr %r, i64 16\n" +
-           "  call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dst, i64 %size, ptr " + format + ", " + argType + " %v)\n" +
+           "  %n = call i32 (ptr, $S, ptr, ...) @snprintf(ptr null, $S 0, ptr " + format + ", " + argType + " %v)\n" +
+           "  " + SizeFromI32(ir, "%n64", "%n") + "  %size = add $S %n64, 1\n" +
+           "  %r = call ptr @__cs_alloc($S %size, $S %n64)\n" +
+           "  %dst = getelementptr i8, ptr %r, $S $H\n" +
+           "  call i32 (ptr, $S, ptr, ...) @snprintf(ptr %dst, $S %size, ptr " + format + ", " + argType + " %v)\n" +
            "  ret ptr %r\n}\n\n";
 }

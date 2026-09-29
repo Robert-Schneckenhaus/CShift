@@ -277,10 +277,12 @@ string CurrentThreadCore(Compiler cg)
 
 void DeclarePthreads(Compiler cg)
 {
-    cg.Ir.Declare("@malloc", "declare ptr @malloc(i64)");
+    cg.Ir.Declare("@malloc", "declare ptr @malloc(" + SizeIr(cg) + ")");
     cg.Ir.Declare("@pthread_create", "declare i32 @pthread_create(ptr, ptr, ptr, ptr)");
-    cg.Ir.Declare("@pthread_detach", "declare i32 @pthread_detach(ptr)");
-    cg.Ir.Declare("@pthread_self", "declare ptr @pthread_self()");
+    // pthread_t is an integer (unsigned long, uintptr_t on Windows): on m68k integers and pointers are returned in
+    // different registers
+    cg.Ir.Declare("@pthread_detach", "declare i32 @pthread_detach(" + SizeIr(cg) + ")");
+    cg.Ir.Declare("@pthread_self", "declare " + SizeIr(cg) + " @pthread_self()");
 }
 
 // The LLVM type of the argument block: { ptr payload, parameters... }.
@@ -314,8 +316,9 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
 
     // 1. The control block shared with the worker: the layout of SharedPtr<payload>, with two references (the handle
     //    and the worker thread).
-    string block = ir.Call("ptr", "@__cs_alloc", "i64 " + SizeOfType(cg, tt.Payload) + ", i64 0");
-    ir.Store("i64", "2", block);
+    string size = SizeIr(cg);
+    string block = ir.Call("ptr", "@__cs_alloc", size + " " + SizeOfType(cg, tt.Payload) + ", " + size + " 0");
+    ir.Store(size, "2", block);
     string payload = DataPtr(cg, block);
     EmitDirectCall(cg, ThreadMethod(cg, tt.Core, "Init", loc), payload, new Arg[0], loc);
 
@@ -323,7 +326,7 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
     //    (also inside structs, Optional<T> and Error<T>) are copied into new blocks that only the worker owns, a
     //    SharedPtr<T> is retained (its count is atomic). The trampoline frees the block.
     string argsType = ThreadArgsType(cg, fi);
-    string argsBlock = ir.Call("ptr", "@malloc", "i64 ptrtoint (ptr getelementptr (" + argsType + ", ptr null, i32 1) to i64)");
+    string argsBlock = ir.Call("ptr", "@malloc", size + " ptrtoint (ptr getelementptr (" + argsType + ", ptr null, i32 1) to " + size + ")");
     EmitPanicIf(cg, ir.ICmp("eq", "ptr", argsBlock, "null"), "out of memory");
     ir.Store("ptr", payload, ir.Gep(argsType, argsBlock, "i32 0, i32 0"));
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
@@ -344,7 +347,7 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
     }
     string idSlot = ir.Alloca("ptr", "thread.id");
     if (cg.St[0].ArcStats)
-        ir.Line(ir.NewTemp() + " = atomicrmw add ptr @__cs_threads, i64 1 seq_cst"); // see __cs_arc_wait_threads
+        ir.Line(ir.NewTemp() + " = atomicrmw add ptr @__cs_threads, " + SizeIr(cg) + " 1 seq_cst"); // see __cs_arc_wait_threads
     string rc = ir.Call("i32", "@pthread_create", "ptr " + idSlot + ", ptr null, ptr " + ThreadTrampolineName(cg, instance) + ", ptr " + argsBlock);
     EmitPanicIf(cg, ir.ICmp("ne", "i32", rc, "0"), "cannot create a thread");
 
@@ -412,11 +415,11 @@ string StringCloneHelper(Compiler cg)
 {
     string name = "@__cs_string_clone";
     if (cg.Ir.Declared.Add(name))
-        cg.Ir.AppendHelper("define internal ptr @__cs_string_clone(ptr %s) {\nentry:\n" +
+        cg.Ir.AppendHelper(SizedText(cg, "define internal ptr @__cs_string_clone(ptr %s) {\nentry:\n" +
                            "  %isnull = icmp eq ptr %s, null\n  br i1 %isnull, label %null, label %copy\n" +
                            "null:\n  ret ptr null\n" +
-                           "copy:\n  %len = call i64 @__cs_len(ptr %s)\n  %n = trunc i64 %len to i32\n" +
-                           "  %r = call ptr @__cs_substring(ptr %s, i32 0, i32 %n)\n  ret ptr %r\n}\n");
+                           "copy:\n  %len = call $S @__cs_len(ptr %s)\n  " + SizeToI32Line(cg.Ir, "%n", "%len") +
+                           "  %r = call ptr @__cs_substring(ptr %s, i32 0, i32 %n)\n  ret ptr %r\n}\n"));
     return name;
 }
 
@@ -438,7 +441,7 @@ void EmitThreadTrampoline(Compiler cg, int instance)
     var tt = ResolveThreadTypes(cg, fi.Ret, loc);
     DeclarePthreads(cg);
 
-    ir.Call("i32", "@pthread_detach", "ptr " + ir.Call("ptr", "@pthread_self", ""));
+    ir.Call("i32", "@pthread_detach", SizeIr(cg) + " " + ir.Call(SizeIr(cg), "@pthread_self", ""));
     string argsType = ThreadArgsType(cg, fi);
     string payload = ir.Load("ptr", ir.Gep(argsType, "%args", "i32 0, i32 0"));
     ir.Store("ptr", payload, CurrentThreadCore(cg));
@@ -468,10 +471,10 @@ void EmitThreadTrampoline(Compiler cg, int instance)
     EmitDirectCall(cg, ThreadMethod(cg, tt.Core, "MarkCompleted", loc), payload, new Arg[0], loc);
 
     // the worker's reference to the control block
-    ir.Call("void", ReleaseFunction(cg, types.SharedPtrOf(tt.Payload)), "ptr " + ir.ByteGep(payload, "-16"));
+    ir.Call("void", ReleaseFunction(cg, types.SharedPtrOf(tt.Payload)), "ptr " + ir.ByteGep(payload, "-" + HeaderSize(cg)));
     PopScope(cg, true);
     if (cg.St[0].ArcStats)
-        ir.Line(ir.NewTemp() + " = atomicrmw sub ptr @__cs_threads, i64 1 seq_cst"); // this thread released everything
+        ir.Line(ir.NewTemp() + " = atomicrmw sub ptr @__cs_threads, " + SizeIr(cg) + " 1 seq_cst"); // this thread released everything
     ir.Ret("ptr", "null");
     ir.EndFunction();
 }

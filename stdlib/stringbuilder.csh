@@ -13,7 +13,7 @@
 
 namespace System;
 
-extern "C" void* memcpy(void* dest, void* source, uint64 count);
+extern "C" void* memcpy(void* dest, void* source, nuint count);
 
 struct StringBuilderState
 {
@@ -54,7 +54,7 @@ struct StringBuilder
         unsafe
         {
             uint8* target = &_state[0].Data[_state[0].Length];
-            memcpy((void*)target, (void*)text.Ptr(), (uint64)n);
+            memcpy((void*)target, (void*)text.Ptr(), (nuint)n);
         }
         _state[0].Length += n;
     }

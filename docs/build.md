@@ -41,7 +41,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `defines` | macros used when parsing C headers (`NAME`, `NAME=value`) | `[]` |
 | `libraryPaths` | linker search paths (`-L`) | `[]` |
 | `ffiApi` | path fragments of C headers that belong to the imported API even when they live in system paths (`--ffi-api=`, see [ffi.md](ffi.md)) | `[]` |
-| `target` | the target triple | host |
+| `target` | the target triple; a 32-bit triple (`i686-linux-gnu`, `m68k-…`, `arm…`) makes pointers, `nint`/`nuint` and sizes 32 bits | host |
 | `unchecked` | `true`: integer overflow wraps around instead of a panic in the whole project (like `--unchecked`; division by zero and index checks stay; `--checked` on the command line overrides it) | `false` |
 | `platforms` | additions per platform: `{ "windows": {...}, "linux": {...}, "macos": {...} }`, each with `links`, `includePaths`, `libraryPaths` and/or `defines`, appended to the common lists when building for that platform (e.g. `"windows": { "links": ["opengl32"] }, "linux": { "links": ["GL"] }`) | none |
 

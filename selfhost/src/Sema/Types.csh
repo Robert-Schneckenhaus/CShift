@@ -87,7 +87,8 @@ struct TypeContext
     int Nint;   // pointer-sized signed integer
     int Nuint;  // pointer-sized unsigned integer
 
-    static TypeContext Create()
+    // pointerBits: the width of nint/nuint (64, or 32 on a 32-bit target)
+    static TypeContext Create(int pointerBits)
     {
         var tc = TypeContext { };
         tc.Infos = List<TypeInfo>.Create();
@@ -109,10 +110,9 @@ struct TypeContext
         tc.U64 = tc.Add(TypeKind.Int, "uint64", 64, false);
         tc.F32 = tc.Add(TypeKind.Float, "float32", 32, false);
         tc.F64 = tc.Add(TypeKind.Float, "float64", 64, false);
-        // 64 bits: only 64-bit targets are supported so far
-        tc.Nint = tc.Add(TypeKind.Int, "nint", 64, true);
+        tc.Nint = tc.Add(TypeKind.Int, "nint", pointerBits, true);
         tc.SetNative(tc.Nint);
-        tc.Nuint = tc.Add(TypeKind.Int, "nuint", 64, false);
+        tc.Nuint = tc.Add(TypeKind.Int, "nuint", pointerBits, false);
         tc.SetNative(tc.Nuint);
         tc.Lambda = tc.Add(TypeKind.Lambda, "lambda", 0, false);
         tc.Collection = tc.Add(TypeKind.Collection, "collection", 0, false);

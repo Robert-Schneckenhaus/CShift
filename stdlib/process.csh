@@ -60,7 +60,7 @@ struct Process
             uint8* buffer = (uint8*)Memory.Allocate(4096);
             while (true)
             {
-                uint64 n = fread(buffer, 1, 4096, pipe);
+                nuint n = fread(buffer, 1, 4096, pipe);
                 if (n == 0)
                     break;
                 for (var i = 0; i < (int)n; i += 1)

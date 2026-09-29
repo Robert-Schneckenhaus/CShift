@@ -50,7 +50,7 @@ struct File
                     Array.Copy(data, 0, bigger, 0, length);
                     data = bigger;
                 }
-                uint64 n = fread(&data[length], 1, (uint64)(data.Length - length), f);
+                nuint n = fread(&data[length], 1, (nuint)(data.Length - length), f);
                 if (n == 0)
                     break;
                 length += (int)n;
@@ -91,11 +91,11 @@ struct File
                 return error("cannot create file '" + path + "'", IoError.CannotCreate);
 
             int length = bytes.Length;
-            uint64 written = 0;
+            nuint written = 0;
             if (length > 0)
-                written = fwrite(&bytes[0], 1, (uint64)length, f);
+                written = fwrite(&bytes[0], 1, (nuint)length, f);
             int closed = fclose(f);
-            if (written != (uint64)length || closed != 0)
+            if (written != (nuint)length || closed != 0)
                 return error("cannot write file '" + path + "'", IoError.CannotWrite);
         }
         return;

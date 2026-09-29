@@ -9,7 +9,7 @@
 
 namespace System;
 
-extern "C" int64 time(void* timer);
+extern "C" nint time(void* timer); // time_t
 
 struct Random
 {

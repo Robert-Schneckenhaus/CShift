@@ -32,10 +32,11 @@ struct IrWriter
     HashSet<string> Declared;
     HashSet<string> Preds;     // labels that a branch jumps to (to know whether a block can be reached)
     Dictionary<string, string> Literals; // string literals and C strings by content
+    TargetInfo Target;
 
-    static IrWriter Create()
+    static IrWriter Create(TargetInfo target)
     {
-        var w = IrWriter { S = new IrState[1] };
+        var w = IrWriter { S = new IrState[1], Target = target };
         w.Globals = StringBuilder.Create();
         w.Declares = StringBuilder.Create();
         w.Functions = StringBuilder.Create();
@@ -104,7 +105,7 @@ struct IrWriter
     }
 
     // A string literal: a heap block header that never reaches a zero count (immortal), followed by the bytes.
-    // Block layout: { i64 refcount, i64 length, bytes... }.
+    // Block layout: { size refcount, size length, bytes... } (size: i64, or i32 on a 32-bit target).
     string StringLiteral(string s)
     {
         var found = Literals.TryGet("s:" + s);
@@ -112,7 +113,9 @@ struct IrWriter
             return existing;
         string name = NewGlobal("str");
         string arr = "[" + (s.Length + 1).ToString() + " x i8]";
-        Globals.Append(name + " = private global { i64, i64, " + arr + " } { i64 1152921504606846976, i64 " + s.Length.ToString() +
+        string size = Target.SizeIr;
+        Globals.Append(name + " = private global { " + size + ", " + size + ", " + arr + " } { " + size + " " + Target.ImmortalCount() + ", " +
+                       size + " " + s.Length.ToString() +
                        ", " + arr + " c\"" + EscapeBytes(s) + "\\00\" }\n");
         Literals.Set("s:" + s, name);
         return name;
@@ -141,7 +144,9 @@ struct IrWriter
         if (found is string existing)
             return existing;
         string name = NewGlobal("carr");
-        Globals.Append(name + " = private global { i64, i64, " + arr + " } { i64 1152921504606846976, i64 " + items.Length.ToString() +
+        string size = Target.SizeIr;
+        Globals.Append(name + " = private global { " + size + ", " + size + ", " + arr + " } { " + size + " " + Target.ImmortalCount() + ", " +
+                       size + " " + items.Length.ToString() +
                        ", " + arr + " " + init + " }\n");
         Literals.Set(key, name);
         return name;
@@ -377,7 +382,7 @@ struct IrWriter
     string ByteGep(string ptr, string offset)
     {
         string t = NewTemp();
-        Line(t + " = getelementptr i8, ptr " + ptr + ", i64 " + offset);
+        Line(t + " = getelementptr i8, ptr " + ptr + ", " + Target.SizeIr + " " + offset);
         return t;
     }
 

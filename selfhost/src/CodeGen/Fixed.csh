@@ -104,14 +104,14 @@ Value EmitFixedElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     }
     string addr = FixedAddress(cg, obj);
     string i = SliceBound(cg, index, fromEnd, n.ToString());
-    EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i, n.ToString()), "fixed array index out of range", i, n.ToString());
-    string p = ir.Gep(LlvmType(cg, elem), addr, "i64 " + i);
+    EmitIndexPanicIf(cg, ir.ICmp("uge", SizeIr(cg), i, n.ToString()), "fixed array index out of range", i, n.ToString());
+    string p = ir.Gep(LlvmType(cg, elem), addr, SizeIr(cg) + " " + i);
     if (!obj.IsLValue)
         return Rvalue(elem, ir.Load(LlvmType(cg, elem), p), false);
     return Lvalue(elem, p, obj.IsConst);
 }
 
-// A counting loop over the N elements, emitted inline: BeginFixedLoop ... EndFixedLoop; Index is the i64 position.
+// A counting loop over the N elements, emitted inline: BeginFixedLoop ... EndFixedLoop; Index is the position (a size).
 struct FixedLoop
 {
     string Slot;
@@ -123,15 +123,15 @@ struct FixedLoop
 FixedLoop BeginFixedLoop(Compiler cg, int n)
 {
     var ir = cg.Ir;
-    string slot = ir.Alloca("i64", "fixed.i");
-    ir.Store("i64", "0", slot);
+    string slot = ir.Alloca(SizeIr(cg), "fixed.i");
+    ir.Store(SizeIr(cg), "0", slot);
     string cond = ir.NewLabel("fixed.cond");
     string body = ir.NewLabel("fixed.body");
     string end = ir.NewLabel("fixed.end");
     ir.Br(cond);
     ir.SetBlock(cond);
-    string i = ir.Load("i64", slot);
-    ir.CondBr(ir.ICmp("ult", "i64", i, n.ToString()), body, end);
+    string i = ir.Load(SizeIr(cg), slot);
+    ir.CondBr(ir.ICmp("ult", SizeIr(cg), i, n.ToString()), body, end);
     ir.SetBlock(body);
     return FixedLoop { Slot = slot, Index = i, Cond = cond, End = end };
 }
@@ -139,7 +139,7 @@ FixedLoop BeginFixedLoop(Compiler cg, int n)
 void EndFixedLoop(Compiler cg, FixedLoop loop)
 {
     var ir = cg.Ir;
-    ir.Store("i64", ir.Bin("add", "i64", loop.Index, "1"), loop.Slot);
+    ir.Store(SizeIr(cg), ir.Bin("add", SizeIr(cg), loop.Index, "1"), loop.Slot);
     ir.Br(loop.Cond);
     ir.SetBlock(loop.End);
 }
@@ -156,9 +156,9 @@ Value FixedToArray(Compiler cg, Value obj)
     string arr = AllocArray(cg, elem, n.ToString());
     string data = DataPtr(cg, arr);
     var loop = BeginFixedLoop(cg, n);
-    string x = ir.Load(et, ir.Gep(et, addr, "i64 " + loop.Index));
+    string x = ir.Load(et, ir.Gep(et, addr, SizeIr(cg) + " " + loop.Index));
     EmitRetain(cg, elem, x);
-    ir.Store(et, x, ir.Gep(et, data, "i64 " + loop.Index));
+    ir.Store(et, x, ir.Gep(et, data, SizeIr(cg) + " " + loop.Index));
     EndFixedLoop(cg, loop);
     return Rvalue(types.ArrayOf(elem), arr, true);
 }
@@ -196,14 +196,14 @@ Value EmitFixedCollection(Compiler cg, Expr e, CollectionExpr n, int to, SourceL
     Value arr = EmitCollection(cg, e, types.ArrayOf(elem), loc);
     HoldTemp(cg, arr);
     string length = ArrayLength(cg, arr.V);
-    EmitPanicIf(cg, ir.ICmp("ne", "i64", length, count.ToString()), "the collection for '" + types.Name(to) + "' does not have " +
+    EmitPanicIf(cg, ir.ICmp("ne", SizeIr(cg), length, count.ToString()), "the collection for '" + types.Name(to) + "' does not have " +
                                                                         count.ToString() + " elements");
     string slot = ir.Alloca(ty, "fixed.init");
     string data = DataPtr(cg, arr.V);
     var loop = BeginFixedLoop(cg, count);
-    string x = ir.Load(et, ir.Gep(et, data, "i64 " + loop.Index));
+    string x = ir.Load(et, ir.Gep(et, data, SizeIr(cg) + " " + loop.Index));
     EmitRetain(cg, elem, x);
-    ir.Store(et, x, ir.Gep(et, slot, "i64 " + loop.Index));
+    ir.Store(et, x, ir.Gep(et, slot, SizeIr(cg) + " " + loop.Index));
     EndFixedLoop(cg, loop);
     return Rvalue(to, ir.Load(ty, slot), true);
 }
@@ -221,11 +221,11 @@ string FixedHelper(Compiler cg, int t, bool isRetain)
     string et = LlvmType(cg, elem);
     string fn = isRetain ? RetainFunction(cg, elem) : ReleaseFunction(cg, elem);
     string n = types.Count(t).ToString();
-    ir.AppendHelper("define internal void " + name + "(" + ty + " %v) {\nentry:\n" +
+    ir.AppendHelper(SizedText(cg, "define internal void " + name + "(" + ty + " %v) {\nentry:\n" +
                     "  %p = alloca " + ty + "\n  store " + ty + " %v, ptr %p\n  br label %loop\nloop:\n" +
-                    "  %i = phi i64 [ 0, %entry ], [ %next, %body ]\n  %done = icmp eq i64 %i, " + n + "\n" +
+                    "  %i = phi $S [ 0, %entry ], [ %next, %body ]\n  %done = icmp eq $S %i, " + n + "\n" +
                     "  br i1 %done, label %exit, label %body\nbody:\n" +
-                    "  %e = getelementptr " + et + ", ptr %p, i64 %i\n  %x = load " + et + ", ptr %e\n" +
-                    "  call void " + fn + "(" + et + " %x)\n  %next = add i64 %i, 1\n  br label %loop\nexit:\n  ret void\n}\n\n");
+                    "  %e = getelementptr " + et + ", ptr %p, $S %i\n  %x = load " + et + ", ptr %e\n" +
+                    "  call void " + fn + "(" + et + " %x)\n  %next = add $S %i, 1\n  br label %loop\nexit:\n  ret void\n}\n\n"));
     return name;
 }

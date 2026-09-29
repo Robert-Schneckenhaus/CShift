@@ -1,7 +1,8 @@
 // Generic bodies are checked once with unknown type parameters: nothing that depends on a type parameter is reported
 // there, and every instantiation is generated as before.
 // expect-exit: 0
-// expect-stdout: 3 33032x xxx22313
+// expect-stdout-64: 3 33032x xxx22313
+// expect-stdout-32: 3 33032x xxx2239
 
 using System;
 enum Color : uint8 { Red, Green }

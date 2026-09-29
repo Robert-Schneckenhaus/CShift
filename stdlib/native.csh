@@ -6,8 +6,8 @@ namespace System.Native;
 // stdio (files)
 extern "C" void* fopen(char* path, char* mode);
 extern "C" int fclose(void* file);
-extern "C" uint64 fread(void* buffer, uint64 size, uint64 count, void* file);
-extern "C" uint64 fwrite(void* buffer, uint64 size, uint64 count, void* file);
+extern "C" nuint fread(void* buffer, nuint size, nuint count, void* file);
+extern "C" nuint fwrite(void* buffer, nuint size, nuint count, void* file);
 extern "C" int remove(char* path);
 
 // stdlib

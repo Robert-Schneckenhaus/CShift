@@ -10,7 +10,7 @@
 //
 // The body is compiled right away, into an IR writer of its own; the enclosing variables it needs are found while it is
 // compiled (LookupVariable asks CaptureVariable). Only then the environment is known: the block
-// { i64 count, i64 unused, ptr drop, captured values..., [this] } that the new function value owns (see FuncPtrs.csh).
+// { size count, size unused, ptr drop, captured values..., [this] } that the new function value owns (see FuncPtrs.csh).
 // A lambda that captures nothing is a plain function (no environment, and it can be passed to C).
 
 namespace CShift.CodeGen;
@@ -242,7 +242,7 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
 
     // the environment type and its drop function (releases the captured values)
     var fields = StringBuilder.Create();
-    fields.Append("i64, i64, ptr");
+    fields.Append(SizeIr(cg) + ", " + SizeIr(cg) + ", ptr");
     foreach (var c in captures)
         fields.Append(", " + LlvmType(cg, c.Type));
     if (capturesThis)
@@ -266,8 +266,9 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
 
     // creating the value: a new environment with copies of the captured values
     var ir = cg.Ir;
-    string size = ir.Bin("sub", "i64", "ptrtoint (ptr getelementptr (" + envType + ", ptr null, i32 1) to i64)", "16");
-    string env = ir.Call("ptr", "@__cs_alloc", "i64 " + size + ", i64 0");
+    string sizeIr = SizeIr(cg);
+    string size = ir.Bin("sub", sizeIr, "ptrtoint (ptr getelementptr (" + envType + ", ptr null, i32 1) to " + sizeIr + ")", HeaderSize(cg));
+    string env = ir.Call("ptr", "@__cs_alloc", sizeIr + " " + size + ", " + sizeIr + " 0");
     ir.Store("ptr", "@\"lambda." + id + ".drop\"", ir.Gep(envType, env, "i32 0, i32 2"));
     for (var i = 0; i < captures.Count(); i += 1)
     {

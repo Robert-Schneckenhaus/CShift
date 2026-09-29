@@ -88,7 +88,9 @@ directories.
 
 The name of a struct/enum type is its **typedef name**, if it has one (`z_stream`, not `z_stream_s`).
 
-**`nint` / `nuint`** are integers the size of a pointer (like `IntPtr`/`UIntPtr` in C#): 64 bits on 64-bit targets.
+**`nint` / `nuint`** are integers the size of a pointer (like `IntPtr`/`UIntPtr` in C#): 64 bits on 64-bit targets,
+32 bits on 32-bit targets (`--target i686-linux-gnu`, `m68k-…`). `size_t` maps to `nuint`, `ssize_t`/`ptrdiff_t` to
+`nint`.
 `int` values and anything smaller convert to `nint`/`nuint` implicitly; `nint`/`nuint` convert to `int64`/`uint64`
 implicitly, but the other direction needs a cast (on 32-bit targets that would lose information). `int` and `uint`
 keep their fixed 32-bit size — which is why C's `int` is deliberately mapped to `int32` and not to `nint`.

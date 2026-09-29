@@ -51,7 +51,8 @@ Value EmitExprKind(Compiler cg, Expr e)
         int t = DeclTypeOf(cg, cg.Tree.GetSizeOf(e).Type);
         if (cg.Types.IsVoid(t))
             Fail(cg, e.Loc, "sizeof(void) is not defined");
-        return Rvalue(cg.Types.I32, "trunc (i64 " + SizeOfType(cg, t) + " to i32)", false);
+        string size = SizeOfType(cg, t);
+        return Rvalue(cg.Types.I32, SizeIr(cg) == "i32" ? size : "trunc (" + SizeIr(cg) + " " + size + " to i32)", false);
     }
     case ExprKind.Default:
     {
@@ -326,7 +327,7 @@ void EmitPanicIf(Compiler cg, string cond, string message)
     ir.SetBlock(okLabel);
 }
 
-// Like EmitPanicIf for an index check: the message also shows the index and the length (both i64).
+// Like EmitPanicIf for an index check: the message also shows the index and the length (both sizes).
 void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, string length)
 {
     var ir = cg.Ir;
@@ -334,6 +335,9 @@ void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, st
     string okLabel = ir.NewLabel("cont");
     ir.CondBr(cond, failLabel, okLabel);
     ir.SetBlock(failLabel);
+    // the message prints both as int64 (%lld)
+    index = SizeToI64(cg, index, true);
+    length = SizeToI64(cg, length, true);
     ir.Call("void", "@__cs_panic_index", "ptr " + ir.CString(message) + ", i64 " + index + ", i64 " + length + ", ptr " + PanicWhere(cg) +
                                           ", ptr " + CallerOperand(cg));
     ir.Unreachable();
@@ -1155,8 +1159,8 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
     }
     if (types.IsChar(t))
     {
-        string r = ir.Call("ptr", "@__cs_alloc", "i64 2, i64 1");
-        string data = ir.ByteGep(r, "16");
+        string r = ir.Call("ptr", "@__cs_alloc", SizeIr(cg) + " 2, " + SizeIr(cg) + " 1");
+        string data = ir.ByteGep(r, HeaderSize(cg));
         ir.Store("i8", v.V, data);
         return r;
     }

@@ -43,7 +43,8 @@ for file in "$ROOT"/tests/cases/*.csh; do
     want_exit="$(directives "$file" expect-exit | head -n 1)"; want_exit="${want_exit:-0}"
     ok=1
     [ "$code" -ne "$want_exit" ] && ok=0
-    while IFS= read -r text; do [ -z "$text" ] && continue; grep -qF -- "$text" "$TMP/r.out" || ok=0; done < <(directives "$file" expect-stdout)
+    # cshc builds for the host (64-bit pointers)
+    while IFS= read -r text; do [ -z "$text" ] && continue; grep -qF -- "$text" "$TMP/r.out" || ok=0; done < <(directives "$file" expect-stdout; directives "$file" expect-stdout-64)
     while IFS= read -r text; do [ -z "$text" ] && continue; grep -qF -- "$text" "$TMP/r.err" || ok=0; done < <(directives "$file" expect-stderr)
     # every heap block must be released again (unless the test says otherwise)
     if ! grep -q "^// arc-ignore" "$file" && grep -qF "[arc]" "$TMP/r.err"; then grep -q "live=0" "$TMP/r.err" || ok=0; fi

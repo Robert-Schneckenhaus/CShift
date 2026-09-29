@@ -16,7 +16,7 @@ extern "C" void* opendir(char* path);
 extern "C" void* readdir(void* dir);
 extern "C" int closedir(void* dir);
 extern "C" int mkdir(char* path, int mode);
-extern "C" char* getcwd(char* buffer, uint64 size);
+extern "C" char* getcwd(char* buffer, nuint size);
 
 struct Path
 {
@@ -222,7 +222,8 @@ struct Directory
             return 8;  // MinGW-w64: long d_ino, unsigned short d_reclen, unsigned short d_namlen, char d_name[]
         if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
             return 21; // macOS: d_ino, d_seekoff, d_reclen, d_namlen, d_type, d_name
-        return 19;     // Linux (glibc, musl): d_ino, d_off, d_reclen, d_type, d_name
+        // Linux (glibc, musl): long d_ino, long d_off, unsigned short d_reclen, unsigned char d_type, char d_name[]
+        return sizeof(nint) == 8 ? 19 : 11;
     }
 
     // The names of the files and directories in a directory (not the paths, without "." and ".."), sorted.

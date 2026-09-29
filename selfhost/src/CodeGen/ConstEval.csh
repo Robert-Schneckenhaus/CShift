@@ -17,7 +17,7 @@ using CShift.Sema;
 using CShift.Emit;
 using System.Native;
 
-extern "C" int snprintf(char* buffer, uint64 size, char* format, ...);
+extern "C" int snprintf(char* buffer, nuint size, char* format, ...);
 
 // Unknown: the value of a constant whose type or initializer had an error (reported once); everything computed from it is
 // unknown too, and nothing about it is reported.
@@ -436,7 +436,7 @@ Value ConstSliceValue(Compiler cg, ConstVal v)
     string ty = LlvmType(cg, v.Type);
     string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", block, "0");
     agg = ir.InsertValue(ty, agg, "ptr", DataPtr(cg, block), "1");
-    agg = ir.InsertValue(ty, agg, "i64", items.Length.ToString(), "2");
+    agg = ir.InsertValue(ty, agg, SizeIr(cg), items.Length.ToString(), "2");
     return Rvalue(v.Type, agg, false);
 }
 

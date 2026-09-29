@@ -257,7 +257,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
             {
                 // const char*: pass the character data of the string (null stays NULL). Strings are NUL-terminated.
                 string isNull = ir.ICmp("eq", "ptr", cv.V, "null");
-                passed = ir.Select(isNull, "ptr", "null", ir.ByteGep(cv.V, "16"));
+                passed = ir.Select(isNull, "ptr", "null", ir.ByteGep(cv.V, HeaderSize(cg)));
                 passedType = "ptr";
             }
         }
@@ -788,10 +788,9 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
             Value n = ToRValue(cg, args[0].V);
             if (!types.IsIntegral(n.Type))
                 Fail(cg, loc, "Memory.Allocate needs an integer size");
-            bool sizeSigned = types.IsInt(n.Type) && types.IsSigned(n.Type);
-            string size = NumericConvert(cg, n.V, n.Type, sizeSigned ? types.I64 : types.U64);
-            ir.Declare("@malloc", "declare ptr @malloc(i64)");
-            return Rvalue(types.PointerTo(types.Void), ir.Call("ptr", "@malloc", "i64 " + size), false);
+            string size = SizeIndex(cg, n.V, n.Type);
+            ir.Declare("@malloc", "declare ptr @malloc(" + SizeIr(cg) + ")");
+            return Rvalue(types.PointerTo(types.Void), ir.Call("ptr", "@malloc", SizeIr(cg) + " " + size), false);
         }
         if (method == "Free")
         {
@@ -932,13 +931,13 @@ void ExpectArgs(Compiler cg, Arg[] args, int n, string type, string method, Sour
         Fail(cg, loc, "'" + type + "." + method + "' takes " + n.ToString() + " argument(s)");
 }
 
-// SharedPtr<T>.Create(value): moves the value into a new block {i64 count = 1, i64 unused, T value}.
+// SharedPtr<T>.Create(value): moves the value into a new block {size count = 1, size unused, T value}.
 Value EmitSharedPtrCreate(Compiler cg, int sp, Value value, SourceLoc loc)
 {
     int elem = cg.Types.Elem(sp);
     Value v = ConvertValue(cg, value, elem, loc);
     string owned = Consume(cg, v);
-    string block = cg.Ir.Call("ptr", "@__cs_alloc", "i64 " + SizeOfType(cg, elem) + ", i64 0");
+    string block = cg.Ir.Call("ptr", "@__cs_alloc", SizeIr(cg) + " " + SizeOfType(cg, elem) + ", " + SizeIr(cg) + " 0");
     cg.Ir.Store(LlvmType(cg, elem), owned, DataPtr(cg, block));
     return Rvalue(sp, block, true);
 }
@@ -997,7 +996,7 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             // Strings are immutable, but an explicit independent copy is possible.
             ExpectArgs(cg, args, 0, tname, method, loc);
             HoldTemp(cg, s);
-            string len = ir.Cast("trunc", "i64", ir.Call("i64", "@__cs_len", "ptr " + s.V), "i32");
+            string len = SizeToI32(cg, ir.Call(SizeIr(cg), "@__cs_len", "ptr " + s.V));
             return Rvalue(types.String, ir.Call("ptr", "@__cs_substring", "ptr " + s.V + ", i32 0, i32 " + len), true);
         }
         if (method == "CStr")
@@ -1017,7 +1016,7 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             if (args.Length == 2)
                 count = ConvertValue(cg, args[1].V, types.I32, loc).V;
             else
-                count = ir.Bin("sub", "i32", ir.Cast("trunc", "i64", ir.Call("i64", "@__cs_len", "ptr " + s.V), "i32"), start);
+                count = ir.Bin("sub", "i32", SizeToI32(cg, ir.Call(SizeIr(cg), "@__cs_len", "ptr " + s.V)), start);
             return Rvalue(types.String, ir.Call("ptr", "@__cs_substring", "ptr " + s.V + ", i32 " + start + ", i32 " + count), true);
         }
         // Everything else (Contains, Trim, Split, ...) is written in CShift: namespace String of the standard library.

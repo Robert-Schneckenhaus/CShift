@@ -1,7 +1,7 @@
 // Sizes and alignments of types, and the layout of structs imported from C headers.
 //
-// The IR is written as text, so there is no LLVM data layout to ask: sizes follow the rules of the 64-bit targets that
-// CShift supports (pointers have 8 bytes, every scalar is aligned to its size, structs are padded like in C).
+// The IR is written as text, so there is no LLVM data layout to ask: sizes follow the target's rules (Emit/Target.csh:
+// the size of pointers and the alignment of the scalars; structs are padded like in C).
 
 namespace CShift.CodeGen;
 
@@ -38,6 +38,68 @@ SizeAlign AggregateLayout(Compiler cg, int[] members)
     return SizeAlign { Size = AlignUp(pos, maxAlign), Align = maxAlign };
 }
 
+// ---------------------------------------------------------------------------
+// Sizes, lengths and indexes: i64, or i32 on a 32-bit target
+// ---------------------------------------------------------------------------
+
+// The LLVM type of sizes, lengths and indexes (the length in a block header and in a slice, array indexes).
+string SizeIr(Compiler cg)
+{
+    return cg.Ir.Target.SizeIr;
+}
+
+// The offset of the elements in a string or array block (after the refcount and the length).
+string HeaderSize(Compiler cg)
+{
+    return cg.Ir.Target.HeaderBytes().ToString();
+}
+
+// A size as an int32 (Length).
+string SizeToI32(Compiler cg, string v)
+{
+    return SizeIr(cg) == "i32" ? v : cg.Ir.Cast("trunc", SizeIr(cg), v, "i32");
+}
+
+// An int32 as a size.
+string I32ToSize(Compiler cg, string v, bool isSigned)
+{
+    return SizeIr(cg) == "i32" ? v : cg.Ir.Cast(isSigned ? "sext" : "zext", "i32", v, SizeIr(cg));
+}
+
+// A size as an int64 (the index and length in a panic message, pointer differences).
+string SizeToI64(Compiler cg, string v, bool isSigned)
+{
+    return SizeIr(cg) == "i64" ? v : cg.Ir.Cast(isSigned ? "sext" : "zext", SizeIr(cg), v, "i64");
+}
+
+// An integer as a size (an index, a count): converted like to int64/uint64 (nint/nuint on a 32-bit target). On a 32-bit
+// target a 64-bit value that does not fit becomes -1 (all bits set), which every bounds check rejects.
+string SizeIndex(Compiler cg, string v, int type)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    bool isSigned = types.IsInt(type) && types.IsSigned(type);
+    if (SizeIr(cg) == "i64")
+        return NumericConvert(cg, v, type, isSigned ? types.I64 : types.U64);
+    if (types.Bits(type) <= 32)
+        return NumericConvert(cg, v, type, isSigned ? types.Nint : types.Nuint);
+    string fits = isSigned
+        ? ir.Bin("and", "i1", ir.ICmp("sge", "i64", v, "-2147483648"), ir.ICmp("sle", "i64", v, "2147483647"))
+        : ir.ICmp("ule", "i64", v, "4294967295");
+    return ir.Select(fits, "i32", ir.Cast("trunc", "i64", v, "i32"), "-1");
+}
+
+// A text of IR for the target (see Sized in Runtime.csh: $S, $P, $H, $I).
+string SizedText(Compiler cg, string text)
+{
+    return Sized(text, cg.Ir);
+}
+
+SizeAlign PointerLayout(Compiler cg, int count)
+{
+    return SizeAlign { Size = (int64)(count * cg.Ir.Target.PtrBytes), Align = (int64)cg.Ir.Target.PtrAlign };
+}
+
 SizeAlign TypeLayout(Compiler cg, int t)
 {
     var types = cg.Types;
@@ -50,8 +112,8 @@ SizeAlign TypeLayout(Compiler cg, int t)
     case TypeKind.Enum:
     case TypeKind.Float:
     {
-        int64 bytes = (int64)(types.Bits(t) / 8);
-        return SizeAlign { Size = bytes, Align = bytes };
+        int bytes = types.Bits(t) / 8;
+        return SizeAlign { Size = (int64)bytes, Align = (int64)cg.Ir.Target.ScalarAlign(bytes, types.IsFloat(t)) };
     }
     case TypeKind.Struct:
     {
@@ -85,11 +147,11 @@ SizeAlign TypeLayout(Compiler cg, int t)
         return AggregateLayout(cg, new int[] { types.String, types.I32 });
     case TypeKind.Function:
     case TypeKind.Interface:
-        return SizeAlign { Size = 16, Align = 8 }; // { ptr, ptr }
+        return PointerLayout(cg, 2); // { ptr, ptr }
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
-        return SizeAlign { Size = 24, Align = 8 }; // { ptr, ptr, i64 }
+        return PointerLayout(cg, 3); // { ptr, ptr, size }
     case TypeKind.Fixed:
     {
         var e = TypeLayout(cg, types.Elem(t));
@@ -101,7 +163,7 @@ SizeAlign TypeLayout(Compiler cg, int t)
         return SizeAlign { Size = ui.Size, Align = ui.Align };
     }
     default:
-        return SizeAlign { Size = 8, Align = 8 }; // pointers, strings, arrays, function values
+        return PointerLayout(cg, 1); // pointers, strings, arrays, function values
     }
 }
 
