@@ -83,3 +83,16 @@ jobs:
 
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc
+
+  vscode:
+    name: VS Code extension (package)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # the same packaging as the release (release.yml), so an invalid package.json fails here and not in a release
+      - name: Package the VS Code extension
+        run: |
+          cp LICENSE vscode-extension/LICENSE
+          cd vscode-extension
+          npx --yes @vscode/vsce package --allow-missing-repository -o "$RUNNER_TEMP/cshift-vscode.vsix"

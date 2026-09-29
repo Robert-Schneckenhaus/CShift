@@ -206,12 +206,12 @@ void CheckVarDecl(Compiler cg, Stmt s)
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEvalAs(cg, d.Init, sc, t), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
-        NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
         var vars = cg.Fn[0].Vars;
         var constVar = vars.Get(vars.Count() - 1);
         constVar.IsConstant = true;
         constVar.ConstValue = cv;
         vars.Set(vars.Count() - 1, constVar);
+        NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None); // after the value: the hover shows it
         return;
     }
     if (t != 0 && types.IsVoid(t))

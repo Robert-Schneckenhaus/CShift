@@ -239,12 +239,21 @@ done
 ffi_main="$TMP/proj_ffi/src/main.csh"
 if [ -f "$ffi_main" ]; then
     problem=""
-    for q in "62 17|int32 Geo.geo_add(int32 a, int32 b)|\"line\": 41" "62 17|native/geo.h|\"col\": 5" "62 13|namespace Geo (imported from|geo.h" "55 17|const int32 GEO_VERSION = 3|\"line\": 7"; do
+    for q in "70 17|int32 Geo.geo_add(int32 a, int32 b)|\"line\": 41" "70 17|native/geo.h|\"col\": 5" "70 13|namespace Geo (imported from|geo.h" "63 17|const int32 GEO_VERSION = 3|\"line\": 7"; do
         pos="${q%%|*}"; rest="${q#*|}"; want1="${rest%%|*}"; want2="${rest#*|}"
         got="$("$COMPILER" query --at "$ffi_main" ${pos% *} ${pos#* } "$TMP/proj_ffi" 2> /dev/null | tr -d '\r')"
         case "$got" in *"$want1"*"$want2"*|*"$want2"*"$want1"*) ;; *) problem="at $pos expected '$want1' and '$want2', got: $got"; break ;; esac
     done
     if [ -n "$problem" ]; then report_fail "query ffi" "$problem"; else report_ok "query ffi"; fi
+fi
+# A constant from embed("file") shows the text of the file (the embed project, copied in section 3).
+embed_main="$TMP/proj_embed/src/main.csh"
+if [ -f "$embed_main" ]; then
+    got="$("$COMPILER" query --at "$embed_main" 4 14 "$TMP/proj_embed" 2> /dev/null | tr -d '\r')"
+    case "$got" in
+        *'const string Version // 6 bytes, 1 line\n1.2.3"'*) report_ok "query embed" ;;
+        *) report_fail "query embed" "expected the text of data/version.txt, got: $got" ;;
+    esac
 fi
 printf 'int Main()\n{\n    int x = "a";\n    return y;\n}\n' > "$TMP/check_bad.csh"
 if "$COMPILER" check "$TMP/check_bad.csh" > /dev/null 2> "$TMP/check.err"; then
