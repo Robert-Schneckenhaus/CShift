@@ -7,7 +7,7 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
   files that are not open. Unsaved changes are included.
 * **Hover**: the type of a variable, parameter, field or constant (also where it is declared), the signature of a
   function or method (also where it is declared, and of those the language provides, like `Console.WriteLine` or
-  `x.ToString()`), what a type is (`struct Person`, `enum Color`, ...), the value of an enum member or constant. In a
+  `x.ToString()`), what a type is (`struct Person`, `enum Color`, ...), the value of an enum member or constant (for a constant from `embed("file")`, the first lines of the file). In a
   generic function the types are shown as written (`ref T slot`). Namespaces show what they are (`namespace Math`,
   `namespace Glfw (imported from "GLFW/glfw3.h")`), fields with a function type (also C function pointers) show the
   signature they are called with.

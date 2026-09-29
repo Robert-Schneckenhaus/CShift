@@ -86,6 +86,14 @@ bool EmitPointerCast(Compiler cg, Value v, int to, SourceLoc loc, ref Value resu
         result = Rvalue(to, ir.InsertValue("{ ptr, ptr }", "zeroinitializer", "ptr", ToRValue(cg, v).V, "0"), false);
         return true;
     }
+    // A C function pointer (the field of a C struct) is a plain pointer: void* <-> C function pointer, e.g. an address
+    // from glfwGetProcAddress stored into an OpenGL function table.
+    if ((types.IsPointer(from) && types.IsCFunction(to)) || (types.IsCFunction(from) && types.IsPointer(to)))
+    {
+        RequireUnsafe(cg, loc, "pointer cast");
+        result = Rvalue(to, ToRValue(cg, v).V, false);
+        return true;
+    }
     if (types.IsPointer(from) && types.IsInt(to))
     {
         RequireUnsafe(cg, loc, "pointer cast");

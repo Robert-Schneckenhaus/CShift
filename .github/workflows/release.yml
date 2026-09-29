@@ -275,6 +275,10 @@ jobs:
         run: |
           cp source/LICENSE source/vscode-extension/LICENSE
           cd source/vscode-extension
+          # the extension's version is the release's (0.14 -> 0.14.0; VS Code wants three numbers)
+          ext_version="$VERSION"
+          [[ "$ext_version" =~ ^[0-9]+\.[0-9]+$ ]] && ext_version="$ext_version.0"
+          npm pkg set version="$ext_version"
           npx --yes @vscode/vsce package --allow-missing-repository -o "$GITHUB_WORKSPACE/assets/cshift-vscode-$VERSION.vsix"
 
       - name: Publish

@@ -47,6 +47,14 @@ char* NameOf(Geo.GeoColor c)
     }
 }
 
+void LoadAddress<T>(ref T slot, void* address)
+{
+    unsafe
+    {
+        slot = (T)address;
+    }
+}
+
 int Main()
 {
     var t = new Tester();
@@ -150,6 +158,12 @@ int Main()
         t.Check(Geo.geo_ops_run(ops, 10) == 21, "function pointer in a struct");
         Func<int, int> doubler = Geo.geo_get_doubler();
         t.Check(doubler != null && doubler(21) == 42, "C function pointer called from CShift");
+        // an address as void* cast to a C function pointer field through a type parameter (like the OpenGL loader of
+        // demo-opengl), and a C function pointer cast to void*
+        void* raw = (void*)ops.fn;
+        Geo.GeoOps loaded = default(Geo.GeoOps);
+        LoadAddress(ref loaded.fn, raw);
+        t.Check(Geo.geo_ops_run(loaded, 5) == 10, "void* cast to a C function pointer");
     }
 
     // C arrays in structs: Fixed<T, N>, laid out exactly like in C

@@ -33,6 +33,14 @@ void CheckProgram(Compiler program)
     cg.Ir = ir;
     cg.Fn = new FnState[1];
 
+    // the constants of the program where they are declared (their values were computed by CheckConstants)
+    for (var c = 0; c < cg.Consts.Count() && cg.St[0].Indexing; c += 1)
+    {
+        var ce = cg.Consts.Get(c);
+        if (!cg.Files.Get(ce.File).IsPrelude)
+            IndexConst(cg, ce.Decl.Loc, ce.Decl.Name.Length, c);
+    }
+
     CheckGlobalInitializers(cg);
 
     for (var entry = 0; entry < cg.Funcs.Count(); entry += 1)

@@ -64,13 +64,15 @@ string HoverType(Compiler cg, int t)
 // A local variable, parameter or pattern variable.
 void IndexLocal(Compiler cg, SourceLoc at, string name)
 {
+    if (!cg.St[0].Indexing)
+        return;
     int i = FindLocal(cg, name);
     if (i < 0)
         return;
     var v = cg.Fn[0].Vars.Get(i);
     string kind = v.IsConstant ? "const " : v.IsParam ? "(parameter) " + v.RefText : "";
     string type = cg.Types.IsUnknown(v.Type) && v.TypeText != null && v.TypeText.Length > 0 ? v.TypeText : HoverType(cg, v.Type);
-    IndexAt(cg, at, name.Length, v.Loc, kind + type + " " + name);
+    IndexAt(cg, at, name.Length, v.Loc, kind + type + " " + name + (v.IsConstant ? ConstValueHover(cg, v.ConstValue) : ""));
 }
 
 // A field of a struct type (its own or an inherited one).
@@ -120,11 +122,46 @@ string FieldHover(Compiler cg, int t, string qualified)
 
 void IndexConst(Compiler cg, SourceLoc at, int length, int c)
 {
+    if (!cg.St[0].Indexing)
+        return;
     var entry = cg.Consts.Get(c);
     ConstVal v = ConstEvalDecl(cg, c);
-    string value = v.Kind == ConstKind.String ? "\"" + ConstToText(cg, v) + "\"" :
-                   v.Kind == ConstKind.Slice || v.Kind == ConstKind.Unknown ? "" : ConstToText(cg, v);
-    IndexAt(cg, at, length, entry.Decl.Loc, "const " + HoverType(cg, v.Type) + " " + entry.Decl.Name + (value.Length > 0 ? " = " + value : ""));
+    IndexAt(cg, at, length, entry.Decl.Loc, "const " + HoverType(cg, v.Type) + " " + entry.Decl.Name + ConstValueHover(cg, v));
+}
+
+// The value of a constant in a hover: " = 42", " = \"text\"", or for a longer string (an embedded file) its size and
+// its first lines below the declaration.
+string ConstValueHover(Compiler cg, ConstVal v)
+{
+    if (v.Kind == ConstKind.Slice || v.Kind == ConstKind.Unknown)
+        return "";
+    string s = ConstToText(cg, v);
+    if (v.Kind != ConstKind.String)
+        return " = " + s;
+    if (s.Length <= 80 && s.IndexOf('\n') < 0)
+        return " = \"" + s + "\"";
+    var lines = s.Split('\n');
+    int count = lines.Length;
+    if (count > 1 && lines[count - 1].Length == 0)
+        count -= 1; // the newline at the end of a file
+    var sb = StringBuilder.Create();
+    sb.Append(" // ");
+    sb.Append(s.Length.ToString());
+    sb.Append(" bytes, ");
+    sb.Append(count.ToString());
+    sb.Append(count == 1 ? " line" : " lines");
+    int shown = count < 20 ? count : 20;
+    for (var i = 0; i < shown; i += 1)
+    {
+        string line = lines[i].ToString();
+        if (line.Length > 0 && line[line.Length - 1] == '\r')
+            line = line.Substring(0, line.Length - 1);
+        sb.Append('\n');
+        sb.Append(line.Length > 120 ? line.Substring(0, 120) + "..." : line);
+    }
+    if (shown < count)
+        sb.Append("\n...");
+    return sb.ToString();
 }
 
 void IndexGlobal(Compiler cg, SourceLoc at, int length, int g)
@@ -217,9 +254,50 @@ void IndexBuiltinCall(Compiler cg, SourceLoc at, string owner, string method, Ar
         if (i > 0)
             sb.Append(", ");
         sb.Append(HoverType(cg, args[i].V.Type));
+        string paramName = BuiltinParamName(method, i);
+        if (paramName.Length > 0)
+        {
+            sb.Append(' ');
+            sb.Append(paramName);
+        }
     }
     sb.Append(')');
     IndexAt(cg, at, method.Length, SourceLoc { }, sb.ToString());
+}
+
+// The name of parameter i of a function the language provides ("" if it has none to show).
+string BuiltinParamName(string method, int i)
+{
+    switch (method)
+    {
+    case "Write":
+    case "WriteLine":
+    case "WriteError":
+    case "WriteErrorLine":
+    case "CopyForThread":
+        return i == 0 ? "value" : "";
+    case "Exit":
+        return i == 0 ? "code" : "";
+    case "Panic":
+        return i == 0 ? "message" : "";
+    case "Allocate":
+        return i == 0 ? "size" : "";
+    case "Free":
+        return i == 0 ? "pointer" : "";
+    case "FromCStr":
+        return i == 0 ? "text" : "";
+    case "FromBytes":
+        return i == 0 ? "bytes" : "";
+    case "ToString":
+        return i == 0 ? "format" : "";
+    case "Substring":
+        return i == 0 ? "start" : i == 1 ? "length" : "";
+    case "Equals":
+    case "CompareTo":
+        return i == 0 ? "other" : "";
+    default:
+        return "";
+    }
 }
 
 // A call that was not resolved (an argument of unknown type, no matching overload): the function if there is only one
