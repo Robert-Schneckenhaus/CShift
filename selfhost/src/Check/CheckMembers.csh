@@ -178,8 +178,8 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
                 return UnknownValue(cg);
             Value builtin = CheckBuiltinStatic(cg, dotted, m.Name, builtinArgs, e.Loc);
             if (m.Object.Kind == ExprKind.Name)
-                IndexAt(cg, m.Object.Loc, dotted.Length, SourceLoc { }, "static class " + dotted);
-            IndexBuiltinCall(cg, m.NameLoc, dotted, m.Name, builtinArgs, builtin, true, cg.Index.Count());
+                IndexAt(cg, m.Object.Loc, dotted.Length, SourceLoc { }, "namespace " + dotted + " (built in)");
+            IndexBuiltinCall(cg, m.NameLoc, dotted, m.Name, builtinArgs, builtin, false, cg.Index.Count());
             return builtin;
         }
         var entry = TypeDeclEntry { };

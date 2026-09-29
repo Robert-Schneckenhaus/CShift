@@ -5,8 +5,8 @@
 // query: 22 9 => "hover": "int32 x"
 // query: 23 5 => "hover": "(parameter) ref T slot"
 // query: 23 5 => "line": 20
-// query: 24 5 => "hover": "static class Console"
-// query: 24 13 => "hover": "static void Console.WriteLine(string)"
+// query: 24 5 => "hover": "namespace Console (built in)"
+// query: 24 13 => "hover": "void Console.WriteLine(string)"
 // query: 24 48 => "hover": "string int32.ToString()"
 // query: 30 9 => "hover": "int32 Box.Twice(int32 factor)"
 // query: 30 19 => "hover": "(parameter) int32 factor"
