@@ -38,6 +38,23 @@ void NoteVar(Compiler cg, SourceLoc loc, bool isParam)
     vars.Set(vars.Count() - 1, v);
 }
 
+// The last declared variable is declared at 'nameLoc' (where its name is written; 'fallback' if that is not known),
+// with its type as written; the declaration itself is indexed (a hover on the name where it is declared).
+void NoteDeclared(Compiler cg, SourceLoc nameLoc, SourceLoc fallback, bool isParam, TypeRef type, RefKind refKind)
+{
+    var vars = cg.Fn[0].Vars;
+    if (vars.Count() == 0)
+        return;
+    var v = vars.Get(vars.Count() - 1);
+    v.Loc = nameLoc.Line > 0 ? nameLoc : fallback;
+    v.IsParam = isParam;
+    v.TypeText = type.IsNull() ? "" : cg.Tree.TypeToString(type);
+    v.RefText = refKind == RefKind.Ref ? "ref " : refKind == RefKind.ConstRef ? "const ref " : "";
+    vars.Set(vars.Count() - 1, v);
+    if (nameLoc.Line > 0)
+        IndexLocal(cg, nameLoc, v.Name);
+}
+
 // The type as it is shown in a hover.
 string HoverType(Compiler cg, int t)
 {
@@ -51,8 +68,9 @@ void IndexLocal(Compiler cg, SourceLoc at, string name)
     if (i < 0)
         return;
     var v = cg.Fn[0].Vars.Get(i);
-    string kind = v.IsConstant ? "const " : v.IsParam ? "(parameter) " : "";
-    IndexAt(cg, at, name.Length, v.Loc, kind + HoverType(cg, v.Type) + " " + name);
+    string kind = v.IsConstant ? "const " : v.IsParam ? "(parameter) " + v.RefText : "";
+    string type = cg.Types.IsUnknown(v.Type) && v.TypeText != null && v.TypeText.Length > 0 ? v.TypeText : HoverType(cg, v.Type);
+    IndexAt(cg, at, name.Length, v.Loc, kind + type + " " + name);
 }
 
 // A field of a struct type (its own or an inherited one).
@@ -102,7 +120,7 @@ void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
     var sb = StringBuilder.Create();
     if (d.IsStatic && fi.Owner != 0)
         sb.Append("static ");
-    sb.Append(HoverType(cg, fi.Ret));
+    sb.Append(DeclaredHoverType(cg, fi.Ret, d.Ret));
     sb.Append(' ');
     sb.Append(DisplayName(cg, instance));
     sb.Append('(');
@@ -111,12 +129,20 @@ void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
         if (i > 0)
             sb.Append(", ");
         sb.Append(fi.ParamRefs[i] == 1 ? "ref " : fi.ParamRefs[i] == 2 ? "const ref " : "");
-        sb.Append(HoverType(cg, fi.ParamTypes[i]));
+        sb.Append(DeclaredHoverType(cg, fi.ParamTypes[i], d.Params[i].Type));
         sb.Append(' ');
         sb.Append(d.Params[i].Name);
     }
     sb.Append(')');
-    IndexAt(cg, at, length, d.Loc, sb.ToString());
+    IndexAt(cg, at, length, d.NameLoc.Line > 0 ? d.NameLoc : d.Loc, sb.ToString());
+}
+
+// A type in a hover; the type as written when it is not known (a generic body is checked with unknown type arguments).
+string DeclaredHoverType(Compiler cg, int t, TypeRef written)
+{
+    if (cg.Types.IsUnknown(t) && !written.IsNull())
+        return cg.Tree.TypeToString(written);
+    return HoverType(cg, t);
 }
 
 // A member that the language provides (the Length of a string, array, slice or Fixed, the Message and Code of an error):
@@ -127,11 +153,42 @@ Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string
     return v;
 }
 
+// A call of a function that the language provides (Console.WriteLine, x.ToString(), ...): its signature as it was
+// called, unless an entry was recorded for the name since 'before' (a function of the standard library).
+void IndexBuiltinCall(Compiler cg, SourceLoc at, string owner, string method, Arg[] args, Value result, bool isStatic, int before)
+{
+    if (!cg.St[0].Indexing || IsUnknown(cg, result))
+        return;
+    for (var i = before; i < cg.Index.Count(); i += 1)
+    {
+        var e = cg.Index.Get(i);
+        if (e.At.File == at.File && e.At.Line == at.Line && e.At.Col == at.Col)
+            return;
+    }
+    var sb = StringBuilder.Create();
+    if (isStatic)
+        sb.Append("static ");
+    sb.Append(HoverType(cg, result.Type));
+    sb.Append(' ');
+    sb.Append(owner);
+    sb.Append('.');
+    sb.Append(method);
+    sb.Append('(');
+    for (var i = 0; i < args.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(HoverType(cg, args[i].V.Type));
+    }
+    sb.Append(')');
+    IndexAt(cg, at, method.Length, SourceLoc { }, sb.ToString());
+}
+
 // A call that was not resolved (an argument of unknown type, no matching overload): the function if there is only one
 // candidate and it is not generic.
 void IndexCandidates(Compiler cg, SourceLoc at, int length, Candidate[] cands)
 {
-    if (!cg.St[0].Indexing || cands.Length != 1)
+    if (!cg.St[0].Indexing || cands.Length != 1 || at.Line <= 0)
         return;
     var c = cands[0];
     var d = cg.Funcs.Get(c.Entry).Decl;

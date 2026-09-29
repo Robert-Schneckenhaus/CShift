@@ -305,6 +305,7 @@ struct VarDeclStmt
 {
     TypeRef Type; // none means 'var'
     string Name;
+    SourceLoc NameLoc;
     Expr Init;    // optional (never for constants)
     bool IsUsing;
     bool IsConst; // const int X = 5;  (a read-only variable with a constant initializer)
@@ -346,6 +347,7 @@ struct ForeachStmt
 {
     TypeRef Type; // none means 'var'
     string Name;
+    SourceLoc NameLoc;
     Expr Iterable;
     Stmt Body;
 }
@@ -400,6 +402,7 @@ struct Param
     SourceLoc Loc;
     TypeRef Type;
     string Name;
+    SourceLoc NameLoc;
     RefKind Ref;
     // FFI marshalling (set for imported C functions)
     bool Nullable;
@@ -416,6 +419,7 @@ struct FuncDecl
 {
     SourceLoc Loc;
     string Name;
+    SourceLoc NameLoc;    // where the name is written (Loc: the start of a method's declaration)
     string[] TypeParams;
     Param[] Params;
     TypeRef Ret;

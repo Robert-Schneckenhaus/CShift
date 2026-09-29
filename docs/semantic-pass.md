@@ -81,8 +81,8 @@ message of the failed inference names it.
 **Tooling.** `cshiftc check` runs the front end (declarations and the checker, `CgState.FrontEndOnly`) and reports the
 errors without generating anything. `cshiftc query --at <file> <line> <col>` does the same with the symbol index
 (`CgState.Indexing`, `Check/Index.csh`): every name the checker resolves (locals, parameters, fields, constants,
-globals, functions and methods, types, enum members) is recorded with its place, the place of its declaration and a
-hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
+globals, functions and methods, the functions the language provides, types, enum members; variables, parameters and
+functions also where they are declared) is recorded with its place, the place of its declaration and a hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
 "col"}}`). `--overlay <file> <text file>` replaces a source with the unsaved text of an editor. Columns count bytes
 (UTF-8), like the error messages.
 
