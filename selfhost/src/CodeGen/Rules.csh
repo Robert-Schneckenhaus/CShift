@@ -364,7 +364,8 @@ int ArithmeticFrame(Compiler cg, int target)
     return target;
 }
 
-// Expressions that are computed in the frame: + - * / % & | ^ << >>, unary - and ~, and unchecked(...) around them.
+// Expressions that are computed in the frame: + - * / % & | ^ << >>, unary - and ~, cond ? a : b (its branches) and
+// unchecked(...) around them.
 bool IsFramable(Compiler cg, Expr e)
 {
     switch (e.Kind)
@@ -380,6 +381,8 @@ bool IsFramable(Compiler cg, Expr e)
         var op = cg.Tree.GetUnary(e).Op;
         return op == UnOp.Neg || op == UnOp.BitNot;
     }
+    case ExprKind.Conditional:
+        return true;
     case ExprKind.Unchecked:
         return IsFramable(cg, cg.Tree.GetUnchecked(e).Operand);
     default:
@@ -387,6 +390,37 @@ bool IsFramable(Compiler cg, Expr e)
     }
 }
 
+// The frames of the arguments of a call (see ArithmeticFrame): for argument i the integer type of parameter i when all
+// candidates that take this many arguments agree on it (value parameters; not for generic functions); 0 otherwise. With
+// overloads that differ there (Foo(uint8) and Foo(int32)) the usual rules decide.
+int[] ArgFrames(Compiler cg, Candidate[] cands, int count)
+{
+    var frames = new int[count];
+    var none = new int[count];
+    bool first = true;
+    foreach (var c in cands)
+    {
+        var fe = cg.Funcs.Get(c.Entry);
+        var d = fe.Decl;
+        if (d.Params.Length != count)
+            continue;
+        if (d.TypeParams.Length > 0 || d.IsVariadic || (c.Owner != 0 && !cg.Types.IsStruct(c.Owner)))
+            return none;
+        var env = c.Owner != 0 ? GetStructInfo(cg, c.Owner).Env : NoEnv();
+        for (var i = 0; i < count; i += 1)
+        {
+            int t = 0;
+            if (d.Params[i].Ref == RefKind.None)
+                t = ArithmeticFrame(cg, ResolveValueType(cg, d.Params[i].Type.Id, fe.File, env));
+            if (first)
+                frames[i] = t;
+            else if (frames[i] != t)
+                frames[i] = 0;
+        }
+        first = false;
+    }
+    return frames;
+}
 // An operand fits the frame: an integer (not an enum) that converts to it implicitly.
 bool FitsFrame(Compiler cg, Value v, int frame)
 {

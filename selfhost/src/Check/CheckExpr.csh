@@ -51,21 +51,7 @@ Value CheckExpr(Compiler cg, Expr e)
     case ExprKind.Unary: return CheckUnary(cg, e);
     case ExprKind.Binary: return CheckBinary(cg, e);
     case ExprKind.Assign: return CheckAssign(cg, e);
-    case ExprKind.Conditional:
-    {
-        var c = tree.GetCond(e);
-        CheckCondition(cg, c.Cond);
-        Value a = CheckRValue(cg, c.Then);
-        Value b = CheckRValue(cg, c.Else);
-        string why = "";
-        int t = ConditionalType(cg, a, b, ref why);
-        if (t == 0)
-        {
-            CheckError(cg, e.Loc, why);
-            return UnknownValue(cg);
-        }
-        return Rvalue(t, "", false);
-    }
+    case ExprKind.Conditional: return CheckConditionalIn(cg, e, 0);
     case ExprKind.Cast: return CheckCast(cg, e);
     case ExprKind.Try: return CheckTry(cg, e);
     case ExprKind.ErrorLit: return CheckErrorLit(cg, e);
@@ -192,6 +178,21 @@ Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
     return list;
 }
 
+// The arguments of a call to one of the candidates: integer arithmetic in an argument is computed in the type of the
+// parameter when the candidates agree on it (see ArgFrames and EmitArgsFor).
+Arg[] CheckArgsFor(Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
+{
+    int[] frames = ArgFrames(cg, cands, args.Length);
+    var list = new Arg[args.Length];
+    for (var i = 0; i < args.Length; i += 1)
+    {
+        list[i] = Arg { Source = args[i], V = frames[i] != 0 ? CheckExprAs(cg, args[i], frames[i]) : CheckExpr(cg, args[i]) };
+        if (IsUnknown(cg, list[i].V))
+            known = false;
+    }
+    return list;
+}
+
 // Calls by name and methods of struct values (see EmitCallVia, EmitNameCall, EmitMemberCall).
 Value CheckCall(Compiler cg, Expr e, bool viaStart)
 {
@@ -238,7 +239,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
         cands = MethodCandidates(cg, owner, n.Name);
     if (cands.Length == 0)
         cands = FreeCandidates(cg, cg.Fn[0].File, n.Name);
-    var args = CheckArgs(cg, call.Args, ref known);
+    var args = CheckArgsFor(cg, call.Args, cands, ref known);
     if (cands.Length == 0)
     {
         CheckError(cg, e.Loc, "undefined function '" + n.Name + "'");
@@ -358,11 +359,30 @@ Value CheckExprAs(Compiler cg, Expr e, int target)
     return CheckFramed(cg, e, frame);
 }
 
+// cond ? a : b; with a frame the branches are computed in it (see EmitConditionalIn).
+Value CheckConditionalIn(Compiler cg, Expr e, int frame)
+{
+    var c = cg.Tree.GetCond(e);
+    CheckCondition(cg, c.Cond);
+    Value a = frame != 0 ? CheckFramed(cg, c.Then, frame) : CheckRValue(cg, c.Then);
+    Value b = frame != 0 ? CheckFramed(cg, c.Else, frame) : CheckRValue(cg, c.Else);
+    string why = "";
+    int t = ConditionalType(cg, a, b, ref why);
+    if (t == 0)
+    {
+        CheckError(cg, e.Loc, why);
+        return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
 // An operand of a framed expression (see EmitFramed).
 Value CheckFramed(Compiler cg, Expr e, int frame)
 {
     if (!IsFramable(cg, e))
         return CheckRValue(cg, e);
+    if (e.Kind == ExprKind.Conditional)
+        return CheckConditionalIn(cg, e, frame);
     if (e.Kind == ExprKind.Unchecked)
         return CheckFramed(cg, cg.Tree.GetUnchecked(e).Operand, frame);
     if (e.Kind == ExprKind.Unary)
@@ -394,7 +414,7 @@ Value CheckFramed(Compiler cg, Expr e, int frame)
     {
         Expr step = chain.Get(i);
         var sb = cg.Tree.GetBinary(step);
-        Value r = CheckFramed(cg, sb.Rhs, frame);
+        Value r = sb.Op == BinOp.Shl || sb.Op == BinOp.Shr ? CheckRValue(cg, sb.Rhs) : CheckFramed(cg, sb.Rhs, frame);
         l = CheckFramedStep(cg, sb.Op, l, r, frame, step.Loc);
     }
     return l;

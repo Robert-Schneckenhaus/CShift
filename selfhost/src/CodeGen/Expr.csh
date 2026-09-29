@@ -87,7 +87,7 @@ Value EmitExprKind(Compiler cg, Expr e)
         collection.CollectionNode = e;
         return collection;
     }
-    case ExprKind.Conditional: return EmitConditional(cg, e);
+    case ExprKind.Conditional: return EmitConditionalIn(cg, e, 0);
     case ExprKind.Cast: return EmitCast(cg, e);
     case ExprKind.Start: return EmitStart(cg, e);
     case ExprKind.RefArg:
@@ -846,7 +846,9 @@ Value EmitFramed(Compiler cg, Expr e, int frame)
     if (e.Loc.Line > 0)
         cg.St[0].Loc = e.Loc;
     Value v;
-    if (e.Kind == ExprKind.Unchecked)
+    if (e.Kind == ExprKind.Conditional)
+        v = EmitConditionalIn(cg, e, frame);
+    else if (e.Kind == ExprKind.Unchecked)
     {
         bool old = cg.Fn[0].Checked;
         cg.Fn[0].Checked = false;
@@ -883,7 +885,8 @@ Value EmitFramed(Compiler cg, Expr e, int frame)
         {
             Expr step = chain.Get(i);
             var sb = cg.Tree.GetBinary(step);
-            Value r = EmitFramed(cg, sb.Rhs, frame);
+            // the count of a shift is not computed in the frame
+            Value r = sb.Op == BinOp.Shl || sb.Op == BinOp.Shr ? EmitRValue(cg, sb.Rhs) : EmitFramed(cg, sb.Rhs, frame);
             if (step.Loc.Line > 0)
                 cg.St[0].Loc = step.Loc;
             v = EmitFramedStep(cg, sb.Op, v, r, frame, step.Loc);
@@ -1025,7 +1028,8 @@ Value EmitAssign(Compiler cg, Expr e)
     return Lvalue(target.Type, target.V, false);
 }
 
-Value EmitConditional(Compiler cg, Expr e)
+// cond ? a : b; with a frame (see EmitFramed) the branches are computed in it.
+Value EmitConditionalIn(Compiler cg, Expr e, int frame)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -1042,14 +1046,14 @@ Value EmitConditional(Compiler cg, Expr e)
     // Both branches are generated first; the conversions to the common type are added at their ends afterwards.
     int thenMark = ir.Mark();
     ir.SetBlock(thenLabel);
-    Value a = EmitRValue(cg, c.Then);
+    Value a = frame != 0 ? EmitFramed(cg, c.Then, frame) : EmitRValue(cg, c.Then);
     string thenEnd = ir.CurrentBlock();
     string thenCode = ir.TakeSince(thenMark);
     var thenTemps = TakeTemps(cg, baseCount);
 
     int elseMark = ir.Mark();
     ir.SetBlock(elseLabel);
-    Value b = EmitRValue(cg, c.Else);
+    Value b = frame != 0 ? EmitFramed(cg, c.Else, frame) : EmitRValue(cg, c.Else);
     string elseEnd = ir.CurrentBlock();
     string elseCode = ir.TakeSince(elseMark);
     var elseTemps = TakeTemps(cg, baseCount);

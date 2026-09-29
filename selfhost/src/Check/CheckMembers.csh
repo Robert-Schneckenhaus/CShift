@@ -214,17 +214,21 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
         if (LookupTypeDecl(cg, file, dotted, ref entry))
         {
-            var targs = CheckArgs(cg, call.Args, ref known);
             if (entry.Kind != DeclKind.Struct)
             {
+                CheckArgs(cg, call.Args, ref known);
                 CheckError(cg, e.Loc, "cshc does not support enums and interfaces yet ('" + dotted + "')");
                 return UnknownValue(cg);
             }
             int st = GetStructType(cg, entry.Index, ResolveTypeArgs(cg, LastTypeArgs(cg, m.Object)), e.Loc);
             if (types.IsUnknown(st))
+            {
+                CheckArgs(cg, call.Args, ref known);
                 return UnknownValue(cg); // List<Foo>.Create() with an unknown Foo
+            }
             IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, types.Name(st));
             var scands = MethodCandidates(cg, st, m.Name);
+            var targs = CheckArgsFor(cg, call.Args, scands, ref known);
             if (scands.Length == 0)
             {
                 CheckError(cg, e.Loc, "struct '" + types.Name(st) + "' has no method '" + m.Name + "'");
@@ -253,8 +257,8 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
         if (IsNamespace(cg, file, dotted))
         {
-            var nargs = CheckArgs(cg, call.Args, ref known);
             var ncands = FreeCandidates(cg, file, dotted + "." + m.Name);
+            var nargs = CheckArgsFor(cg, call.Args, ncands, ref known);
             if (ncands.Length == 0)
             {
                 CheckError(cg, e.Loc, "namespace '" + dotted + "' has no function '" + m.Name + "'");
@@ -296,7 +300,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             return UnknownValue(cg);
         }
     }
-    var args = CheckArgs(cg, call.Args, ref known);
+    var args = types.IsStruct(t) && !m.ViaArrow ? CheckArgsFor(cg, call.Args, MethodCandidates(cg, t, m.Name), ref known) : CheckArgs(cg, call.Args, ref known);
     if (types.IsUnknown(t) || m.ViaArrow || (IsCallableType(cg, t) && m.Name == "Invoke"))
         return UnknownValue(cg);
     if (types.Kind(t) == TypeKind.Interface)

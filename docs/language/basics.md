@@ -81,7 +81,7 @@ unchecked
 
 `unchecked { ... }` and `unchecked(expr)` switch the check off for a block or an expression. To switch it off for a
 whole program, compile with `--unchecked` (it applies to the files given to the compiler) or put `"unchecked": true`
-into `cshift.json` (the whole project). Division by zero and array/string bounds stay checked either way, and so does
+into `cshift.json` (the whole project); `--checked` switches the check back on for a build of such a project. Division by zero and array/string bounds stay checked either way, and so does
 the standard library.
 
 A panic prints its reason and where it happened, then ends the program with exit code 101. An index check also
@@ -121,10 +121,15 @@ int64 big = count * 1000;   // an int32 count: computed in int64
 
 The rule: when an arithmetic expression (`+ - * / % & | ^ << >>`, unary `-` and `~`) is used as a value of an
 integer type T — the type of a declared variable, the target of an assignment or compound assignment, a return value,
-a field in `S { F = ... }`, an array element in `new T[] { ... }`, a constant — it is computed in T, provided that
-every operand converts to T implicitly. A literal counts by its value (`10` fits `uint8`, `300` does not, `-1` fits
+a field in `S { F = ... }`, an array element in `new T[] { ... }`, a constant, an argument for a parameter of type T —
+it is computed in T, provided that every operand converts to T implicitly. The branches of `cond ? x : y` in such a
+place are computed in T as well (`uint8 r = c ? a + 1 : b;`). A literal counts by its value (`10` fits `uint8`, `300` does not, `-1` fits
 only signed types), two literals are combined when the program is compiled (`uint8 x = 1 + 2;`). Integers with and
 without a sign fit a signed type that is larger than both (`int16 d = a + n;` with `uint8 a` and `int8 n`).
+
+An argument has a target type when all overloads of the function with that many parameters have the same integer
+type at its position (not for generic functions); with `Foo(uint8)` and `Foo(int32)`, `Foo(a + b)` computes in `int32`
+and calls `Foo(int32)`.
 
 If an operand does not fit T, or there is no target type at all, the usual rules apply and the small types are
 widened to `int32`, like in C#:

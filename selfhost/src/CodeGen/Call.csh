@@ -23,6 +23,16 @@ Arg[] EmitArgs(Compiler cg, Expr[] args)
     return list;
 }
 
+// The arguments of a call to one of the candidates (see ArgFrames).
+Arg[] EmitArgsFor(Compiler cg, Expr[] args, Candidate[] cands)
+{
+    int[] frames = ArgFrames(cg, cands, args.Length);
+    var list = new Arg[args.Length];
+    for (var i = 0; i < args.Length; i += 1)
+        list[i] = Arg { Source = args[i], V = frames[i] != 0 ? EmitExprAs(cg, args[i], frames[i]) : EmitExpr(cg, args[i]) };
+    return list;
+}
+
 // The cost of passing an argument to a parameter (-1 = impossible).
 int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, bool cstring)
 {
@@ -481,7 +491,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart
     if (cands.Length == 0)
         Fail(cg, e.Loc, "undefined function '" + n.Name + "'");
 
-    var args = EmitArgs(cg, call.Args);
+    var args = EmitArgsFor(cg, call.Args, cands);
     int instance = ResolveOverload(cg, cands, args, ResolveTypeArgs(cg, n.TypeArgs), e.Loc, n.Name);
     if (IsThreadInstance(cg, instance))
     {
@@ -566,7 +576,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
             var scands = MethodCandidates(cg, st, m.Name);
             if (scands.Length == 0)
                 Fail(cg, e.Loc, "struct '" + types.Name(st) + "' has no method '" + m.Name + "'");
-            var sargs = EmitArgs(cg, call.Args);
+            var sargs = EmitArgsFor(cg, call.Args, scands);
             int sinstance = ResolveOverload(cg, scands, sargs, methodTypeArgs, e.Loc, m.Name);
             var sfi = cg.Instances.Get(sinstance);
             if (sfi.HasThis)
@@ -588,7 +598,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
             var ncands = FreeCandidates(cg, file, dotted + "." + m.Name);
             if (ncands.Length == 0)
                 Fail(cg, e.Loc, "namespace '" + dotted + "' has no function '" + m.Name + "'");
-            var nargs = EmitArgs(cg, call.Args);
+            var nargs = EmitArgsFor(cg, call.Args, ncands);
             int ninstance = ResolveOverload(cg, ncands, nargs, methodTypeArgs, e.Loc, m.Name);
             if (IsThreadInstance(cg, ninstance))
             {
@@ -619,7 +629,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
             return EmitIndirectCall(cg, field, EmitArgs(cg, call.Args), e.Loc);
         }
     }
-    var args = EmitArgs(cg, call.Args);
+    var args = types.IsStruct(obj.Type) ? EmitArgsFor(cg, call.Args, MethodCandidates(cg, obj.Type, m.Name)) : EmitArgs(cg, call.Args);
     if (IsCallableType(cg, obj.Type) && m.Name == "Invoke")
         return EmitIndirectCall(cg, obj, args, e.Loc);
     if (types.Kind(obj.Type) == TypeKind.Interface)

@@ -1355,7 +1355,7 @@ ConstVal ConstFramed(Compiler cg, Expr e, ConstScope sc, int frame)
     }
     var b = cg.Tree.GetBinary(e);
     ConstVal l = ConstFramed(cg, b.Lhs, sc, frame);
-    ConstVal r = ConstFramed(cg, b.Rhs, sc, frame);
+    ConstVal r = b.Op == BinOp.Shl || b.Op == BinOp.Shr ? ConstEval(cg, b.Rhs, sc) : ConstFramed(cg, b.Rhs, sc, frame);
     if (l.Kind == ConstKind.Unknown || r.Kind == ConstKind.Unknown)
         return l.Kind == ConstKind.Unknown ? l : r;
     if (l.HasLit && r.HasLit && l.Kind == ConstKind.Int && r.Kind == ConstKind.Int)

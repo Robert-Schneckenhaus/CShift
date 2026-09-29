@@ -195,6 +195,15 @@ for dir in "$DIR"/projects/*/; do
     fi
 done
 
+# --checked overrides "unchecked": true of a project
+if "$COMPILER" run --checked "$DIR/projects/unchecked" $OPT "${CC_ARGS[@]}" -o "$TMP/checked_override" > /dev/null 2> "$TMP/proj.err"; then
+    report_fail "cshiftc --checked" "the overflow did not panic"
+elif ! grep -q "panic: integer overflow" "$TMP/proj.err"; then
+    report_fail "cshiftc --checked" "expected an overflow panic, got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+else
+    report_ok "cshiftc --checked"
+fi
+
 # cshiftc new creates a working project
 if "$COMPILER" new "$TMP/fresh" > /dev/null 2> "$TMP/proj.err" &&
    "$COMPILER" run "$TMP/fresh" $OPT "${CC_ARGS[@]}" 2> "$TMP/proj.err" | tr -d '\r' | grep -qx "Hello, World!"; then
