@@ -51,21 +51,7 @@ Value CheckExpr(Compiler cg, Expr e)
     case ExprKind.Unary: return CheckUnary(cg, e);
     case ExprKind.Binary: return CheckBinary(cg, e);
     case ExprKind.Assign: return CheckAssign(cg, e);
-    case ExprKind.Conditional:
-    {
-        var c = tree.GetCond(e);
-        CheckCondition(cg, c.Cond);
-        Value a = CheckRValue(cg, c.Then);
-        Value b = CheckRValue(cg, c.Else);
-        string why = "";
-        int t = ConditionalType(cg, a, b, ref why);
-        if (t == 0)
-        {
-            CheckError(cg, e.Loc, why);
-            return UnknownValue(cg);
-        }
-        return Rvalue(t, "", false);
-    }
+    case ExprKind.Conditional: return CheckConditionalIn(cg, e, 0);
     case ExprKind.Cast: return CheckCast(cg, e);
     case ExprKind.Try: return CheckTry(cg, e);
     case ExprKind.ErrorLit: return CheckErrorLit(cg, e);
@@ -192,6 +178,21 @@ Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
     return list;
 }
 
+// The arguments of a call to one of the candidates: integer arithmetic in an argument is computed in the type of the
+// parameter when the candidates agree on it (see ArgFrames and EmitArgsFor).
+Arg[] CheckArgsFor(Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
+{
+    int[] frames = ArgFrames(cg, cands, args.Length);
+    var list = new Arg[args.Length];
+    for (var i = 0; i < args.Length; i += 1)
+    {
+        list[i] = Arg { Source = args[i], V = frames[i] != 0 ? CheckExprAs(cg, args[i], frames[i]) : CheckExpr(cg, args[i]) };
+        if (IsUnknown(cg, list[i].V))
+            known = false;
+    }
+    return list;
+}
+
 // Calls by name and methods of struct values (see EmitCallVia, EmitNameCall, EmitMemberCall).
 Value CheckCall(Compiler cg, Expr e, bool viaStart)
 {
@@ -238,7 +239,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
         cands = MethodCandidates(cg, owner, n.Name);
     if (cands.Length == 0)
         cands = FreeCandidates(cg, cg.Fn[0].File, n.Name);
-    var args = CheckArgs(cg, call.Args, ref known);
+    var args = CheckArgsFor(cg, call.Args, cands, ref known);
     if (cands.Length == 0)
     {
         CheckError(cg, e.Loc, "undefined function '" + n.Name + "'");
@@ -345,6 +346,99 @@ Value CheckBinary(Compiler cg, Expr e)
     return l;
 }
 
+// ---------------------------------------------------------------------------
+// Target-typed integer arithmetic (see ArithmeticFrame in CodeGen/Rules.csh and EmitExprAs)
+// ---------------------------------------------------------------------------
+
+// An expression used as a value of 'target'.
+Value CheckExprAs(Compiler cg, Expr e, int target)
+{
+    int frame = ArithmeticFrame(cg, target);
+    if (frame == 0 || !IsFramable(cg, e))
+        return CheckExpr(cg, e);
+    return CheckFramed(cg, e, frame);
+}
+
+// cond ? a : b; with a frame the branches are computed in it (see EmitConditionalIn).
+Value CheckConditionalIn(Compiler cg, Expr e, int frame)
+{
+    var c = cg.Tree.GetCond(e);
+    CheckCondition(cg, c.Cond);
+    Value a = frame != 0 ? CheckFramed(cg, c.Then, frame) : CheckRValue(cg, c.Then);
+    Value b = frame != 0 ? CheckFramed(cg, c.Else, frame) : CheckRValue(cg, c.Else);
+    string why = "";
+    int t = ConditionalType(cg, a, b, ref why);
+    if (t == 0)
+    {
+        CheckError(cg, e.Loc, why);
+        return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
+// An operand of a framed expression (see EmitFramed).
+Value CheckFramed(Compiler cg, Expr e, int frame)
+{
+    if (!IsFramable(cg, e))
+        return CheckRValue(cg, e);
+    if (e.Kind == ExprKind.Conditional)
+        return CheckConditionalIn(cg, e, frame);
+    if (e.Kind == ExprKind.Unchecked)
+        return CheckFramed(cg, cg.Tree.GetUnchecked(e).Operand, frame);
+    if (e.Kind == ExprKind.Unary)
+    {
+        var u = cg.Tree.GetUnary(e);
+        Value operand = CheckFramed(cg, u.Operand, frame);
+        if (u.Op == UnOp.Neg && operand.HasLit)
+            return NegateLiteral(cg, operand);
+        if (FramedUnaryType(cg, u.Op, operand, frame) == frame)
+            return Rvalue(frame, "", false);
+        string why = "";
+        Value r = UnaryResult(cg, u.Op, operand, ref why);
+        if (r.Type == 0)
+        {
+            CheckError(cg, e.Loc, why);
+            return UnknownValue(cg);
+        }
+        return r;
+    }
+    var chain = List<Expr>.Create();
+    Expr leftmost = e;
+    while (leftmost.Kind == ExprKind.Binary && IsFramable(cg, leftmost))
+    {
+        chain.Add(leftmost);
+        leftmost = cg.Tree.GetBinary(leftmost).Lhs;
+    }
+    Value l = CheckFramed(cg, leftmost, frame);
+    for (var i = chain.Count() - 1; i >= 0; i -= 1)
+    {
+        Expr step = chain.Get(i);
+        var sb = cg.Tree.GetBinary(step);
+        Value r = sb.Op == BinOp.Shl || sb.Op == BinOp.Shr ? CheckRValue(cg, sb.Rhs) : CheckFramed(cg, sb.Rhs, frame);
+        l = CheckFramedStep(cg, sb.Op, l, r, frame, step.Loc);
+    }
+    return l;
+}
+
+// l op r in the frame if both fit, otherwise by the usual rules (see EmitFramedStep).
+Value CheckFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
+{
+    bool folded = false;
+    Value lit = FoldLiterals(cg, op, l, r, ref folded);
+    if (folded)
+        return lit;
+    if (FramedArithmeticType(cg, op, l, r, frame) == frame)
+        return Rvalue(frame, "", false);
+    string why = "";
+    int t = ArithmeticType(cg, op, l, r, ref why);
+    if (t == 0)
+    {
+        CheckError(cg, loc, why);
+        return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
 // target = value, target op= value (see EmitAssign). Elements of arrays, slices and Fixed values are checked; indexers
 // (x[k] = v on a struct) and string elements are left to code generation for now.
 Value CheckAssign(Compiler cg, Expr e)
@@ -397,21 +491,36 @@ Value CheckAssign(Compiler cg, Expr e)
         CheckExpr(cg, a.Value);
         return UnknownValue(cg);
     }
-    Value rhs = CheckRValue(cg, a.Value);
     if (a.HasOp)
     {
+        // see EmitCompound
         Value cur = target;
         cur.IsLValue = false;
         cur.IsConst = false;
-        string why = "";
-        int res = ArithmeticType(cg, a.Op, cur, rhs, ref why);
-        if (res == 0)
-            CheckError(cg, e.Loc, why);
-        else if (res != target.Type && !(types.IsNumeric(res) && types.IsNumeric(target.Type)))
-            CheckConversion(cg, Rvalue(res, "", false), target.Type, e.Loc);
+        int frame = ArithmeticFrame(cg, target.Type);
+        Value res;
+        if (frame != 0 && types.IsIntegral(target.Type))
+            res = CheckFramedStep(cg, a.Op, cur, CheckFramed(cg, a.Value, frame), frame, e.Loc);
+        else
+        {
+            Value rhs = CheckRValue(cg, a.Value);
+            string why = "";
+            int rt = ArithmeticType(cg, a.Op, cur, rhs, ref why);
+            if (rt == 0)
+                CheckError(cg, e.Loc, why);
+            res = rt == 0 ? UnknownValue(cg) : Rvalue(rt, "", false);
+        }
+        if (!IsUnknown(cg, res) && res.Type != target.Type && !(types.IsNumeric(res.Type) && types.IsNumeric(target.Type)))
+            CheckConversion(cg, res, target.Type, e.Loc);
     }
     else
+    {
+        Value rhs = CheckExprAs(cg, a.Value, target.Type);
+        rhs.IsLValue = false;
+        rhs.IsConst = false;
+        rhs.IsRefArg = false;
         CheckConversion(cg, rhs, target.Type, a.Value.Loc);
+    }
     return Lvalue(target.Type, target.V, false);
 }
 

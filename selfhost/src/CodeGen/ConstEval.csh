@@ -1319,13 +1319,64 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
         t = RecoverConstantType(cg, c.Loc, t);
     var sc = ConstScope { File = entry.File, What = "constant '" + c.Name + "'", DeclLoc = c.Loc, Env = NoEnv() };
     // with an unknown type the initializer is still checked; the value is unknown (ConstConvert)
-    ConstVal v = IsEmbedExpr(c.Init) && !cg.Types.IsUnknown(t) ? ConstEmbed(cg, c.Init, t) : ConstEval(cg, c.Init, sc);
+    ConstVal v = IsEmbedExpr(c.Init) && !cg.Types.IsUnknown(t) ? ConstEmbed(cg, c.Init, t) : ConstEvalAs(cg, c.Init, sc, t);
     // enumerators of imported C enums are written as integers
     v = ConstConvert(cg, v, t, c.Init.Loc, cg.Files.Get(entry.File).IsPrelude);
     entry.State = 2;
     entry.Value = v;
     cg.Consts.Set(index, entry);
     return v;
+}
+
+// A constant expression whose value becomes a constant of type 'target': integer arithmetic is computed in the target
+// type where its operands allow, like at run time (see ArithmeticFrame and EmitExprAs).
+ConstVal ConstEvalAs(Compiler cg, Expr e, ConstScope sc, int target)
+{
+    int frame = ArithmeticFrame(cg, target);
+    if (frame == 0 || !IsFramable(cg, e))
+        return ConstEval(cg, e, sc);
+    return ConstFramed(cg, e, sc, frame);
+}
+
+ConstVal ConstFramed(Compiler cg, Expr e, ConstScope sc, int frame)
+{
+    if (!IsFramable(cg, e) || e.Kind == ExprKind.Unchecked)
+        return ConstEval(cg, e, sc);
+    if (e.Kind == ExprKind.Unary)
+    {
+        var u = cg.Tree.GetUnary(e);
+        ConstVal v = ConstFramed(cg, u.Operand, sc, frame);
+        if (v.Kind == ConstKind.Unknown || v.HasLit || FramedUnaryType(cg, u.Op, ConstProbe(v), frame) != frame)
+            return ConstEval(cg, e, sc);
+        ConstVal c = ConstConvert(cg, v, frame, e.Loc, false);
+        if (u.Op == UnOp.Neg)
+            return ConstIntOp(cg, BinOp.Sub, ConstFromPattern(cg, frame, 0ul), c, frame, e.Loc);
+        return ConstIntOp(cg, BinOp.BitXor, c, ConstFromPattern(cg, frame, 18446744073709551615ul), frame, e.Loc);
+    }
+    var b = cg.Tree.GetBinary(e);
+    ConstVal l = ConstFramed(cg, b.Lhs, sc, frame);
+    ConstVal r = b.Op == BinOp.Shl || b.Op == BinOp.Shr ? ConstEval(cg, b.Rhs, sc) : ConstFramed(cg, b.Rhs, sc, frame);
+    if (l.Kind == ConstKind.Unknown || r.Kind == ConstKind.Unknown)
+        return l.Kind == ConstKind.Unknown ? l : r;
+    if (l.HasLit && r.HasLit && l.Kind == ConstKind.Int && r.Kind == ConstKind.Int)
+    {
+        // two literals (see FoldLiterals): the result is a value of the frame if it fits (1 + 2 as uint8), otherwise it
+        // stays as it is (200 + 100: an int32 that does not convert to uint8)
+        ConstVal res = ConstArith(cg, b.Op, l, r, e.Loc);
+        if (res.Kind != ConstKind.Int)
+            return res;
+        ConstVal asLit = res;
+        asLit.HasLit = true;
+        ConstVal adapted = ConstAdaptLiteral(cg, asLit, frame);
+        return adapted.HasLit ? res : adapted;
+    }
+    if (FramedArithmeticType(cg, b.Op, ConstProbe(l), ConstProbe(r), frame) != frame)
+        return ConstArith(cg, b.Op, l, r, e.Loc);
+    ConstVal lc = ConstConvert(cg, l.HasLit ? ConstAdaptLiteral(cg, l, frame) : l, frame, e.Loc, false);
+    if (b.Op == BinOp.Shl || b.Op == BinOp.Shr)
+        return ConstIntOp(cg, b.Op, lc, r, frame, e.Loc);
+    ConstVal rc = ConstConvert(cg, r.HasLit ? ConstAdaptLiteral(cg, r, frame) : r, frame, e.Loc, false);
+    return ConstIntOp(cg, b.Op, lc, rc, frame, e.Loc);
 }
 
 // The value of a member of the enum that is being declared: an integer constant that fits into the base type.

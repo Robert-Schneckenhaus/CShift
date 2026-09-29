@@ -204,7 +204,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
         if (!IsConstantType(cg, t))
             t = RecoverConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
-        ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEval(cg, d.Init, sc), t, d.Init.Loc, false);
+        ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEvalAs(cg, d.Init, sc, t), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
         NoteVar(cg, s.Loc, false);
         var vars = cg.Fn[0].Vars;
@@ -221,7 +221,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
     }
     Value init = Value { };
     if (!d.Init.IsNull())
-        init = CheckExpr(cg, d.Init);
+        init = t != 0 ? CheckExprAs(cg, d.Init, t) : CheckExpr(cg, d.Init);
     if (t == 0)
     {
         if (d.Init.IsNull())
@@ -288,7 +288,7 @@ void CheckReturn(Compiler cg, Stmt s)
             CheckExpr(cg, n.Value);
             return;
         }
-        CheckConversion(cg, CheckExpr(cg, n.Value), rt, n.Value.Loc);
+        CheckConversion(cg, CheckExprAs(cg, n.Value, rt), rt, n.Value.Loc);
         return;
     }
     if (!types.IsVoid(rt) && !IsVoidResult(cg, rt))

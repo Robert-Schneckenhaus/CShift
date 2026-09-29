@@ -264,7 +264,7 @@ void EmitGlobalsInit(Compiler cg)
         var current = cg.Globals.Get(i);
         cg.St[0].CurrentInit = i;
         cg.St[0].InitActive = true;
-        Value v = ConvertValue(cg, EmitExpr(cg, g.Decl.Init), current.Type, g.Decl.Init.Loc);
+        Value v = ConvertValue(cg, EmitExprAs(cg, g.Decl.Init, current.Type), current.Type, g.Decl.Init.Loc);
         StoreSlot(cg, current.Type, target.V, Consume(cg, v), false);
         FlushTemps(cg, 0, true);
         cg.St[0].InitActive = false;

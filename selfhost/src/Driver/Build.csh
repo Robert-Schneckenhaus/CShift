@@ -33,6 +33,7 @@ struct BuildOptions
     bool Verbose;
     bool ArcStats;
     bool Unchecked;             // --unchecked: integer overflow wraps instead of a panic
+    bool Checked;               // --checked: overflow panics even if the project file says "unchecked": true
     List<string> Libs;          // -l<name>
     List<string> LibFiles;      // .a/.o/.lib files for the linker
     List<string> LibPaths;      // -L<dir>
@@ -92,6 +93,7 @@ void PrintUsage()
         "  file.a, file.o   libraries and object files are passed to the linker\n" +
         "  --run            run the program after building\n" +
         "  --unchecked      integer overflow wraps around instead of ending the program with a panic\n" +
+        "  --checked        integer overflow panics (the default; overrides \"unchecked\": true in cshift.json)\n" +
         "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
         "  -v               verbose output\n" +
         "  --version        print the version\n" +
@@ -152,6 +154,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.ArcStats = true;
         else if (a == "--unchecked")
             o.Unchecked = true;
+        else if (a == "--checked")
+            o.Checked = true;
         else if (a == "--run")
             o.Run = true;
         else if (a == "-v")
@@ -180,6 +184,11 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.LibFiles.Add(a);
         else
             o.Inputs.Add(a);
+    }
+    if (o.Checked && o.Unchecked)
+    {
+        Console.WriteErrorLine("error: --checked and --unchecked cannot be used together");
+        return false;
     }
     return true;
 }
@@ -246,7 +255,7 @@ int Cshc(string[] args)
                 o.FromProject = true;
                 o.ProjectDir = p.Dir;
                 o.Inputs = p.Sources;
-                o.Unchecked = o.Unchecked || p.Unchecked;
+                o.Unchecked = o.Unchecked || (p.Unchecked && !o.Checked);
                 if (o.Target.Length == 0)
                     o.Target = p.Target;
                 foreach (var l in p.IncludePaths)
@@ -277,7 +286,7 @@ int Cshc(string[] args)
             o.ProjectName = project.Name;
             o.ProjectDir = project.Dir;
             o.Inputs = project.Sources;
-            o.Unchecked = o.Unchecked || project.Unchecked;
+            o.Unchecked = o.Unchecked || (project.Unchecked && !o.Checked);
             if (o.Output.Length == 0)
                 o.Output = project.Output;
             if (!o.OptimizeGiven && project.HasOptimize)

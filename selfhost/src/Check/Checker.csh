@@ -154,7 +154,7 @@ void CheckGlobalInitializers(Compiler cg)
         cg.Fn[0] = f;
         cg.Ir.BeginFunction("define void @check()");
         PushScope(cg); // the scope of pattern variables in the initializer
-        CheckConversion(cg, CheckExpr(cg, g.Decl.Init), target.Type, g.Decl.Init.Loc);
+        CheckConversion(cg, CheckExprAs(cg, g.Decl.Init, target.Type), target.Type, g.Decl.Init.Loc);
         PopScope(cg, false);
         cg.Ir.EndFunction();
     }
