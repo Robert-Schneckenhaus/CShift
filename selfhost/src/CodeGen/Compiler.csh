@@ -145,6 +145,8 @@ struct ScopeVar
     ConstVal ConstValue;
     SourceLoc Loc;       // the checker: where it is declared (for the symbol index)
     bool IsParam;
+    string TypeText;     // ... its type as written ("" for var), shown when the type is not known (a generic body)
+    string RefText;      // ... "ref " or "const ref " for such parameters
 }
 
 struct TempRelease

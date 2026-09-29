@@ -176,7 +176,11 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             var builtinArgs = CheckArgs(cg, call.Args, ref known);
             if (ReportIf(cg, e.Loc, startError))
                 return UnknownValue(cg);
-            return CheckBuiltinStatic(cg, dotted, m.Name, builtinArgs, e.Loc);
+            Value builtin = CheckBuiltinStatic(cg, dotted, m.Name, builtinArgs, e.Loc);
+            if (m.Object.Kind == ExprKind.Name)
+                IndexAt(cg, m.Object.Loc, dotted.Length, SourceLoc { }, "static class " + dotted);
+            IndexBuiltinCall(cg, m.NameLoc, dotted, m.Name, builtinArgs, builtin, true, cg.Index.Count());
+            return builtin;
         }
         var entry = TypeDeclEntry { };
         if (dotted == "Array")
@@ -192,14 +196,18 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
             if (ReportIf(cg, e.Loc, startError))
                 return UnknownValue(cg);
             if (m.Name == "FromCStr" || m.Name == "FromBytes")
-                return Rvalue(types.String, "", false);
+            {
+                Value fromC = Rvalue(types.String, "", false);
+                IndexBuiltinCall(cg, m.NameLoc, "string", m.Name, stringArgs, fromC, true, cg.Index.Count());
+                return fromC;
+            }
             var cands = FreeCandidates(cg, file, "String." + m.Name);
             if (cands.Length == 0)
             {
                 CheckError(cg, e.Loc, "type 'string' has no static method '" + m.Name + "'");
                 return UnknownValue(cg);
             }
-            return CheckResolvedCall(cg, cands, stringArgs, known, new int[0], m.Name, e.Loc);
+            return CheckResolvedCallAt(cg, cands, stringArgs, known, new int[0], m.Name, e.Loc, m.NameLoc);
         }
         if (dotted == "SharedPtr" && !LookupTypeDecl(cg, file, dotted, ref entry))
         {
@@ -321,7 +329,12 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         return UnknownValue(cg);
     }
     if (!types.IsStruct(t))
-        return CheckBuiltinMethod(cg, obj, m.Name, args, known, e.Loc);
+    {
+        int before = cg.Index.Count();
+        Value r = CheckBuiltinMethod(cg, obj, m.Name, args, known, e.Loc, m.NameLoc);
+        IndexBuiltinCall(cg, m.NameLoc, types.Name(t), m.Name, args, r, false, before);
+        return r;
+    }
     return CheckMethodCallOnAt(cg, obj, m.Name, args, known, ResolveTypeArgs(cg, m.TypeArgs), e.Loc, m.NameLoc);
 }
 
@@ -345,12 +358,22 @@ Value CheckThreadUse(Compiler cg, int instance, bool viaStart, string mustStart,
 // A call of a function that was found by name: the overload and its result.
 Value CheckResolvedCall(Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc)
 {
+    return CheckResolvedCallAt(cg, cands, args, known, typeArgs, name, loc, SourceLoc { });
+}
+
+// ... with the place of the function's name for the symbol index (Line 0: not indexed).
+Value CheckResolvedCallAt(Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc, SourceLoc nameLoc)
+{
     if (!known)
+    {
+        IndexCandidates(cg, nameLoc, name.Length, cands);
         return UnknownValue(cg);
+    }
     string why = "";
     int instance = CheckOverload(cg, cands, args, typeArgs, loc, name, ref why);
     if (ReportIf(cg, loc, why))
         return UnknownValue(cg);
+    IndexFunction(cg, nameLoc, name.Length, instance);
     return Rvalue(cg.Instances.Get(instance).Ret, "", false);
 }
 
@@ -482,7 +505,7 @@ string ArgCountError(Compiler cg, Arg[] args, int n, string type, string method)
 }
 
 // Methods of strings, arrays, slices, Fixed values, numbers, bool, enums and SharedPtr (see EmitBuiltinMethod).
-Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool known, SourceLoc loc)
+Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool known, SourceLoc loc, SourceLoc nameLoc)
 {
     var types = cg.Types;
     int t = obj.Type;
@@ -534,7 +557,7 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
         }
         var cands = FreeCandidates(cg, cg.Fn[0].File, "String." + method);
         if (cands.Length > 0)
-            return CheckResolvedCall(cg, cands, WithSelf(obj, args), known, new int[0], method, loc);
+            return CheckResolvedCallAt(cg, cands, WithSelf(obj, args), known, new int[0], method, loc, nameLoc);
         if (!cg.St[0].StdlibLoaded)
             CheckError(cg, loc, "cshc does not support the string method '" + method + "' yet (the standard library is not loaded)");
         else
@@ -567,7 +590,7 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
         {
             var cands = FreeCandidates(cg, cg.Fn[0].File, "String." + method);
             if (cands.Length > 0)
-                return CheckResolvedCall(cg, cands, WithSelf(obj, args), known, new int[0], method, loc);
+                return CheckResolvedCallAt(cg, cands, WithSelf(obj, args), known, new int[0], method, loc, nameLoc);
         }
     }
     else if (types.IsNumeric(t) || types.IsBool(t) || types.IsEnum(t))

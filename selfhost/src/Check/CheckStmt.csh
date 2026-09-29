@@ -206,7 +206,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEvalAs(cg, d.Init, sc, t), t, d.Init.Loc, false);
         DeclareVar(cg, d.Name, t, "");
-        NoteVar(cg, s.Loc, false);
+        NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
         var vars = cg.Fn[0].Vars;
         var constVar = vars.Get(vars.Count() - 1);
         constVar.IsConstant = true;
@@ -244,7 +244,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
     else if (!d.Init.IsNull())
         CheckConversion(cg, init, t, d.Init.Loc);
     DeclareVar(cg, d.Name, t, "%v");
-    NoteVar(cg, s.Loc, false);
+    NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
 }
 
 // Reports if the value does not convert implicitly to the type (see ConvertValue).
@@ -325,7 +325,7 @@ void CheckForeach(Compiler cg, Stmt s)
             CheckConversion(cg, Lvalue(elem, "%e", true), varType, s.Loc);
     }
     DeclareVar(cg, n.Name, varType, "%v");
-    NoteVar(cg, s.Loc, false);
+    NoteDeclared(cg, n.NameLoc, s.Loc, false, n.Type, RefKind.None);
     bool reached = cg.Fn[0].Live;
     cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = "continue", ScopeDepth = outerDepth });
     CheckStmt(cg, n.Body);

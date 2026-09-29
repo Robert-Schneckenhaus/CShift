@@ -684,7 +684,7 @@ void CheckLambdaBody(Compiler cg, Expr e)
     foreach (var p in l.Params)
     {
         DeclareVar(cg, p.Name, p.Type.IsNull() ? cg.Types.Unknown : DeclTypeOf(cg, p.Type), "%p");
-        NoteVar(cg, p.Loc, true);
+        NoteDeclared(cg, p.NameLoc, p.Loc, true, p.Type, p.Ref);
     }
     if (!l.Block.IsNull())
         CheckBlock(cg, l.Block, true);

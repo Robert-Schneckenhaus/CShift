@@ -5,8 +5,10 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
 * **Errors while you type**: the whole program is checked (with `cshiftc check`) when a file is opened, saved, and
   after a short pause in typing; all errors of the program are shown in the editor and in *Problems*, also those of
   files that are not open. Unsaved changes are included.
-* **Hover**: the type of a variable, parameter, field or constant, the signature of a function or method, what a type
-  is (`struct Person`, `enum Color`, ...), the value of an enum member or constant.
+* **Hover**: the type of a variable, parameter, field or constant (also where it is declared), the signature of a
+  function or method (also where it is declared, and of those the language provides, like `Console.WriteLine` or
+  `x.ToString()`), what a type is (`struct Person`, `enum Color`, ...), the value of an enum member or constant. In a
+  generic function the types are shown as written (`ref T slot`).
 * **Go to definition** (F12, Ctrl+click) for the same names: into the file where they are declared.
 * Syntax highlighting (keywords, types, generics, numbers with suffixes, strings, comments, `link`, `namespace`/`using`),
   bracket pairs, auto-indent, comment toggling, `// region` folding, snippets (`main`, `struct`, `fn`, `foreach`,

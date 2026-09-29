@@ -123,8 +123,10 @@ void CheckFunction(Compiler cg, int instance)
             cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = "%p", IsRef = true, IsConst = fi.ParamRefs[i] == 2 });
         else
             DeclareVar(cg, name, pt, "%p");
-        NoteVar(cg, d.Params[i].Loc, true);
+        NoteDeclared(cg, d.Params[i].NameLoc, d.Params[i].Loc, true, d.Params[i].Type, d.Params[i].Ref);
     }
+    if (d.NameLoc.Line > 0)
+        IndexFunction(cg, d.NameLoc, d.Name.Length, instance); // the name where the function is declared
     cg.Fn[0].Live = true;
     CheckBlock(cg, d.Body, true);
     // falling off the end (see EmitFunctionBody): the end is reached for sure, so code generation reaches it too

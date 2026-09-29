@@ -425,11 +425,12 @@ struct Parser
             }
             SourceLoc memberLoc = Cur().Loc;
             TypeRef type = try ParseType();
+            SourceLoc nameLoc = Cur().Loc;
             string name = try ExpectIdent("member name");
 
             if (Check(TokenKind.LParen) || Check(TokenKind.Lt))
             {
-                var fn = FuncDecl { Loc = memberLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
+                var fn = FuncDecl { Loc = memberLoc, NameLoc = nameLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
                 try ParseFunctionRest(ref fn);
                 methods.Add(fn);
             }
@@ -464,6 +465,7 @@ struct Parser
         {
             var fn = FuncDecl { Loc = Cur().Loc, Owner = -1 };
             fn.Ret = try ParseType();
+            fn.NameLoc = Cur().Loc;
             fn.Name = try ExpectIdent("method name");
             try ParseFunctionRest(ref fn);
             if (!fn.Body.IsNull())
@@ -515,6 +517,7 @@ struct Parser
         var fn = FuncDecl { IsExtern = isExtern, IsStatic = isStatic, Owner = -1 };
         fn.Ret = try ParseType();
         fn.Loc = Cur().Loc;
+        fn.NameLoc = fn.Loc;
         fn.Name = try ExpectIdent("function name");
         try ParseFunctionRest(ref fn);
         return fn;
@@ -546,7 +549,10 @@ struct Parser
                 p.Type = try ParseType();
                 p.Name = "";
                 if (Check(TokenKind.Ident))
+                {
+                    p.NameLoc = Cur().Loc;
                     p.Name = Advance().Text;
+                }
                 list.Add(p);
             } while (Match(TokenKind.Comma));
         }
@@ -766,6 +772,7 @@ struct Parser
             if (IsVarType(t))
                 return error("a constant needs an explicit type, e.g. const int X = 5;", loc.Pack());
             d.Type = t;
+            d.NameLoc = Cur().Loc;
             d.Name = try ExpectIdent("constant name");
             try Expect(TokenKind.Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
             d.Init = try ParseExpr();
@@ -814,6 +821,7 @@ struct Parser
         if (!t.IsNull() && Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Assign || PeekKind(1) == TokenKind.Semi))
         {
             var d = VarDeclStmt { };
+            d.NameLoc = Cur().Loc;
             d.Name = Advance().Text;
             if (Match(TokenKind.Assign))
             {
@@ -962,6 +970,7 @@ struct Parser
         TypeRef t = try ParseType();
         if (!IsVarType(t))
             s.Type = t;
+        s.NameLoc = Cur().Loc;
         s.Name = try ExpectIdent("loop variable name");
         try Expect(TokenKind.KwIn, "'in'");
         s.Iterable = try ParseExpr();
@@ -1049,6 +1058,7 @@ struct Parser
             TypeRef t = try ParseType();
             if (!IsVarType(t))
                 decl.Type = t;
+            decl.NameLoc = Cur().Loc;
             decl.Name = try ExpectIdent("variable name");
             try Expect(TokenKind.Assign, "'='");
             decl.Init = try ParseExpr();
@@ -1063,6 +1073,7 @@ struct Parser
         var d = VarDeclStmt { IsUsing = true };
         if (Check(TokenKind.Ident) && PeekKind(1) == TokenKind.Assign)
         {
+            d.NameLoc = Cur().Loc;
             d.Name = Advance().Text;
         }
         else
@@ -1070,6 +1081,7 @@ struct Parser
             TypeRef t = try ParseType();
             if (!IsVarType(t))
                 d.Type = t;
+            d.NameLoc = Cur().Loc;
             d.Name = try ExpectIdent("variable name");
         }
         try Expect(TokenKind.Assign, "'=' in using declaration");
@@ -1513,7 +1525,7 @@ struct Parser
         if (Check(TokenKind.Ident))
         {
             Token name = Advance();
-            parameters.Add(Param { Loc = name.Loc, Name = name.Text });
+            parameters.Add(Param { Loc = name.Loc, NameLoc = name.Loc, Name = name.Text });
         }
         else
         {
@@ -1524,10 +1536,14 @@ struct Parser
                 {
                     var p = Param { Loc = Cur().Loc };
                     if (Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+                    {
+                        p.NameLoc = Cur().Loc;
                         p.Name = Advance().Text; // the type comes from the target
+                    }
                     else
                     {
                         p.Type = try ParseType();
+                        p.NameLoc = Cur().Loc;
                         p.Name = try ExpectIdent("parameter name");
                     }
                     parameters.Add(p);
