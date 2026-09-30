@@ -484,6 +484,30 @@ Value CheckBuiltinStatic(Compiler cg, string type, string method, Arg[] args, So
                 CheckError(cg, loc, "Memory.Free needs a pointer");
             return none;
         }
+        if (method == "VolatileRead" || method == "VolatileWrite")
+        {
+            bool write = method == "VolatileWrite";
+            if (args.Length != (write ? 2 : 1))
+            {
+                CheckError(cg, loc, write ? "Memory.VolatileWrite takes two arguments (pointer, value)" : "Memory.VolatileRead takes one argument (pointer)");
+                return UnknownValue(cg);
+            }
+            int pt = args[0].V.Type;
+            string why = VolatileTargetError(cg, pt, method);
+            if (why.Length > 0)
+            {
+                CheckError(cg, loc, why);
+                return UnknownValue(cg);
+            }
+            if (types.IsUnknown(pt) || types.IsUnknown(types.Elem(pt)))
+                return write ? none : UnknownValue(cg);
+            if (write)
+            {
+                CheckConversion(cg, args[1].V, types.Elem(pt), loc);
+                return none;
+            }
+            return Rvalue(types.Elem(pt), "", false);
+        }
         CheckError(cg, loc, "Memory has no function '" + method + "'");
         return none;
     }
