@@ -50,7 +50,13 @@ const ReadOnlySlice<string> AmigaStubs = [
     "__dos_Execute|__cs_DOSBase|-222|d1,d2,d3",
     "__dos_NameFromLock|__cs_DOSBase|-402|d1,d2,d3",
     "__dos_SystemTagList|__cs_DOSBase|-606|d1,d2",
-    "__dos_GetVar|__cs_DOSBase|-906|d1,d2,d3,d4"];
+    "__dos_GetVar|__cs_DOSBase|-906|d1,d2,d3,d4",
+    // graphics.library (for Amiga.Hardware: taking the machine over and giving it back)
+    "__gfx_LoadView|__cs_GfxBase|-222|a1",
+    "__gfx_WaitTOF|__cs_GfxBase|-270|",
+    "__gfx_WaitBlit|__cs_GfxBase|-228|",
+    "__gfx_OwnBlitter|__cs_GfxBase|-456|",
+    "__gfx_DisownBlitter|__cs_GfxBase|-462|"];
 
 // The registers a stub has to keep (the C convention keeps d2-d7/a2-a6).
 string StubAsm(string name, string libBase, int offset, string regs)
@@ -275,6 +281,10 @@ string AmigaStartupAsm(int stackSize)
     "\tmove.l\t(0,%a0,%d0.l),%d0\n" +
     "\tmove.l\t%d0,%a0\n" +
     "\trts\n" +
+    "__cs_amiga_libtable:\n" +
+    "\tlea\t__cs_amiga_libs,%a0\n" +
+    "\tmove.l\t%a0,%d0\n" +
+    "\trts\n" +
     "__cs_amiga_set:\n" +
     "\tmove.l\t(4,%sp),%d0\n" +
     "\tlsl.l\t#2,%d0\n" +
@@ -296,6 +306,7 @@ string AmigaStartupAsm(int stackSize)
     "__cs_SavedSP:\t.long\t0\n" +
     "stdout:\t.long\t0\n" +
     "stderr:\t.long\t0\n" +
+    "__cs_GfxBase:\t.long\t0\n" +
     "\t.text\n";
 }
 

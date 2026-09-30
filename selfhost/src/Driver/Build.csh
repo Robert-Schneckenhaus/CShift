@@ -33,6 +33,7 @@ struct BuildOptions
     bool EmitLlvm;
     bool EmitAsm;               // --emit-asm: the assembly of the m68k backend
     string Backend;             // --backend: "llvm" or "m68k" ("" = the project's, else the target's default)
+    string Ndk;                 // --ndk: the AmigaOS NDK (SFD files for "using X from "lib.sfd";")
     bool Run;
     bool Verbose;
     bool ArcStats;
@@ -54,7 +55,7 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Backend = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
+        var o = BuildOptions { Output = "", Target = "", Backend = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
                                AtFile = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
@@ -88,6 +89,7 @@ void PrintUsage()
         "  -O0 .. -O3       optimization level (default -O2)\n" +
         "  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)\n" +
         "  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)\n" +
+        "  --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)\n" +
         "  --emit-asm       m68k backend: write the assembly (.s) instead of an executable\n" +
         "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
         "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
@@ -167,6 +169,11 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
                 Console.WriteErrorLine("error: unknown backend '" + o.Backend + "' (llvm or m68k)");
                 return false;
             }
+        }
+        else if (a == "--ndk" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.Ndk = args[i];
         }
         else if (a == "--arc-stats")
             o.ArcStats = true;
@@ -278,6 +285,8 @@ int Cshc(string[] args)
                     o.Target = p.Target;
                 if (o.Backend.Length == 0)
                     o.Backend = p.Backend;
+                if (o.Ndk.Length == 0)
+                    o.Ndk = p.Ndk;
                 foreach (var l in p.IncludePaths)
                     o.IncludePaths.Insert(0, l);
                 foreach (var l in p.Defines)
@@ -315,6 +324,8 @@ int Cshc(string[] args)
                 o.Target = project.Target;
             if (o.Backend.Length == 0)
                 o.Backend = project.Backend;
+            if (o.Ndk.Length == 0)
+                o.Ndk = project.Ndk;
             foreach (var l in project.Links)
                 o.Libs.Insert(0, l);
             foreach (var l in project.LinkFiles)

@@ -35,6 +35,7 @@ extern "C" int __dos_GetVar(char* name, char* buffer, int size, int flags);
 extern "C" void* __dos_DateStamp(void* stamp);
 extern "C" int __cs_amiga_get(int index);
 extern "C" void __cs_amiga_set(int index, int value);
+extern "C" int* __cs_amiga_libtable();
 extern "C" int main(int argc, char** argv);
 
 // the slots of __cs_amiga_get/__cs_amiga_set (AmigaRuntime.csh)
@@ -80,6 +81,12 @@ extern "C" int __cs_amiga_main()
         __cs_amiga_set(_VarStdout, (int)(nint)_NewFile(output, false));
         __cs_amiga_set(_VarStderr, (int)(nint)_NewFile(errors, false));
 
+        if (!_OpenLibraries(errors))
+        {
+            __cs_amiga_cleanup();
+            return 20;
+        }
+
         // the arguments: the command line after the program name, split at spaces ("..." keeps spaces)
         char* text = (char*)__cs_amiga_get(_VarArgPtr);
         int length = __cs_amiga_get(_VarArgLen);
@@ -118,6 +125,28 @@ extern "C" int __cs_amiga_main()
     }
 }
 
+// Opens the libraries the program calls (imported from SFD files); false (and a message) if one is missing.
+bool _OpenLibraries(int errors)
+{
+    unsafe
+    {
+        int* libs = __cs_amiga_libtable();
+        for (var k = 0; libs[k] != 0; k += 2)
+        {
+            char* libName = (char*)(nint)libs[k];
+            void* libBase = __exec_OpenLibrary(libName, 0);
+            if (libBase == null)
+            {
+                string message = "cannot open " + string.FromCStr(libName) + "\n";
+                __dos_Write(errors, message.CStr(), message.Length);
+                return false;
+            }
+            *(void**)(nint)libs[k + 1] = libBase;
+        }
+        return true;
+    }
+}
+
 // Before the program ends: all memory back, dos.library closed.
 extern "C" void __cs_amiga_cleanup()
 {
@@ -131,6 +160,16 @@ extern "C" void __cs_amiga_cleanup()
             block = next;
         }
         _Allocations = null;
+        int* libs = __cs_amiga_libtable();
+        for (var k = 0; libs[k] != 0; k += 2)
+        {
+            void** slot = (void**)(nint)libs[k + 1];
+            if (*slot != null)
+            {
+                __exec_CloseLibrary(*slot);
+                *slot = null;
+            }
+        }
         int dos = __cs_amiga_get(_VarDOSBase);
         if (dos != 0)
         {

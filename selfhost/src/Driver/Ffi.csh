@@ -109,6 +109,19 @@ Error<FfiFiles> PrepareFfi(FfiImport imp, BuildOptions o, string cacheDir)
     }
 
     string ffiPath = Path.Combine(cacheDir, SanitizeName(imp.Name) + ".ffi");
+
+    // an AmigaOS library: its SFD file (from the NDK) becomes the .ffi file
+    if (imp.Header.EndsWith(".sfd"))
+    {
+        string ndk = o.Ndk;
+        if (ndk.Length == 0 && Process.GetEnv("CSHIFT_NDK") is string fromEnv)
+            ndk = fromEnv;
+        string sfd = try FindSfd(imp.Header, baseArg, ndk);
+        if (!Directory.Create(cacheDir))
+            return error("cannot create '" + cacheDir + "'");
+        try GenerateSfdFfi(imp.Name, sfd, ffiPath);
+        return FfiFiles { FfiPath = ffiPath, Shims = List<string>.Create() };
+    }
     var options = FfiOptionsOf(o, LocateClang(o.Cc, Process.IsWindows()));
     string why = "not generated yet";
     if (File.Exists(ffiPath) && IsFfiFresh(ffiPath, imp.Header, options, ref why))

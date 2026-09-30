@@ -30,6 +30,7 @@ struct Project
     string Target;               // target triple, "" = host
     bool Unchecked;              // integer overflow wraps instead of a panic
     string Backend;              // "llvm", "m68k" or "" (the target's default)
+    string Ndk;                  // the AmigaOS NDK (a path relative to the project)
 }
 
 bool ValidProjectName(string name)
@@ -213,7 +214,7 @@ Error<Project> LoadProject(string location, string target)
     p.LibraryPaths = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend" };
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -235,6 +236,9 @@ Error<Project> LoadProject(string location, string target)
     p.Output = try ReadString(json, root, "output", file, "");
     p.Target = try ReadString(json, root, "target", file, "");
     p.Backend = try ReadString(json, root, "backend", file, "");
+    p.Ndk = try ReadString(json, root, "ndk", file, "");
+    if (p.Ndk.Length > 0 && !IsAbsolutePath(p.Ndk))
+        p.Ndk = Path.Combine(p.Dir, p.Ndk);
     if (p.Backend.Length > 0 && p.Backend != "llvm" && p.Backend != "m68k")
         return error(file + ": 'backend' must be \"llvm\" or \"m68k\", not \"" + p.Backend + "\"");
     if (p.Type != "executable" && p.Type != "object")

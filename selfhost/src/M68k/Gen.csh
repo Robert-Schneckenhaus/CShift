@@ -28,6 +28,7 @@ struct Gen
     StringBuilder Data;
     Dictionary<string, string> Symbols;
     Dictionary<string, string> Reverse;   // assembly name -> IR name
+    List<string> Libraries;               // the AmigaOS libraries that are called (their bases: __cs_lib_<index>)
     int[] Counters;                       // [0] labels, [1] symbols
     List<string> Errors;
 
@@ -44,7 +45,7 @@ struct Gen
     static Gen Create(IrModule m)
     {
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
-                      Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
+                      Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
         return g;
@@ -137,6 +138,7 @@ Error<string> GenerateModule(IrModule m, string prelude)
         if (text is string data)
             g.Out.Append(data);
     }
+    g.Out.Append(LibraryTable(g));
     if (g.Errors.Count() > 0)
         return error(string.Join("\n", g.Errors.ToArray()));
     return g.Out.ToString();
@@ -1485,6 +1487,11 @@ void GenCall(Gen g, IrInst inst)
         GenIntrinsic(g, inst, callee.Name);
         return;
     }
+    if (callee.Kind == ValKind.Global && callee.Name.StartsWith("__amiga$"))
+    {
+        GenLibraryCall(g, inst, callee.Name);
+        return;
+    }
     int bytes = 0;
     for (var i = inst.Args.Length - 1; i >= 0; i -= 1)
         bytes += PushArg(g, inst.Args[i], g.M.Vals.Get(inst.Args[i]).Type);
@@ -1508,6 +1515,94 @@ void GenCall(Gen g, IrInst inst)
     if (g.T.Kind(inst.Type) == IrKind.Ptr)
         g.Line("move.l\t%a0,%d0");
     StoreResult(g, inst);
+}
+
+// A call of an AmigaOS library function (imported from an SFD file): __amiga$<library>$<offset>$<registers>$<n|v>.
+// The arguments are pushed like for C, then loaded into their registers; the library base goes to a6. With v (a
+// ...Tags function) the last register gets the address of the variable arguments, which are on the stack already.
+void GenLibraryCall(Gen g, IrInst inst, string name)
+{
+    var parts = name.Split('$');
+    string library = parts[1].ToString();
+    string offset = parts[2].ToString();
+    var regs = parts[3].Length > 0 ? parts[3].Split('.') : new StringSlice[0];
+    bool varargs = parts[4].ToString() == "v";
+
+    // the registers to keep (the C convention keeps d2-d7/a2-a6; our frame pointer is a6)
+    var saved = List<string>.Create();
+    foreach (var r in regs)
+    {
+        string reg = r.ToString();
+        if (reg != "d0" && reg != "d1" && reg != "a0" && reg != "a1" && !saved.Contains("%" + reg))
+            saved.Add("%" + reg);
+    }
+    saved.Add("%a6");
+    string savedList = string.Join("/", saved.ToArray());
+    g.Line("movem.l\t" + savedList + ",-(%sp)");
+    int bytes = 0;
+    for (var i = inst.Args.Length - 1; i >= 0; i -= 1)
+        bytes += PushArg(g, inst.Args[i], g.M.Vals.Get(inst.Args[i]).Type);
+    int off = 0;
+    int r = 0;
+    for (var i = 0; i < inst.Args.Length && r < regs.Length; i += 1)
+    {
+        if (varargs && r == regs.Length - 1)
+            break;
+        int size = ArgSize(g, g.M.Vals.Get(inst.Args[i]).Type);
+        g.Line("move.l\t(" + off.ToString() + ",%sp),%" + regs[r].ToString());
+        r += 1;
+        if (size == 8 && r < regs.Length)
+        {
+            g.Line("move.l\t(" + (off + 4).ToString() + ",%sp),%" + regs[r].ToString());
+            r += 1;
+        }
+        off += size;
+    }
+    if (varargs && r == regs.Length - 1)
+        g.Line("lea\t(" + off.ToString() + ",%sp),%" + regs[r].ToString());
+    g.Line("move.l\t" + LibraryBase(g, library) + ",%a6");
+    g.Line("jsr\t(-" + offset + ",%a6)");
+    if (bytes > 0)
+        g.Line("lea\t(" + bytes.ToString() + ",%sp),%sp");
+    g.Line("movem.l\t(%sp)+," + savedList);
+    if (inst.Res.Length > 0)
+        StoreResult(g, inst);
+}
+
+// Where the base of a library is: exec's at address 4, dos.library's is opened by the runtime, the others are opened
+// when the program starts (the table __cs_amiga_libs).
+string LibraryBase(Gen g, string library)
+{
+    if (library == "exec.library")
+        return "4";
+    if (library == "dos.library")
+        return "__cs_DOSBase";
+    int index = g.Libraries.IndexOf(library);
+    if (index < 0)
+    {
+        g.Libraries.Add(library);
+        index = g.Libraries.Count() - 1;
+    }
+    return "__cs_lib_" + index.ToString();
+}
+
+// The table of the libraries to open: name, base, ..., 0.
+string LibraryTable(Gen g)
+{
+    var sb = StringBuilder.Create();
+    sb.Append("\t.even\n__cs_amiga_libs:\n");
+    for (var i = 0; i < g.Libraries.Count(); i += 1)
+        sb.Append("\t.long\t__cs_libname_" + i.ToString() + ",__cs_lib_" + i.ToString() + "\n");
+    sb.Append("\t.long\t0\n");
+    for (var i = 0; i < g.Libraries.Count(); i += 1)
+    {
+        sb.Append("__cs_lib_" + i.ToString() + ":\t.long\t0\n");
+        sb.Append("__cs_libname_" + i.ToString() + ":\n\t.byte\t");
+        foreach (var c in g.Libraries.Get(i))
+            sb.Append(((int)c).ToString() + ",");
+        sb.Append("0\n\t.even\n");
+    }
+    return sb.ToString();
 }
 
 void GenIntrinsic(Gen g, IrInst inst, string name)
