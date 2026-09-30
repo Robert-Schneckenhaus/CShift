@@ -875,21 +875,52 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
         return 1;
     }
-    if (!o.EmitAsm)
+    string asm = "";
+    if (text is string generated)
+        asm = generated;
+    if (o.EmitAsm)
+        return WriteOutput(o.Output.Length == 0 ? baseName + ".s" : (o.FromProject ? o.Output + ".s" : o.Output), asm);
+
+    var assembled = Assemble(asm);
+    if (assembled is error asmError)
     {
-        Console.WriteErrorLine("error: the m68k backend writes assembly only so far: use --emit-asm");
+        Console.WriteErrorLine("error: m68k backend: " + asmError.Message);
         return 1;
     }
-    string path = o.Output.Length == 0 ? baseName + ".s" : (o.FromProject ? o.Output + ".s" : o.Output);
-    EnsureParentDirectory(path);
-    if (text is string asm)
+    if (assembled is AsmObject obj)
     {
-        var wrote = File.WriteAllText(path, asm);
-        if (wrote is error wroteError)
+        if (o.ObjectOnly)
         {
-            Console.WriteErrorLine("error: cannot write '" + path + "': " + wroteError.Message);
-            return 1;
+            // an ELF object: for m68k Linux (the tests of the backend)
+            string path = o.Output.Length > 0 && !o.FromProject ? o.Output : baseName + ".o";
+            return WriteBytesOutput(path, WriteElfObject(obj));
         }
+        Console.WriteErrorLine("error: the m68k backend cannot write an executable for '" + o.Target + "' yet: use -c or --emit-asm");
+        return 1;
+    }
+    return 1;
+}
+
+int WriteOutput(string path, string text)
+{
+    EnsureParentDirectory(path);
+    var wrote = File.WriteAllText(path, text);
+    if (wrote is error wroteError)
+    {
+        Console.WriteErrorLine("error: cannot write '" + path + "': " + wroteError.Message);
+        return 1;
+    }
+    return 0;
+}
+
+int WriteBytesOutput(string path, uint8[] bytes)
+{
+    EnsureParentDirectory(path);
+    var wrote = File.WriteAllBytes(path, bytes);
+    if (wrote is error wroteError)
+    {
+        Console.WriteErrorLine("error: cannot write '" + path + "': " + wroteError.Message);
+        return 1;
     }
     return 0;
 }
