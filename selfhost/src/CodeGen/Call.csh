@@ -802,6 +802,28 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
             ir.Call("void", "@free", "ptr " + p.V);
             return none;
         }
+        if (method == "VolatileRead" || method == "VolatileWrite")
+        {
+            // hardware registers, memory shared with an interrupt: every access happens, in order, none is merged
+            bool write = method == "VolatileWrite";
+            if (args.Length != (write ? 2 : 1))
+                Fail(cg, loc, write ? "Memory.VolatileWrite takes two arguments (pointer, value)" : "Memory.VolatileRead takes one argument (pointer)");
+            Value p = ToRValue(cg, args[0].V);
+            string why = VolatileTargetError(cg, p.Type, method);
+            if (why.Length > 0)
+                Fail(cg, loc, why);
+            int elem = types.Elem(p.Type);
+            string ty = LlvmType(cg, elem);
+            if (!write)
+            {
+                string t = ir.NewTemp();
+                ir.Line(t + " = load volatile " + ty + ", ptr " + p.V);
+                return Rvalue(elem, t, false);
+            }
+            Value v = ToRValue(cg, ConvertValue(cg, args[1].V, elem, loc));
+            ir.Line("store volatile " + ty + " " + v.V + ", ptr " + p.V);
+            return none;
+        }
         Fail(cg, loc, "Memory has no function '" + method + "'");
     }
 

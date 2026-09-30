@@ -31,6 +31,23 @@ Value EmitAddressOf(Compiler cg, Expr e, Expr operand)
     return Rvalue(cg.Types.PointerTo(o.Type), o.V, false);
 }
 
+// Memory.VolatileRead/VolatileWrite: a pointer to a number, bool, char, enum or pointer (what one load or store can
+// access). "" if the type is fine, otherwise the error.
+string VolatileTargetError(Compiler cg, int pointerType, string method)
+{
+    var types = cg.Types;
+    if (types.IsUnknown(pointerType))
+        return "";
+    if (!types.IsPointer(pointerType))
+        return "Memory." + method + " needs a pointer, not '" + types.Name(pointerType) + "'";
+    int elem = types.Elem(pointerType);
+    if (types.IsUnknown(elem))
+        return "";
+    if (!(types.IsIntegral(elem) || types.IsFloat(elem) || types.IsBool(elem) || types.IsEnum(elem) || types.IsPointer(elem)))
+        return "Memory." + method + " needs a pointer to a number, bool, char, enum or pointer, not '" + types.Name(pointerType) + "'";
+    return "";
+}
+
 // p + n, n + p, p - n, p - q (in elements)
 Value EmitPointerArithmetic(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
 {

@@ -55,6 +55,20 @@ unsafe
 Memory from `Memory.Allocate` is not tracked by ARC — you're responsible for freeing it, exactly like `malloc`/`free`
 in C. This mechanism, plus raw pointers, is also what makes [C interop](ffi-and-interop.md) work.
 
+`Memory.VolatileRead(p)` and `Memory.VolatileWrite(p, value)` (also `unsafe`) read and write through a pointer to a
+number, `bool`, `char`, enum or pointer like `volatile` in C: every access happens, in program order, and none is
+merged with another or left out. That is what hardware registers need (memory-mapped I/O) and memory that an interrupt
+changes:
+
+```csharp
+unsafe
+{
+    var color0 = (uint16*)0xDFF180;            // Amiga: background color register
+    for (var i = 0; i < 4096; i += 1)
+        Memory.VolatileWrite(color0, (uint16)i); // 4096 writes, not one
+}
+```
+
 ## `ref` and `const ref`
 
 Parameters are passed by value by default (a copy for a struct, a shared reference for managed data). `ref` creates

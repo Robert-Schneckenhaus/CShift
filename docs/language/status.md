@@ -46,7 +46,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | String interpolation `$"a {x} b"` (concatenation; `string ToString()` of structs), number formats and alignment (`ToString("F2")`, `{x,8:F2}`) | ✔ (self-hosted, [strings](arrays-strings-collections.md)) |
 | Indexers: `x[k]` calls `Get(k)`, `x[k] = v` calls `Set(k, v)` (`List`, `Dictionary`, own structs) | ✔ (self-hosted) |
 | Importing C headers: `using Name from "header.h";` (libclang, a `.ffi` cache), `nint`/`nuint`, structs by value | ✔ (see [../ffi.md](../ffi.md)) |
-| `unsafe`: pointers, `&`, `*`, pointer arithmetic, `Memory.Allocate/Free` | ✔ |
+| `unsafe`: pointers, `&`, `*`, pointer arithmetic, `Memory.Allocate/Free`, `Memory.VolatileRead/VolatileWrite` | ✔ |
 | Entry point: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
@@ -88,7 +88,7 @@ The design document leaves a number of things open; these are the decisions that
   time and in constants.
 * **Methods on `const ref` objects** operate on a copy (like C#'s `in`), so the read-only guarantee holds.
 * **Built in** (generated directly by the compiler as IR, no runtime library): `Console.Write/WriteLine`,
-  `Memory.Allocate/Free`, `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`,
+  `Memory.Allocate/Free/VolatileRead/VolatileWrite`, `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`,
   `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue` (files are embedded with the keywords `embed`/`embed_filenames`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.

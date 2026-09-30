@@ -283,7 +283,10 @@ string BuiltinParamName(string method, int i)
     case "Allocate":
         return i == 0 ? "size" : "";
     case "Free":
+    case "VolatileRead":
         return i == 0 ? "pointer" : "";
+    case "VolatileWrite":
+        return i == 0 ? "pointer" : i == 1 ? "value" : "";
     case "FromCStr":
         return i == 0 ? "text" : "";
     case "FromBytes":
