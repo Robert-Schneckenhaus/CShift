@@ -12,7 +12,8 @@ selfhost/
 ├── src/
 │   ├── Driver/              command line: Build.csh (options, build/run/new, finding clang and the toolchain),
 │   │                        Project.csh (cshift.json), Json.csh, Ffi.csh (loading and caching .ffi files),
-│   │                        FfiGenerator.csh (C header -> .ffi with libclang), EmbeddedStdlib.csh (the stdlib, via embed)
+│   │                        FfiGenerator.csh (C header -> .ffi with libclang), Sfd.csh (AmigaOS SFD file -> .ffi),
+│   │                        EmbeddedStdlib.csh (the stdlib, via embed)
 │   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
@@ -28,29 +29,40 @@ selfhost/
 │   │   ├── Checker.csh      checks every function body of the program before code generation, continues after errors
 │   │   ├── CheckStmt.csh    statements and scopes (the same scopes as code generation)
 │   │   └── CheckExpr.csh    expressions: Values without code; unknown type for what is not checked yet
-│   └── CodeGen/             namespace CShift.CodeGen
-│       ├── Compiler.csh     compiler state, declarations, type resolution, function instances (CodeGen.cpp)
-│       ├── Rules.csh        decisions shared by the checker and code generation (operator types, conditions, ...)
-│       ├── Values.csh       values, reference counting, conversions (the first half of CodeGenExpr.cpp)
-│       ├── Expr.csh         expressions (CodeGenExpr.cpp)
-│       ├── Call.csh         calls, overload resolution, Console/Environment (CodeGenCall.cpp)
-│       ├── Structs.csh      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
-│       ├── Arrays.csh       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
-│       ├── Errors.csh       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
-│       ├── Switch.csh       switch with constant and pattern labels
-│       ├── Enums.csh        enums and constant integer expressions
-│       ├── Generics.csh     type arguments, inference, interfaces, constraints, using/IDisposable
-│       ├── Pointers.csh     pointers: *, &, arithmetic, casts
-│       ├── FuncPtrs.csh     function pointers: Action/Func, method groups, indirect calls
-│       ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
-│       ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
-│       ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
-│       ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
-│       ├── Lambdas.csh      lambdas and closures: captures, environments
-│       ├── Interfaces.csh   interfaces as ref/const ref parameters: method tables, dispatch
-│       ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
-│       ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
-│       └── Module.csh       compiling the whole program, the entry point
+│   ├── CodeGen/             namespace CShift.CodeGen
+│   │   ├── Compiler.csh     compiler state, declarations, type resolution, function instances (CodeGen.cpp)
+│   │   ├── Rules.csh        decisions shared by the checker and code generation (operator types, conditions, ...)
+│   │   ├── Values.csh       values, reference counting, conversions (the first half of CodeGenExpr.cpp)
+│   │   ├── Expr.csh         expressions (CodeGenExpr.cpp)
+│   │   ├── Call.csh         calls, overload resolution, Console/Environment (CodeGenCall.cpp)
+│   │   ├── Structs.csh      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
+│   │   ├── Arrays.csh       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
+│   │   ├── Errors.csh       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
+│   │   ├── Switch.csh       switch with constant and pattern labels
+│   │   ├── Enums.csh        enums and constant integer expressions
+│   │   ├── Generics.csh     type arguments, inference, interfaces, constraints, using/IDisposable
+│   │   ├── Pointers.csh     pointers: *, &, arithmetic, casts
+│   │   ├── FuncPtrs.csh     function pointers: Action/Func, method groups, indirect calls
+│   │   ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
+│   │   ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
+│   │   ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
+│   │   ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
+│   │   ├── Lambdas.csh      lambdas and closures: captures, environments
+│   │   ├── Interfaces.csh   interfaces as ref/const ref parameters: method tables, dispatch
+│   │   ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
+│   │   ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
+│   │   └── Module.csh       compiling the whole program, the entry point
+│   └── M68k/                namespace CShift.M68k: the 68000 backend (--backend m68k, docs/amiga.md)
+│       ├── IrReader.csh     reads the IR text back (types, constants, functions, instructions)
+│       ├── Layout.csh       sizes and offsets of the IR types on the 68000
+│       ├── Prepare.csh      constant folding, dead code, variables written once, address folding
+│       ├── Inline.csh       inlining of small functions (in loops: larger ones, the deepest loops first)
+│       ├── Regalloc.csh     linear scan register allocation (d4-d7/a2-a5), load forwarding
+│       ├── Gen.csh          IR -> 68000 assembly (GNU syntax); AmigaOS library calls
+│       ├── Peephole.csh     simplifications of the assembly
+│       ├── Asm.csh          the assembler: 68000 encoding, branch relaxation
+│       ├── Hunk.csh, Elf.csh    AmigaOS executables, ELF objects (m68k Linux, for the tests)
+│       └── Runtime.csh, AmigaRuntime.csh    multiplication/division helpers; startup, library stubs, printf
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
 ├── version/version.txt      the version cshc reports (written by build-release.sh)
 ├── stage0.txt               the release that is stage 0 (selfhost/ and stdlib/ may use its features)

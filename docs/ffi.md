@@ -20,6 +20,9 @@ cshiftc build          # cshift.json: "links": ["z"]
 cshiftc prog.csh -lz   # single file
 ```
 
+AmigaOS libraries are imported the same way from the SFD files of the NDK (`using Gfx from "graphics_lib.sfd";`):
+their functions are called with register arguments through the library base, see [amiga.md](amiga.md#amigaos-libraries-from-sfd-files).
+
 ## How it works
 
 1. The compiler parses the header with **libclang** and writes a **`.ffi` file** (JSON, easy to read) to

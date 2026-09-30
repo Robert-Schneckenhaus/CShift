@@ -73,8 +73,10 @@ is the type of lengths, indexes and sizes in the generated code, of `nint`/`nuin
 sizes and alignments of types follow the target's data layout. The language does not change: `Length` is `int32`,
 `int64` exists on every target (a 64-bit index on a 32-bit target that does not fit fails the bounds check).
 Tested: i686 Linux (the whole test suite, a 32-bit cshc rebuilds itself) and 32-bit big-endian PowerPC under qemu.
-m68k works for small programs; LLVM's m68k backend is still experimental (only the small code model: data more than
-32 KB away does not link; some larger programs are miscompiled, also by the bundled clang 22).
+For m68k, LLVM's backend is still experimental (only the small code model: data more than 32 KB away does not link;
+some larger programs are miscompiled, also by the bundled clang 22). CShift therefore has its own backend for the
+68000 (`--backend m68k`, the default for `m68k-amigaos`): it reads the IR back and writes 68000 code, assembles it
+and writes AmigaOS executables or ELF objects itself, see [amiga.md](amiga.md).
 
 ## Tests
 

@@ -1,0 +1,146 @@
+# The Amiga: the m68k backend
+
+CShift programs run on the Amiga (68000 and up, AmigaOS 1.3 and later). For them the compiler has its own backend:
+it turns the IR into 68000 code, assembles it and writes an AmigaOS executable itself. LLVM, clang and an Amiga
+cross toolchain are not needed (libclang only for importing C headers of the NDK).
+
+```
+cshiftc --target m68k-amigaos hello.csh -o hello        # an AmigaOS executable (hunk format)
+```
+
+```json
+{
+	"name": "demo",
+	"sources": ["src"],
+	"target": "m68k-amigaos",
+	"ndk": "../NDK3.2"
+}
+```
+
+Two demos show what is possible: [demo-amiga-hw](../demo-amiga-hw/README.md) (copper raster bars on the custom chips,
+50 frames per second on an A500) and [demo-amiga-ndk](../demo-amiga-ndk/README.md) (a rotating cube in an Intuition
+window, written against the NDK 3.2).
+
+## Choosing the backend
+
+| Option | cshift.json | Meaning |
+|---|---|---|
+| `--backend llvm` | `"backend": "llvm"` | LLVM IR, compiled and linked by clang (the default for all targets but AmigaOS) |
+| `--backend m68k` | `"backend": "m68k"` | CShift's own 68000 code generator (the default for `m68k-amigaos`) |
+| `--ndk <dir>` | `"ndk": "<dir>"` | the AmigaOS NDK (also the environment variable `CSHIFT_NDK`); a path in cshift.json is relative to it |
+| `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable |
+
+The m68k backend accepts m68k targets only:
+
+* `m68k-amigaos`: an AmigaOS executable (hunk format), with its own startup code and C library.
+* `m68k-linux-gnu`: an ELF object (`-c`), linked with a cross `gcc` and run under `qemu-m68k`. This is how the
+  backend is tested: the same program runs on x86 and under qemu, and the outputs are compared.
+
+## What a program can use
+
+The whole language and the standard library work, with these differences:
+
+* **No threads.** `Thread`, `Mutex<T>` and `SharedPtr<T>` need pthreads, which AmigaOS does not have. A program that
+  uses them does not link: the compiler names the missing functions.
+* **Floating point in software.** `double` and `float` are computed by `stdlib/m68k/softfloat.csh` (IEEE 754, exact
+  rounding); `Math` (`Sqrt`, `Sin`, `Exp`, `Pow`, ...) by `stdlib/m68k/math.csh` and `mathtrans.csh` (within 2 ULP of
+  glibc). This works but is slow on a 68000: for graphics use integers, fixed point and
+  [`FastTrig`](stdlib.md) (sine and cosine from tables).
+* **The C library** (`stdlib/amiga/libc.csh`) is written on exec.library and dos.library: memory, `printf`, files,
+  directories, `Process.GetEnv`, time, `Process.Run`. Functions that need a newer dos.library (environment
+  variables, the current directory, the exit code of a command) check its version.
+* **The stack.** A program gets its own stack of 256 KB at startup (the stack of a CLI program is often only 4 KB).
+* **`int` is 32 bits, pointers are 32 bits** (`nint`, `sizeof`, lengths). 64-bit integers work, in software.
+
+## AmigaOS libraries from SFD files
+
+The NDK describes every library in an SFD file: the offset of each function, the registers of its arguments, its C
+prototype. CShift imports it like a C header:
+
+```csharp
+using Gfx from "graphics_lib.sfd";
+using Intui from "intuition_lib.sfd";
+using I from "intuition/intuition.h";   // structures, flags and tags come from the C headers
+
+void* window = Intui.OpenWindowTags(null, I.WA_Width, 320, I.WA_Height, 200, I.TAG_DONE);
+Gfx.SetAPen(rastPort, 1);
+Gfx.Move(rastPort, 10, 10);
+Gfx.Draw(rastPort, 100, 50);
+```
+
+* The SFD file is looked up next to the importing file, then in `<ndk>/SFD`.
+* A call puts the arguments in the registers the SFD names and calls the library through its base in `a6`
+  (`jsr -offset(a6)`). For the varargs versions (`OpenWindowTags`, ...) the arguments after the fixed ones stay on the
+  stack as a tag list, and the last register gets its address.
+* **The libraries that are used are opened when the program starts** (with version 0) and closed at its end; the
+  program ends with a message if one cannot be opened. exec.library and dos.library are always there.
+* Types: the integer typedefs of `exec/types.h` (`LONG`, `UWORD`, `BOOL`, ...) become their CShift types, pointers
+  become `void*`, `CONST_STRPTR` becomes a string parameter (passed as a C string).
+* C headers of the NDK: for amigaos targets `<ndk>/Include_H` is searched, and structs are laid out as on the Amiga
+  (packed to 2 bytes).
+
+## The custom chips: `Amiga.Hardware`
+
+For demos and games that bypass the operating system (`stdlib/amiga/hardware.csh`, only for amigaos targets):
+
+```csharp
+using Amiga;
+
+unsafe
+{
+    uint16* list = (uint16*)Hardware.AllocChip(1024);   // chip memory, cleared (null if there is none left)
+    ...                                                  // write a copper list
+    Hardware.TakeOver();                                 // the OS stops drawing; DMA and interrupts are ours
+    Hardware.StartCopper(list);
+    while (!Hardware.LeftMouseButton())
+    {
+        Hardware.WaitVBlank();                           // until the beam is below the picture (line 300)
+        Hardware.Write(Custom.COLOR00, 0x0F00);
+    }
+    Hardware.Restore();                                  // the OS display, DMA and interrupts are back
+    Hardware.FreeChip(list, 1024);
+}
+```
+
+| Function | |
+|---|---|
+| `TakeOver()` / `Restore()` | take the machine from the OS (Forbid, the view, DMA, interrupts, the blitter) and give it back |
+| `StartCopper(list)` | run a copper list (in chip memory) |
+| `WaitVBlank()`, `RasterLine()` | wait for the vertical blank; the current line of the beam |
+| `Write(reg, value)`, `Read(reg)`, `WriteLong(reg, address)`, `Register(reg)` | the custom chip registers (`Custom.COLOR00`, `DMACON`, `BPL1PTH`, ...), with volatile accesses |
+| `LeftMouseButton()` | the left button (port 1) |
+| `AllocChip(size)` / `FreeChip(memory, size)` | chip memory for copper lists, bitplanes, sprites and sounds |
+
+## How the backend works
+
+The sources are in [selfhost/src/M68k](../selfhost/src/M68k); the compiler writes its IR as always, and the backend
+reads it back:
+
+```
+IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─▶ Gen (68000 assembly) ─▶ Peephole ─▶ Asm ─▶ Hunk / Elf
+```
+
+* **IrReader.csh** reads the LLVM IR the front end writes (types, constants, functions, instructions).
+* **Prepare.csh, Inline.csh**: small functions are inlined (up to 6 instructions everywhere, up to 80 in loops, the
+  deepest loops first, while the function grows by at most 160 instructions); variables written once become their
+  value; constants are folded; dead code is removed; a pointer that is only used by one load or store becomes an
+  addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
+* **Regalloc.csh**: a linear scan over live intervals; values and variables get `d4`-`d7` and `a2`-`a5` by their uses,
+  weighted by loop depth; a value loaded from a variable shares its register.
+* **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
+  fused with their branch (`bvs`), division by constants, `asl` for checked products by powers of two, only the
+  registers that are used are saved.
+* **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);
+  **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
+* **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
+  32/64-bit multiplication and division.
+
+The calling convention is the one of GCC for m68k: arguments on the stack, results in `d0` (and `d1`), `a0` as well
+for pointers; `d2`-`d7` and `a2`-`a6` are kept.
+
+## Testing Amiga programs
+
+* **vamos** ([amitools](https://github.com/cnvogelg/amitools)) runs AmigaOS command-line programs on the PC without an
+  Amiga ROM: good for everything but the hardware. `vamos -v` also prints the number of CPU cycles, a measure of speed.
+* **FS-UAE** (or WinUAE) with an A500 configuration and a Kickstart ROM (or the free AROS ROM) for graphics and the
+  custom chips.

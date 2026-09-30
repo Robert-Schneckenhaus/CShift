@@ -138,14 +138,19 @@ cshiftc check                                  report all errors, generate nothi
 cshiftc query --at file.csh 12 8               the name at a position (hover, definition) as JSON
 ```
 
-`cshiftc --help` lists the options (`-o`, `-O0..-O3`, `--target`, `--cc`, `-l`/`-L`/`-I`/`-D`, `--emit-llvm`,
-`--arc-stats`, ...). All files of a program form one unit: types and functions can be used before their definition,
+`cshiftc --help` lists the options (`-o`, `-O0..-O3`, `--target`, `--backend`, `--ndk`, `--cc`, `-l`/`-L`/`-I`/`-D`,
+`--emit-llvm`, `--emit-asm`, `--arc-stats`, ...). All files of a program form one unit: types and functions can be used before their definition,
 in any file. Errors are printed as `file:line:column: error: text`.
 
 A project is described by a `cshift.json` (sources, output, libraries, per-platform settings; see
 [docs/build.md](docs/build.md)). C libraries are used without hand-written declarations: `using Zlib from "zlib.h";`
 imports the header as a namespace ([docs/ffi.md](docs/ffi.md)). Two complete examples with C libraries and VS Code
 tasks: [demo-minifb/](demo-minifb/) (a MiniFB window) and [demo-opengl/](demo-opengl/) (OpenGL 3.3 with GLFW).
+
+CShift also runs on the **Amiga**: `--target m68k-amigaos` builds an AmigaOS executable with CShift's own 68000
+backend, AmigaOS libraries are imported from the NDK's SFD files (`using Gfx from "graphics_lib.sfd";`)
+([docs/amiga.md](docs/amiga.md)). Demos: [demo-amiga-hw/](demo-amiga-hw/README.md) (copper raster bars, 50 frames per
+second on an A500) and [demo-amiga-ndk/](demo-amiga-ndk/README.md) (a rotating cube in an Intuition window).
 
 ## VS Code
 
