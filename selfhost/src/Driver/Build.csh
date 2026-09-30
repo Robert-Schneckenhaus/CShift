@@ -15,6 +15,8 @@ using System;
 using CShift.Syntax;
 using CShift.CodeGen;
 using CShift.Check;
+using CShift.M68k;
+using CShift.Emit;
 
 struct BuildOptions
 {
@@ -29,6 +31,8 @@ struct BuildOptions
     bool OptimizeGiven;
     bool ObjectOnly;
     bool EmitLlvm;
+    bool EmitAsm;               // --emit-asm: the assembly of the m68k backend
+    string Backend;             // --backend: "llvm" or "m68k" ("" = the project's, else the target's default)
     bool Run;
     bool Verbose;
     bool ArcStats;
@@ -50,7 +54,7 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
+        var o = BuildOptions { Output = "", Target = "", Backend = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
                                AtFile = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
@@ -82,7 +86,9 @@ void PrintUsage()
         "  -c               compile to an object file only (no linking)\n" +
         "  --emit-llvm      write LLVM IR (.ll) instead of an executable\n" +
         "  -O0 .. -O3       optimization level (default -O2)\n" +
-        "  --target <triple> target triple (default: host)\n" +
+        "  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)\n" +
+        "  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)\n" +
+        "  --emit-asm       m68k backend: write the assembly (.s) instead of an executable\n" +
         "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
         "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
         "  -l<name>         link an additional library\n" +
@@ -150,6 +156,18 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.ObjectOnly = true;
         else if (a == "--emit-llvm")
             o.EmitLlvm = true;
+        else if (a == "--emit-asm")
+            o.EmitAsm = true;
+        else if (a == "--backend" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.Backend = args[i];
+            if (o.Backend != "llvm" && o.Backend != "m68k")
+            {
+                Console.WriteErrorLine("error: unknown backend '" + o.Backend + "' (llvm or m68k)");
+                return false;
+            }
+        }
         else if (a == "--arc-stats")
             o.ArcStats = true;
         else if (a == "--unchecked")
@@ -258,6 +276,8 @@ int Cshc(string[] args)
                 o.Unchecked = o.Unchecked || (p.Unchecked && !o.Checked);
                 if (o.Target.Length == 0)
                     o.Target = p.Target;
+                if (o.Backend.Length == 0)
+                    o.Backend = p.Backend;
                 foreach (var l in p.IncludePaths)
                     o.IncludePaths.Insert(0, l);
                 foreach (var l in p.Defines)
@@ -293,6 +313,8 @@ int Cshc(string[] args)
                 o.Optimize = project.Optimize;
             if (o.Target.Length == 0)
                 o.Target = project.Target;
+            if (o.Backend.Length == 0)
+                o.Backend = project.Backend;
             foreach (var l in project.Links)
                 o.Libs.Insert(0, l);
             foreach (var l in project.LinkFiles)
@@ -496,7 +518,16 @@ int Build(BuildOptions o)
     // ---- parse ----
     var diag = Diagnostics.Create();
     var tree = Ast.Create();
-    var cg = Compiler.Create(tree, diag, windows, o.Target);
+    if (o.Backend.Length == 0)
+        o.Backend = TargetInfo.DefaultBackend(o.Target);
+    if (o.Backend == "m68k" && o.Target.Length == 0)
+        o.Target = "m68k-amigaos";
+    if (o.Backend == "m68k" && !o.Target.ToLower().StartsWith("m68k"))
+    {
+        Console.WriteErrorLine("error: the m68k backend generates code for m68k targets, not '" + o.Target + "'");
+        return 1;
+    }
+    var cg = Compiler.Create(tree, diag, windows, o.Target, o.Backend);
     cg.St[0].ArcStats = o.ArcStats;
     cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)
@@ -508,6 +539,11 @@ int Build(BuildOptions o)
     {
         for (var i = 0; i < EmbeddedStdlibNames.Length; i += 1)
             AddSourceText(cg, diag, tree, "<stdlib>/" + EmbeddedStdlibNames[i], EmbeddedStdlibTexts[i], true, o.Imports);
+        if (o.Backend == "m68k")
+        {
+            for (var i = 0; i < EmbeddedM68kNames.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/m68k/" + EmbeddedM68kNames[i], EmbeddedM68kTexts[i], true, o.Imports);
+        }
         cg.St[0].StdlibLoaded = EmbeddedStdlibNames.Length > 0;
     }
     else if (o.Stdlib != "-")
@@ -515,6 +551,9 @@ int Build(BuildOptions o)
         var libFiles = Directory.FindFiles(o.Stdlib, ".csh");
         foreach (var libFile in libFiles)
         {
+            // the runtime of a backend (stdlib/m68k/) only belongs to programs for that backend
+            if (libFile.Contains("/m68k/") && o.Backend != "m68k")
+                continue;
             if (!AddSource(cg, diag, tree, libFile, true, o.Imports))
                 return 1;
         }
@@ -618,6 +657,9 @@ int Build(BuildOptions o)
         }
         return 0;
     }
+
+    if (o.Backend == "m68k")
+        return BuildM68k(o, ir, baseName);
 
     string clang = LocateClang(o.Cc, windows);
     if (clang.Length == 0)
@@ -822,4 +864,38 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
     return answer + "}";
+}
+
+// The m68k backend (selfhost/src/M68k): the IR becomes 68000 assembly.
+int BuildM68k(BuildOptions o, string ir, string baseName)
+{
+    var text = M68kAssembly(ir);
+    if (text is error failed)
+    {
+        Console.WriteErrorLine("error: m68k backend: " + failed.Message);
+        return 1;
+    }
+    if (!o.EmitAsm)
+    {
+        Console.WriteErrorLine("error: the m68k backend writes assembly only so far: use --emit-asm");
+        return 1;
+    }
+    string path = o.Output.Length == 0 ? baseName + ".s" : (o.FromProject ? o.Output + ".s" : o.Output);
+    EnsureParentDirectory(path);
+    if (text is string asm)
+    {
+        var wrote = File.WriteAllText(path, asm);
+        if (wrote is error wroteError)
+        {
+            Console.WriteErrorLine("error: cannot write '" + path + "': " + wroteError.Message);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+Error<string> M68kAssembly(string ir)
+{
+    var module = try ReadModule(ir);
+    return try GenerateModule(module);
 }

@@ -279,11 +279,12 @@ struct Compiler
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
     List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
 
-    // triple: the target ("" = the host); it decides the size of pointers (Emit/Target.csh)
-    static Compiler Create(Ast tree, Diagnostics diag, bool windows, string triple)
+    // triple: the target ("" = the host) and the backend that generates the machine code; they decide the size of
+    // pointers and the layout of structs (Emit/Target.csh)
+    static Compiler Create(Ast tree, Diagnostics diag, bool windows, string triple, string backend)
     {
         var cg = Compiler { Tree = tree, Diag = diag };
-        var target = TargetInfo.Of(triple);
+        var target = TargetInfo.Of(triple, backend);
         cg.Types = TypeContext.Create(target.PtrBytes * 8);
         cg.Ir = IrWriter.Create(target);
         cg.St = new CgState[1];
@@ -424,6 +425,10 @@ void AddUnit(Compiler cg, CompilationUnit unit)
     {
         var f = unit.Funcs.Get(i);
         cg.Funcs.Add(FuncEntry { Decl = f, File = file, OwnerStruct = -1 });
+        // extern "C" with a body: a function with a C name that C code (and the runtime) can call. Its definition
+        // takes the place of declarations of the same C function (no "declare" for it).
+        if (f.IsExtern && !f.Body.IsNull())
+            cg.Ir.Declared.Add("@" + (f.Symbol != null && f.Symbol.Length > 0 ? f.Symbol : f.Name));
         string q = Qualified(cg, file, f.Name);
         var existing = cg.FuncDecls.TryGet(q);
         if (existing is List<int> list)
@@ -988,7 +993,7 @@ void UseFunction(Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
-    if (d.IsExtern)
+    if (d.IsExtern && d.Body.IsNull())
     {
         DeclareExtern(cg, instance);
         return;

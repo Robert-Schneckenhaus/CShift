@@ -17,23 +17,34 @@ struct TargetInfo
     int I32Align;     // ... of int32 (and float32 on m68k, see FloatAlign)
     int I64Align;     // ... of int64
     int F64Align;     // ... of float64
+    int F32Align;     // ... of float32
     string SizeIr;    // the LLVM type of sizes, lengths and indexes: "i64" or "i32"
 
-    static TargetInfo Of(string triple)
+    // backend: "llvm", or "m68k" (CShift's own 68000 code generator, selfhost/src/M68k), which lays out structs like the
+    // AmigaOS compilers and GCC on m68k: everything of two bytes or more is aligned to two bytes.
+    static TargetInfo Of(string triple, string backend)
     {
         string arch = triple.ToLower();
         int dash = arch.IndexOf('-');
         if (dash >= 0)
             arch = arch.Substring(0, dash);
+        if (backend == "m68k")
+            return TargetInfo { PtrBytes = 4, PtrAlign = 2, I32Align = 2, I64Align = 2, F64Align = 2, F32Align = 2, SizeIr = "i32" };
         if (!Has32BitPointers(arch))
-            return TargetInfo { PtrBytes = 8, PtrAlign = 8, I32Align = 4, I64Align = 8, F64Align = 8, SizeIr = "i64" };
+            return TargetInfo { PtrBytes = 8, PtrAlign = 8, I32Align = 4, I64Align = 8, F64Align = 8, F32Align = 4, SizeIr = "i64" };
         if (arch == "m68k")
-            return TargetInfo { PtrBytes = 4, PtrAlign = 2, I32Align = 2, I64Align = 4, F64Align = 8, SizeIr = "i32" };
+            return TargetInfo { PtrBytes = 4, PtrAlign = 2, I32Align = 2, I64Align = 4, F64Align = 8, F32Align = 4, SizeIr = "i32" };
         bool x86 = arch == "x86" || (arch.Length == 4 && arch.StartsWith("i") && arch.EndsWith("86"));
         bool windows = triple.ToLower().Contains("windows") || triple.ToLower().Contains("mingw");
         if (x86 && !windows)
-            return TargetInfo { PtrBytes = 4, PtrAlign = 4, I32Align = 4, I64Align = 4, F64Align = 4, SizeIr = "i32" };
-        return TargetInfo { PtrBytes = 4, PtrAlign = 4, I32Align = 4, I64Align = 8, F64Align = 8, SizeIr = "i32" };
+            return TargetInfo { PtrBytes = 4, PtrAlign = 4, I32Align = 4, I64Align = 4, F64Align = 4, F32Align = 4, SizeIr = "i32" };
+        return TargetInfo { PtrBytes = 4, PtrAlign = 4, I32Align = 4, I64Align = 8, F64Align = 8, F32Align = 4, SizeIr = "i32" };
+    }
+
+    // The backend a target uses unless one is chosen: AmigaOS has CShift's own, everything else LLVM.
+    static string DefaultBackend(string triple)
+    {
+        return triple.ToLower().Contains("amigaos") ? "m68k" : "llvm";
     }
 
     static bool Has32BitPointers(string arch)
@@ -62,7 +73,7 @@ struct TargetInfo
         if (bytes == 2)
             return 2;
         if (bytes == 4)
-            return isFloat ? 4 : I32Align;
+            return isFloat ? F32Align : I32Align;
         return isFloat ? F64Align : I64Align;
     }
 }

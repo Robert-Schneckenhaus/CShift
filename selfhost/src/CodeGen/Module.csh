@@ -67,9 +67,10 @@ string CompileProgram(Compiler cg, string triple)
     {
         var fe = cg.Funcs.Get(entry);
         var d = fe.Decl;
-        if (fe.OwnerStruct != -1 || d.TypeParams.Length > 0 || d.IsExtern)
+        bool exported = d.IsExtern && !d.Body.IsNull(); // always generated, also in the standard library
+        if (fe.OwnerStruct != -1 || d.TypeParams.Length > 0 || (d.IsExtern && !exported))
             continue;
-        if (cg.Files.Get(fe.File).IsPrelude)
+        if (cg.Files.Get(fe.File).IsPrelude && !exported)
             continue;
         int instance = GetFuncInstance(cg, entry, 0, NoEnv(), new int[0], d.Loc);
         UseFunction(cg, instance);
