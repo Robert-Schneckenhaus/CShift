@@ -591,6 +591,40 @@ string HomeOf(Gen g, int vi)
     return "";
 }
 
+// The data register a result lives in, "" if it has none (or lives in an address register).
+string ResultRegister(Gen g, string name)
+{
+    var home = g.Home.TryGet(name);
+    if (home is string reg && reg.StartsWith("%d"))
+        return reg;
+    return "";
+}
+
+// A value as the source operand of an instruction of 'bits' bits: its register, an immediate or (32 bits) its slot;
+// "" if it has to be loaded into a register first.
+string SourceOperand(Gen g, int vi, int bits)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind == ValKind.Local)
+    {
+        if (g.Alloca.ContainsKey(v.Name))
+            return "";
+        var home = g.Home.TryGet(v.Name);
+        if (home is string reg)
+            return bits < 32 && reg.StartsWith("%a") ? "" : reg;
+        var t = g.ValType.TryGet(v.Name);
+        if (bits == 32 && t is int vt && g.L.Size(vt) == 4 && !g.T.IsAggregate(vt))
+            return Frame(g.Slot.Get(v.Name));
+        return "";
+    }
+    if (v.Kind == ValKind.Int || v.Kind == ValKind.Null || v.Kind == ValKind.Zero)
+    {
+        int64 n = v.Kind == ValKind.Int ? v.Int : 0;
+        return "#" + (n & 4294967295).ToString();
+    }
+    return "";
+}
+
 // One arm of a select into the result.
 void SelectArm(Gen g, IrInst inst, int arm, int off)
 {
@@ -610,146 +644,6 @@ bool IsScalar4(Gen g, int t)
 {
     var k = g.T.Kind(t);
     return (k == IrKind.Int || k == IrKind.Ptr || k == IrKind.Float) && g.L.Size(t) <= 4;
-}
-
-void AllocateRegisters(Gen g, IrFunc f)
-{
-    g.Home.Clear();
-    g.Saved.Clear();
-    g.Saved.Add("%d2-%d3");
-    var blocks = f.Blocks.ToArray();
-
-    // loop nesting: a branch back to an earlier block makes the blocks in between a loop
-    var index = Dictionary<string, int>.Create();
-    for (var i = 0; i < blocks.Length; i += 1)
-        index.Set(blocks[i].Label, i);
-    var depth = new int[blocks.Length];
-    for (var j = 0; j < blocks.Length; j += 1)
-    {
-        foreach (var inst in blocks[j].Insts.ToArray())
-        {
-            if (inst.Op != "br" && inst.Op != "switch")
-                continue;
-            foreach (var label in inst.Labels)
-            {
-                var target = index.TryGet(label);
-                if (target is int i && i <= j)
-                {
-                    for (var k = i; k <= j; k += 1)
-                        depth[k] += 1;
-                }
-            }
-        }
-    }
-
-    // the candidates: scalar variables whose address is only loaded from and stored to, and scalar values
-    var allocaSize = Dictionary<string, int>.Create();
-    var isPointer = Dictionary<string, bool>.Create();
-    var excluded = HashSet<string>.Create();
-    foreach (var p in f.Params)
-        excluded.Add(p.Name);
-    foreach (var b in blocks)
-    {
-        foreach (var inst in b.Insts.ToArray())
-        {
-            if (inst.Op == "alloca")
-            {
-                if (IsScalar4(g, inst.OpType) && (inst.Args.Length == 0 || !IsLocal(g, inst.Args[0])))
-                {
-                    allocaSize.Set(inst.Res, g.L.Size(inst.OpType));
-                    isPointer.Set(inst.Res, g.T.Kind(inst.OpType) == IrKind.Ptr);
-                }
-                else
-                    excluded.Add(inst.Res);
-            }
-            else if (inst.Res.Length > 0)
-            {
-                if (IsScalar4(g, inst.Type))
-                    isPointer.Set(inst.Res, g.T.Kind(inst.Type) == IrKind.Ptr);
-                else
-                    excluded.Add(inst.Res);
-            }
-        }
-    }
-    var score = Dictionary<string, int>.Create();
-    for (var j = 0; j < blocks.Length; j += 1)
-    {
-        int d = depth[j] > 3 ? 3 : depth[j];
-        int w = d == 0 ? 1 : (d == 1 ? 8 : (d == 2 ? 64 : 512));
-        foreach (var inst in blocks[j].Insts.ToArray())
-        {
-            if (inst.Res.Length > 0)
-                score.Set(inst.Res, score.GetOrDefault(inst.Res, 0) + w);
-            for (var a = 0; a < inst.Args.Length; a += 1)
-            {
-                var v = g.M.Vals.Get(inst.Args[a]);
-                if (v.Kind != ValKind.Local)
-                    continue;
-                var size = allocaSize.TryGet(v.Name);
-                if (size is int s)
-                {
-                    bool plain = (inst.Op == "load" && a == 0 && g.L.Size(inst.Type) == s && IsScalar4(g, inst.Type)) ||
-                                 (inst.Op == "store" && a == 1 && g.L.Size(inst.OpType) == s && IsScalar4(g, inst.OpType));
-                    if (!plain)
-                        excluded.Add(v.Name); // its address is used
-                }
-                score.Set(v.Name, score.GetOrDefault(v.Name, 0) + w);
-            }
-        }
-    }
-
-    // the best ones get registers: pointers address registers, the rest data registers (then the other kind)
-    var names = List<string>.Create();
-    foreach (var entry in score.Entries())
-    {
-        if (!excluded.Contains(entry.Key) && isPointer.ContainsKey(entry.Key) && entry.Value >= 3)
-            names.Add(entry.Key);
-    }
-    var ordered = names.ToArray();
-    // (a simple sort by score, highest first)
-    for (var i = 1; i < ordered.Length; i += 1)
-    {
-        string x = ordered[i];
-        int sx = score.Get(x);
-        int k = i - 1;
-        while (k >= 0 && (score.Get(ordered[k]) < sx || (score.Get(ordered[k]) == sx && ordered[k].CompareTo(x) > 0)))
-        {
-            ordered[k + 1] = ordered[k];
-            k -= 1;
-        }
-        ordered[k + 1] = x;
-    }
-    string[] dataRegs = ["%d4", "%d5", "%d6", "%d7"];
-    string[] addrRegs = ["%a2", "%a3", "%a4", "%a5"];
-    int nd = 0;
-    int na = 0;
-    foreach (var name in ordered)
-    {
-        bool ptr = isPointer.Get(name);
-        string reg = "";
-        if (ptr && na < 4)
-        {
-            reg = addrRegs[na];
-            na += 1;
-        }
-        else if (nd < 4)
-        {
-            reg = dataRegs[nd];
-            nd += 1;
-        }
-        else if (na < 4)
-        {
-            reg = addrRegs[na];
-            na += 1;
-        }
-        else
-            break;
-        g.Home.Set(name, reg);
-    }
-    for (var i = 0; i < nd; i += 1)
-        g.Saved.Add(dataRegs[i]);
-    for (var i = 0; i < na; i += 1)
-        g.Saved.Add(addrRegs[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,8 +1008,16 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
     }
     if (op == "load" && HomeOf(g, inst.Args[0]).Length > 0)
     {
-        // a variable that lives in a register
-        g.Line("move.l\t" + HomeOf(g, inst.Args[0]) + ",%d0");
+        // a variable that lives in a register (a load that is forwarded shares it: nothing to do)
+        string from = HomeOf(g, inst.Args[0]);
+        var home = g.Home.TryGet(inst.Res);
+        if (home is string reg)
+        {
+            if (reg != from)
+                g.Line("move.l\t" + from + "," + reg);
+            return;
+        }
+        g.Line("move.l\t" + from + ",%d0");
         StoreResult(g, inst);
         return;
     }
@@ -1314,6 +1216,36 @@ void GenBinary32(Gen g, IrInst inst)
 {
     string op = inst.Op;
     int bits = g.T.Kind(inst.OpType) == IrKind.Int ? g.T.Bits(inst.OpType) : 32;
+    // add, sub, and, or, xor and shifts: straight into the result's data register, with the second operand as it is
+    string target = ResultRegister(g, inst.Res);
+    if (target.Length > 0 && SourceOperand(g, inst.Args[1], 32) == target)
+        target = ""; // (the second operand is in the result's register: through d0)
+    if (op == "add" || op == "sub" || op == "and" || op == "or" || op == "xor" || op == "shl" || op == "lshr" || op == "ashr")
+    {
+        string dst = target.Length > 0 ? target : "%d0";
+        Load32(g, inst.Args[0], dst);
+        string src = SourceOperand(g, inst.Args[1], 32);
+        bool shift = op == "shl" || op == "lshr" || op == "ashr";
+        if (shift)
+        {
+            var c = g.M.Vals.Get(inst.Args[1]);
+            src = c.Kind == ValKind.Int && c.Int >= 1 && c.Int <= 8 ? "#" + c.Int.ToString() : "";
+        }
+        if (src.Length == 0 || ((op == "xor" || shift) && !src.StartsWith("%d") && !src.StartsWith("#")))
+        {
+            Load32(g, inst.Args[1], "%d1");
+            src = "%d1";
+        }
+        if (op == "lshr")
+            Extend(g, dst, bits, false);
+        else if (op == "ashr")
+            Extend(g, dst, bits, true);
+        string m = op == "xor" ? "eor" : op == "shl" ? "lsl" : op == "lshr" ? "lsr" : op == "ashr" ? "asr" : op;
+        g.Line(m + ".l\t" + src + "," + dst);
+        if (dst == "%d0")
+            StoreResult(g, inst);
+        return;
+    }
     Load32(g, inst.Args[0], "%d0");
     Load32(g, inst.Args[1], "%d1");
     if (op == "add")
@@ -1510,12 +1442,22 @@ void GenOverflowBranch(Gen g, IrInst[] insts, int k)
     string suffix = bits <= 8 ? ".b" : bits == 16 ? ".w" : ".l";
     bool signed = name.StartsWith("llvm.s");
     bool add = name.Contains("add");
-    Load32(g, call.Args[0], "%d0");
-    Load32(g, call.Args[1], "%d1");
-    g.Line((add ? "add" : "sub") + suffix + "\t%d1,%d0");
+    string target = ResultRegister(g, value.Res);
+    if (target.Length > 0 && SourceOperand(g, call.Args[1], 32) == target)
+        target = "";
+    string dst = target.Length > 0 ? target : "%d0";
+    Load32(g, call.Args[0], dst);
+    string src = SourceOperand(g, call.Args[1], bits);
+    if (src.Length == 0)
+    {
+        Load32(g, call.Args[1], "%d1");
+        src = "%d1";
+    }
+    g.Line((add ? "add" : "sub") + suffix + "\t" + src + "," + dst);
     // the flag is true: to the first label (the panic); signed: overflow (V), unsigned: carry/borrow (C)
     g.Line((signed ? "bvs" : "bcs") + "\t" + g.BlockLabel.Get(br.Labels[0]));
-    g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
+    if (dst == "%d0")
+        g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
     g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
 }
 
@@ -1526,14 +1468,25 @@ void GenCompareBranch(Gen g, IrFunc f, IrInst cmp, IrInst br)
     int t = cmp.OpType;
     int bits = g.T.Kind(t) == IrKind.Int ? g.T.Bits(t) : 32;
     string suffix = bits <= 8 ? ".b" : bits == 16 ? ".w" : ".l";
-    Load32(g, cmp.Args[0], "%d0");
+    // the left operand where it is (a data register), else in d0; the right one as it is if possible
+    string left = SourceOperand(g, cmp.Args[0], bits);
+    if (!left.StartsWith("%d"))
+    {
+        Load32(g, cmp.Args[0], "%d0");
+        left = "%d0";
+    }
     var right = g.M.Vals.Get(cmp.Args[1]);
     if ((right.Kind == ValKind.Int || right.Kind == ValKind.Null) && right.Int == 0)
-        g.Line("tst" + suffix + "\t%d0");
+        g.Line("tst" + suffix + "\t" + left);
     else
     {
-        Load32(g, cmp.Args[1], "%d1");
-        g.Line("cmp" + suffix + "\t%d1,%d0");
+        string src = SourceOperand(g, cmp.Args[1], bits);
+        if (src.Length == 0)
+        {
+            Load32(g, cmp.Args[1], "%d1");
+            src = "%d1";
+        }
+        g.Line("cmp" + suffix + "\t" + src + "," + left);
     }
     g.Line("b" + Cond(cmp.Pred) + "\t" + g.BlockLabel.Get(br.Labels[0]));
     g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
