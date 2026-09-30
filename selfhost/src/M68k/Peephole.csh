@@ -136,6 +136,21 @@ string OffsetOperand(string operand, int plus)
     return "";
 }
 
+// "(%aX)" -> 0, "(n,%aX)" -> n; -99999 for any other use of the register
+int RegisterOffset(string operand, string reg)
+{
+    if (operand == "(" + reg + ")")
+        return 0;
+    string tail = "," + reg + ")";
+    if (operand.StartsWith("(") && operand.EndsWith(tail))
+    {
+        var n = TryAsmNumber(operand.Substring(1, operand.Length - 1 - tail.Length).ToString());
+        if (n is int64 v && v >= -32768 && v <= 32767)
+            return (int)v;
+    }
+    return -99999;
+}
+
 bool PeepholePass(List<string> lines)
 {
     bool changed = false;
@@ -150,6 +165,67 @@ bool PeepholePass(List<string> lines)
             continue;
         }
         var ops = Operands(line);
+
+        // lea (d,%a6),%aX / lea (c,%aX),%aX -> lea (d+c,%a6),%aX
+        if (mn == "lea" && ops.Length == 2 && ops[1].StartsWith("%a") && OffsetOperand(ops[0], 0).Length > 0 && i + 1 < lines.Count())
+        {
+            string next = lines.Get(i + 1);
+            var ops2 = Operands(next);
+            if (Mnemonic(next) == "lea" && ops2.Length == 2 && ops2[1] == ops[1])
+            {
+                int at = RegisterOffset(ops2[0], ops[1]);
+                if (at != -99999)
+                {
+                    lines.Set(i, Instr("lea", OffsetOperand(ops[0], at) + "," + ops[1]));
+                    lines.RemoveAt(i + 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        // lea (d,%a6),%a0 / op ...(n,%a0)... -> op ...(d+n,%a6)... (a0 not needed afterwards; same for a1)
+        // move.l %aN,%a0 / op ...(n,%a0)... -> op ...(n,%aN)...
+        if ((mn == "lea" || mn == "move.l") && ops.Length == 2 && (ops[1] == "%a0" || ops[1] == "%a1") && i + 1 < lines.Count())
+        {
+            string scratch = ops[1];
+            bool fromFrame = mn == "lea" && OffsetOperand(ops[0], 0).Length > 0;
+            bool fromReg = mn == "move.l" && ops[0].StartsWith("%a") && ops[0] != "%a0" && ops[0] != "%a1" && ops[0] != "%sp";
+            string next = lines.Get(i + 1);
+            string mn2 = Mnemonic(next);
+            var ops2 = Operands(next);
+            if ((fromFrame || fromReg) && mn2.Length > 0 && !mn2.StartsWith("lea") && mn2 != "jsr" && mn2 != "jmp" && ops2.Length >= 1 &&
+                DeadAfter(lines, i + 2, scratch))
+            {
+                var rewritten = new string[ops2.Length];
+                bool ok = true;
+                int uses = 0;
+                for (var k = 0; k < ops2.Length && ok; k += 1)
+                {
+                    string o = ops2[k];
+                    if (!Mentions(o, scratch))
+                    {
+                        rewritten[k] = o;
+                        continue;
+                    }
+                    int at = RegisterOffset(o, scratch);
+                    if (at == -99999)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    uses += 1;
+                    rewritten[k] = fromFrame ? OffsetOperand(ops[0], at) : "(" + at.ToString() + "," + ops[0] + ")";
+                }
+                if (ok && uses > 0)
+                {
+                    lines.RemoveAt(i);
+                    lines.Set(i, Instr(mn2, string.Join(",", rewritten)));
+                    changed = true;
+                    continue;
+                }
+            }
+        }
 
         // lea (0,%aN),%aN
         if (mn == "lea" && ops.Length == 2 && ops[0] == "(0," + ops[1] + ")")

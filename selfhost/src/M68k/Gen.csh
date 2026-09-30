@@ -1629,7 +1629,12 @@ void GenExtract(Gen g, IrInst inst)
 // getelementptr: the base in d0, plus the constant offsets and the scaled variable indexes.
 void GenGep(Gen g, IrInst inst)
 {
-    Load32(g, inst.Args[0], "%d0");
+    // computed in an address register: the result's, or a0
+    string dst = "%a0";
+    var home = g.Home.TryGet(inst.Res);
+    if (home is string reg && reg.StartsWith("%a"))
+        dst = reg;
+    LoadAddr(g, inst.Args[0], dst);
     int t = inst.OpType;
     int64 constant = 0;
     for (var k = 1; k < inst.Args.Length; k += 1)
@@ -1670,14 +1675,23 @@ void GenGep(Gen g, IrInst inst)
         if (ib < 32)
             Extend(g, "%d1", ib, true);
         ScaleD1(g, stride);
-        g.Line("add.l\t%d1,%d0");
+        g.Line("add.l\t%d1," + dst);
     }
     if (constant != 0)
-        g.Line("add.l\t#" + constant.ToString() + ",%d0");
-    StoreResult(g, inst);
+    {
+        if (constant >= -32768 && constant <= 32767)
+            g.Line("lea\t(" + constant.ToString() + "," + dst + ")," + dst);
+        else
+            g.Line("add.l\t#" + constant.ToString() + "," + dst);
+    }
+    if (dst == "%a0")
+    {
+        g.Line("move.l\t%a0,%d0");
+        StoreResult(g, inst);
+    }
 }
 
-// d1 *= n (d0 kept).
+// d1 *= n (d0 and a0 kept).
 void ScaleD1(Gen g, int n)
 {
     if (n == 1)
