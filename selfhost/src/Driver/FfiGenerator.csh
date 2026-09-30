@@ -51,6 +51,9 @@ List<string> FfiFlags(FfiOptions options)
         flags.Add("-D" + d);
     foreach (var p in options.ApiPaths)
         flags.Add("-cshift-api=" + p); // not a clang flag: recorded so that the cache notices changes
+    // AmigaOS aligns everything larger than a byte to 2 (clang's m68k target would align long to 4)
+    if (options.Target.Contains("amigaos"))
+        flags.Add("-fpack-struct=2");
     return flags;
 }
 

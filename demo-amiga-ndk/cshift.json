@@ -1,0 +1,8 @@
+{
+	"name": "demo-amiga-ndk",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/demo-amiga-ndk",
+	"target": "m68k-amigaos"
+}

@@ -47,7 +47,7 @@ void CheckProgram(Compiler program)
     {
         var fe = cg.Funcs.Get(entry);
         var d = fe.Decl;
-        if (cg.Files.Get(fe.File).IsPrelude || d.IsExtern || d.Body.IsNull())
+        if (cg.Files.Get(fe.File).IsPrelude || d.Body.IsNull())
             continue;
         int owner = 0;
         var ownerEnv = NoEnv();

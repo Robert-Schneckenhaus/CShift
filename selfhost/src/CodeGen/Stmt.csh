@@ -134,7 +134,8 @@ void EmitFunctionBody(Compiler cg, int instance)
         sb.Append((sb.Length() > 0 ? ", " : "") + "ptr %caller.arg");
         cg.Fn[0].CallerArg = "%caller.arg";
     }
-    ir.BeginFunction("define internal " + AbiReturn(cg, fi.Ret) + " " + bodyName + "(" + sb.ToString() + ")");
+    // an exported (extern "C" with a body) function is visible to the linker
+    ir.BeginFunction("define " + (d.IsExtern ? "" : "internal ") + AbiReturn(cg, fi.Ret) + " " + bodyName + "(" + sb.ToString() + ")");
     PushScope(cg);
 
     if (fi.HasThis)
