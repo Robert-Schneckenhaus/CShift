@@ -37,6 +37,17 @@ var p1 = new Player();                 // every field gets its zero value (0, fa
 var p2 = Player { Health = 100 };      // an initializer sets the fields it names
 ```
 
+With a declared type, `new` does not need to repeat it: `new { ... }` is an initializer and `new()` the zero value of
+the declared type. This is handy for global variables:
+
+```csharp
+Player player = new { Health = 100 };  // like Player { Health = 100 }
+Player other = new();                  // like new Player()
+List<int> scores = new();              // any struct, also the standard library's
+```
+
+It only works where the type is written: `var p = new { ... };` is an error.
+
 There are no constructors. More elaborate setup is an ordinary function that returns the struct:
 
 ```csharp

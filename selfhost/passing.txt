@@ -126,6 +126,7 @@ err_nested_else.csh
 err_nested_error.csh
 err_nested_if.csh
 err_nested_loop.csh
+err_new_without_type.csh
 err_no_main.csh
 err_no_overload.csh
 err_number_format.csh
@@ -182,6 +183,7 @@ err_union_interface.csh
 err_union_member.csh
 err_union_self.csh
 err_unknown_type.csh
+err_unsafe_statement.csh
 err_unsigned_negate.csh
 err_using_not_disposable.csh
 err_void_result_value.csh
@@ -209,6 +211,7 @@ main_try.csh
 main_void.csh
 misc_features.csh
 native_int.csh
+new_target_typed.csh
 number_formats.csh
 panic_array_copy.csh
 panic_bounds.csh
@@ -261,3 +264,4 @@ thread_start_contextual.csh
 thread_static_method.csh
 thread_strings.csh
 unions.csh
+unsafe_forms.csh

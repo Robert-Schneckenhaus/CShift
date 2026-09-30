@@ -797,6 +797,11 @@ Value CheckNewArray(Compiler cg, Expr e)
 Value CheckNewObject(Compiler cg, Expr e)
 {
     var types = cg.Types;
+    if (cg.Tree.GetNewObject(e).Type.IsNull())
+    {
+        CheckError(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        return UnknownValue(cg);
+    }
     int t = DeclTypeOf(cg, cg.Tree.GetNewObject(e).Type);
     if (!types.IsStruct(t))
     {
@@ -810,6 +815,13 @@ Value CheckStructInit(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetStructInit(e);
+    if (n.Type.IsNull())
+    {
+        CheckError(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        foreach (var f in n.Fields)
+            CheckExpr(cg, f.Value);
+        return UnknownValue(cg);
+    }
     int t = DeclTypeOf(cg, n.Type);
     if (!types.IsStruct(t))
     {

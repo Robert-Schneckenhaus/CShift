@@ -395,6 +395,8 @@ Value EmitStructInit(Compiler cg, Expr e)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetStructInit(e);
+    if (n.Type.IsNull())
+        Fail(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
     int t = DeclTypeOf(cg, n.Type);
     if (!types.IsStruct(t))
         Fail(cg, e.Loc, "'" + types.Name(t) + "' is not a struct, initializers are only available for structs");
@@ -422,6 +424,8 @@ Value EmitNewObject(Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetNewObject(e);
+    if (n.Type.IsNull())
+        Fail(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
     int t = DeclTypeOf(cg, n.Type);
     if (!types.IsStruct(t))
         Fail(cg, e.Loc, "'new' can only create structs and arrays, not '" + types.Name(t) + "'");

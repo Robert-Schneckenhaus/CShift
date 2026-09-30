@@ -299,6 +299,7 @@ struct BlockStmt
     Stmt[] Stmts;
     bool IsUnsafe;
     bool IsUnchecked;
+    bool NoScope;         // "unsafe <statement>": the statement's declarations belong to the enclosing scope
 }
 
 struct VarDeclStmt

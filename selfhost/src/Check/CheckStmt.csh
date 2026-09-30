@@ -86,6 +86,8 @@ void CheckStmt(Compiler cg, Stmt s)
 void CheckBlock(Compiler cg, Stmt block, bool newScope)
 {
     var b = cg.Tree.GetBlock(block);
+    if (b.NoScope)
+        newScope = false;
     if (b.IsUnsafe)
         cg.Fn[0].UnsafeDepth += 1;
     if (newScope)
