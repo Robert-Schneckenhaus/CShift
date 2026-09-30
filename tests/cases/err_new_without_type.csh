@@ -1,5 +1,5 @@
 // new without a type needs a declared type
-// expect-error: 'new' without a type needs a declaration with a type to take it from
+// expect-error: 'new' without a type needs a struct type to take
 struct Player
 {
     int X;

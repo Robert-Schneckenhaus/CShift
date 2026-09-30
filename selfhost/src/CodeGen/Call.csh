@@ -27,9 +27,15 @@ Arg[] EmitArgs(Compiler cg, Expr[] args)
 Arg[] EmitArgsFor(Compiler cg, Expr[] args, Candidate[] cands)
 {
     int[] frames = ArgFrames(cg, cands, args.Length);
+    int[] targets = ArgTargets(cg, cands, args.Length);
     var list = new Arg[args.Length];
     for (var i = 0; i < args.Length; i += 1)
-        list[i] = Arg { Source = args[i], V = frames[i] != 0 ? EmitExprAs(cg, args[i], frames[i]) : EmitExpr(cg, args[i]) };
+    {
+        if (IsTypelessNew(cg, args[i]))
+            list[i] = Arg { Source = args[i], V = EmitTypelessNew(cg, args[i], targets[i]) };
+        else
+            list[i] = Arg { Source = args[i], V = frames[i] != 0 ? EmitExprAs(cg, args[i], frames[i]) : EmitExpr(cg, args[i]) };
+    }
     return list;
 }
 

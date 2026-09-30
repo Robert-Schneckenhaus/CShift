@@ -183,10 +183,14 @@ Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
 Arg[] CheckArgsFor(Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
 {
     int[] frames = ArgFrames(cg, cands, args.Length);
+    int[] targets = ArgTargets(cg, cands, args.Length);
     var list = new Arg[args.Length];
     for (var i = 0; i < args.Length; i += 1)
     {
-        list[i] = Arg { Source = args[i], V = frames[i] != 0 ? CheckExprAs(cg, args[i], frames[i]) : CheckExpr(cg, args[i]) };
+        if (IsTypelessNew(cg, args[i]))
+            list[i] = Arg { Source = args[i], V = CheckTypelessNew(cg, args[i], targets[i]) };
+        else
+            list[i] = Arg { Source = args[i], V = frames[i] != 0 ? CheckExprAs(cg, args[i], frames[i]) : CheckExpr(cg, args[i]) };
         if (IsUnknown(cg, list[i].V))
             known = false;
     }
@@ -354,6 +358,8 @@ Value CheckBinary(Compiler cg, Expr e)
 // An expression used as a value of 'target'.
 Value CheckExprAs(Compiler cg, Expr e, int target)
 {
+    if (IsTypelessNew(cg, e))
+        return CheckTypelessNew(cg, e, target);
     int frame = ArithmeticFrame(cg, target);
     if (frame == 0 || !IsFramable(cg, e))
         return CheckExpr(cg, e);

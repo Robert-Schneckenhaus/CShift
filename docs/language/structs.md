@@ -37,16 +37,20 @@ var p1 = new Player();                 // every field gets its zero value (0, fa
 var p2 = Player { Health = 100 };      // an initializer sets the fields it names
 ```
 
-With a declared type, `new` does not need to repeat it: `new { ... }` is an initializer and `new()` the zero value of
-the declared type. This is handy for global variables:
+Where the type is known, `new` does not need to repeat it: `new { ... }` is an initializer and `new()` the zero value
+of that type. This works in declarations with a type (also of global variables), assignments, return values,
+arguments (when all overloads agree on the parameter's type), fields of an initializer and for `Optional<T>`/`Error<T>`:
 
 ```csharp
 Player player = new { Health = 100 };  // like Player { Health = 100 }
 Player other = new();                  // like new Player()
 List<int> scores = new();              // any struct, also the standard library's
+player = new { Health = 50 };
+Heal(new { Health = 10 });             // void Heal(Player p)
+Player Spawn() { return new { Health = 100 }; }
 ```
 
-It only works where the type is written: `var p = new { ... };` is an error.
+Without a type to take it is an error: `var p = new { ... };`.
 
 There are no constructors. More elaborate setup is an ordinary function that returns the struct:
 

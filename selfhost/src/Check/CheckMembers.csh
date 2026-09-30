@@ -799,7 +799,7 @@ Value CheckNewObject(Compiler cg, Expr e)
     var types = cg.Types;
     if (cg.Tree.GetNewObject(e).Type.IsNull())
     {
-        CheckError(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        CheckError(cg, e.Loc, TypelessNewError());
         return UnknownValue(cg);
     }
     int t = DeclTypeOf(cg, cg.Tree.GetNewObject(e).Type);
@@ -817,7 +817,7 @@ Value CheckStructInit(Compiler cg, Expr e)
     var n = cg.Tree.GetStructInit(e);
     if (n.Type.IsNull())
     {
-        CheckError(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        CheckError(cg, e.Loc, TypelessNewError());
         foreach (var f in n.Fields)
             CheckExpr(cg, f.Value);
         return UnknownValue(cg);
@@ -830,6 +830,33 @@ Value CheckStructInit(Compiler cg, Expr e)
             CheckExpr(cg, f.Value);
         return UnknownValue(cg);
     }
+    return CheckStructInitOf(cg, e, t);
+}
+
+// new { ... } / new() as the struct of a target type (see EmitTypelessNew).
+Value CheckTypelessNew(Compiler cg, Expr e, int target)
+{
+    int t = TypelessNewType(cg, target);
+    if (t == 0)
+    {
+        if (!cg.Types.IsUnknown(target))
+            CheckError(cg, e.Loc, TypelessNewError());
+        if (e.Kind == ExprKind.StructInit)
+        {
+            foreach (var f in cg.Tree.GetStructInit(e).Fields)
+                CheckExpr(cg, f.Value);
+        }
+        return UnknownValue(cg);
+    }
+    if (e.Kind == ExprKind.NewObject)
+        return Rvalue(t, "", false);
+    return CheckStructInitOf(cg, e, t);
+}
+
+Value CheckStructInitOf(Compiler cg, Expr e, int t)
+{
+    var types = cg.Types;
+    var n = cg.Tree.GetStructInit(e);
     var seen = HashSet<string>.Create();
     foreach (var f in n.Fields)
     {

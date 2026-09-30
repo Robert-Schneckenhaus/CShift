@@ -105,6 +105,7 @@ void PrintUsage()
         "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
         "  -v               verbose output\n" +
         "  --version        print the version\n" +
+        "  --clear-cache    delete the toolchains a standalone cshiftc has unpacked (all versions)\n" +
         "  -h, --help       show this help");
 }
 
@@ -231,6 +232,8 @@ int Cshc(string[] args)
         Console.WriteLine("cshiftc " + CshcVersion() + " (self-hosted)");
         return 0;
     }
+    if (args[0] == "--clear-cache")
+        return ClearToolchainCache();
 
     var o = BuildOptions.Create();
     string command = "compile";
@@ -483,6 +486,45 @@ string TarCommand(bool windows)
 // A per-user, per-version cache directory for the extracted toolchain.
 string ToolchainCacheDir(bool windows)
 {
+    string root = ToolchainCacheRoot(windows);
+    if (root.Length == 0)
+        return "";
+    return Path.Combine(root, "toolchain-" + CshcVersion());
+}
+
+// --clear-cache: the cache directory of the standalone builds goes (every version's toolchain; it is unpacked again
+// the next time a standalone cshiftc needs it).
+int ClearToolchainCache()
+{
+    bool windows = Process.IsWindows();
+    string root = ToolchainCacheRoot(windows);
+    if (root.Length == 0)
+    {
+        Console.WriteErrorLine("error: no cache directory (neither LOCALAPPDATA nor XDG_CACHE_HOME/HOME is set)");
+        return 1;
+    }
+    if (!Directory.Exists(root))
+    {
+        Console.WriteLine("nothing to clear (" + root + " does not exist)");
+        return 0;
+    }
+    string path = NativePath(root, windows);
+    if (windows)
+        Process.Run("rmdir /s /q \"" + path + "\"");
+    else
+        Process.Run("rm -rf \"" + path + "\"");
+    if (Directory.Exists(root))
+    {
+        Console.WriteErrorLine("error: could not delete " + root);
+        return 1;
+    }
+    Console.WriteLine("deleted " + root);
+    return 0;
+}
+
+// The per-user directory that holds the toolchains of all versions (<cache>/cshift).
+string ToolchainCacheRoot(bool windows)
+{
     string baseDir = "";
     if (windows)
     {
@@ -501,7 +543,7 @@ string ToolchainCacheDir(bool windows)
     }
     if (baseDir.Length == 0)
         return "";
-    return Path.Combine(Path.Combine(Path.Normalize(baseDir), "cshift"), "toolchain-" + CshcVersion());
+    return Path.Combine(Path.Normalize(baseDir), "cshift");
 }
 
 void EnsureParentDirectory(string file)

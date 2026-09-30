@@ -22,7 +22,6 @@ the git log.
 
 - [ ] Linux standalone executable: still needs the host's glibc and binutils (`build-essential`), like the regular
       Linux archive; only Windows is zero-dependency.
-- [ ] The toolchain cache of the standalone executable is never cleaned up (`cshiftc --clear-cache`?).
 
 ## Standard library
 

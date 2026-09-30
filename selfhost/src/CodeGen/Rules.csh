@@ -390,6 +390,64 @@ bool IsFramable(Compiler cg, Expr e)
     }
 }
 
+// new { ... } and new() without a type: they take the type they are used as (EmitExprAs, CheckExprAs).
+bool IsTypelessNew(Compiler cg, Expr e)
+{
+    if (e.Kind == ExprKind.StructInit)
+        return cg.Tree.GetStructInit(e).Type.IsNull();
+    if (e.Kind == ExprKind.NewObject)
+        return cg.Tree.GetNewObject(e).Type.IsNull();
+    return false;
+}
+
+// The struct a typeless new creates for a target type (the T of an Optional<T> / Error<T>), 0 if it is none.
+int TypelessNewType(Compiler cg, int target)
+{
+    var types = cg.Types;
+    if (target == 0 || types.IsUnknown(target))
+        return 0;
+    if (types.IsResultLike(target))
+        target = types.Elem(target);
+    return target != 0 && types.IsStruct(target) ? target : 0;
+}
+
+string TypelessNewError()
+{
+    return "'new' without a type needs a struct type to take: a declaration with a type, an assignment, a return value " +
+           "or an argument (Player p = new { X = 1 };), not var";
+}
+
+// The parameter types of a call's arguments where all candidates that take this many arguments agree on them (for a
+// typeless new; value parameters, not for generic functions), 0 otherwise.
+int[] ArgTargets(Compiler cg, Candidate[] cands, int count)
+{
+    var targets = new int[count];
+    var none = new int[count];
+    bool first = true;
+    foreach (var c in cands)
+    {
+        var fe = cg.Funcs.Get(c.Entry);
+        var d = fe.Decl;
+        if (d.Params.Length != count)
+            continue;
+        if (d.TypeParams.Length > 0 || d.IsVariadic || (c.Owner != 0 && !cg.Types.IsStruct(c.Owner)))
+            return none;
+        var env = c.Owner != 0 ? GetStructInfo(cg, c.Owner).Env : NoEnv();
+        for (var i = 0; i < count; i += 1)
+        {
+            int t = 0;
+            if (d.Params[i].Ref == RefKind.None)
+                t = ResolveValueType(cg, d.Params[i].Type.Id, fe.File, env);
+            if (first)
+                targets[i] = t;
+            else if (targets[i] != t)
+                targets[i] = 0;
+        }
+        first = false;
+    }
+    return targets;
+}
+
 // The frames of the arguments of a call (see ArithmeticFrame): for argument i the integer type of parameter i when all
 // candidates that take this many arguments agree on it (value parameters; not for generic functions); 0 otherwise. With
 // overloads that differ there (Foo(uint8) and Foo(int32)) the usual rules decide.

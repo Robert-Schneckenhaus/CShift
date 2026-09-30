@@ -396,10 +396,30 @@ Value EmitStructInit(Compiler cg, Expr e)
     var ir = cg.Ir;
     var n = cg.Tree.GetStructInit(e);
     if (n.Type.IsNull())
-        Fail(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        Fail(cg, e.Loc, TypelessNewError());
     int t = DeclTypeOf(cg, n.Type);
     if (!types.IsStruct(t))
         Fail(cg, e.Loc, "'" + types.Name(t) + "' is not a struct, initializers are only available for structs");
+    return EmitStructInitOf(cg, e, t);
+}
+
+// new { ... } / new() as the struct of a target type (see IsTypelessNew).
+Value EmitTypelessNew(Compiler cg, Expr e, int target)
+{
+    int t = TypelessNewType(cg, target);
+    if (t == 0)
+        Fail(cg, e.Loc, TypelessNewError());
+    if (e.Kind == ExprKind.NewObject)
+        return Rvalue(t, "zeroinitializer", false);
+    return EmitStructInitOf(cg, e, t);
+}
+
+// The fields of an initializer in the struct t.
+Value EmitStructInitOf(Compiler cg, Expr e, int t)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var n = cg.Tree.GetStructInit(e);
 
     string ty = LlvmType(cg, t);
     string agg = "zeroinitializer";
@@ -425,7 +445,7 @@ Value EmitNewObject(Compiler cg, Expr e)
     var types = cg.Types;
     var n = cg.Tree.GetNewObject(e);
     if (n.Type.IsNull())
-        Fail(cg, e.Loc, "'new' without a type needs a declaration with a type to take it from (Player p = new { X = 1 };), not var");
+        Fail(cg, e.Loc, TypelessNewError());
     int t = DeclTypeOf(cg, n.Type);
     if (!types.IsStruct(t))
         Fail(cg, e.Loc, "'new' can only create structs and arrays, not '" + types.Name(t) + "'");
