@@ -7,18 +7,27 @@ namespace CShift.M68k;
 
 using System;
 
-const int InlineLimit = 80;     // the most instructions a function may have to be inlined
+const int InlineLimit = 80;     // the most instructions a function may have to be inlined in a loop
+const int InlineSmall = 6;     // ... anywhere (not more code than the call itself)
 const int InlineBudget = 40;    // inlined calls per function
+const int InlineGrowth = 160;   // instructions that inlining in loops may add to a function
 
 void InlineCalls(Gen g, IrFunc f)
 {
     int budget = InlineBudget;
-    bool changed = true;
-    while (changed && budget > 0)
+    int growth = InlineGrowth;
+    while (budget > 0)
     {
-        changed = false;
-        for (var bi = 0; bi < f.Blocks.Count() && !changed; bi += 1)
+        // the call to inline next: the one in the deepest loop (the first of those)
+        var depth = LoopDepth(f);
+        int bestBlock = -1;
+        int bestInst = -1;
+        int bestDepth = -1;
+        int bestIndex = -1;
+        for (var bi = 0; bi < f.Blocks.Count(); bi += 1)
         {
+            if (depth[bi] <= bestDepth)
+                continue;
             var insts = f.Blocks.Get(bi).Insts.ToArray();
             for (var k = 0; k < insts.Length; k += 1)
             {
@@ -33,18 +42,63 @@ void InlineCalls(Gen g, IrFunc f)
                 if (index < 0)
                     continue;
                 var fn = g.M.Funcs.Get(index);
-                if (!Inlinable(g, fn) || fn.Params.Length != inst.Args.Length)
+                int limit = depth[bi] > 0 ? (growth < InlineLimit ? growth : InlineLimit) : 0;
+                if (limit < InlineSmall)
+                    limit = InlineSmall;
+                if (!Inlinable(g, fn, limit) || fn.Params.Length != inst.Args.Length)
                     continue;
-                InlineAt(g, f, bi, k, fn);
-                changed = true;
-                budget -= 1;
+                bestBlock = bi;
+                bestInst = k;
+                bestDepth = depth[bi];
+                bestIndex = index;
                 break;
             }
         }
+        if (bestBlock < 0)
+            return;
+        var best = g.M.Funcs.Get(bestIndex);
+        int size = InstCount(best);
+        if (size > InlineSmall)
+            growth -= size;
+        InlineAt(g, f, bestBlock, bestInst, best);
+        budget -= 1;
     }
 }
 
-bool Inlinable(Gen g, IrFunc fn)
+int InstCount(IrFunc fn)
+{
+    int count = 0;
+    foreach (var b in fn.Blocks.ToArray())
+        count += b.Insts.Count();
+    return count;
+}
+
+// how many loops each block is in: a branch to an earlier (or the same) block closes one
+int[] LoopDepth(IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    var index = Dictionary<string, int>.Create();
+    for (var i = 0; i < blocks.Length; i += 1)
+        index.Set(blocks[i].Label, i);
+    var depth = new int[blocks.Length];
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op != "br" && inst.Op != "switch")
+                continue;
+            foreach (var label in inst.Labels)
+            {
+                int target = index.TryGet(label) is int t ? t : -1;
+                for (var k = target; k >= 0 && k <= j; k += 1)
+                    depth[k] += 1;
+            }
+        }
+    }
+    return depth;
+}
+
+bool Inlinable(Gen g, IrFunc fn, int limit)
 {
     if (!fn.Defined || fn.Varargs || fn.Blocks.Count() == 0)
         return false;
@@ -61,7 +115,7 @@ bool Inlinable(Gen g, IrFunc fn)
             count += 1;
             if (inst.Op == "ret")
                 returns = true;
-            if (count > InlineLimit)
+            if (count > limit)
                 return false;
             if (inst.Op == "call" && inst.Callee >= 0)
             {
