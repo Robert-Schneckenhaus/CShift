@@ -17,6 +17,19 @@ string RuntimeAsm()
     // d0 * d1 -> d0 (registers: d1 is clobbered)
     "__cs68k_mul32:\n" +
     "\tmovem.l\t%d2-%d3,-(%sp)\n" +
+    // both factors fit in 16 bits (signed): one muls.w
+    "\tmove.w\t%d0,%d2\n" +
+    "\text.l\t%d2\n" +
+    "\tcmp.l\t%d0,%d2\n" +
+    "\tbne.s\t.Lcs_mul32_full\n" +
+    "\tmove.w\t%d1,%d2\n" +
+    "\text.l\t%d2\n" +
+    "\tcmp.l\t%d1,%d2\n" +
+    "\tbne.s\t.Lcs_mul32_full\n" +
+    "\tmuls.w\t%d1,%d0\n" +
+    "\tmovem.l\t(%sp)+,%d2-%d3\n" +
+    "\trts\n" +
+    ".Lcs_mul32_full:\n" +
     "\tmove.l\t%d0,%d2\n" +
     "\tswap\t%d2\n" +
     "\tmulu.w\t%d1,%d2\n" +          // ah * bl
@@ -257,6 +270,20 @@ string RuntimeAsm()
     "\tmovem.l\t%d2-%d3,-(%sp)\n" +
     "\tmove.l\t(12,%sp),%d0\n" +
     "\tmove.l\t(16,%sp),%d1\n" +
+    // both factors fit in 16 bits: one muls.w, and the product always fits
+    "\tmove.w\t%d0,%d2\n" +
+    "\text.l\t%d2\n" +
+    "\tcmp.l\t%d0,%d2\n" +
+    "\tbne.s\t.Lcs_smul_slow\n" +
+    "\tmove.w\t%d1,%d2\n" +
+    "\text.l\t%d2\n" +
+    "\tcmp.l\t%d1,%d2\n" +
+    "\tbne.s\t.Lcs_smul_slow\n" +
+    "\tmuls.w\t%d1,%d0\n" +
+    "\tmoveq\t#0,%d1\n" +
+    "\tmovem.l\t(%sp)+,%d2-%d3\n" +
+    "\trts\n" +
+    ".Lcs_smul_slow:\n" +
     "\tjsr\t__cs68k_umul64\n" +      // d0:d1 unsigned product
     "\tmove.l\t(12,%sp),%d2\n" +
     "\tbpl.s\t.Lcs_smul_a\n" +

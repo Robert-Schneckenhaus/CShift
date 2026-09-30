@@ -1744,6 +1744,19 @@ void GenCall(Gen g, IrInst inst)
         GenLibraryCall(g, inst, callee.Name);
         return;
     }
+    if (callee.Kind == ValKind.Global && callee.Name == "__cs_len" && inst.Args.Length == 1 && g.M.FuncIndex.ContainsKey("__cs_len"))
+    {
+        // the length of a string or array (0 for null), inline: it is needed for every bounds check
+        string done = g.NewLabel();
+        LoadAddr(g, inst.Args[0], "%a0");
+        g.Line("moveq\t#0,%d0");
+        g.Line("move.l\t%a0,%d1");
+        g.Line("beq.s\t" + done);
+        g.Line("move.l\t(4,%a0),%d0");
+        g.Label(done);
+        StoreResult(g, inst);
+        return;
+    }
     int bytes = 0;
     for (var i = inst.Args.Length - 1; i >= 0; i -= 1)
         bytes += PushArg(g, inst.Args[i], g.M.Vals.Get(inst.Args[i]).Type);
