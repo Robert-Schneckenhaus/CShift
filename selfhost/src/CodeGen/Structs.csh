@@ -534,8 +534,8 @@ Value EmitMember(Compiler cg, Expr e)
     {
         Value o = ToRValue(cg, obj);
         HoldTemp(cg, o);
-        string len = cg.Ir.Call("i64", "@__cs_len", "ptr " + o.V);
-        return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
+        string len = cg.Ir.Call(SizeIr(cg), "@__cs_len", "ptr " + o.V);
+        return Rvalue(types.I32, SizeToI32(cg, len), false);
     }
     if (types.IsFixed(t) && m.Name == "Length")
         return ConstInt(cg, types.I32, (int64)types.Count(t)); // a constant: the number of elements is part of the type
@@ -544,7 +544,7 @@ Value EmitMember(Compiler cg, Expr e)
         Value o = ToRValue(cg, obj);
         HoldTemp(cg, o);
         string len = cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2");
-        return Rvalue(types.I32, cg.Ir.Cast("trunc", "i64", len, "i32"), false);
+        return Rvalue(types.I32, SizeToI32(cg, len), false);
     }
     if (types.IsError(t) && (m.Name == "Message" || m.Name == "Code"))
     {

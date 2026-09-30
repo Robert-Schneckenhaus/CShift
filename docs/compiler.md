@@ -64,8 +64,17 @@ at its first error. Generic bodies are walked again for every instantiation, lik
 **Reference counting:** variables, fields and array elements own a reference; intermediate results carry a "+1" that
 is taken over when stored or released at the end of the statement. Arguments are passed borrowed; the called function
 retains its own parameters. Heap blocks (strings, arrays, closure environments) start with
-`{int64 count, int64 length}`. `--arc-stats` prints the balance of allocations and frees at the end of the program.
+`{size count, size length}`. `--arc-stats` prints the balance of allocations and frees at the end of the program.
 Only `SharedPtr<T>` counts atomically.
+
+**Targets:** `size` is the pointer-sized integer of the target (`selfhost/src/Emit/Target.csh`): `i64` on 64-bit targets
+(the default, the host), `i32` for a `--target` triple with 32-bit pointers (`i686-linux-gnu`, `m68k-…`, `arm…`). It
+is the type of lengths, indexes and sizes in the generated code, of `nint`/`nuint` and of the length in a slice; the
+sizes and alignments of types follow the target's data layout. The language does not change: `Length` is `int32`,
+`int64` exists on every target (a 64-bit index on a 32-bit target that does not fit fails the bounds check).
+Tested: i686 Linux (the whole test suite, a 32-bit cshc rebuilds itself) and 32-bit big-endian PowerPC under qemu.
+m68k works for small programs; LLVM's m68k backend is still experimental (only the small code model: data more than
+32 KB away does not link; some larger programs are miscompiled, also by the bundled clang 22).
 
 ## Tests
 
@@ -81,6 +90,9 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshi
 * The selfhost section builds the compiler with the compiler under test and checks: all cases pass with it
   (`selfhost/status.sh`, `passing.txt`), the projects build (`selfhost/projects.sh`), it rebuilds itself to the same
   IR (`selfhost/bootstrap.sh`).
+* `CSHIFT_TARGET=i686-linux-gnu tests/run_tests.sh` runs everything as 32-bit code (needs the 32-bit C library, e.g.
+  `gcc-multilib`); the selfhost section then also builds a 32-bit compiler. Output that depends on the size of pointers
+  (`sizeof`) is checked with `// expect-stdout-64:` / `// expect-stdout-32:`.
 
 ## What the compiler needs
 

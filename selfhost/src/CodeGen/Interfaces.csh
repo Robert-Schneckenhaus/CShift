@@ -216,7 +216,7 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
     Value self = ToRValue(cg, obj);
     string data = ir.ExtractValue("{ ptr, ptr }", self.V, "0");
     string table = ir.ExtractValue("{ ptr, ptr }", self.V, "1");
-    string fn = ir.Load("ptr", ir.Gep("ptr", table, "i64 " + chosen.ToString()));
+    string fn = ir.Load("ptr", ir.Gep("ptr", table, SizeIr(cg) + " " + chosen.ToString()));
 
     var releaseSlots = List<TempRelease>.Create();
     var callArgs = StringBuilder.Create();

@@ -129,11 +129,11 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
     for (var i = 0; i < n.Items.Length; i += 1)
     {
         if (n.Spread[i])
-            total = ir.Bin("add", "i64", total, lengths[i]);
+            total = ir.Bin("add", SizeIr(cg), total, lengths[i]);
         else
             plain += 1;
     }
-    total = ir.Bin("add", "i64", total, plain.ToString());
+    total = ir.Bin("add", SizeIr(cg), total, plain.ToString());
     string arr = AllocArray(cg, elem, total);
     string first = DataPtr(cg, arr);
     string at = "0";
@@ -141,14 +141,14 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
     {
         if (n.Spread[i])
         {
-            ir.Call("void", ArrayHelper(cg, arrayType, "copy"), "ptr " + owners[i] + ", i64 " + offsets[i] + ", ptr " + arr +
-                                                                ", i64 " + at + ", i64 " + lengths[i]);
-            at = ir.Bin("add", "i64", at, lengths[i]);
+            ir.Call("void", ArrayHelper(cg, arrayType, "copy"), "ptr " + owners[i] + ", " + SizeIr(cg) + " " + offsets[i] + ", ptr " + arr +
+                                                                ", " + SizeIr(cg) + " " + at + ", " + SizeIr(cg) + " " + lengths[i]);
+            at = ir.Bin("add", SizeIr(cg), at, lengths[i]);
         }
         else
         {
-            ir.Store(elemIr, values[i], ir.Gep(elemIr, first, "i64 " + at)); // the new array takes over the reference
-            at = ir.Bin("add", "i64", at, "1");
+            ir.Store(elemIr, values[i], ir.Gep(elemIr, first, SizeIr(cg) + " " + at)); // the new array takes over the reference
+            at = ir.Bin("add", SizeIr(cg), at, "1");
         }
     }
     if (to != 0 && types.IsElemSlice(to))
@@ -157,7 +157,7 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
         string ty = LlvmType(cg, to);
         string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", arr, "0");
         agg = ir.InsertValue(ty, agg, "ptr", first, "1");
-        agg = ir.InsertValue(ty, agg, "i64", total, "2");
+        agg = ir.InsertValue(ty, agg, SizeIr(cg), total, "2");
         return Rvalue(to, agg, true);
     }
     return Rvalue(arrayType, arr, true);
@@ -192,21 +192,21 @@ Value EmitCollectionBuilder(Compiler cg, CollectionExpr n, int to, SourceLoc loc
         Value src = SpreadSource(cg, item);
         var parts = PartsOf(cg, src);
         int srcElem = types.Elem(src.Type);
-        string idxSlot = ir.Alloca("i64", "spread.idx");
-        ir.Store("i64", "0", idxSlot);
+        string idxSlot = ir.Alloca(SizeIr(cg), "spread.idx");
+        ir.Store(SizeIr(cg), "0", idxSlot);
         string condLabel = ir.NewLabel("spread.cond");
         string bodyLabel = ir.NewLabel("spread.body");
         string endLabel = ir.NewLabel("spread.end");
         ir.Br(condLabel);
         ir.SetBlock(condLabel);
-        string idx = ir.Load("i64", idxSlot);
-        ir.CondBr(ir.ICmp("ult", "i64", idx, parts.Length), bodyLabel, endLabel);
+        string idx = ir.Load(SizeIr(cg), idxSlot);
+        ir.CondBr(ir.ICmp("ult", SizeIr(cg), idx, parts.Length), bodyLabel, endLabel);
         ir.SetBlock(bodyLabel);
         int mark = cg.Fn[0].Temps.Count();
-        args[0] = Arg { V = Lvalue(srcElem, ir.Gep(LlvmType(cg, srcElem), parts.Data, "i64 " + idx), true), Source = item };
+        args[0] = Arg { V = Lvalue(srcElem, ir.Gep(LlvmType(cg, srcElem), parts.Data, SizeIr(cg) + " " + idx), true), Source = item };
         EmitMethodCallOn(cg, coll, "Add", args, new int[0], item.Loc);
         FlushTemps(cg, mark, true); // per element: the result of Add and its temporaries
-        ir.Store("i64", ir.Bin("add", "i64", idx, "1"), idxSlot);
+        ir.Store(SizeIr(cg), ir.Bin("add", SizeIr(cg), idx, "1"), idxSlot);
         ir.Br(condLabel);
         ir.SetBlock(endLabel);
     }

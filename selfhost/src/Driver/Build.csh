@@ -496,7 +496,7 @@ int Build(BuildOptions o)
     // ---- parse ----
     var diag = Diagnostics.Create();
     var tree = Ast.Create();
-    var cg = Compiler.Create(tree, diag, windows);
+    var cg = Compiler.Create(tree, diag, windows, o.Target);
     cg.St[0].ArcStats = o.ArcStats;
     cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)

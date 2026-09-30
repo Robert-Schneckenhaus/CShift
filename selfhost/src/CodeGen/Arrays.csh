@@ -1,7 +1,7 @@
 // Arrays and strings as sequences: creation, indexing, foreach, Array.Copy, Clone and the per-type release of arrays
 // (the array parts of CodeGenExpr.cpp, CodeGenStmt.cpp and CodeGenRuntime.cpp).
 //
-// An array is a heap block { i64 refcount, i64 length, elements... } like a string; a null array has length 0.
+// An array is a heap block { size refcount, size length, elements... } like a string; a null array has length 0.
 
 namespace CShift.CodeGen;
 
@@ -13,25 +13,26 @@ using CShift.Emit;
 // The size of a type in bytes as a constant operand (the "getelementptr null" trick).
 string SizeOfType(Compiler cg, int t)
 {
-    return "ptrtoint (ptr getelementptr (" + LlvmType(cg, t) + ", ptr null, i32 1) to i64)";
+    return "ptrtoint (ptr getelementptr (" + LlvmType(cg, t) + ", ptr null, i32 1) to " + SizeIr(cg) + ")";
 }
 
 // The address of the first element of a block.
 string DataPtr(Compiler cg, string block)
 {
-    return cg.Ir.ByteGep(block, "16");
+    return cg.Ir.ByteGep(block, HeaderSize(cg));
 }
 
 string ArrayLength(Compiler cg, string block)
 {
-    return cg.Ir.Call("i64", "@__cs_len", "ptr " + block);
+    return cg.Ir.Call(SizeIr(cg), "@__cs_len", "ptr " + block);
 }
 
 // The block of 'count' elements of the type, zeroed, with reference count 1.
 string AllocArray(Compiler cg, int elem, string count)
 {
-    string bytes = cg.Ir.Bin("mul", "i64", count, SizeOfType(cg, elem));
-    return cg.Ir.Call("ptr", "@__cs_alloc", "i64 " + bytes + ", i64 " + count);
+    string size = SizeIr(cg);
+    string bytes = cg.Ir.Bin("mul", size, count, SizeOfType(cg, elem));
+    return cg.Ir.Call("ptr", "@__cs_alloc", size + " " + bytes + ", " + size + " " + count);
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ Value EmitNewArray(Compiler cg, Expr e)
         {
             Value v = ConvertValue(cg, ToRValue(cg, EmitExprAs(cg, n.Init[i], elem)), elem, n.Init[i].Loc);
             string owned = Consume(cg, v);
-            string slot = ir.Gep(elemIr, DataPtr(cg, arr), "i64 " + i.ToString());
+            string slot = ir.Gep(elemIr, DataPtr(cg, arr), SizeIr(cg) + " " + i.ToString());
             ir.Store(elemIr, owned, slot);
         }
         return Rvalue(arrayType, arr, true);
@@ -71,9 +72,9 @@ Value EmitNewArray(Compiler cg, Expr e)
     if (!types.IsIntegral(size.Type))
         Fail(cg, n.Size.Loc, "the array size must be an integer");
     bool isSigned = types.IsInt(size.Type) && types.IsSigned(size.Type);
-    string count = NumericConvert(cg, size.V, size.Type, isSigned ? types.I64 : types.U64);
-    if (isSigned)
-        EmitPanicIf(cg, ir.ICmp("slt", "i64", count, "0"), "negative array length");
+    string count = SizeIndex(cg, size.V, size.Type);
+    if (isSigned || SizeIr(cg) != "i64")
+        EmitPanicIf(cg, ir.ICmp("slt", SizeIr(cg), count, "0"), "negative array length");
     return Rvalue(arrayType, AllocArray(cg, elem, count), true);
 }
 
@@ -111,40 +112,42 @@ Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc lo
         HoldTemp(cg, whole);
         string length = ArrayLength(cg, whole.V);
         string fromStart = SliceBound(cg, index, true, length);
-        EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", fromStart, length), types.IsArray(obj.Type) ? "array index out of range" : "string index out of range",
+        EmitIndexPanicIf(cg, ir.ICmp("uge", SizeIr(cg), fromStart, length), types.IsArray(obj.Type) ? "array index out of range" : "string index out of range",
                          fromStart, length);
         string first = DataPtr(cg, whole.V);
         if (types.IsString(obj.Type))
-            return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", first, "i64 " + fromStart)), false);
-        return Lvalue(types.Elem(obj.Type), ir.Gep(LlvmType(cg, types.Elem(obj.Type)), first, "i64 " + fromStart), false);
+            return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", first, SizeIr(cg) + " " + fromStart)), false);
+        return Lvalue(types.Elem(obj.Type), ir.Gep(LlvmType(cg, types.Elem(obj.Type)), first, SizeIr(cg) + " " + fromStart), false);
     }
     if (fromEnd)
         Fail(cg, loc, "'^' (from the end) needs an array, a string or a slice, not '" + types.Name(obj.Type) + "'");
     Value idx = EmitRValue(cg, index);
     if (!types.IsIntegral(idx.Type))
         Fail(cg, index.Loc, "an index must be an integer, not '" + types.Name(idx.Type) + "'");
-    bool signedIndex = types.IsInt(idx.Type) && types.IsSigned(idx.Type);
-    string i64v = NumericConvert(cg, idx.V, idx.Type, signedIndex ? types.I64 : types.U64);
 
     int t = obj.Type;
     if (types.IsArray(t) || types.IsString(t))
     {
+        string at = SizeIndex(cg, idx.V, idx.Type);
         Value arr = ToRValue(cg, obj);
         HoldTemp(cg, arr);
         string len = ArrayLength(cg, arr.V);
-        EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i64v, len), types.IsArray(t) ? "array index out of range" : "string index out of range", i64v, len);
+        EmitIndexPanicIf(cg, ir.ICmp("uge", SizeIr(cg), at, len), types.IsArray(t) ? "array index out of range" : "string index out of range", at, len);
         string data = DataPtr(cg, arr.V);
         if (types.IsString(t))
-            return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", data, "i64 " + i64v)), false);
-        return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), data, "i64 " + i64v), false);
+            return Rvalue(types.Char, ir.Load("i8", ir.Gep("i8", data, SizeIr(cg) + " " + at)), false);
+        return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), data, SizeIr(cg) + " " + at), false);
     }
     if (types.IsPointer(t))
     {
         RequireUnsafe(cg, loc, "pointer indexing");
         if (types.IsVoid(types.Elem(t)))
             Fail(cg, loc, "cannot index 'void*'");
+        // like C: a pointer-sized offset (a 64-bit index is cut on a 32-bit target)
+        bool signedIndex = types.IsInt(idx.Type) && types.IsSigned(idx.Type);
+        string offset = NumericConvert(cg, idx.V, idx.Type, signedIndex ? types.Nint : types.Nuint);
         Value p = ToRValue(cg, obj);
-        return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), p.V, "i64 " + i64v), false);
+        return Lvalue(types.Elem(t), ir.Gep(LlvmType(cg, types.Elem(t)), p.V, SizeIr(cg) + " " + offset), false);
     }
     Fail(cg, loc, "cannot index a value of type '" + types.Name(t) + "'");
     return obj;
@@ -191,7 +194,7 @@ void EmitForeach(Compiler cg, Stmt s)
         Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N> or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
     bool isFixed = types.IsFixed(collType);
     int elemType = SliceElemType(cg, collType);
-    string collIr = LlvmType(cg, collType); // ptr, or { ptr, ptr, i64 } for a slice
+    string collIr = LlvmType(cg, collType); // ptr, or { ptr, ptr, size } for a slice
 
     PushScope(cg); // holds the collection so that it stays alive during the loop
     string collSlot = ir.Alloca(collIr, "foreach.coll");
@@ -199,8 +202,9 @@ void EmitForeach(Compiler cg, Stmt s)
     DeclareVar(cg, "$foreach", collType, collSlot);
     FlushTemps(cg, 0, true);
 
-    string idxSlot = ir.Alloca("i64", "foreach.idx");
-    ir.Store("i64", "0", idxSlot);
+    string size = SizeIr(cg);
+    string idxSlot = ir.Alloca(size, "foreach.idx");
+    ir.Store(size, "0", idxSlot);
     // a Fixed is iterated in its own slot (a copy): its length is a constant
     string len = isFixed ? types.Count(collType).ToString() : PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Length;
 
@@ -211,15 +215,15 @@ void EmitForeach(Compiler cg, Stmt s)
     ir.Br(condLabel);
 
     ir.SetBlock(condLabel);
-    string idx = ir.Load("i64", idxSlot);
-    ir.CondBr(ir.ICmp("ult", "i64", idx, len), bodyLabel, endLabel);
+    string idx = ir.Load(size, idxSlot);
+    ir.CondBr(ir.ICmp("ult", size, idx, len), bodyLabel, endLabel);
 
     ir.SetBlock(bodyLabel);
     int outerDepth = ScopeCount(cg);
     PushScope(cg); // per-iteration scope for the loop variable
     int varType = n.Type.IsNull() ? elemType : DeclTypeOf(cg, n.Type);
     string first = isFixed ? collSlot : PartsOf(cg, Rvalue(collType, ir.Load(collIr, collSlot), false)).Data;
-    string addr = ir.Gep(LlvmType(cg, elemType), first, "i64 " + idx);
+    string addr = ir.Gep(LlvmType(cg, elemType), first, size + " " + idx);
     Value elem = Lvalue(elemType, addr, true);
     Value cv = ConvertValue(cg, elem, varType, s.Loc);
     string varSlot = ir.Alloca(LlvmType(cg, varType), n.Name);
@@ -233,8 +237,8 @@ void EmitForeach(Compiler cg, Stmt s)
     ir.Br(incLabel);
 
     ir.SetBlock(incLabel);
-    string next = ir.Bin("add", "i64", ir.Load("i64", idxSlot), "1");
-    ir.Store("i64", next, idxSlot);
+    string next = ir.Bin("add", size, ir.Load(size, idxSlot), "1");
+    ir.Store(size, next, idxSlot);
     ir.Br(condLabel);
 
     ir.SetBlock(endLabel);
@@ -263,11 +267,13 @@ Value EmitArrayCopy(Compiler cg, Arg[] args, SourceLoc loc)
     string di = "0";
     if (!shortForm)
     {
-        si = ir.Cast("sext", "i32", ConvertValue(cg, args[1].V, types.I32, loc).V, "i64");
-        di = ir.Cast("sext", "i32", ConvertValue(cg, args[3].V, types.I32, loc).V, "i64");
+        si = I32ToSize(cg, ConvertValue(cg, args[1].V, types.I32, loc).V, true);
+        di = I32ToSize(cg, ConvertValue(cg, args[3].V, types.I32, loc).V, true);
     }
-    string count = ir.Cast("sext", "i32", ConvertValue(cg, args[shortForm ? 2 : 4].V, types.I32, loc).V, "i64");
-    ir.Call("void", ArrayHelper(cg, src.Type, "copy"), "ptr " + src.V + ", i64 " + si + ", ptr " + dst.V + ", i64 " + di + ", i64 " + count);
+    string count = I32ToSize(cg, ConvertValue(cg, args[shortForm ? 2 : 4].V, types.I32, loc).V, true);
+    string size = SizeIr(cg);
+    ir.Call("void", ArrayHelper(cg, src.Type, "copy"), "ptr " + src.V + ", " + size + " " + si + ", ptr " + dst.V + ", " + size + " " + di + ", " +
+                                                        size + " " + count);
     return Rvalue(types.Void, "", false);
 }
 
@@ -331,17 +337,17 @@ string RetainFunction(Compiler cg, int t)
     return "";
 }
 
-// SharedPtr<T>: an atomically reference-counted box {i64 count, i64 unused, T value}, safe to share between OS threads.
+// SharedPtr<T>: an atomically reference-counted box {size count, size unused, T value}, safe to share between OS threads.
 // Retaining is the same for every T, so one helper serves all of them.
 string SharedRetainHelper(Compiler cg)
 {
     string name = "@__cs_retain_shared";
     if (!cg.Ir.Declared.Add(name))
         return name;
-    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+    cg.Ir.AppendHelper(SizedText(cg, "define internal void " + name + "(ptr %p) {\nentry:\n" +
                        "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %inc\n" +
-                       "inc:\n  %old = atomicrmw add ptr %p, i64 1 monotonic\n  br label %done\n" +
-                       "done:\n  ret void\n}\n\n");
+                       "inc:\n  %old = atomicrmw add ptr %p, $S 1 monotonic\n  br label %done\n" +
+                       "done:\n  ret void\n}\n\n"));
     return name;
 }
 
@@ -357,18 +363,18 @@ string SharedReleaseHelper(Compiler cg, int t)
     if (NeedsArc(cg, elem))
     {
         string ty = LlvmType(cg, elem);
-        releaseValue = "  %vp = getelementptr i8, ptr %p, i64 16\n  %v = load " + ty + ", ptr %vp\n" +
+        releaseValue = "  %vp = getelementptr i8, ptr %p, $S $H\n  %v = load " + ty + ", ptr %vp\n" +
                        "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %v)\n";
     }
     string counter = cg.St[0].ArcStats
-        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
+        ? "  %f = atomicrmw add ptr @__cs_frees, $S 1 monotonic\n"
         : "";
-    cg.Ir.AppendHelper("define internal void " + name + "(ptr %p) {\nentry:\n" +
+    cg.Ir.AppendHelper(SizedText(cg, "define internal void " + name + "(ptr %p) {\nentry:\n" +
                        "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
-                       "dec:\n  %old = atomicrmw sub ptr %p, i64 1 acq_rel\n" +
-                       "  %last = icmp eq i64 %old, 1\n  br i1 %last, label %free, label %done\n" +
+                       "dec:\n  %old = atomicrmw sub ptr %p, $S 1 acq_rel\n" +
+                       "  %last = icmp eq $S %old, 1\n  br i1 %last, label %free, label %done\n" +
                        "free:\n" + releaseValue + "  call void @free(ptr %p)\n" + counter + "  br label %done\n" +
-                       "done:\n  ret void\n}\n\n");
+                       "done:\n  ret void\n}\n\n"));
     return name;
 }
 
@@ -387,7 +393,7 @@ string ArrayHelper(Compiler cg, int arrayType, string kind)
         text = ArrayCloneText(cg, name, elem);
     else
         text = ArrayCopyText(cg, name, elem);
-    ir.AppendHelper(text);
+    ir.AppendHelper(SizedText(cg, text));
     return name;
 }
 
@@ -395,19 +401,19 @@ string ArrayReleaseText(Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string counter = cg.St[0].ArcStats
-        ? "  %f = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n"
+        ? "  %f = atomicrmw add ptr @__cs_frees, $S 1 monotonic\n"
         : "";
     return "define internal void " + name + "(ptr %p) {\nentry:\n" +
            "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %done, label %dec\n" +
-           "dec:\n  %rc0 = load i64, ptr %p\n  %rc = sub i64 %rc0, 1\n  store i64 %rc, ptr %p\n" +
-           "  %lenp = getelementptr i8, ptr %p, i64 8\n  %len = load i64, ptr %lenp\n" +
-           "  %zero = icmp eq i64 %rc, 0\n  br i1 %zero, label %loop, label %done\n" +
-           "loop:\n  %i = phi i64 [ 0, %dec ], [ %next, %body ]\n" +
-           "  %more = icmp ult i64 %i, %len\n  br i1 %more, label %body, label %free\n" +
-           "body:\n  %data = getelementptr i8, ptr %p, i64 16\n" +
-           "  %ep = getelementptr " + ty + ", ptr %data, i64 %i\n  %ev = load " + ty + ", ptr %ep\n" +
+           "dec:\n  %rc0 = load $S, ptr %p\n  %rc = sub $S %rc0, 1\n  store $S %rc, ptr %p\n" +
+           "  %lenp = getelementptr i8, ptr %p, $S $P\n  %len = load $S, ptr %lenp\n" +
+           "  %zero = icmp eq $S %rc, 0\n  br i1 %zero, label %loop, label %done\n" +
+           "loop:\n  %i = phi $S [ 0, %dec ], [ %next, %body ]\n" +
+           "  %more = icmp ult $S %i, %len\n  br i1 %more, label %body, label %free\n" +
+           "body:\n  %data = getelementptr i8, ptr %p, $S $H\n" +
+           "  %ep = getelementptr " + ty + ", ptr %data, $S %i\n  %ev = load " + ty + ", ptr %ep\n" +
            "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %ev)\n" +
-           "  %next = add i64 %i, 1\n  br label %loop\n" +
+           "  %next = add $S %i, 1\n  br label %loop\n" +
            "free:\n  call void @free(ptr %p)\n" + counter + "  br label %done\n" +
            "done:\n  ret void\n}\n\n";
 }
@@ -418,19 +424,19 @@ string ArrayCloneText(Compiler cg, string name, int elem)
     string text = "define internal ptr " + name + "(ptr %p) {\nentry:\n" +
                   "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %null, label %copy\n" +
                   "null:\n  ret ptr null\n" +
-                  "copy:\n  %lenp = getelementptr i8, ptr %p, i64 8\n  %len = load i64, ptr %lenp\n" +
-                  "  %bytes = mul i64 %len, " + SizeOfType(cg, elem) + "\n" +
-                  "  %r = call ptr @__cs_alloc(i64 %bytes, i64 %len)\n" +
-                  "  %dst = getelementptr i8, ptr %r, i64 16\n  %src = getelementptr i8, ptr %p, i64 16\n" +
-                  "  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %src, i64 %bytes, i1 false)\n";
+                  "copy:\n  %lenp = getelementptr i8, ptr %p, $S $P\n  %len = load $S, ptr %lenp\n" +
+                  "  %bytes = mul $S %len, " + SizeOfType(cg, elem) + "\n" +
+                  "  %r = call ptr @__cs_alloc($S %bytes, $S %len)\n" +
+                  "  %dst = getelementptr i8, ptr %r, $S $H\n  %src = getelementptr i8, ptr %p, $S $H\n" +
+                  "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %src, $S %bytes, i1 false)\n";
     if (NeedsArc(cg, elem))
     {
         text += "  br label %loop\n" +
-                "loop:\n  %i = phi i64 [ 0, %copy ], [ %next, %body ]\n" +
-                "  %more = icmp ult i64 %i, %len\n  br i1 %more, label %body, label %done\n" +
-                "body:\n  %ep = getelementptr " + ty + ", ptr %dst, i64 %i\n  %ev = load " + ty + ", ptr %ep\n" +
+                "loop:\n  %i = phi $S [ 0, %copy ], [ %next, %body ]\n" +
+                "  %more = icmp ult $S %i, %len\n  br i1 %more, label %body, label %done\n" +
+                "body:\n  %ep = getelementptr " + ty + ", ptr %dst, $S %i\n  %ev = load " + ty + ", ptr %ep\n" +
                 "  call void " + RetainFunction(cg, elem) + "(" + ty + " %ev)\n" +
-                "  %next = add i64 %i, 1\n  br label %loop\n" +
+                "  %next = add $S %i, 1\n  br label %loop\n" +
                 "done:\n  ret ptr %r\n}\n\n";
         return text;
     }
@@ -442,23 +448,23 @@ string ArrayCloneText(Compiler cg, string name, int elem)
 string ArrayCopyText(Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
-    string text = "define internal void " + name + "(ptr %src, i64 %si, ptr %dst, i64 %di, i64 %count) {\nentry:\n" +
-                  "  %srclen = call i64 @__cs_len(ptr %src)\n  %dstlen = call i64 @__cs_len(ptr %dst)\n" +
-                  "  %b1 = icmp slt i64 %si, 0\n  %b2 = icmp slt i64 %di, 0\n  %b3 = icmp slt i64 %count, 0\n" +
-                  "  %e1 = add i64 %si, %count\n  %b4 = icmp sgt i64 %e1, %srclen\n" +
-                  "  %e2 = add i64 %di, %count\n  %b5 = icmp sgt i64 %e2, %dstlen\n" +
+    string text = "define internal void " + name + "(ptr %src, $S %si, ptr %dst, $S %di, $S %count) {\nentry:\n" +
+                  "  %srclen = call $S @__cs_len(ptr %src)\n  %dstlen = call $S @__cs_len(ptr %dst)\n" +
+                  "  %b1 = icmp slt $S %si, 0\n  %b2 = icmp slt $S %di, 0\n  %b3 = icmp slt $S %count, 0\n" +
+                  "  %e1 = add $S %si, %count\n  %b4 = icmp sgt $S %e1, %srclen\n" +
+                  "  %e2 = add $S %di, %count\n  %b5 = icmp sgt $S %e2, %dstlen\n" +
                   "  %o1 = or i1 %b1, %b2\n  %o2 = or i1 %o1, %b3\n  %o3 = or i1 %o2, %b4\n  %bad = or i1 %o3, %b5\n" +
                   "  br i1 %bad, label %range, label %ok\n" +
                   "range:\n  call void @__cs_panic(ptr " + cg.Ir.CString("array copy out of range") + ")\n  unreachable\n" +
-                  "ok:\n  %sdata = getelementptr i8, ptr %src, i64 16\n  %ddata = getelementptr i8, ptr %dst, i64 16\n" +
-                  "  %sbase = getelementptr " + ty + ", ptr %sdata, i64 %si\n" +
-                  "  %dbase = getelementptr " + ty + ", ptr %ddata, i64 %di\n";
+                  "ok:\n  %sdata = getelementptr i8, ptr %src, $S $H\n  %ddata = getelementptr i8, ptr %dst, $S $H\n" +
+                  "  %sbase = getelementptr " + ty + ", ptr %sdata, $S %si\n" +
+                  "  %dbase = getelementptr " + ty + ", ptr %ddata, $S %di\n";
     if (!NeedsArc(cg, elem))
     {
-        return text + "  %bytes = mul i64 %count, " + SizeOfType(cg, elem) + "\n" +
-               "  call void @llvm.memmove.p0.p0.i64(ptr %dbase, ptr %sbase, i64 %bytes, i1 false)\n  ret void\n}\n\n";
+        return text + "  %bytes = mul $S %count, " + SizeOfType(cg, elem) + "\n" +
+               "  call void @llvm.memmove.p0.p0.$S(ptr %dbase, ptr %sbase, $S %bytes, i1 false)\n  ret void\n}\n\n";
     }
-    text += "  %same = icmp eq ptr %src, %dst\n  %ahead = icmp sgt i64 %di, %si\n" +
+    text += "  %same = icmp eq ptr %src, %dst\n  %ahead = icmp sgt $S %di, %si\n" +
             "  %backward = and i1 %same, %ahead\n  br i1 %backward, label %bwd.head, label %fwd.head\n";
     text += CopyLoop(cg, ty, elem, "fwd", false) + CopyLoop(cg, ty, elem, "bwd", true);
     return text + "done:\n  ret void\n}\n\n";
@@ -468,20 +474,20 @@ string ArrayCopyText(Compiler cg, string name, int elem)
 string CopyLoop(Compiler cg, string ty, int elem, string prefix, bool backward)
 {
     string index = backward ? "%" + prefix + ".rev" : "%" + prefix + ".i";
-    string text = prefix + ".head:\n  %" + prefix + ".i = phi i64 [ 0, %ok ], [ %" + prefix + ".next, %" + prefix + ".body ]\n" +
-                  "  %" + prefix + ".more = icmp slt i64 %" + prefix + ".i, %count\n" +
+    string text = prefix + ".head:\n  %" + prefix + ".i = phi $S [ 0, %ok ], [ %" + prefix + ".next, %" + prefix + ".body ]\n" +
+                  "  %" + prefix + ".more = icmp slt $S %" + prefix + ".i, %count\n" +
                   "  br i1 %" + prefix + ".more, label %" + prefix + ".body, label %done\n" +
                   prefix + ".body:\n";
     if (backward)
-        text += "  %bwd.last = sub i64 %count, 1\n  %bwd.rev = sub i64 %bwd.last, %bwd.i\n";
-    text += "  %" + prefix + ".sp = getelementptr " + ty + ", ptr %sbase, i64 " + index + "\n" +
-            "  %" + prefix + ".dp = getelementptr " + ty + ", ptr %dbase, i64 " + index + "\n" +
+        text += "  %bwd.last = sub $S %count, 1\n  %bwd.rev = sub $S %bwd.last, %bwd.i\n";
+    text += "  %" + prefix + ".sp = getelementptr " + ty + ", ptr %sbase, $S " + index + "\n" +
+            "  %" + prefix + ".dp = getelementptr " + ty + ", ptr %dbase, $S " + index + "\n" +
             "  %" + prefix + ".v = load " + ty + ", ptr %" + prefix + ".sp\n" +
             "  call void " + RetainFunction(cg, elem) + "(" + ty + " %" + prefix + ".v)\n" +
             "  %" + prefix + ".old = load " + ty + ", ptr %" + prefix + ".dp\n" +
             "  store " + ty + " %" + prefix + ".v, ptr %" + prefix + ".dp\n" +
             "  call void " + ReleaseFunction(cg, elem) + "(" + ty + " %" + prefix + ".old)\n" +
-            "  %" + prefix + ".next = add i64 %" + prefix + ".i, 1\n  br label %" + prefix + ".head\n";
+            "  %" + prefix + ".next = add $S %" + prefix + ".i, 1\n  br label %" + prefix + ".head\n";
     return text;
 }
 
@@ -579,7 +585,7 @@ Value EmitStringFromBytes(Compiler cg, Arg[] args, SourceLoc loc)
         Fail(cg, loc, "string.FromBytes needs a 'uint8[]', not '" + types.Name(bytes.Type) + "'");
     HoldTemp(cg, bytes);
     string start = "0";
-    string count = ir.Cast("trunc", "i64", ArrayLength(cg, bytes.V), "i32");
+    string count = SizeToI32(cg, ArrayLength(cg, bytes.V));
     if (args.Length == 3)
     {
         start = ConvertValue(cg, args[1].V, types.I32, loc).V;

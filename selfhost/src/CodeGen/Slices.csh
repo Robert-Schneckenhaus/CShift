@@ -1,7 +1,7 @@
 // Slices: Slice<T> (a view of part of an array), ReadOnlySlice<T> (the same, read-only) and StringSlice (a view of part
 // of a string, read-only).
 //
-// A slice is { ptr owner, ptr data, i64 length }: the block that owns the elements (an array or a string, whose
+// A slice is { ptr owner, ptr data, size length }: the block that owns the elements (an array or a string, whose
 // reference the slice holds), the first element and the number of elements. Creating a slice copies nothing; the view
 // keeps the whole block alive. a[i..j], a[..j], a[i..], a[..] slice arrays, strings and slices; ^n counts from the end.
 
@@ -69,7 +69,7 @@ Value MakeSlice(Compiler cg, int sliceType, SliceParts p)
     string ty = LlvmType(cg, sliceType);
     string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", p.Owner, "0");
     agg = ir.InsertValue(ty, agg, "ptr", p.Data, "1");
-    agg = ir.InsertValue(ty, agg, "i64", p.Length, "2");
+    agg = ir.InsertValue(ty, agg, SizeIr(cg), p.Length, "2");
     return Rvalue(sliceType, agg, true);
 }
 
@@ -81,16 +81,15 @@ Value ToSlice(Compiler cg, Value v, int sliceType)
     return MakeSlice(cg, sliceType, PartsOf(cg, r));
 }
 
-// An index for a[i] or a range bound: i64, counted from the end for ^n.
+// An index for a[i] or a range bound: a size (Layout.csh: SizeIndex), counted from the end for ^n.
 string SliceBound(Compiler cg, Expr e, bool fromEnd, string length)
 {
     var types = cg.Types;
     Value v = EmitRValue(cg, e);
     if (!types.IsIntegral(v.Type))
         Fail(cg, e.Loc, "an index must be an integer, not '" + types.Name(v.Type) + "'");
-    bool isSigned = types.IsInt(v.Type) && types.IsSigned(v.Type);
-    string i64v = NumericConvert(cg, v.V, v.Type, isSigned ? types.I64 : types.U64);
-    return fromEnd ? cg.Ir.Bin("sub", "i64", length, i64v) : i64v;
+    string at = SizeIndex(cg, v.V, v.Type);
+    return fromEnd ? cg.Ir.Bin("sub", SizeIr(cg), length, at) : at;
 }
 
 // a[start..end]
@@ -108,12 +107,12 @@ Value EmitSlice(Compiler cg, Expr e)
     string start = n.Start.IsNull() ? "0" : SliceBound(cg, n.Start, n.StartFromEnd, parts.Length);
     string end = n.End.IsNull() ? parts.Length : SliceBound(cg, n.End, n.EndFromEnd, parts.Length);
     // 0 <= start <= end <= length
-    string bad = ir.Bin("or", "i1", ir.ICmp("slt", "i64", start, "0"), ir.ICmp("sgt", "i64", start, end));
-    bad = ir.Bin("or", "i1", bad, ir.ICmp("sgt", "i64", end, parts.Length));
+    string bad = ir.Bin("or", "i1", ir.ICmp("slt", SizeIr(cg), start, "0"), ir.ICmp("sgt", SizeIr(cg), start, end));
+    bad = ir.Bin("or", "i1", bad, ir.ICmp("sgt", SizeIr(cg), end, parts.Length));
     EmitPanicIf(cg, bad, "slice range out of bounds");
     int elem = SliceElemType(cg, sliceType);
-    var result = SliceParts { Owner = parts.Owner, Length = ir.Bin("sub", "i64", end, start) };
-    result.Data = ir.Gep(LlvmType(cg, elem), parts.Data, "i64 " + start);
+    var result = SliceParts { Owner = parts.Owner, Length = ir.Bin("sub", SizeIr(cg), end, start) };
+    result.Data = ir.Gep(LlvmType(cg, elem), parts.Data, SizeIr(cg) + " " + start);
     return MakeSlice(cg, sliceType, result);
 }
 
@@ -126,9 +125,9 @@ Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     HoldTemp(cg, s);
     var parts = PartsOf(cg, s);
     string i = SliceBound(cg, index, fromEnd, parts.Length);
-    EmitIndexPanicIf(cg, ir.ICmp("uge", "i64", i, parts.Length), "slice index out of range", i, parts.Length);
+    EmitIndexPanicIf(cg, ir.ICmp("uge", SizeIr(cg), i, parts.Length), "slice index out of range", i, parts.Length);
     int elem = SliceElemType(cg, s.Type);
-    string addr = ir.Gep(LlvmType(cg, elem), parts.Data, "i64 " + i);
+    string addr = ir.Gep(LlvmType(cg, elem), parts.Data, SizeIr(cg) + " " + i);
     if (types.IsStringSlice(s.Type))
         return Rvalue(types.Char, ir.Load("i8", addr), false); // strings are immutable
     if (types.IsReadOnlySlice(s.Type))
@@ -140,13 +139,13 @@ Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
 string SliceOffset(Compiler cg, int sliceType, SliceParts p)
 {
     var ir = cg.Ir;
-    string first = ir.Cast("ptrtoint", "ptr", DataPtr(cg, p.Owner), "i64");
-    string data = ir.Cast("ptrtoint", "ptr", p.Data, "i64");
-    string bytes = ir.Bin("sub", "i64", data, first);
+    string first = ir.Cast("ptrtoint", "ptr", DataPtr(cg, p.Owner), SizeIr(cg));
+    string data = ir.Cast("ptrtoint", "ptr", p.Data, SizeIr(cg));
+    string bytes = ir.Bin("sub", SizeIr(cg), data, first);
     int64 size = TypeLayout(cg, SliceElemType(cg, sliceType)).Size;
-    string elements = size == 1 ? bytes : ir.Bin("sdiv exact", "i64", bytes, size.ToString());
+    string elements = size == 1 ? bytes : ir.Bin("sdiv exact", SizeIr(cg), bytes, size.ToString());
     // an empty slice without an owner (default, null) has no data pointer
-    return ir.Select(ir.ICmp("eq", "ptr", p.Owner, "null"), "i64", "0", elements);
+    return ir.Select(ir.ICmp("eq", "ptr", p.Owner, "null"), SizeIr(cg), "0", elements);
 }
 
 // StringSlice.ToString(): a new string with the bytes of the view (owned).
@@ -156,8 +155,8 @@ string StringSliceText(Compiler cg, Value v)
     Value s = ToRValue(cg, v);
     HoldTemp(cg, s);
     var p = PartsOf(cg, s);
-    string offset = ir.Cast("trunc", "i64", SliceOffset(cg, s.Type, p), "i32");
-    string count = ir.Cast("trunc", "i64", p.Length, "i32");
+    string offset = SizeToI32(cg, SliceOffset(cg, s.Type, p));
+    string count = SizeToI32(cg, p.Length);
     return ir.Call("ptr", "@__cs_substring", "ptr " + p.Owner + ", i32 " + offset + ", i32 " + count);
 }
 
@@ -171,8 +170,8 @@ Value SliceToArray(Compiler cg, Value v)
     var p = PartsOf(cg, s);
     int arrayType = types.ArrayOf(types.Elem(s.Type));
     string copy = AllocArray(cg, types.Elem(s.Type), p.Length);
-    ir.Call("void", ArrayHelper(cg, arrayType, "copy"), "ptr " + p.Owner + ", i64 " + SliceOffset(cg, s.Type, p) + ", ptr " + copy +
-                                                        ", i64 0, i64 " + p.Length);
+    ir.Call("void", ArrayHelper(cg, arrayType, "copy"), "ptr " + p.Owner + ", " + SizeIr(cg) + " " + SliceOffset(cg, s.Type, p) + ", ptr " + copy +
+                                                        ", " + SizeIr(cg) + " 0, " + SizeIr(cg) + " " + p.Length);
     return Rvalue(arrayType, copy, true);
 }
 
@@ -186,9 +185,9 @@ Value EmitTextEquals(Compiler cg, BinOp op, Value l0, Value r0)
     HoldTemp(cg, r);
     var a = PartsOf(cg, l);
     var b = PartsOf(cg, r);
-    string sameLength = ir.ICmp("eq", "i64", a.Length, b.Length);
-    string count = ir.Select(sameLength, "i64", a.Length, "0"); // compare nothing if the lengths differ
-    string cmp = ir.Call("i32", "@memcmp", "ptr " + a.Data + ", ptr " + b.Data + ", i64 " + count);
+    string sameLength = ir.ICmp("eq", SizeIr(cg), a.Length, b.Length);
+    string count = ir.Select(sameLength, SizeIr(cg), a.Length, "0"); // compare nothing if the lengths differ
+    string cmp = ir.Call("i32", "@memcmp", "ptr " + a.Data + ", ptr " + b.Data + ", " + SizeIr(cg) + " " + count);
     string eq = ir.Bin("and", "i1", sameLength, ir.ICmp("eq", "i32", cmp, "0"));
     return MakeBool(cg, op == BinOp.Eq ? eq : ir.Bin("xor", "i1", eq, "true"));
 }

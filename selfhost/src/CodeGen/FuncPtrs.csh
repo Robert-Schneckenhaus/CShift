@@ -2,7 +2,7 @@
 //
 // A function value is { ptr fn, ptr env }. For a plain function (and a lambda that captures nothing) env is null and
 // fn is the function itself, so it can be passed to C as it is. A lambda that captures variables (Lambdas.csh) has an
-// environment: a reference-counted block { i64 count, i64 unused, ptr drop, captured values... }, and fn takes it as
+// environment: a reference-counted block { size count, size unused, ptr drop, captured values... }, and fn takes it as
 // an extra first parameter. 'drop' releases the captured values when the last reference goes away.
 //
 // A function name used as a value has the type "function" (a method group). It becomes a function value when it is
@@ -177,16 +177,16 @@ string FunctionReleaseHelper(Compiler cg)
 {
     string name = "@__cs_release_fn";
     if (cg.Ir.Declared.Add(name))
-        cg.Ir.AppendHelper("define internal void @__cs_release_fn({ ptr, ptr } %f) {\nentry:\n" +
+        cg.Ir.AppendHelper(SizedText(cg, "define internal void @__cs_release_fn({ ptr, ptr } %f) {\nentry:\n" +
                            "  %env = extractvalue { ptr, ptr } %f, 1\n" +
                            "  %isnull = icmp eq ptr %env, null\n  br i1 %isnull, label %done, label %dec\n" +
-                           "dec:\n  %rc = load i64, ptr %env\n  %rc1 = sub i64 %rc, 1\n  store i64 %rc1, ptr %env\n" +
-                           "  %last = icmp eq i64 %rc1, 0\n  br i1 %last, label %drop, label %done\n" +
-                           "drop:\n  %dropp = getelementptr i8, ptr %env, i64 16\n  %dropfn = load ptr, ptr %dropp\n" +
+                           "dec:\n  %rc = load $S, ptr %env\n  %rc1 = sub $S %rc, 1\n  store $S %rc1, ptr %env\n" +
+                           "  %last = icmp eq $S %rc1, 0\n  br i1 %last, label %drop, label %done\n" +
+                           "drop:\n  %dropp = getelementptr i8, ptr %env, $S $H\n  %dropfn = load ptr, ptr %dropp\n" +
                            "  call void %dropfn(ptr %env)\n  call void @free(ptr %env)\n" +
-                           (cg.St[0].ArcStats ? "  %fr = atomicrmw add ptr @__cs_frees, i64 1 monotonic\n" : "") +
+                           (cg.St[0].ArcStats ? "  %fr = atomicrmw add ptr @__cs_frees, $S 1 monotonic\n" : "") +
                            "  br label %done\n" +
-                           "done:\n  ret void\n}\n");
+                           "done:\n  ret void\n}\n"));
     return name;
 }
 

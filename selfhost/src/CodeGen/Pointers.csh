@@ -39,21 +39,23 @@ Value EmitPointerArithmetic(Compiler cg, BinOp op, Value l, Value r, SourceLoc l
     RequireUnsafe(cg, loc, "pointer arithmetic");
     if (types.IsPointer(l.Type) && types.IsPointer(r.Type) && op == BinOp.Sub && l.Type == r.Type && !types.IsVoid(types.Elem(l.Type)))
     {
-        string a = ir.Cast("ptrtoint", "ptr", l.V, "i64");
-        string b = ir.Cast("ptrtoint", "ptr", r.V, "i64");
-        string bytes = ir.Bin("sub", "i64", a, b);
-        return Rvalue(types.I64, ir.Bin("sdiv", "i64", bytes, SizeOfType(cg, types.Elem(l.Type))), false);
+        string size = SizeIr(cg);
+        string a = ir.Cast("ptrtoint", "ptr", l.V, size);
+        string b = ir.Cast("ptrtoint", "ptr", r.V, size);
+        string bytes = ir.Bin("sub", size, a, b);
+        return Rvalue(types.I64, SizeToI64(cg, ir.Bin("sdiv", size, bytes, SizeOfType(cg, types.Elem(l.Type))), true), false);
     }
     Value ptr = types.IsPointer(l.Type) ? l : r;
     Value off = types.IsPointer(l.Type) ? r : l;
     if ((op == BinOp.Add || (op == BinOp.Sub && types.IsPointer(l.Type))) && types.IsIntegral(off.Type) &&
         !types.IsVoid(types.Elem(ptr.Type)))
     {
+        // like C: the offset is converted to a pointer-sized integer (a 64-bit offset is cut on a 32-bit target)
         bool isSigned = types.IsInt(off.Type) && types.IsSigned(off.Type);
-        string n = NumericConvert(cg, off.V, off.Type, isSigned ? types.I64 : types.U64);
+        string n = NumericConvert(cg, off.V, off.Type, isSigned ? types.Nint : types.Nuint);
         if (op == BinOp.Sub)
-            n = ir.Bin("sub", "i64", "0", n);
-        return Rvalue(ptr.Type, ir.Gep(LlvmType(cg, types.Elem(ptr.Type)), ptr.V, "i64 " + n), false);
+            n = ir.Bin("sub", SizeIr(cg), "0", n);
+        return Rvalue(ptr.Type, ir.Gep(LlvmType(cg, types.Elem(ptr.Type)), ptr.V, SizeIr(cg) + " " + n), false);
     }
     Fail(cg, loc, "invalid pointer arithmetic");
     return l;

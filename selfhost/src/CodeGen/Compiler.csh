@@ -279,11 +279,13 @@ struct Compiler
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
     List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
 
-    static Compiler Create(Ast tree, Diagnostics diag, bool windows)
+    // triple: the target ("" = the host); it decides the size of pointers (Emit/Target.csh)
+    static Compiler Create(Ast tree, Diagnostics diag, bool windows, string triple)
     {
         var cg = Compiler { Tree = tree, Diag = diag };
-        cg.Types = TypeContext.Create();
-        cg.Ir = IrWriter.Create();
+        var target = TargetInfo.Of(triple);
+        cg.Types = TypeContext.Create(target.PtrBytes * 8);
+        cg.Ir = IrWriter.Create(target);
         cg.St = new CgState[1];
         cg.St[0].Windows = windows;
         cg.St[0].Recovering = true; // until the checker has run (CompileProgram)
@@ -827,7 +829,7 @@ string LlvmType(Compiler cg, int t)
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
-        return "{ ptr, ptr, i64 }";
+        return "{ ptr, ptr, " + cg.Ir.Target.SizeIr + " }";
     case TypeKind.Fixed:
         return "[" + types.Count(t).ToString() + " x " + LlvmType(cg, types.Elem(t)) + "]"; // the block that owns the elements, the first element, the length (Slices.csh)
     default:

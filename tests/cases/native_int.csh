@@ -17,11 +17,14 @@ int Main()
     if (m != 4000000000)
         return 3;
 
-    // Arithmetic stays in the native width
-    nint big = 3000000000;
-    big = big * 2;
-    if (big != 6000000000 && sizeof(nint) == 8)
-        return 4;
+    // Arithmetic stays in the native width (beyond int32 on a 64-bit target)
+    nint big = 1500000000;
+    if (sizeof(nint) == 8)
+    {
+        big = big * 2;
+        if (big != 3000000000)
+            return 4;
+    }
 
     // Explicit casts
     int back = (int)n;

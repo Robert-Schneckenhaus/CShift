@@ -6,6 +6,8 @@
 # The compiler is taken from the first argument, $CSHIFTC, build/stage2/cshiftc[.exe] (the self-hosted compiler that is
 # released, see selfhost/build-release.sh) or selfhost/bin/cshc[.exe].
 # clang (or the program given with $CSHIFT_CC) must be available for linking.
+# CSHIFT_TARGET=<triple> builds the programs for another target that runs on this machine (i686-linux-gnu: the
+# 32-bit code; needs the 32-bit C library, e.g. gcc-multilib).
 #
 # What is tested:
 #   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
@@ -14,6 +16,7 @@
 #        // expect-error:  <text>   compilation must fail and print <text> (several lines: all of them)
 #        // expect-exit:   <n>      exit code of the program (default 0)
 #        // expect-stdout: <text>   stdout contains <text>   (may be repeated)
+#        // expect-stdout-64: <text>, expect-stdout-32: <text>   the same, only on targets with 64-bit / 32-bit pointers
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
 #        // arc-ignore              skip the leak check
 #        // options:       <args>   extra compiler options (e.g. --unchecked)
@@ -45,6 +48,12 @@ fi
 COMPILER="$(cd "$(dirname "$COMPILER")" && pwd)/$(basename "$COMPILER")"
 CC_ARGS=()
 if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
+C_TARGET=()
+if [ -n "${CSHIFT_TARGET:-}" ]; then CC_ARGS+=(--target "$CSHIFT_TARGET"); C_TARGET=(--target="$CSHIFT_TARGET"); fi
+POINTER_BITS=64
+case "${CSHIFT_TARGET:-}" in
+    i[3-6]86-*|x86-*|arm-*|armv*|thumb*|m68k-*|mips-*|mipsel-*|powerpc-*|riscv32-*|wasm32-*) POINTER_BITS=32 ;;
+esac
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -133,7 +142,7 @@ for file in "$DIR"/cases/*.csh; do
     while IFS= read -r text; do
         [ -z "$text" ] && continue
         grep -qF -- "$text" "$TMP/case.out" || problem="stdout does not contain '$text'"
-    done < <(directives "$file" expect-stdout)
+    done < <(directives "$file" expect-stdout; directives "$file" "expect-stdout-$POINTER_BITS")
     while IFS= read -r text; do
         [ -z "$text" ] && continue
         grep -qF -- "$text" "$TMP/case.run.err" || problem="stderr does not contain '$text'"
@@ -162,7 +171,7 @@ for dir in "$DIR"/projects/*/; do
     # Native sources of a project (native/*.c) are compiled to objects the project links.
     for c_file in "$work"/native/*.c; do
         [ -f "$c_file" ] || continue
-        "${CSHIFT_CC:-clang}" -c "$c_file" -o "${c_file%.c}.o" || report_fail "$name" "cannot compile $c_file"
+        "${CSHIFT_CC:-clang}" "${C_TARGET[@]}" -c "$c_file" -o "${c_file%.c}.o" || report_fail "$name" "cannot compile $c_file"
     done
 
     if [ -f "$work/expected-error.txt" ]; then
@@ -327,7 +336,9 @@ else
             report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
         fi
         # Projects (cshift.json, build/run/new, C headers through libclang) built by cshc.
-        if bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
+        if [ -n "${CSHIFT_TARGET:-}" ]; then
+            echo "selfhost projects: skipped (cshc built for $CSHIFT_TARGET cannot load the libclang of this machine)"
+        elif bash "$DIR/../selfhost/projects.sh" "$cshc" > "$TMP/selfhost.proj" 2>&1; then
             report_ok "selfhost projects"
             head -n 1 "$TMP/selfhost.proj"
         else

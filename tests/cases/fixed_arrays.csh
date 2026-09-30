@@ -5,7 +5,8 @@
 // expect-exit: 0
 // expect-stdout: 16 7 9 0
 // expect-stdout: 12 15 2
-// expect-stdout: 5 a changed 32
+// expect-stdout-64: 5 a changed 32
+// expect-stdout-32: 5 a changed 20
 // expect-stdout: 1 100 9 64
 // expect-stdout: 58 x 4
 // expect-stdout: list 4

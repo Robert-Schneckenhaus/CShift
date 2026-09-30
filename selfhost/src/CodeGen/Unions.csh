@@ -97,11 +97,15 @@ int GetUnionType(Compiler cg, int index, SourceLoc loc)
     int64 unit = align;
     int64 count = (size + unit - 1) / unit;
     cg.Ir.Globals.Append(info.IrName + " = type { i32, [" + count.ToString() + " x i" + (unit * 8).ToString() + "] }\n");
-    int64 total = (align > 4 ? align : 4) + count * unit;
-    int64 outer = align > 4 ? align : 4;
+    // the layout LLVM gives { i32, [count x iN] } on the target (see TypeLayout)
+    var target = cg.Ir.Target;
+    int64 tagAlign = (int64)target.ScalarAlign(4, false);
+    int64 unitAlign = (int64)target.ScalarAlign((int)unit, false);
+    int64 total = AlignUp(4, unitAlign) + count * unit;
+    int64 outer = unitAlign > tagAlign ? unitAlign : tagAlign;
     info = cg.UnionInfos.Get(infoIndex);
     info.Members = members;
-    info.Size = (total + outer - 1) / outer * outer;
+    info.Size = AlignUp(total, outer);
     info.Align = outer;
 
     // the interfaces: every member has to implement them
@@ -245,8 +249,8 @@ string UnionAsInterface(Compiler cg, int union, string slot, int iface)
     var ir = cg.Ir;
     string tag = UnionTag(cg, union, slot);
     EmitPanicIf(cg, ir.ICmp("eq", "i32", tag, "0"), "the union '" + cg.Types.Name(union) + "' holds no value");
-    string wide = ir.Cast("zext", "i32", tag, "i64");
-    string table = ir.Load("ptr", ir.Gep("ptr", UnionTables(cg, union, iface), "i64 " + wide));
+    string wide = I32ToSize(cg, tag, false);
+    string table = ir.Load("ptr", ir.Gep("ptr", UnionTables(cg, union, iface), SizeIr(cg) + " " + wide));
     string agg = ir.InsertValue("{ ptr, ptr }", "undef", "ptr", UnionPayload(cg, union, slot), "0");
     return ir.InsertValue("{ ptr, ptr }", agg, "ptr", table, "1");
 }
