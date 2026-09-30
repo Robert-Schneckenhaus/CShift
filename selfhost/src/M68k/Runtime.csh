@@ -34,6 +34,27 @@ string RuntimeAsm()
     // ---- unsigned 32 / 32: d0 = n, d1 = d -> d0 = quotient, d1 = remainder (shift and subtract) ----
     "__cs68k_udivmod:\n" +
     "\tmovem.l\t%d2-%d3,-(%sp)\n" +
+    // a divisor below 65536: two divu.w (the high half of the dividend, then the rest with its remainder)
+    "\tmove.l\t%d1,%d3\n" +
+    "\tswap\t%d3\n" +
+    "\ttst.w\t%d3\n" +
+    "\tbne.s\t.Lcs_udiv_slow\n" +
+    "\tmove.l\t%d0,%d2\n" +
+    "\tclr.w\t%d2\n" +
+    "\tswap\t%d2\n" +               // the high half of the dividend
+    "\tdivu.w\t%d1,%d2\n" +          // remainder : quotient (high)
+    "\tmove.w\t%d2,%d3\n" +
+    "\tswap\t%d3\n" +               // the high half of the quotient
+    "\tmove.w\t%d0,%d2\n" +          // remainder : the low half of the dividend
+    "\tdivu.w\t%d1,%d2\n" +
+    "\tmove.w\t%d2,%d3\n" +          // the whole quotient
+    "\tclr.w\t%d2\n" +
+    "\tswap\t%d2\n" +               // the remainder
+    "\tmove.l\t%d3,%d0\n" +
+    "\tmove.l\t%d2,%d1\n" +
+    "\tmovem.l\t(%sp)+,%d2-%d3\n" +
+    "\trts\n" +
+    ".Lcs_udiv_slow:\n" +
     "\tmove.l\t%d1,%d3\n" +
     "\tmoveq\t#0,%d1\n" +
     "\tmoveq\t#31,%d2\n" +

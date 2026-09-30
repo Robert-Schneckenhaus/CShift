@@ -539,6 +539,13 @@ void GenFunction(Gen g, IrFunc f)
                 k += 1;
                 continue;
             }
+            // an add/sub with an overflow check: add, branch on the flag (checked arithmetic)
+            if (k + 3 < insts.Length && IsFusableOverflow(g, insts, k, uses))
+            {
+                GenOverflowBranch(g, insts, k);
+                k += 3;
+                continue;
+            }
             GenInst(g, f, inst);
         }
     }
@@ -1229,6 +1236,58 @@ void GenIcmp(Gen g, IrInst inst)
     g.Line("s" + Cond(pred) + "\t%d0");
     g.Line("and.l\t#1,%d0");
     StoreResult(g, inst);
+}
+
+// call {iN, i1} @llvm.[su](add|sub).with.overflow.iN(a, b) / extractvalue 0 / extractvalue 1 / br i1 flag:
+// the flag only decides the branch (N <= 32, no phis in the targets).
+bool IsFusableOverflow(Gen g, IrInst[] insts, int k, Dictionary<string, int> uses)
+{
+    var call = insts[k];
+    if (call.Op != "call" || call.Res.Length == 0)
+        return false;
+    var callee = g.M.Vals.Get(call.Callee);
+    if (callee.Kind != ValKind.Global || !callee.Name.StartsWith("llvm.") || !callee.Name.Contains(".with.overflow.") ||
+        callee.Name.Contains("mul"))
+        return false;
+    int t = g.M.Vals.Get(call.Args[0]).Type;
+    if (g.T.Kind(t) != IrKind.Int || g.T.Bits(t) > 32 || g.T.Bits(t) < 8)
+        return false;
+    var e1 = insts[k + 1];
+    var e2 = insts[k + 2];
+    var br = insts[k + 3];
+    if (e1.Op != "extractvalue" || e2.Op != "extractvalue" || br.Op != "br" || br.Labels.Length != 2)
+        return false;
+    if (uses.GetOrDefault(call.Res, 0) != 2 || !IsLocal(g, e1.Args[0]) || !IsLocal(g, e2.Args[0]) ||
+        g.M.Vals.Get(e1.Args[0]).Name != call.Res || g.M.Vals.Get(e2.Args[0]).Name != call.Res)
+        return false;
+    // which extract is the flag
+    var flag = e1.Cases.Length > 0 && e1.Cases[0] == 1 ? e1 : e2;
+    var value = e1.Cases.Length > 0 && e1.Cases[0] == 1 ? e2 : e1;
+    if (flag.Cases.Length != 1 || flag.Cases[0] != 1 || value.Cases.Length != 1 || value.Cases[0] != 0)
+        return false;
+    if (!IsLocal(g, br.Args[0]) || g.M.Vals.Get(br.Args[0]).Name != flag.Res || uses.GetOrDefault(flag.Res, 0) != 1)
+        return false;
+    return !g.Phis.ContainsKey(br.Labels[0]) && !g.Phis.ContainsKey(br.Labels[1]);
+}
+
+void GenOverflowBranch(Gen g, IrInst[] insts, int k)
+{
+    var call = insts[k];
+    string name = g.M.Vals.Get(call.Callee).Name;
+    var e1 = insts[k + 1];
+    var value = e1.Cases[0] == 0 ? e1 : insts[k + 2];
+    var br = insts[k + 3];
+    int bits = g.T.Bits(g.M.Vals.Get(call.Args[0]).Type);
+    string suffix = bits <= 8 ? ".b" : bits == 16 ? ".w" : ".l";
+    bool signed = name.StartsWith("llvm.s");
+    bool add = name.Contains("add");
+    Load32(g, call.Args[0], "%d0");
+    Load32(g, call.Args[1], "%d1");
+    g.Line((add ? "add" : "sub") + suffix + "\t%d1,%d0");
+    // the flag is true: to the first label (the panic); signed: overflow (V), unsigned: carry/borrow (C)
+    g.Line((signed ? "bvs" : "bcs") + "\t" + g.BlockLabel.Get(br.Labels[0]));
+    g.Line("move.l\t%d0," + Frame(g.Slot.Get(value.Res)));
+    g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
 }
 
 // icmp + br on its result (32 bits or less)
