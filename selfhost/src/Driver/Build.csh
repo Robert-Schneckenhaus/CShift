@@ -533,6 +533,11 @@ int Build(BuildOptions o)
         o.Backend = TargetInfo.DefaultBackend(o.Target);
     if (o.Backend == "m68k" && o.Target.Length == 0)
         o.Target = "m68k-amigaos";
+    // the AmigaOS NDK: its SFD files (Ffi.csh) and C headers
+    if (o.Ndk.Length == 0 && Process.GetEnv("CSHIFT_NDK") is string envNdk)
+        o.Ndk = envNdk;
+    if (o.Ndk.Length > 0 && o.Target.Contains("amigaos"))
+        o.IncludePaths.Add(Path.Combine(o.Ndk, "Include_H"));
     if (o.Backend == "m68k" && !o.Target.ToLower().StartsWith("m68k"))
     {
         Console.WriteErrorLine("error: the m68k backend generates code for m68k targets, not '" + o.Target + "'");

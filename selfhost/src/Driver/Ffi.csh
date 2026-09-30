@@ -113,10 +113,7 @@ Error<FfiFiles> PrepareFfi(FfiImport imp, BuildOptions o, string cacheDir)
     // an AmigaOS library: its SFD file (from the NDK) becomes the .ffi file
     if (imp.Header.EndsWith(".sfd"))
     {
-        string ndk = o.Ndk;
-        if (ndk.Length == 0 && Process.GetEnv("CSHIFT_NDK") is string fromEnv)
-            ndk = fromEnv;
-        string sfd = try FindSfd(imp.Header, baseArg, ndk);
+        string sfd = try FindSfd(imp.Header, baseArg, o.Ndk);
         if (!Directory.Create(cacheDir))
             return error("cannot create '" + cacheDir + "'");
         try GenerateSfdFfi(imp.Name, sfd, ffiPath);
