@@ -544,6 +544,11 @@ int Build(BuildOptions o)
             for (var i = 0; i < EmbeddedM68kNames.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/m68k/" + EmbeddedM68kNames[i], EmbeddedM68kTexts[i], true, o.Imports);
         }
+        if (o.Backend == "m68k" && o.Target.Contains("amigaos"))
+        {
+            for (var i = 0; i < EmbeddedAmigaNames.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/amiga/" + EmbeddedAmigaNames[i], EmbeddedAmigaTexts[i], true, o.Imports);
+        }
         cg.St[0].StdlibLoaded = EmbeddedStdlibNames.Length > 0;
     }
     else if (o.Stdlib != "-")
@@ -553,6 +558,8 @@ int Build(BuildOptions o)
         {
             // the runtime of a backend (stdlib/m68k/) only belongs to programs for that backend
             if (libFile.Contains("/m68k/") && o.Backend != "m68k")
+                continue;
+            if (libFile.Contains("/amiga/") && !(o.Backend == "m68k" && o.Target.Contains("amigaos")))
                 continue;
             if (!AddSource(cg, diag, tree, libFile, true, o.Imports))
                 return 1;
@@ -878,6 +885,9 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
     string asm = "";
     if (text is string generated)
         asm = generated;
+    bool amiga = o.Target.Contains("amigaos");
+    if (amiga)
+        asm = AmigaStartupAsm(262144) + asm; // the startup code comes first
     if (o.EmitAsm)
         return WriteOutput(o.Output.Length == 0 ? baseName + ".s" : (o.FromProject ? o.Output + ".s" : o.Output), asm);
 
@@ -895,7 +905,19 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
             string path = o.Output.Length > 0 && !o.FromProject ? o.Output : baseName + ".o";
             return WriteBytesOutput(path, WriteElfObject(obj));
         }
-        Console.WriteErrorLine("error: the m68k backend cannot write an executable for '" + o.Target + "' yet: use -c or --emit-asm");
+        if (!amiga)
+        {
+            Console.WriteErrorLine("error: the m68k backend writes executables for AmigaOS only (for '" + o.Target + "': use -c or --emit-asm)");
+            return 1;
+        }
+        var exe = WriteHunkExecutable(obj);
+        if (exe is error exeError)
+        {
+            Console.WriteErrorLine("error: " + exeError.Message);
+            return 1;
+        }
+        if (exe is uint8[] exeBytes)
+            return WriteBytesOutput(o.Output.Length > 0 ? o.Output : baseName, exeBytes);
         return 1;
     }
     return 1;

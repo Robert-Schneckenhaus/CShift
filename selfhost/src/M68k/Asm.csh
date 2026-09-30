@@ -815,10 +815,15 @@ void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
         return;
     case "movem":
     {
-        bool toRegs = a.Mode != OpMode.RegList;
+        // a single register is a list of one
+        bool toRegs = !(a.Mode == OpMode.RegList || a.Mode == OpMode.Dn || a.Mode == OpMode.An);
         var list = toRegs ? b : a;
         var ea = toRegs ? a : b;
         int mask = (int)list.Value;
+        if (list.Mode == OpMode.Dn)
+            mask = 1 << list.Reg;
+        else if (list.Mode == OpMode.An)
+            mask = 1 << (8 + list.Reg);
         if (ea.Mode == OpMode.PreDec)
         {
             // reversed: bit 0 is a7
@@ -876,6 +881,9 @@ void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
     case "subq":
         EmitWord(sec, 20480 | (((int)a.Value & 7) << 9) | (op == "subq" ? 256 : 0) | (SizeBits(size) << 6) | EaField(b));
         EaExtension(enc, item, sec, b, size);
+        return;
+    case "cmpm":
+        EmitWord(sec, 45320 | (b.Reg << 9) | (SizeBits(size) << 6) | a.Reg);
         return;
     case "addx":
     case "subx":
