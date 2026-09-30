@@ -108,7 +108,7 @@ Error<string> GenerateModule(IrModule m, string prelude)
             g.Out = StringBuilder.Create();
             GenFunction(g, m.Funcs.Get(f));
             string text = g.Out.ToString();
-            funcText.Set(f, Peephole(text));
+            funcText.Set(f, FinishSaves(Peephole(text)));
             ScanSymbols(text, work, seen);
         }
         var gi = m.GlobalIndex.TryGet(ir);
@@ -145,6 +145,21 @@ Error<string> GenerateModule(IrModule m, string prelude)
     if (g.Errors.Count() > 0)
         return error(string.Join("\n", g.Errors.ToArray()));
     return g.Out.ToString();
+}
+
+// The prologue and the epilogue keep exactly the registers d2-d7/a2-a5 that the code of the function uses.
+string FinishSaves(string text)
+{
+    string[] regs = ["%d2", "%d3", "%d4", "%d5", "%d6", "%d7", "%a2", "%a3", "%a4", "%a5"];
+    var used = List<string>.Create();
+    foreach (var r in regs)
+    {
+        if (text.Contains(r))
+            used.Add(r);
+    }
+    if (used.Count() == 0)
+        return text.Replace("\tmovem.l\t@SAVE@,-(%sp)\n", "").Replace("\tmovem.l\t(%sp)+,@SAVE@\n", "");
+    return text.Replace("@SAVE@", string.Join("/", used.ToArray()));
 }
 
 void AddWork(string name, List<string> work, HashSet<string> seen)
@@ -517,7 +532,7 @@ void GenFunction(Gen g, IrFunc f)
     string savedList = string.Join("/", g.Saved.ToArray());
     g.Label(name);
     g.Line("link.w\t%a6,#-" + frame.ToString());
-    g.Line("movem.l\t" + savedList + ",-(%sp)");
+    g.Line("movem.l\t@SAVE@,-(%sp)"); // the registers the function uses (FinishSaves)
     foreach (var b in f.Blocks.ToArray())
     {
         g.Fn[1] = b.Label;
@@ -561,7 +576,7 @@ void GenFunction(Gen g, IrFunc f)
         }
     }
     g.Label(g.Fn[2]);
-    g.Line("movem.l\t(%sp)+," + savedList);
+    g.Line("movem.l\t(%sp)+,@SAVE@");
     g.Line("unlk\t%a6");
     g.Line("rts");
 }
@@ -1248,6 +1263,35 @@ void GenBinary32(Gen g, IrInst inst)
             StoreResult(g, inst);
         return;
     }
+    // division by a constant of 1..32767: one divs.w/divu.w; if the quotient does not fit in 16 bits (V), the helper
+    var divisor = g.M.Vals.Get(inst.Args[1]);
+    if ((op == "sdiv" || op == "srem" || op == "udiv" || op == "urem") && divisor.Kind == ValKind.Int && divisor.Int >= 1 &&
+        divisor.Int <= 32767)
+    {
+        bool signedDiv = op == "sdiv" || op == "srem";
+        bool rem = op == "srem" || op == "urem";
+        string slow = g.NewLabel();
+        string done = g.NewLabel();
+        Load32(g, inst.Args[0], "%d0");
+        Extend(g, "%d0", bits, signedDiv);
+        g.Line((signedDiv ? "divs.w" : "divu.w") + "\t#" + divisor.Int.ToString() + ",%d0");
+        g.Line("bvs\t" + slow);
+        if (rem)
+            g.Line("swap\t%d0");
+        if (signedDiv)
+            g.Line("ext.l\t%d0");
+        else
+            g.Line("and.l\t#65535,%d0");
+        g.Line("bra\t" + done);
+        g.Label(slow);
+        g.Line("move.l\t#" + divisor.Int.ToString() + ",%d1");
+        g.Line("jsr\t" + (signedDiv ? "__cs68k_sdivmod" : "__cs68k_udivmod"));
+        if (rem)
+            g.Line("move.l\t%d1,%d0");
+        g.Label(done);
+        StoreResult(g, inst);
+        return;
+    }
     Load32(g, inst.Args[0], "%d0");
     Load32(g, inst.Args[1], "%d1");
     if (op == "add")
@@ -1409,12 +1453,13 @@ bool IsFusableOverflow(Gen g, IrInst[] insts, int k, Dictionary<string, int> use
     if (call.Op != "call" || call.Res.Length == 0)
         return false;
     var callee = g.M.Vals.Get(call.Callee);
-    if (callee.Kind != ValKind.Global || !callee.Name.StartsWith("llvm.") || !callee.Name.Contains(".with.overflow.") ||
-        callee.Name.Contains("mul"))
+    if (callee.Kind != ValKind.Global || !callee.Name.StartsWith("llvm.") || !callee.Name.Contains(".with.overflow."))
         return false;
     int t = g.M.Vals.Get(call.Args[0]).Type;
     if (g.T.Kind(t) != IrKind.Int || g.T.Bits(t) > 32 || g.T.Bits(t) < 8)
         return false;
+    if (callee.Name.Contains("mul") && (callee.Name != "llvm.smul.with.overflow.i32"))
+        return false; // (the signed 32-bit multiplication only)
     var e1 = insts[k + 1];
     var e2 = insts[k + 2];
     var br = insts[k + 3];
@@ -1444,6 +1489,39 @@ void GenOverflowBranch(Gen g, IrInst[] insts, int k)
     string suffix = bits <= 8 ? ".b" : bits == 16 ? ".w" : ".l";
     bool signed = name.StartsWith("llvm.s");
     bool add = name.Contains("add");
+    if (name.Contains("mul"))
+    {
+        // both factors in 16 bits: muls.w cannot overflow; else the helper (d0 product, d1 overflow)
+        string slow = g.NewLabel();
+        string ok = g.NewLabel();
+        Load32(g, call.Args[0], "%d0");
+        Load32(g, call.Args[1], "%d1");
+        g.Line("move.w\t%d0,%d2");
+        g.Line("ext.l\t%d2");
+        g.Line("cmp.l\t%d0,%d2");
+        g.Line("bne\t" + slow);
+        var cb = g.M.Vals.Get(call.Args[1]);
+        if (!(cb.Kind == ValKind.Int && cb.Int >= -32768 && cb.Int <= 32767))
+        {
+            g.Line("move.w\t%d1,%d2");
+            g.Line("ext.l\t%d2");
+            g.Line("cmp.l\t%d1,%d2");
+            g.Line("bne\t" + slow);
+        }
+        g.Line("muls.w\t%d1,%d0");
+        g.Line("bra\t" + ok);
+        g.Label(slow);
+        g.Line("move.l\t%d1,-(%sp)");
+        g.Line("move.l\t%d0,-(%sp)");
+        g.Line("jsr\t__cs68k_smul32o");
+        g.Line("addq.l\t#8,%sp");
+        g.Line("tst.b\t%d1");
+        g.Line("bne\t" + g.BlockLabel.Get(br.Labels[0]));
+        g.Label(ok);
+        g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
+        g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
+        return;
+    }
     string target = ResultRegister(g, value.Res);
     if (target.Length > 0 && SourceOperand(g, call.Args[1], 32) == target)
         target = "";

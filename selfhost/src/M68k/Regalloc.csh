@@ -293,19 +293,34 @@ void AllocateRegisters(Gen g, IrFunc f)
         var ld = loads.Get(i);
         string t = ld.Res;
         string variable = g.M.Vals.Get(ld.Args[0]).Name;
-        if (!IsCandidate(t, isPointer, excluded) || !IsCandidate(variable, isPointer, excluded) || nonLocal.Contains(t) || !hi.ContainsKey(t))
+        if (!IsCandidate(t, isPointer, excluded) || !IsCandidate(variable, isPointer, excluded) || !hi.ContainsKey(t))
             continue;
         int from = loadPos.Get(i);
         int until = hi.Get(t);
+        int home = BlockAt(blockStart, from);
+        // the variable must keep its value while the loaded value lives: no store after the load in its block (up to the
+        // last use there, or to the end if it lives on), none in any other block where it lives
         bool written = false;
         for (var k = 0; k < stores.Count() && !written; k += 1)
         {
+            if (g.M.Vals.Get(stores.Get(k).Args[1]).Name != variable)
+                continue;
             int sp = storePos.Get(k);
-            if (sp > from && sp <= until && g.M.Vals.Get(stores.Get(k).Args[1]).Name == variable)
+            int sb = storeBlock.Get(k);
+            if (sb == home)
+            {
+                if (sp > from && (sp <= until || liveOut[home].Contains(t)))
+                    written = true;
+            }
+            else if (liveIn[sb].Contains(t) || liveOut[sb].Contains(t))
                 written = true;
         }
+        // (a loaded value that lives into a loop that also contains the load: not shared)
+        if (!written && liveIn[home].Contains(t))
+            written = true;
         if (written)
             continue;
+        Touch(variable, lo.Get(t), 0, weight, lo, hi);
         Touch(variable, until, 0, weight, lo, hi);
         weight.Set(variable, weight.GetOrDefault(variable, 0) + weight.GetOrDefault(t, 0));
         aliasOf.Set(t, variable);
@@ -438,6 +453,18 @@ void AllocateRegisters(Gen g, IrFunc f)
         if (used[r])
             g.Saved.Add(regs[r]);
     }
+}
+
+// the block that contains a position
+int BlockAt(int[] blockStart, int at)
+{
+    int b = 0;
+    for (var j = 0; j < blockStart.Length; j += 1)
+    {
+        if (blockStart[j] <= at)
+            b = j;
+    }
+    return b;
 }
 
 bool IsCandidate(string name, Dictionary<string, bool> isPointer, HashSet<string> excluded)
