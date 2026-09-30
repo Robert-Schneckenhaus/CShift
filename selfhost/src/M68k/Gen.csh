@@ -27,6 +27,7 @@ struct Gen
     StringBuilder Out;
     StringBuilder Data;
     Dictionary<string, string> Symbols;
+    Dictionary<string, string> Reverse;   // assembly name -> IR name
     int[] Counters;                       // [0] labels, [1] symbols
     List<string> Errors;
 
@@ -43,7 +44,7 @@ struct Gen
     static Gen Create(IrModule m)
     {
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
-                      Symbols = Dictionary<string, string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
+                      Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
         return g;
@@ -78,30 +79,121 @@ struct Gen
 // The module
 // ---------------------------------------------------------------------------
 
-// The assembly of a whole module, or the errors.
-Error<string> GenerateModule(IrModule m)
+// The assembly of a whole module, or the errors. Only what is used is written: the functions and globals that main,
+// the prelude (the startup code of AmigaOS) and the runtime refer to, and so on.
+Error<string> GenerateModule(IrModule m, string prelude)
 {
     var g = Gen.Create(m);
+    var funcText = Dictionary<int, string>.Create();
+    var globalText = Dictionary<int, string>.Create();
+    var work = List<string>.Create();
+    var seen = HashSet<string>.Create();
+    string runtime = RuntimeAsm();
+    ScanSymbols(prelude, work, seen);
+    ScanSymbols(runtime, work, seen);
+    AddWork("main", work, seen);
+    var output = g.Out;
+    for (var next = 0; next < work.Count(); next += 1)
+    {
+        string name = work.Get(next);
+        var irName = g.Reverse.TryGet(name);
+        string ir = irName is string known ? known : name;
+        var fi = m.FuncIndex.TryGet(ir);
+        if (fi is int f && m.Funcs.Get(f).Defined && !funcText.ContainsKey(f))
+        {
+            g.Out = StringBuilder.Create();
+            GenFunction(g, m.Funcs.Get(f));
+            string text = g.Out.ToString();
+            funcText.Set(f, Peephole(text));
+            ScanSymbols(text, work, seen);
+        }
+        var gi = m.GlobalIndex.TryGet(ir);
+        if (gi is int x && m.Globals.Get(x).Init >= 0 && !globalText.ContainsKey(x))
+        {
+            var gl = m.Globals.Get(x);
+            g.Out = StringBuilder.Create();
+            g.Out.Append("\t.even\n");
+            g.Out.Append(Sym(g, gl.Name) + ":\n");
+            EmitConst(g, gl.Init, gl.Type);
+            string text = g.Out.ToString();
+            globalText.Set(x, text);
+            ScanSymbols(text, work, seen);
+        }
+    }
+    g.Out = output;
+    g.Out.Append(prelude);
     g.Out.Append("\t.text\n");
     for (var i = 0; i < m.Funcs.Count(); i += 1)
     {
-        var f = m.Funcs.Get(i);
-        if (f.Defined)
-            GenFunction(g, f);
+        var text = funcText.TryGet(i);
+        if (text is string code)
+            g.Out.Append(code);
     }
-    g.Out.Append(RuntimeAsm());
+    g.Out.Append(runtime);
     g.Out.Append("\t.data\n");
-    foreach (var gl in m.Globals.ToArray())
+    for (var i = 0; i < m.Globals.Count(); i += 1)
     {
-        if (gl.Init < 0)
-            continue;
-        g.Out.Append("\t.even\n");
-        g.Out.Append(Sym(g, gl.Name) + ":\n");
-        EmitConst(g, gl.Init, gl.Type);
+        var text = globalText.TryGet(i);
+        if (text is string data)
+            g.Out.Append(data);
     }
     if (g.Errors.Count() > 0)
         return error(string.Join("\n", g.Errors.ToArray()));
     return g.Out.ToString();
+}
+
+void AddWork(string name, List<string> work, HashSet<string> seen)
+{
+    if (!seen.Contains(name))
+    {
+        seen.Add(name);
+        work.Add(name);
+    }
+}
+
+// The symbols the operands of the assembly text refer to (not local labels and registers).
+void ScanSymbols(string text, List<string> work, HashSet<string> seen)
+{
+    int i = 0;
+    int n = text.Length;
+    while (i < n)
+    {
+        // an instruction line: a tab, the mnemonic, a tab, the operands
+        int lineEnd = text.IndexOf('\n', i);
+        if (lineEnd < 0)
+            lineEnd = n;
+        int tab = text.IndexOf('\t', i);
+        if (tab >= 0 && tab < lineEnd)
+        {
+            int ops = text.IndexOf('\t', tab + 1);
+            if (ops >= 0 && ops < lineEnd)
+            {
+                int k = ops + 1;
+                while (k < lineEnd)
+                {
+                    char c = text[k];
+                    bool start = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+                    bool prevOk = k == ops + 1 || !IsSymbolChar(text[k - 1]) && text[k - 1] != '%' && text[k - 1] != '.';
+                    if (start && prevOk)
+                    {
+                        int e = k;
+                        while (e < lineEnd && IsSymbolChar(text[e]))
+                            e += 1;
+                        AddWork(text.Substring(k, e - k).ToString(), work, seen);
+                        k = e;
+                    }
+                    else
+                        k += 1;
+                }
+            }
+        }
+        i = lineEnd + 1;
+    }
+}
+
+bool IsSymbolChar(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '$';
 }
 
 // The assembly name of a global or function: external C names (and main) stay, everything else gets a short name
@@ -127,6 +219,7 @@ string Sym(Gen g, string name)
         result = "_cs" + g.Counters[1].ToString();
     }
     g.Symbols.Set(name, result);
+    g.Reverse.Set(result, name);
     return result;
 }
 
@@ -397,6 +490,21 @@ void GenFunction(Gen g, IrFunc f)
         g.Fail("the stack frame is too large (" + frame.ToString() + " bytes)");
     g.Frame[0] = frame;
 
+    // how often each value is used
+    var uses = Dictionary<string, int>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local)
+                    uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+            }
+        }
+    }
+
     string name = Sym(g, f.Name);
     if (!f.Internal)
         g.Out.Append("\t.globl\t" + name + "\n");
@@ -414,10 +522,22 @@ void GenFunction(Gen g, IrFunc f)
             foreach (var phi in list)
                 CopyFrame(g, g.PhiTmp.Get(phi.Res), g.Slot.Get(phi.Res), SlotSize(g, phi.Type));
         }
-        foreach (var inst in b.Insts.ToArray())
+        var insts = b.Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
         {
-            if (inst.Op != "phi" && inst.Op != "alloca")
-                GenInst(g, f, inst);
+            var inst = insts[k];
+            if (inst.Op == "phi" || inst.Op == "alloca")
+                continue;
+            // a comparison that only decides the branch after it: compare and branch, no flag in between
+            if (inst.Op == "icmp" && k + 1 < insts.Length && insts[k + 1].Op == "br" && insts[k + 1].Labels.Length == 2 &&
+                IsLocal(g, insts[k + 1].Args[0]) && g.M.Vals.Get(insts[k + 1].Args[0]).Name == inst.Res && uses.GetOrDefault(inst.Res, 0) == 1 &&
+                g.T.Bits(inst.OpType) != 64)
+            {
+                GenCompareBranch(g, f, inst, insts[k + 1]);
+                k += 1;
+                continue;
+            }
+            GenInst(g, f, inst);
         }
     }
     g.Label(g.Fn[2]);
@@ -1107,6 +1227,26 @@ void GenIcmp(Gen g, IrInst inst)
     g.Line("s" + Cond(pred) + "\t%d0");
     g.Line("and.l\t#1,%d0");
     StoreResult(g, inst);
+}
+
+// icmp + br on its result (32 bits or less)
+void GenCompareBranch(Gen g, IrFunc f, IrInst cmp, IrInst br)
+{
+    WritePhiCopies(g, f, br.Labels);
+    int t = cmp.OpType;
+    int bits = g.T.Kind(t) == IrKind.Int ? g.T.Bits(t) : 32;
+    string suffix = bits <= 8 ? ".b" : bits == 16 ? ".w" : ".l";
+    Load32(g, cmp.Args[0], "%d0");
+    var right = g.M.Vals.Get(cmp.Args[1]);
+    if ((right.Kind == ValKind.Int || right.Kind == ValKind.Null) && right.Int == 0)
+        g.Line("tst" + suffix + "\t%d0");
+    else
+    {
+        Load32(g, cmp.Args[1], "%d1");
+        g.Line("cmp" + suffix + "\t%d1,%d0");
+    }
+    g.Line("b" + Cond(cmp.Pred) + "\t" + g.BlockLabel.Get(br.Labels[0]));
+    g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
 }
 
 void GenSwitch64(Gen g, IrInst inst)

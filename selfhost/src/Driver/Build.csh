@@ -876,7 +876,8 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
 // The m68k backend (selfhost/src/M68k): the IR becomes 68000 assembly.
 int BuildM68k(BuildOptions o, string ir, string baseName)
 {
-    var text = M68kAssembly(ir);
+    bool amiga = o.Target.Contains("amigaos");
+    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144) : ""); // the startup code comes first
     if (text is error failed)
     {
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
@@ -885,9 +886,6 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
     string asm = "";
     if (text is string generated)
         asm = generated;
-    bool amiga = o.Target.Contains("amigaos");
-    if (amiga)
-        asm = AmigaStartupAsm(262144) + asm; // the startup code comes first
     if (o.EmitAsm)
         return WriteOutput(o.Output.Length == 0 ? baseName + ".s" : (o.FromProject ? o.Output + ".s" : o.Output), asm);
 
@@ -947,8 +945,8 @@ int WriteBytesOutput(string path, uint8[] bytes)
     return 0;
 }
 
-Error<string> M68kAssembly(string ir)
+Error<string> M68kAssembly(string ir, string prelude)
 {
     var module = try ReadModule(ir);
-    return try GenerateModule(module);
+    return try GenerateModule(module, prelude);
 }
