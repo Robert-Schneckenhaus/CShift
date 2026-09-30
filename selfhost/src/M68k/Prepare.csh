@@ -22,6 +22,7 @@ void PrepareFunction(Gen g, IrFunc f)
 {
     g.Folds.Clear();
     g.Skip.Clear();
+    InlineCalls(g, f);
     FoldConstants(g, f);
     RemoveDeadCode(g, f);
     FoldAddresses(g, f);
@@ -216,18 +217,25 @@ void FoldAddresses(Gen g, IrFunc f)
                 uses.Set(g.M.Vals.Get(inst.Callee).Name, uses.GetOrDefault(g.M.Vals.Get(inst.Callee).Name, 0) + 1);
         }
     }
+    // the geps of the function (a gep's single use may be in a later block: its operands are values that do not change)
+    var geps = List<IrInst>.Create();
+    var gepAt = Dictionary<string, int>.Create();
     foreach (var b in f.Blocks.ToArray())
     {
-        var insts = b.Insts.ToArray();
-        var gepAt = Dictionary<string, int>.Create(); // gep results of this block -> index
-        for (var k = 0; k < insts.Length; k += 1)
+        foreach (var inst in b.Insts.ToArray())
         {
-            var inst = insts[k];
-            if (inst.Op == "getelementptr")
+            if (inst.Op == "getelementptr" && !g.Skip.Contains(inst.Res))
             {
-                gepAt.Set(inst.Res, k);
-                continue;
+                gepAt.Set(inst.Res, geps.Count());
+                geps.Add(inst);
             }
+        }
+    }
+    var insts = geps.ToArray();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
             if (inst.Op != "load" && inst.Op != "store")
                 continue;
             int t = inst.Op == "load" ? inst.Type : inst.OpType;

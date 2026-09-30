@@ -522,11 +522,10 @@ void Touch(string name, int at, int w, Dictionary<string, int> weight, Dictionar
         weight.Set(name, weight.GetOrDefault(name, 0) + w);
 }
 
-// the weight per length of the interval (short, much used values first), scaled to keep integers
+// what a register saves: the uses weighted by loop nesting (a long-lived value used in a loop beats short temporaries)
 int Worth(LiveInterval iv)
 {
-    int length = iv.End - iv.Start + 1;
-    return iv.Weight * 256 / (length < 1 ? 1 : length) + iv.Weight;
+    return iv.Weight;
 }
 
 // a free register: address registers for pointers, data registers for the rest (then the other kind)
