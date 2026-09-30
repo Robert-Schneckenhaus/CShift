@@ -225,6 +225,18 @@ void AllocateRegisters(Gen g, IrFunc f)
                     Touch(target.Name, pos, w, weight, lo, hi);
                 }
             }
+            // the called value of an indirect call is used here as well
+            if (inst.Callee >= 0)
+            {
+                var cv = g.M.Vals.Get(inst.Callee);
+                if (cv.Kind == ValKind.Local && IsCandidate(cv.Name, isPointer, excluded))
+                {
+                    uses.Set(cv.Name, uses.GetOrDefault(cv.Name, 0) + 1);
+                    if (!kill[j].Contains(cv.Name))
+                        gen[j].Add(cv.Name);
+                    Touch(cv.Name, pos, w, weight, lo, hi);
+                }
+            }
             if (inst.Res.Length > 0 && inst.Op != "alloca" && IsCandidate(inst.Res, isPointer, excluded))
             {
                 defPos.Set(inst.Res, pos);
@@ -471,6 +483,8 @@ void AllocateRegisters(Gen g, IrFunc f)
         var home = g.Home.TryGet(entry.Value);
         if (home is string reg)
             g.Home.Set(entry.Key, reg);
+        else if (allocaSize.GetOrDefault(entry.Value, 0) == 4)
+            g.Home.Set(entry.Key, Frame(g.Alloca.Get(entry.Value))); // the variable's slot: read (or written) there
     }
     for (var r = 0; r < 8; r += 1)
     {

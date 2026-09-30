@@ -630,7 +630,7 @@ string SourceOperand(Gen g, int vi, int bits)
             return "";
         var home = g.Home.TryGet(v.Name);
         if (home is string reg)
-            return bits < 32 && reg.StartsWith("%a") ? "" : reg;
+            return bits < 32 && !reg.StartsWith("%d") ? "" : reg;
         var t = g.ValType.TryGet(v.Name);
         if (bits == 32 && t is int vt && g.L.Size(vt) == 4 && !g.T.IsAggregate(vt))
             return Frame(g.Slot.Get(v.Name));
@@ -1054,6 +1054,19 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         string dest = FoldedOperand(g, fold);
         g.Line("move" + suffix + "\t" + src + "," + dest);
         return;
+    }
+    // a value that lives in its variable's slot (Regalloc.csh): the load and the store are that slot already
+    if (op == "load" && IsLocal(g, inst.Args[0]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[0]).Name))
+    {
+        var home = g.Home.TryGet(inst.Res);
+        if (home is string slot && slot == Frame(g.Alloca.Get(g.M.Vals.Get(inst.Args[0]).Name)))
+            return;
+    }
+    if (op == "store" && IsLocal(g, inst.Args[0]) && IsLocal(g, inst.Args[1]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[1]).Name))
+    {
+        var home = g.Home.TryGet(g.M.Vals.Get(inst.Args[0]).Name);
+        if (home is string slot && slot == Frame(g.Alloca.Get(g.M.Vals.Get(inst.Args[1]).Name)))
+            return;
     }
     if (op == "load" && HomeOf(g, inst.Args[0]).Length > 0)
     {

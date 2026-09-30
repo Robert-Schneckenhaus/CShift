@@ -23,6 +23,7 @@ void PrepareFunction(Gen g, IrFunc f)
     g.Folds.Clear();
     g.Skip.Clear();
     FoldConstants(g, f);
+    RemoveDeadCode(g, f);
     FoldAddresses(g, f);
 }
 
@@ -75,7 +76,23 @@ void FoldConstants(Gen g, IrFunc f)
                 continue;
             int64 x = 0;
             int64 y = 0;
-            if (!ConstInt(g, inst.Args[0], ref x) || !ConstInt(g, inst.Args[1], ref y))
+            bool cx = ConstInt(g, inst.Args[0], ref x);
+            bool cy = ConstInt(g, inst.Args[1], ref y);
+            if ((inst.Op == "and" || inst.Op == "or") && (cx != cy) && g.T.Kind(inst.OpType) == IrKind.Int)
+            {
+                // x and 0 = 0; for i1: x or 1 = 1
+                int64 c = cx ? x : y;
+                int width = g.T.Bits(inst.OpType);
+                bool zero = inst.Op == "and" && Normalize(c, width, false) == 0;
+                bool one = inst.Op == "or" && width == 1 && Normalize(c, 1, false) == 1;
+                if (zero || one)
+                {
+                    known.Set(inst.Res, g.M.AddVal(IrVal { Kind = ValKind.Int, Type = inst.OpType, Int = zero ? 0 : 1 }));
+                    g.Skip.Add(inst.Res);
+                }
+                continue;
+            }
+            if (!cx || !cy)
                 continue;
             int t = inst.OpType;
             if (g.T.Kind(t) != IrKind.Int && g.T.Kind(t) != IrKind.Ptr)
@@ -109,6 +126,76 @@ void FoldConstants(Gen g, IrFunc f)
     }
 }
 
+// Instructions without side effects whose results nobody uses (after the folding) are not written.
+void RemoveDeadCode(Gen g, IrFunc f)
+{
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        var uses = Dictionary<string, int>.Create();
+        foreach (var b in f.Blocks.ToArray())
+        {
+            foreach (var inst in b.Insts.ToArray())
+            {
+                if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                    continue;
+                foreach (var a in inst.Args)
+                {
+                    var v = g.M.Vals.Get(a);
+                    if (v.Kind == ValKind.Local)
+                        uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+                }
+                if (inst.Callee >= 0 && g.M.Vals.Get(inst.Callee).Kind == ValKind.Local)
+                    uses.Set(g.M.Vals.Get(inst.Callee).Name, uses.GetOrDefault(g.M.Vals.Get(inst.Callee).Name, 0) + 1);
+            }
+        }
+        foreach (var b in f.Blocks.ToArray())
+        {
+            foreach (var inst in b.Insts.ToArray())
+            {
+                if (inst.Res.Length == 0 || g.Skip.Contains(inst.Res) || uses.ContainsKey(inst.Res) || !IsPure(inst))
+                    continue;
+                g.Skip.Add(inst.Res);
+                changed = true;
+            }
+        }
+    }
+}
+
+bool IsPure(IrInst inst)
+{
+    switch (inst.Op)
+    {
+    case "add":
+    case "sub":
+    case "mul":
+    case "and":
+    case "or":
+    case "xor":
+    case "shl":
+    case "lshr":
+    case "ashr":
+    case "icmp":
+    case "fcmp":
+    case "zext":
+    case "sext":
+    case "trunc":
+    case "ptrtoint":
+    case "inttoptr":
+    case "bitcast":
+    case "getelementptr":
+    case "select":
+    case "extractvalue":
+    case "insertvalue":
+        return true;
+    case "load":
+        return !inst.Volatile;
+    default:
+        return false;
+    }
+}
+
 void FoldAddresses(Gen g, IrFunc f)
 {
     var uses = Dictionary<string, int>.Create();
@@ -125,6 +212,8 @@ void FoldAddresses(Gen g, IrFunc f)
                 if (v.Kind == ValKind.Local)
                     uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
             }
+            if (inst.Callee >= 0 && g.M.Vals.Get(inst.Callee).Kind == ValKind.Local)
+                uses.Set(g.M.Vals.Get(inst.Callee).Name, uses.GetOrDefault(g.M.Vals.Get(inst.Callee).Name, 0) + 1);
         }
     }
     foreach (var b in f.Blocks.ToArray())
