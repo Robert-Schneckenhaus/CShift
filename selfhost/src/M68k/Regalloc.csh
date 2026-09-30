@@ -131,6 +131,8 @@ void AllocateRegisters(Gen g, IrFunc f)
     var storeBlock = List<int>.Create();
     var lo = Dictionary<string, int>.Create();
     var hi = Dictionary<string, int>.Create();
+    var phiEnds = List<string>.Create();        // phi results and their predecessors: the predecessor writes the
+    var phiFrom = List<int>.Create();           // result's register before its branch (and its compare)
     int pos = 0;
     for (var j = 0; j < n; j += 1)
     {
@@ -188,6 +190,11 @@ void AllocateRegisters(Gen g, IrFunc f)
                     var from = index.TryGet(inst.Labels[a]);
                     if (v.Kind == ValKind.Local && IsCandidate(v.Name, isPointer, excluded) && from is int pj)
                         phiUses[pj].Add(v.Name);
+                    if (from is int pk && IsCandidate(inst.Res, isPointer, excluded))
+                    {
+                        phiEnds.Add(inst.Res);
+                        phiFrom.Add(pk);
+                    }
                 }
                 continue;
             }
@@ -250,6 +257,13 @@ void AllocateRegisters(Gen g, IrFunc f)
         pos += 1;
         foreach (var u in phiUses[j].ToArray())
             Touch(u, blockEnd[j], w, weight, lo, hi);
+    }
+
+    for (var i = 0; i < phiEnds.Count(); i += 1)
+    {
+        int end = blockEnd[phiFrom.Get(i)];
+        Touch(phiEnds.Get(i), end - 2, 0, weight, lo, hi);
+        Touch(phiEnds.Get(i), end - 1, 0, weight, lo, hi);
     }
 
     // ---- liveness: live-in = gen + (live-out - kill); live-out = the live-ins of the successors (without their

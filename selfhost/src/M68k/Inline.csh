@@ -7,7 +7,7 @@ namespace CShift.M68k;
 
 using System;
 
-const int InlineLimit = 40;     // the most instructions a function may have to be inlined
+const int InlineLimit = 80;     // the most instructions a function may have to be inlined
 const int InlineBudget = 40;    // inlined calls per function
 
 void InlineCalls(Gen g, IrFunc f)
@@ -95,6 +95,7 @@ int RemapValue(Gen g, InlineCopy copy, int vi)
 
 void InlineAt(Gen g, IrFunc f, int bi, int k, IrFunc fn)
 {
+    PromoteSingleStores(g, fn); // (the callee's parameters: their values, not variables)
     string tag = "in" + g.NewLabel().Substring(2).ToString();
     var block = f.Blocks.Get(bi);
     var insts = block.Insts.ToArray();

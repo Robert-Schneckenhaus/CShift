@@ -2,6 +2,8 @@
 //
 //   * Constant folding: comparisons of two constants, and/or/xor of constants (the division checks of CShift compare
 //     the divisor with -1 even when it is a constant) - the uses get the constant, the instruction is skipped.
+//   * Variables written once: a scalar variable stored once in the entry block (a parameter's copy, mostly) and
+//     otherwise only read is replaced by the stored value.
 //   * Address folding: a getelementptr whose only use is the load or store right after it (in its block) is not
 //     computed on its own: the access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
 
@@ -22,6 +24,7 @@ void PrepareFunction(Gen g, IrFunc f)
 {
     g.Folds.Clear();
     g.Skip.Clear();
+    PromoteSingleStores(g, f);
     InlineCalls(g, f);
     FoldConstants(g, f);
     RemoveDeadCode(g, f);
@@ -162,6 +165,124 @@ void RemoveDeadCode(Gen g, IrFunc f)
             }
         }
     }
+}
+
+void PromoteSingleStores(Gen g, IrFunc f)
+{
+    if (f.Blocks.Count() == 0)
+        return;
+    var blocks = f.Blocks.ToArray();
+    // the candidates: allocas of one scalar
+    var state = Dictionary<string, int>.Create();   // alloca -> 0 not stored yet, 1 stored once, -1 not promotable
+    var stored = Dictionary<string, int>.Create();  // alloca -> the stored value
+    var storeType = Dictionary<string, int>.Create();
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "alloca" && (inst.Args.Length == 0 || !IsLocal(g, inst.Args[0])) && IsScalar4(g, inst.OpType))
+                state.Set(inst.Res, 0);
+        }
+    }
+    if (state.Count() == 0)
+        return;
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Callee >= 0)
+                Disqualify(g, state, inst.Callee);
+            for (var a = 0; a < inst.Args.Length; a += 1)
+            {
+                var v = g.M.Vals.Get(inst.Args[a]);
+                if (v.Kind != ValKind.Local || !state.ContainsKey(v.Name))
+                    continue;
+                int st = state.Get(v.Name);
+                if (st < 0)
+                    continue;
+                if (inst.Op == "store" && a == 1)
+                {
+                    // once, in the entry block (which comes before every other block)
+                    if (j == 0 && st == 0 && g.L.Size(inst.OpType) == 4)
+                    {
+                        state.Set(v.Name, 1);
+                        stored.Set(v.Name, inst.Args[0]);
+                        storeType.Set(v.Name, inst.OpType);
+                    }
+                    else
+                        state.Set(v.Name, -1);
+                }
+                else if (inst.Op == "load" && a == 0)
+                {
+                    // read after the store, as what was stored
+                    if (st != 1 || inst.Type != storeType.Get(v.Name))
+                        state.Set(v.Name, -1);
+                }
+                else
+                    state.Set(v.Name, -1);
+            }
+        }
+    }
+    // the loads become the stored value
+    var value = Dictionary<string, int>.Create();
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op != "load")
+                continue;
+            var v = g.M.Vals.Get(inst.Args[0]);
+            if (v.Kind == ValKind.Local && state.GetOrDefault(v.Name, -1) == 1)
+                value.Set(inst.Res, stored.Get(v.Name));
+        }
+    }
+    if (value.Count() == 0)
+        return;
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var kept = List<IrInst>.Create();
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op == "alloca" && state.GetOrDefault(inst.Res, -1) == 1)
+                continue;
+            if (inst.Op == "store" && IsLocal(g, inst.Args[1]) && state.GetOrDefault(g.M.Vals.Get(inst.Args[1]).Name, -1) == 1)
+                continue;
+            if (inst.Op == "load" && value.ContainsKey(inst.Res))
+                continue;
+            for (var a = 0; a < inst.Args.Length; a += 1)
+                inst.Args[a] = Promoted(g, value, inst.Args[a]);
+            var copy = inst;
+            if (inst.Callee >= 0)
+                copy.Callee = Promoted(g, value, inst.Callee);
+            kept.Add(copy);
+        }
+        f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
+    }
+}
+
+// a value, or what was stored in the variable it was loaded from (through loads of such values)
+int Promoted(Gen g, Dictionary<string, int> value, int vi)
+{
+    int at = vi;
+    for (var guard = 0; guard < 1000; guard += 1)
+    {
+        var v = g.M.Vals.Get(at);
+        if (v.Kind != ValKind.Local)
+            return at;
+        var next = value.TryGet(v.Name);
+        int n = next is int found ? found : -1;
+        if (n < 0)
+            return at;
+        at = n;
+    }
+    return at;
+}
+
+void Disqualify(Gen g, Dictionary<string, int> state, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind == ValKind.Local && state.ContainsKey(v.Name))
+        state.Set(v.Name, -1);
 }
 
 bool IsPure(IrInst inst)

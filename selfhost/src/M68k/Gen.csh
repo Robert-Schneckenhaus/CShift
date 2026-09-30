@@ -547,10 +547,7 @@ void GenFunction(Gen g, IrFunc f)
         {
             foreach (var phi in list)
             {
-                var home = g.Home.TryGet(phi.Res);
-                if (home is string reg)
-                    g.Line("move.l\t" + Frame(g.PhiTmp.Get(phi.Res)) + "," + reg);
-                else
+                if (PhiRegister(g, phi).Length == 0)
                     CopyFrame(g, g.PhiTmp.Get(phi.Res), g.Slot.Get(phi.Res), SlotSize(g, phi.Type));
             }
         }
@@ -1250,7 +1247,8 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
     g.Fail("the instruction '" + op + "' is not supported yet");
 }
 
-// Before a branch: the values the successors' phis take from this block, into their staging slots.
+// Before a branch: the values the successors' phis take from this block, into their registers (the register
+// allocation keeps them free here) or their staging slots (read at the start of the successor).
 void WritePhiCopies(Gen g, IrFunc f, string[] targets)
 {
     foreach (var target in targets)
@@ -1258,19 +1256,76 @@ void WritePhiCopies(Gen g, IrFunc f, string[] targets)
         var phis = g.Phis.TryGet(target);
         if (phis is List<IrInst> list)
         {
+            // a register that is written and also read by another copy: all through the staging slots first
+            var written = HashSet<string>.Create();
             foreach (var phi in list)
             {
-                for (var i = 0; i < phi.Labels.Length; i += 1)
+                string reg = PhiRegister(g, phi);
+                if (reg.Length > 0 && PhiArg(g, phi) >= 0)
+                    written.Add(reg);
+            }
+            bool clash = false;
+            foreach (var phi in list)
+            {
+                int arg = PhiArg(g, phi);
+                string from = arg >= 0 ? ValueRegister(g, arg) : "";
+                if (from.Length > 0 && written.Contains(from) && from != PhiRegister(g, phi))
+                    clash = true;
+            }
+            foreach (var phi in list)
+            {
+                int arg = PhiArg(g, phi);
+                if (arg < 0)
+                    continue;
+                string reg = PhiRegister(g, phi);
+                if (reg.Length > 0 && !clash)
+                    Load32(g, arg, reg);
+                else
+                    CopyToSlot(g, arg, phi.Type, g.PhiTmp.Get(phi.Res));
+            }
+            if (clash)
+            {
+                foreach (var phi in list)
                 {
-                    if (phi.Labels[i] == g.Fn[1])
-                    {
-                        CopyToSlot(g, phi.Args[i], phi.Type, g.PhiTmp.Get(phi.Res));
-                        break;
-                    }
+                    string reg = PhiRegister(g, phi);
+                    if (reg.Length > 0 && PhiArg(g, phi) >= 0)
+                        g.Line("move.l\t" + Frame(g.PhiTmp.Get(phi.Res)) + "," + reg);
                 }
             }
         }
     }
+}
+
+// the value a phi takes from the current block (-1: none)
+int PhiArg(Gen g, IrInst phi)
+{
+    for (var i = 0; i < phi.Labels.Length; i += 1)
+    {
+        if (phi.Labels[i] == g.Fn[1])
+            return phi.Args[i];
+    }
+    return -1;
+}
+
+// the register a value (not a variable's address) is in ("": none)
+string ValueRegister(Gen g, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind != ValKind.Local || g.Alloca.ContainsKey(v.Name))
+        return "";
+    var home = g.Home.TryGet(v.Name);
+    if (home is string reg && reg.StartsWith("%"))
+        return reg;
+    return "";
+}
+
+// the register of a phi's result, written by its predecessors ("": through its staging slot)
+string PhiRegister(Gen g, IrInst phi)
+{
+    var home = g.Home.TryGet(phi.Res);
+    if (home is string reg && reg.StartsWith("%"))
+        return reg;
+    return "";
 }
 
 // add, sub, ... on values of up to 32 bits: a in d0, b in d1.
@@ -1538,6 +1593,35 @@ void GenOverflowBranch(Gen g, IrInst[] insts, int k)
     bool add = name.Contains("add");
     if (name.Contains("mul"))
     {
+        // by a power of two (2 to 256): asl sets V when the sign changes at any step, which is the overflow
+        int factor = -1;
+        int shift = 0;
+        for (var side = 1; side >= 0 && factor < 0; side -= 1)
+        {
+            var cv = g.M.Vals.Get(call.Args[side]);
+            if (cv.Kind != ValKind.Int)
+                continue;
+            for (var n = 1; n <= 8; n += 1)
+            {
+                if (cv.Int == ((int64)1 << n))
+                {
+                    factor = 1 - side;
+                    shift = n;
+                }
+            }
+        }
+        if (factor >= 0)
+        {
+            string into = ResultRegister(g, value.Res);
+            string reg = into.Length > 0 ? into : "%d0";
+            Load32(g, call.Args[factor], reg);
+            g.Line("asl.l\t#" + shift.ToString() + "," + reg);
+            g.Line("bvs\t" + g.BlockLabel.Get(br.Labels[0]));
+            if (reg == "%d0")
+                g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
+            g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
+            return;
+        }
         // both factors in 16 bits: muls.w cannot overflow; else the helper (d0 product, d1 overflow)
         string slow = g.NewLabel();
         string ok = g.NewLabel();
