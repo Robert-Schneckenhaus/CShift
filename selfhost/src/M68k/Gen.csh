@@ -1231,7 +1231,9 @@ void GenBinary32(Gen g, IrInst inst)
             var c = g.M.Vals.Get(inst.Args[1]);
             src = c.Kind == ValKind.Int && c.Int >= 1 && c.Int <= 8 ? "#" + c.Int.ToString() : "";
         }
-        if (src.Length == 0 || ((op == "xor" || shift) && !src.StartsWith("%d") && !src.StartsWith("#")))
+        // (and/or cannot read an address register, eor and shifts only a data register or an immediate)
+        if (src.Length == 0 || ((op == "xor" || shift) && !src.StartsWith("%d") && !src.StartsWith("#")) ||
+            ((op == "and" || op == "or") && src.StartsWith("%a")))
         {
             Load32(g, inst.Args[1], "%d1");
             src = "%d1";

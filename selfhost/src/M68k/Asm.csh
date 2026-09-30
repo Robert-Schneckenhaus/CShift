@@ -894,6 +894,8 @@ void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
     case "divu":
     case "divs":
     {
+        if (a.Mode == OpMode.An)
+            EncError(enc, item, "an address register cannot be a factor or divisor");
         int baseOp = op == "mulu" ? 49344 : (op == "muls" ? 49600 : (op == "divu" ? 32960 : 33216));
         EmitWord(sec, baseOp | (b.Reg << 9) | EaField(a));
         EaExtension(enc, item, sec, a, 2);
@@ -1088,6 +1090,8 @@ void EncodeAddSub(Encoder enc, ref AsmItem item, AsmSection sec, bool add, AsmOp
 // and/or: baseOp for <ea>,Dn; immediate: immOp (andi = 0x0200, ori = 0x0000)
 void EncodeLogic(Encoder enc, ref AsmItem item, AsmSection sec, int baseOp, int immOp, AsmOperand a, AsmOperand b, int size)
 {
+    if (a.Mode == OpMode.An || b.Mode == OpMode.An)
+        EncError(enc, item, "and/or cannot use an address register");
     if (a.Mode == OpMode.Imm)
     {
         EmitWord(sec, immOp | (SizeBits(size) << 6) | EaField(b));

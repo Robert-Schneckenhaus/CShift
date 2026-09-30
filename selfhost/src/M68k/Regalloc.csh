@@ -121,6 +121,14 @@ void AllocateRegisters(Gen g, IrFunc f)
     var phiDefs = new HashSet<string>[n];
     var phiUses = new List<string>[n];   // values that phis of other blocks take from this block (used at its end)
     var weight = Dictionary<string, int>.Create();
+    var uses = Dictionary<string, int>.Create();
+    var defPos = Dictionary<string, int>.Create();
+    var defBlock = Dictionary<string, int>.Create();
+    var loads = List<IrInst>.Create();          // loads of variables, with their positions
+    var loadPos = List<int>.Create();
+    var stores = List<IrInst>.Create();
+    var storePos = List<int>.Create();
+    var storeBlock = List<int>.Create();
     var lo = Dictionary<string, int>.Create();
     var hi = Dictionary<string, int>.Create();
     int pos = 0;
@@ -151,6 +159,8 @@ void AllocateRegisters(Gen g, IrFunc f)
                 for (var a = 0; a < inst.Args.Length; a += 1)
                 {
                     var v = g.M.Vals.Get(inst.Args[a]);
+                    if (v.Kind == ValKind.Local)
+                        uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
                     var from = index.TryGet(inst.Labels[a]);
                     if (v.Kind == ValKind.Local && IsCandidate(v.Name, isPointer, excluded) && from is int pj)
                         phiUses[pj].Add(v.Name);
@@ -158,9 +168,22 @@ void AllocateRegisters(Gen g, IrFunc f)
                 continue;
             }
             // uses first (a store's value; a load's variable), then the definition
+            if (inst.Op == "load" && IsLocal(g, inst.Args[0]) && allocaSize.ContainsKey(g.M.Vals.Get(inst.Args[0]).Name))
+            {
+                loads.Add(inst);
+                loadPos.Add(pos);
+            }
+            if (inst.Op == "store" && IsLocal(g, inst.Args[1]) && allocaSize.ContainsKey(g.M.Vals.Get(inst.Args[1]).Name))
+            {
+                stores.Add(inst);
+                storePos.Add(pos);
+                storeBlock.Add(j);
+            }
             for (var a = 0; a < inst.Args.Length; a += 1)
             {
                 var v = g.M.Vals.Get(inst.Args[a]);
+                if (v.Kind == ValKind.Local)
+                    uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
                 if (v.Kind != ValKind.Local || !IsCandidate(v.Name, isPointer, excluded))
                     continue;
                 if (inst.Op == "store" && a == 1 && allocaSize.ContainsKey(v.Name))
@@ -180,6 +203,8 @@ void AllocateRegisters(Gen g, IrFunc f)
             }
             if (inst.Res.Length > 0 && inst.Op != "alloca" && IsCandidate(inst.Res, isPointer, excluded))
             {
+                defPos.Set(inst.Res, pos);
+                defBlock.Set(inst.Res, j);
                 kill[j].Add(inst.Res);
                 Touch(inst.Res, pos, w, weight, lo, hi);
             }
@@ -251,6 +276,89 @@ void AllocateRegisters(Gen g, IrFunc f)
             Touch(v, blockEnd[j], 0, weight, lo, hi);
     }
 
+    // ---- values that share their variable's register ----
+    var nonLocal = HashSet<string>.Create();
+    for (var j = 0; j < n; j += 1)
+    {
+        foreach (var v in liveIn[j].ToArray())
+            nonLocal.Add(v);
+        foreach (var v in liveOut[j].ToArray())
+            nonLocal.Add(v);
+    }
+    var aliasOf = Dictionary<string, string>.Create();
+    var aliasEnd = Dictionary<string, int>.Create();   // the last use of a load that shares its variable's register
+    // a load whose value is used in its block before the variable is written again: the variable's register
+    for (var i = 0; i < loads.Count(); i += 1)
+    {
+        var ld = loads.Get(i);
+        string t = ld.Res;
+        string variable = g.M.Vals.Get(ld.Args[0]).Name;
+        if (!IsCandidate(t, isPointer, excluded) || !IsCandidate(variable, isPointer, excluded) || nonLocal.Contains(t) || !hi.ContainsKey(t))
+            continue;
+        int from = loadPos.Get(i);
+        int until = hi.Get(t);
+        bool written = false;
+        for (var k = 0; k < stores.Count() && !written; k += 1)
+        {
+            int sp = storePos.Get(k);
+            if (sp > from && sp <= until && g.M.Vals.Get(stores.Get(k).Args[1]).Name == variable)
+                written = true;
+        }
+        if (written)
+            continue;
+        Touch(variable, until, 0, weight, lo, hi);
+        weight.Set(variable, weight.GetOrDefault(variable, 0) + weight.GetOrDefault(t, 0));
+        aliasOf.Set(t, variable);
+        aliasEnd.Set(t, until);
+        lo.Remove(t);
+        hi.Remove(t);
+    }
+    // a value that is only stored into a variable, which is not read in between: computed in the variable's register
+    for (var k = 0; k < stores.Count(); k += 1)
+    {
+        var st = stores.Get(k);
+        var val = g.M.Vals.Get(st.Args[0]);
+        string variable = g.M.Vals.Get(st.Args[1]).Name;
+        if (val.Kind != ValKind.Local || !IsCandidate(val.Name, isPointer, excluded) || !IsCandidate(variable, isPointer, excluded))
+            continue;
+        string x = val.Name;
+        if (aliasOf.ContainsKey(x) || nonLocal.Contains(x) || uses.GetOrDefault(x, 0) != 1 || !defPos.ContainsKey(x) ||
+            defBlock.Get(x) != storeBlock.Get(k) || !lo.ContainsKey(x))
+            continue;
+        int d = defPos.Get(x);
+        int sp = storePos.Get(k);
+        bool read = false;
+        for (var i = 0; i < loads.Count() && !read; i += 1)
+        {
+            int lp = loadPos.Get(i);
+            var ld = loads.Get(i);
+            if (g.M.Vals.Get(ld.Args[0]).Name != variable)
+                continue;
+            // a load in between, or an earlier load whose shared value is still used after the definition
+            if (lp > d && lp < sp)
+                read = true;
+            var ali = aliasOf.TryGet(ld.Res);
+            if (ali is string av && av == variable && lp <= d)
+            {
+                if (aliasEnd.GetOrDefault(ld.Res, 0) > d)
+                    read = true;
+            }
+        }
+        for (var i = 0; i < stores.Count() && !read; i += 1)
+        {
+            int op = storePos.Get(i);
+            if (op > d && op < sp && g.M.Vals.Get(stores.Get(i).Args[1]).Name == variable)
+                read = true;
+        }
+        if (read)
+            continue;
+        Touch(variable, d, 0, weight, lo, hi);
+        weight.Set(variable, weight.GetOrDefault(variable, 0) + weight.GetOrDefault(x, 0));
+        aliasOf.Set(x, variable);
+        lo.Remove(x);
+        hi.Remove(x);
+    }
+
     // ---- linear scan ----
     var intervals = List<LiveInterval>.Create();
     foreach (var entry in lo.Entries())
@@ -318,6 +426,12 @@ void AllocateRegisters(Gen g, IrFunc f)
             g.Home.Set(sorted[i].Name, regs[assigned[i]]);
             used[assigned[i]] = true;
         }
+    }
+    foreach (var entry in aliasOf.Entries())
+    {
+        var home = g.Home.TryGet(entry.Value);
+        if (home is string reg)
+            g.Home.Set(entry.Key, reg);
     }
     for (var r = 0; r < 8; r += 1)
     {
