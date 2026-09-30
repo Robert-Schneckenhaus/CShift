@@ -17,6 +17,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System.Native` | `native.csh` | C imports (`fopen`, `sin`, `pthread_mutex/cond_*`, …), also usable by your own programs (`using System.Native;`) |
 | `System` | `thread.csh`, `mutex.csh` | `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>` (`using System;`, see [threading.md](language/threading.md)) |
 | `System` | `random.csh` | `Random`: seeded pseudo-random numbers |
+| `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 
 **`List<T>`** — a growable array. Create it with `List<int>.Create()` (or `new List<int>()`).
 `Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)` / `list[i]`, `Set(i, v)` /

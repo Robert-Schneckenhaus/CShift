@@ -45,6 +45,14 @@
 			"default": false,
 			"description": "Integer overflow wraps around instead of ending the program with a panic (like --unchecked). Division by zero and index checks stay."
 		},
+		"backend": {
+			"enum": ["llvm", "m68k"],
+			"description": "Code generator: \"llvm\" (LLVM IR, compiled and linked by clang) or \"m68k\" (CShift's own 68000 code generator, assembler and linker, like --backend). Default: m68k for AmigaOS targets (m68k-amigaos), llvm for all others."
+		},
+		"ndk": {
+			"type": "string",
+			"description": "The AmigaOS NDK folder (e.g. NDK3.2), relative to this file (like --ndk; the environment variable CSHIFT_NDK is used if this is not set). \"using X from \"lib.sfd\";\" finds the SFD files in <ndk>/SFD, and <ndk>/Include_H is searched for C headers on amigaos targets."
+		},
 		"links": {
 			"type": "array",
 			"items": { "type": "string" },
@@ -72,7 +80,8 @@
 		},
 		"target": {
 			"type": "string",
-			"description": "Target triple, e.g. x86_64-w64-windows-gnu. Default: the host."
+			"description": "Target triple, e.g. x86_64-w64-windows-gnu, i686-linux-gnu or m68k-amigaos (an Amiga program, built with the m68k backend). Default: the host.",
+			"examples": ["x86_64-w64-windows-gnu", "x86_64-linux-gnu", "i686-linux-gnu", "m68k-amigaos"]
 		},
 		"platforms": {
 			"type": "object",
