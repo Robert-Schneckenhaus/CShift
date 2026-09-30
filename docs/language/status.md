@@ -47,6 +47,8 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Indexers: `x[k]` calls `Get(k)`, `x[k] = v` calls `Set(k, v)` (`List`, `Dictionary`, own structs) | ✔ (self-hosted) |
 | Importing C headers: `using Name from "header.h";` (libclang, a `.ffi` cache), `nint`/`nuint`, structs by value | ✔ (see [../ffi.md](../ffi.md)) |
 | `unsafe`: pointers, `&`, `*`, pointer arithmetic, `Memory.Allocate/Free`, `Memory.VolatileRead/VolatileWrite` | ✔ |
+| `unsafe` on functions and methods (`unsafe void F()`) and before a single statement (`unsafe Memory.Free(p);`) | ✔ |
+| `new { ... }` / `new()` with the type taken from the declaration (`Player p = new { X = 1 };`) | ✔ |
 | Entry point: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |

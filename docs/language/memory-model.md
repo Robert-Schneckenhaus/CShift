@@ -119,6 +119,25 @@ unsafe
 }
 ```
 
+`unsafe` also works on a whole function or method, and before a single statement (a variable it declares stays
+visible after it):
+
+```csharp
+unsafe void Render()               // the whole body is unsafe
+{
+    uint32* row = _pixels;
+    ...
+}
+
+struct Canvas
+{
+    static unsafe void Clear(uint32* p, int n) { ... }
+}
+
+unsafe Memory.Free(_pixels);        // just this statement
+unsafe uint8* bytes = (uint8*)data; // bytes can be used afterwards (in unsafe code)
+```
+
 Pointers show up constantly at the C boundary — see [C interop](ffi-and-interop.md) for how C's own pointer types map
 to CShift.
 

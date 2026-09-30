@@ -257,7 +257,7 @@ int Cshc(string[] args)
             Console.WriteErrorLine("error: " + createdError.Message);
             return 1;
         }
-        Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  cshc run");
+        Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  " + CompilerName() + " run");
         return 0;
     }
 
@@ -887,6 +887,15 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
     return answer + "}";
+}
+
+// The name the compiler was started with (for hints like "cshiftc run"): the file name of the executable without .exe.
+string CompilerName()
+{
+    string name = Path.GetFileName(Host.ExecutablePath());
+    if (name.ToLower().EndsWith(".exe"))
+        name = name.Substring(0, name.Length - 4).ToString();
+    return name.Length > 0 ? name : "cshiftc";
 }
 
 // The m68k backend (selfhost/src/M68k): the IR becomes 68000 assembly.

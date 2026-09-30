@@ -268,8 +268,23 @@ struct Parser
         else if (IsThreadModifier())
         {
             Advance();
+            bool threadUnsafe = Match(TokenKind.KwUnsafe);
             FuncDecl f = try ParseFunction(false, false);
             f.IsThread = true;
+            if (threadUnsafe)
+                MarkUnsafe(f.Body);
+            Unit.Funcs.Add(f);
+        }
+        else if (Check(TokenKind.KwUnsafe))
+        {
+            // unsafe for a whole function: its body is an unsafe block
+            Advance();
+            bool isThread = IsThreadModifier();
+            if (isThread)
+                Advance();
+            FuncDecl f = try ParseFunction(false, false);
+            f.IsThread = isThread;
+            MarkUnsafe(f.Body);
             Unit.Funcs.Add(f);
         }
         else if (Check(TokenKind.Ident))
@@ -288,7 +303,10 @@ struct Parser
                 g.Loc = Cur().Loc;
                 g.Name = try ExpectIdent("variable name");
                 if (Match(TokenKind.Assign))
+                {
                     g.Init = try ParseExpr();
+                    TakeDeclaredType(g.Init, g.Type);
+                }
                 try Expect(TokenKind.Semi, "';' after variable declaration");
                 Unit.Globals.Add(g);
             }
@@ -411,10 +429,13 @@ struct Parser
         {
             bool isStatic = false;
             bool isThread = false;
+            bool isUnsafe = false;
             while (true)
             {
                 if (Match(TokenKind.KwStatic))
                     isStatic = true;
+                else if (Match(TokenKind.KwUnsafe))
+                    isUnsafe = true;
                 else if (IsThreadModifier())
                 {
                     Advance();
@@ -432,6 +453,8 @@ struct Parser
             {
                 var fn = FuncDecl { Loc = memberLoc, NameLoc = nameLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
                 try ParseFunctionRest(ref fn);
+                if (isUnsafe)
+                    MarkUnsafe(fn.Body);
                 methods.Add(fn);
             }
             else
@@ -440,6 +463,8 @@ struct Parser
                     return error("static fields are not supported", memberLoc.Pack());
                 if (isThread)
                     return error("'thread' can only be used on a method", memberLoc.Pack());
+                if (isUnsafe)
+                    return error("'unsafe' can only be used on a method, a function or a statement", memberLoc.Pack());
                 fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1 });
                 try Expect(TokenKind.Semi, "';' after field");
             }
@@ -710,6 +735,33 @@ struct Parser
         return Tree.AddBlock(loc, BlockStmt { Stmts = stmts.ToArray() });
     }
 
+    // "Player p = new { X = 1 };" and "Player p = new();": a 'new' without a type gets the declared one
+    void TakeDeclaredType(Expr init, TypeRef type)
+    {
+        if (init.Kind == ExprKind.StructInit && Tree.GetStructInit(init).Type.IsNull())
+        {
+            var n = Tree.GetStructInit(init);
+            n.Type = type;
+            Tree.StructInits.Set(init.Index, n);
+        }
+        else if (init.Kind == ExprKind.NewObject && Tree.GetNewObject(init).Type.IsNull())
+        {
+            var n = Tree.GetNewObject(init);
+            n.Type = type;
+            Tree.NewObjects.Set(init.Index, n);
+        }
+    }
+
+    // unsafe on a function or method: its body is an unsafe block (extern functions have none)
+    void MarkUnsafe(Stmt body)
+    {
+        if (body.Kind != StmtKind.Block)
+            return;
+        var node = Tree.GetBlock(body);
+        node.IsUnsafe = true;
+        Tree.Blocks.Set(body.Index, node);
+    }
+
     // A block that is marked unsafe or unchecked: the marker is set after the block was parsed.
     Error<Stmt> ParseMarkedBlock(bool isUnsafe)
     {
@@ -797,9 +849,17 @@ struct Parser
             return Tree.AddReturn(loc, r);
         }
         case TokenKind.KwUnsafe:
+        {
             if (PeekKind(1) == TokenKind.LBrace)
                 return ParseMarkedBlock(true);
-            break;
+            // unsafe before a single statement: a block around it without a scope of its own (a variable it declares
+            // stays visible after it)
+            Advance();
+            Stmt inner = try ParseStatement();
+            var one = new Stmt[1];
+            one[0] = inner;
+            return Tree.AddBlock(loc, BlockStmt { Stmts = one, IsUnsafe = true, NoScope = true });
+        }
         case TokenKind.KwUnchecked:
             if (PeekKind(1) == TokenKind.LBrace)
                 return ParseMarkedBlock(false);
@@ -840,7 +900,10 @@ struct Parser
                 }
             }
             if (!IsVarType(t))
+            {
                 d.Type = t;
+                TakeDeclaredType(d.Init, t);
+            }
             return Tree.AddVarDecl(loc, d);
         }
         Pos = save;
@@ -1673,6 +1736,20 @@ struct Parser
     Error<Expr> ParseNew()
     {
         SourceLoc loc = Advance().Loc; // new
+        if (Check(TokenKind.LBrace))
+        {
+            // new { X = 1 }: the type comes from the declaration (TakeDeclaredType)
+            var typed = StructInitExpr { };
+            typed.Fields = try ParseStructInitBody();
+            return Tree.AddStructInit(loc, typed);
+        }
+        if (Check(TokenKind.LParen) && PeekKind(1) == TokenKind.RParen)
+        {
+            // new(): the same, zero-initialized
+            Advance();
+            Advance();
+            return Tree.AddNewObject(loc, NewObjectExpr { });
+        }
         TypeRef type = try ParseNamedType();
 
         if (Check(TokenKind.LBracket))
