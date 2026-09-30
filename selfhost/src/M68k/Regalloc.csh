@@ -57,7 +57,7 @@ void AllocateRegisters(Gen g, IrFunc f)
             }
             else if (inst.Res.Length > 0)
             {
-                if (IsScalar4(g, inst.Type))
+                if (IsScalar4(g, inst.Type) && !g.Skip.Contains(inst.Res))
                     isPointer.Set(inst.Res, g.T.Kind(inst.Type) == IrKind.Ptr);
                 else
                     excluded.Add(inst.Res);
@@ -148,6 +148,30 @@ void AllocateRegisters(Gen g, IrFunc f)
         foreach (var inst in blocks[j].Insts.ToArray())
         {
             pos += 1;
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue; // folded: its operands are used where it is used
+            // a folded access uses the base and the index of its address
+            if (inst.Op == "load" || inst.Op == "store")
+            {
+                var ptr = g.M.Vals.Get(inst.Args[inst.Op == "load" ? 0 : 1]);
+                var fold = ptr.Kind == ValKind.Local ? g.Folds.TryGet(ptr.Name) : null;
+                if (fold is AddrFold af)
+                {
+                    int[] parts = [af.Base, af.Index];
+                    foreach (var pv in parts)
+                    {
+                        if (pv < 0)
+                            continue;
+                        var v = g.M.Vals.Get(pv);
+                        if (v.Kind != ValKind.Local || !IsCandidate(v.Name, isPointer, excluded))
+                            continue;
+                        uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+                        if (!kill[j].Contains(v.Name))
+                            gen[j].Add(v.Name);
+                        Touch(v.Name, pos, w, weight, lo, hi);
+                    }
+                }
+            }
             if (inst.Op == "phi")
             {
                 if (IsCandidate(inst.Res, isPointer, excluded))

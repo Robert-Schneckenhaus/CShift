@@ -40,6 +40,8 @@ struct Gen
     Dictionary<string, List<IrInst>> Phis; // block -> its phis
     Dictionary<string, string> Home;       // values and allocas that live in a register for the whole function
     List<string> Saved;                   // the registers the function keeps (movem)
+    Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.csh)
+    HashSet<string> Skip;                 // instructions that are not written (folded)
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
     int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
@@ -48,7 +50,8 @@ struct Gen
     {
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
-                      Saved = List<string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
+                      Saved = List<string>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
+                      Counters = new int[2], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
         return g;
@@ -452,6 +455,7 @@ void GenFunction(Gen g, IrFunc f)
     g.Fn[0] = f.Name;
     g.Fn[2] = g.NewLabel();
     g.Frame[1] = ReturnsStruct(g, f.Ret) ? 1 : 0;
+    PrepareFunction(g, f);
 
     // parameters: above the return address and the saved a6
     int pos = 8 + (g.Frame[1] == 1 ? 4 : 0);
@@ -554,7 +558,7 @@ void GenFunction(Gen g, IrFunc f)
         for (var k = 0; k < insts.Length; k += 1)
         {
             var inst = insts[k];
-            if (inst.Op == "phi" || inst.Op == "alloca")
+            if (inst.Op == "phi" || inst.Op == "alloca" || (inst.Res.Length > 0 && g.Skip.Contains(inst.Res)))
                 continue;
             // a comparison that only decides the branch after it: compare and branch, no flag in between
             if (inst.Op == "icmp" && k + 1 < insts.Length && insts[k + 1].Op == "br" && insts[k + 1].Labels.Length == 2 &&
@@ -1019,6 +1023,36 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
     if (op == "fptrunc" || op == "fpext" || op == "sitofp" || op == "uitofp" || op == "fptosi" || op == "fptoui")
     {
         GenFloatCast(g, inst);
+        return;
+    }
+    if ((op == "load" || op == "store") && IsLocal(g, inst.Args[op == "load" ? 0 : 1]) &&
+        g.Folds.ContainsKey(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name))
+    {
+        // an access through an address mode (Prepare.csh)
+        var fold = g.Folds.Get(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name);
+        int size = g.L.Size(op == "load" ? inst.Type : inst.OpType);
+        string suffix = SizeSuffix(size);
+        if (op == "load")
+        {
+            string operand = FoldedOperand(g, fold);
+            string target = size == 4 ? ResultRegister(g, inst.Res) : "";
+            if (target.Length > 0)
+            {
+                g.Line("move.l\t" + operand + "," + target);
+                return;
+            }
+            g.Line("move" + suffix + "\t" + operand + ",%d0");
+            StoreResult(g, inst);
+            return;
+        }
+        string src = SourceOperand(g, inst.Args[0], size * 8);
+        if (src.Length == 0)
+        {
+            Load32(g, inst.Args[0], "%d0");
+            src = "%d0";
+        }
+        string dest = FoldedOperand(g, fold);
+        g.Line("move" + suffix + "\t" + src + "," + dest);
         return;
     }
     if (op == "load" && HomeOf(g, inst.Args[0]).Length > 0)

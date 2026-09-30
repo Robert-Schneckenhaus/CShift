@@ -71,9 +71,22 @@ uint8[] WriteElfObject(AsmObject obj)
         Put8(symtab, 0);
         Put16(symtab, s);
     }
-    int firstGlobal = 3;
     var symIndex = Dictionary<string, int>.Create();
     int next = 3;
+    // the local labels (not .L...): names for debuggers and profilers
+    foreach (var entry in obj.Symbols.Entries())
+    {
+        if (entry.Value.Global || entry.Key.StartsWith("."))
+            continue;
+        Put32(symtab, StrIndex(strtab, strings, entry.Key));
+        Put32(symtab, entry.Value.Offset);
+        Put32(symtab, 0);
+        Put8(symtab, 0); // local, no type
+        Put8(symtab, 0);
+        Put16(symtab, entry.Value.Section + 1);
+        next += 1;
+    }
+    int firstGlobal = next;
     foreach (var entry in obj.Symbols.Entries())
     {
         if (!entry.Value.Global)
