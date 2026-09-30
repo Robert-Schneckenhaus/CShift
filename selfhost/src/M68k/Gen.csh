@@ -38,6 +38,8 @@ struct Gen
     Dictionary<string, int> Alloca;       // alloca result -> offset of its memory
     Dictionary<string, int> PhiTmp;       // phi result -> offset of its staging slot
     Dictionary<string, List<IrInst>> Phis; // block -> its phis
+    Dictionary<string, string> Home;       // values and allocas that live in a register for the whole function
+    List<string> Saved;                   // the registers the function keeps (movem)
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
     int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
@@ -45,7 +47,8 @@ struct Gen
     static Gen Create(IrModule m)
     {
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
-                      Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
+                      Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
+                      Saved = List<string>.Create(), Counters = new int[2], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
         return g;
@@ -510,9 +513,11 @@ void GenFunction(Gen g, IrFunc f)
     string name = Sym(g, f.Name);
     if (!f.Internal)
         g.Out.Append("\t.globl\t" + name + "\n");
+    AllocateRegisters(g, f);
+    string savedList = string.Join("/", g.Saved.ToArray());
     g.Label(name);
     g.Line("link.w\t%a6,#-" + frame.ToString());
-    g.Line("movem.l\t%d2-%d3,-(%sp)");
+    g.Line("movem.l\t" + savedList + ",-(%sp)");
     foreach (var b in f.Blocks.ToArray())
     {
         g.Fn[1] = b.Label;
@@ -522,7 +527,13 @@ void GenFunction(Gen g, IrFunc f)
         if (phis is List<IrInst> list)
         {
             foreach (var phi in list)
-                CopyFrame(g, g.PhiTmp.Get(phi.Res), g.Slot.Get(phi.Res), SlotSize(g, phi.Type));
+            {
+                var home = g.Home.TryGet(phi.Res);
+                if (home is string reg)
+                    g.Line("move.l\t" + Frame(g.PhiTmp.Get(phi.Res)) + "," + reg);
+                else
+                    CopyFrame(g, g.PhiTmp.Get(phi.Res), g.Slot.Get(phi.Res), SlotSize(g, phi.Type));
+            }
         }
         var insts = b.Insts.ToArray();
         for (var k = 0; k < insts.Length; k += 1)
@@ -550,9 +561,195 @@ void GenFunction(Gen g, IrFunc f)
         }
     }
     g.Label(g.Fn[2]);
-    g.Line("movem.l\t(%sp)+,%d2-%d3");
+    g.Line("movem.l\t(%sp)+," + savedList);
     g.Line("unlk\t%a6");
     g.Line("rts");
+}
+
+// ---------------------------------------------------------------------------
+// Registers: the values used most (weighted by loop nesting) live in d4-d7/a2-a5 for the whole function
+// ---------------------------------------------------------------------------
+
+// Where a result is kept: its register or its slot.
+string SlotOperand(Gen g, string name)
+{
+    var home = g.Home.TryGet(name);
+    if (home is string reg)
+        return reg;
+    return Frame(g.Slot.Get(name));
+}
+
+// The register of a variable (an alloca: load and store use the register instead of memory), "" if it has none.
+string HomeOf(Gen g, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind != ValKind.Local || !g.Alloca.ContainsKey(v.Name))
+        return "";
+    var home = g.Home.TryGet(v.Name);
+    if (home is string reg)
+        return reg;
+    return "";
+}
+
+// One arm of a select into the result.
+void SelectArm(Gen g, IrInst inst, int arm, int off)
+{
+    if (g.T.IsAggregate(inst.Type))
+    {
+        CopyToSlot(g, inst.Args[arm], inst.Type, off);
+        return;
+    }
+    if (g.L.Size(inst.Type) == 8)
+        Load64(g, inst.Args[arm], "%d0", "%d1");
+    else
+        Load32(g, inst.Args[arm], "%d0");
+    StoreResult(g, inst);
+}
+
+bool IsScalar4(Gen g, int t)
+{
+    var k = g.T.Kind(t);
+    return (k == IrKind.Int || k == IrKind.Ptr || k == IrKind.Float) && g.L.Size(t) <= 4;
+}
+
+void AllocateRegisters(Gen g, IrFunc f)
+{
+    g.Home.Clear();
+    g.Saved.Clear();
+    g.Saved.Add("%d2-%d3");
+    var blocks = f.Blocks.ToArray();
+
+    // loop nesting: a branch back to an earlier block makes the blocks in between a loop
+    var index = Dictionary<string, int>.Create();
+    for (var i = 0; i < blocks.Length; i += 1)
+        index.Set(blocks[i].Label, i);
+    var depth = new int[blocks.Length];
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op != "br" && inst.Op != "switch")
+                continue;
+            foreach (var label in inst.Labels)
+            {
+                var target = index.TryGet(label);
+                if (target is int i && i <= j)
+                {
+                    for (var k = i; k <= j; k += 1)
+                        depth[k] += 1;
+                }
+            }
+        }
+    }
+
+    // the candidates: scalar variables whose address is only loaded from and stored to, and scalar values
+    var allocaSize = Dictionary<string, int>.Create();
+    var isPointer = Dictionary<string, bool>.Create();
+    var excluded = HashSet<string>.Create();
+    foreach (var p in f.Params)
+        excluded.Add(p.Name);
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "alloca")
+            {
+                if (IsScalar4(g, inst.OpType) && (inst.Args.Length == 0 || !IsLocal(g, inst.Args[0])))
+                {
+                    allocaSize.Set(inst.Res, g.L.Size(inst.OpType));
+                    isPointer.Set(inst.Res, g.T.Kind(inst.OpType) == IrKind.Ptr);
+                }
+                else
+                    excluded.Add(inst.Res);
+            }
+            else if (inst.Res.Length > 0)
+            {
+                if (IsScalar4(g, inst.Type))
+                    isPointer.Set(inst.Res, g.T.Kind(inst.Type) == IrKind.Ptr);
+                else
+                    excluded.Add(inst.Res);
+            }
+        }
+    }
+    var score = Dictionary<string, int>.Create();
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        int d = depth[j] > 3 ? 3 : depth[j];
+        int w = d == 0 ? 1 : (d == 1 ? 8 : (d == 2 ? 64 : 512));
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Res.Length > 0)
+                score.Set(inst.Res, score.GetOrDefault(inst.Res, 0) + w);
+            for (var a = 0; a < inst.Args.Length; a += 1)
+            {
+                var v = g.M.Vals.Get(inst.Args[a]);
+                if (v.Kind != ValKind.Local)
+                    continue;
+                var size = allocaSize.TryGet(v.Name);
+                if (size is int s)
+                {
+                    bool plain = (inst.Op == "load" && a == 0 && g.L.Size(inst.Type) == s && IsScalar4(g, inst.Type)) ||
+                                 (inst.Op == "store" && a == 1 && g.L.Size(inst.OpType) == s && IsScalar4(g, inst.OpType));
+                    if (!plain)
+                        excluded.Add(v.Name); // its address is used
+                }
+                score.Set(v.Name, score.GetOrDefault(v.Name, 0) + w);
+            }
+        }
+    }
+
+    // the best ones get registers: pointers address registers, the rest data registers (then the other kind)
+    var names = List<string>.Create();
+    foreach (var entry in score.Entries())
+    {
+        if (!excluded.Contains(entry.Key) && isPointer.ContainsKey(entry.Key) && entry.Value >= 3)
+            names.Add(entry.Key);
+    }
+    var ordered = names.ToArray();
+    // (a simple sort by score, highest first)
+    for (var i = 1; i < ordered.Length; i += 1)
+    {
+        string x = ordered[i];
+        int sx = score.Get(x);
+        int k = i - 1;
+        while (k >= 0 && (score.Get(ordered[k]) < sx || (score.Get(ordered[k]) == sx && ordered[k].CompareTo(x) > 0)))
+        {
+            ordered[k + 1] = ordered[k];
+            k -= 1;
+        }
+        ordered[k + 1] = x;
+    }
+    string[] dataRegs = ["%d4", "%d5", "%d6", "%d7"];
+    string[] addrRegs = ["%a2", "%a3", "%a4", "%a5"];
+    int nd = 0;
+    int na = 0;
+    foreach (var name in ordered)
+    {
+        bool ptr = isPointer.Get(name);
+        string reg = "";
+        if (ptr && na < 4)
+        {
+            reg = addrRegs[na];
+            na += 1;
+        }
+        else if (nd < 4)
+        {
+            reg = dataRegs[nd];
+            nd += 1;
+        }
+        else if (na < 4)
+        {
+            reg = addrRegs[na];
+            na += 1;
+        }
+        else
+            break;
+        g.Home.Set(name, reg);
+    }
+    for (var i = 0; i < nd; i += 1)
+        g.Saved.Add(dataRegs[i]);
+    for (var i = 0; i < na; i += 1)
+        g.Saved.Add(addrRegs[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -599,6 +796,13 @@ void Load32(Gen g, int vi, string reg)
             g.Line("move.l\t%a0," + reg);
             return;
         }
+        var home = g.Home.TryGet(v.Name);
+        if (home is string homeReg)
+        {
+            if (homeReg != reg)
+                g.Line("move.l\t" + homeReg + "," + reg);
+            return;
+        }
         int off = SlotOf(g, vi);
         int t = g.ValType.Get(v.Name);
         if (g.L.Size(t) == 8)
@@ -619,7 +823,7 @@ void Load32(Gen g, int vi, string reg)
         int64 n = c.Off & 4294967295;
         if (n >= 4294967168)
             n = n - 4294967296;
-        if (n >= -128 && n <= 127)
+        if (n >= -128 && n <= 127 && reg.StartsWith("%d"))
             g.Line("moveq\t#" + n.ToString() + "," + reg);
         else
             g.Line("move.l\t#" + n.ToString() + "," + reg);
@@ -654,6 +858,13 @@ void LoadAddr(Gen g, int vi, string areg)
         if (a is int aoff)
         {
             g.Line("lea\t" + Frame(aoff) + "," + areg);
+            return;
+        }
+        var home = g.Home.TryGet(v.Name);
+        if (home is string homeReg)
+        {
+            if (homeReg != areg)
+                g.Line("move.l\t" + homeReg + "," + areg);
             return;
         }
         g.Line("move.l\t" + Frame(SlotOf(g, vi)) + "," + areg);
@@ -821,6 +1032,12 @@ void StoreConst(Gen g, int vi, int t, string baseReg, int off)
 // The result of an instruction: from d0 (and d1 for 64 bits) into its slot.
 void StoreResult(Gen g, IrInst inst)
 {
+    var home = g.Home.TryGet(inst.Res);
+    if (home is string reg)
+    {
+        g.Line("move.l\t%d0," + reg);
+        return;
+    }
     int off = g.Slot.Get(inst.Res);
     if (g.L.Size(inst.Type) == 8)
     {
@@ -895,6 +1112,18 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         GenFloatCast(g, inst);
         return;
     }
+    if (op == "load" && HomeOf(g, inst.Args[0]).Length > 0)
+    {
+        // a variable that lives in a register
+        g.Line("move.l\t" + HomeOf(g, inst.Args[0]) + ",%d0");
+        StoreResult(g, inst);
+        return;
+    }
+    if (op == "store" && HomeOf(g, inst.Args[1]).Length > 0)
+    {
+        Load32(g, inst.Args[0], HomeOf(g, inst.Args[1]));
+        return;
+    }
     if (op == "load")
     {
         LoadAddr(g, inst.Args[0], "%a0");
@@ -950,10 +1179,10 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         Load32(g, inst.Args[0], "%d0");
         g.Line("tst.b\t%d0");
         g.Line("beq\t" + other);
-        CopyToSlot(g, inst.Args[1], inst.Type, off);
+        SelectArm(g, inst, 1, off);
         g.Line("bra\t" + done);
         g.Label(other);
-        CopyToSlot(g, inst.Args[2], inst.Type, off);
+        SelectArm(g, inst, 2, off);
         g.Label(done);
         return;
     }
@@ -1034,7 +1263,7 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         int size = g.L.Size(t);
         LoadAddr(g, inst.Args[0], "%a1");
         g.Line("move" + SizeSuffix(size) + "\t(%a1),%d0");
-        g.Line("move.l\t%d0," + Frame(g.Slot.Get(inst.Res)));
+        g.Line("move.l\t%d0," + SlotOperand(g, inst.Res));
         g.Line("move.l\t%a1,-(%sp)");
         Load32(g, inst.Args[1], "%d1");
         g.Line("move.l\t(%sp)+,%a1");
@@ -1286,7 +1515,7 @@ void GenOverflowBranch(Gen g, IrInst[] insts, int k)
     g.Line((add ? "add" : "sub") + suffix + "\t%d1,%d0");
     // the flag is true: to the first label (the panic); signed: overflow (V), unsigned: carry/borrow (C)
     g.Line((signed ? "bvs" : "bcs") + "\t" + g.BlockLabel.Get(br.Labels[0]));
-    g.Line("move.l\t%d0," + Frame(g.Slot.Get(value.Res)));
+    g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
     g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
 }
 
@@ -1402,16 +1631,25 @@ void GenExtract(Gen g, IrInst inst)
                 StoreConst(g, inst.Args[0], ft, "%a6", off);
             else
             {
-                g.Line("clr.l\t" + Frame(off));
-                if (g.L.Size(ft) == 8)
-                    g.Line("clr.l\t" + Frame(off + 4));
+                g.Line("moveq\t#0,%d0");
+                g.Line("moveq\t#0,%d1");
+                StoreResult(g, inst);
             }
             return;
         }
         int item = inst.Args[0];
         foreach (var i in inst.Cases)
             item = g.M.Vals.Get(item).Items[(int)i];
-        CopyToSlot(g, item, ft, off);
+        if (g.T.IsAggregate(ft))
+            CopyToSlot(g, item, ft, off);
+        else
+        {
+            if (g.L.Size(ft) == 8)
+                Load64(g, item, "%d0", "%d1");
+            else
+                Load32(g, item, "%d0");
+            StoreResult(g, inst);
+        }
         return;
     }
     int src = SlotOf(g, inst.Args[0]) + at;
