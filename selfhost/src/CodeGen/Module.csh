@@ -176,8 +176,7 @@ void EmitEntryPoint(Compiler cg)
                "ok:\n  %v = extractvalue " + ty + " %r, 1\n" + releaseGlobals + ArcStatsCode(cg, ".ok") +
                ExitCodeConversion(cg, elem, "%v") +
                "fail:\n  %msg = extractvalue " + ty + " %r, 2\n  %text = call ptr @__cs_data(ptr %msg)\n" +
-               StderrLoad(cg.St[0].Windows).Replace("%err", "%err.msg") +
-               "  call i32 (ptr, ptr, ...) @fprintf(ptr %err.msg, ptr " + ir.CString("error: %s\n") + ", ptr %text)\n" +
+               "  call void @__cs_report(ptr @.cs.error, ptr %text)\n" +
                stats + "  ret i32 1\n";
     }
     ir.AppendFunctionText("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" + body + "}\n");
