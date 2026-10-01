@@ -501,6 +501,16 @@ string[] CandidateNames(Compiler cg, int file, string name)
 }
 
 // Finds a struct, interface or enum; returns false if there is none.
+// 'Thread' without type arguments in a static call (Thread.Sleep(...)): the non-generic handle, '_ThreadVoid'.
+void UseBareThread(Compiler cg, int file, string dotted, int typeArgs, ref TypeDeclEntry entry)
+{
+    if (dotted != "Thread" || typeArgs != 0 || entry.Kind != DeclKind.Struct || cg.Structs.Get(entry.Index).Decl.TypeParams.Length == 0)
+        return;
+    var voidEntry = TypeDeclEntry { };
+    if (LookupTypeDecl(cg, file, "System._ThreadVoid", ref voidEntry))
+        entry = voidEntry;
+}
+
 bool LookupTypeDecl(Compiler cg, int file, string name, ref TypeDeclEntry entry)
 {
     foreach (var c in CandidateNames(cg, file, name))

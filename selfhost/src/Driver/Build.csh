@@ -70,43 +70,12 @@ struct BuildOptions
     }
 }
 
+// usage.txt, embedded when cshc is compiled
+const string UsageText = embed("usage.txt");
+
 void PrintUsage()
 {
-    Console.WriteErrorLine("cshiftc - CShift compiler\n\n" +
-        "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n" +
-        "       cshiftc build [project] [options]              build a project (cshift.json)\n" +
-        "       cshiftc run   [project] [options]              build and run a project\n" +
-        "       cshiftc new   <directory>                      create a new project\n" +
-        "       cshiftc check [project | files] [options]      report the errors, generate nothing\n" +
-        "       cshiftc query --at <file> <line> <col> [project | files] [--overlay <file> <text file>]\n" +
-        "                                                      the name at a position (hover, definition) as JSON\n\n" +
-        "'project' is a directory containing cshift.json or the path of a project file;\n" +
-        "without it cshift.json is searched in the current directory and its parents.\n\n" +
-        "options:\n" +
-        "  -o <file>        output file\n" +
-        "  -c               compile to an object file only (no linking)\n" +
-        "  --emit-llvm      write LLVM IR (.ll) instead of an executable\n" +
-        "  -O0 .. -O3       optimization level (default -O2)\n" +
-        "  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)\n" +
-        "  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)\n" +
-        "  --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)\n" +
-        "  --emit-asm       m68k backend: write the assembly (.s) instead of an executable\n" +
-        "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
-        "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
-        "  -l<name>         link an additional library\n" +
-        "  -L<dir>          library search path for the linker\n" +
-        "  -I<dir>          include path for C headers (using X from \"header.h\")\n" +
-        "  -D<name>[=value] define a macro when parsing C headers\n" +
-        "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n" +
-        "  file.a, file.o   libraries and object files are passed to the linker\n" +
-        "  --run            run the program after building\n" +
-        "  --unchecked      integer overflow wraps around instead of ending the program with a panic\n" +
-        "  --checked        integer overflow panics (the default; overrides \"unchecked\": true in cshift.json)\n" +
-        "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
-        "  -v               verbose output\n" +
-        "  --version        print the version\n" +
-        "  --clear-cache    delete the toolchains a standalone cshiftc has unpacked (all versions)\n" +
-        "  -h, --help       show this help");
+    Console.WriteError(UsageText);
 }
 
 bool IsLinkerInput(string a)
@@ -607,6 +576,15 @@ int Build(BuildOptions o)
             for (var i = 0; i < EmbeddedAmigaNames.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/amiga/" + EmbeddedAmigaNames[i], EmbeddedAmigaTexts[i], true, o.Imports);
         }
+        foreach (var layer in OsLayers(o.Target, o.Backend, windows).ToArray())
+        {
+            var names = layer == "windows" ? EmbeddedOsWindowsNames : layer == "posix" ? EmbeddedOsPosixNames :
+                        layer == "posix-64" ? EmbeddedOsPosix64Names : layer == "posix-32" ? EmbeddedOsPosix32Names : EmbeddedOsPosixM68kNames;
+            var texts = layer == "windows" ? EmbeddedOsWindowsTexts : layer == "posix" ? EmbeddedOsPosixTexts :
+                        layer == "posix-64" ? EmbeddedOsPosix64Texts : layer == "posix-32" ? EmbeddedOsPosix32Texts : EmbeddedOsPosixM68kTexts;
+            for (var i = 0; i < names.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/os/" + layer + "/" + names[i], texts[i], true, o.Imports);
+        }
         cg.St[0].StdlibLoaded = EmbeddedStdlibNames.Length > 0;
     }
     else if (o.Stdlib != "-")
@@ -618,6 +596,9 @@ int Build(BuildOptions o)
             if (libFile.Contains("/m68k/") && o.Backend != "m68k")
                 continue;
             if (libFile.Contains("/amiga/") && !(o.Backend == "m68k" && o.Target.Contains("amigaos")))
+                continue;
+            int osAt = Path.Normalize(libFile).IndexOf("/os/");
+            if (osAt >= 0 && !OsLayers(o.Target, o.Backend, windows).Contains(Path.GetDirectory(libFile.Substring(osAt + 4).ToString())))
                 continue;
             if (!AddSource(cg, diag, tree, libFile, true, o.Imports))
                 return 1;
@@ -929,6 +910,33 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
     return answer + "}";
+}
+
+// The folders of stdlib/os that a target uses: windows; posix and the struct layouts of its architecture; none for
+// AmigaOS (stdlib/amiga has the same functions).
+List<string> OsLayers(string target, string backend, bool windows)
+{
+    var layers = List<string>.Create();
+    string lower = target.ToLower();
+    if (lower.Contains("amigaos"))
+        return layers;
+    if (windows)
+    {
+        layers.Add("windows");
+        return layers;
+    }
+    layers.Add("posix");
+    string arch = lower;
+    int dash = arch.IndexOf('-');
+    if (dash >= 0)
+        arch = arch.Substring(0, dash).ToString();
+    if (arch == "m68k" || backend == "m68k")
+        layers.Add("posix-m68k");
+    else if (target.Length > 0 && TargetInfo.Has32BitPointers(arch))
+        layers.Add("posix-32");
+    else
+        layers.Add("posix-64");
+    return layers;
 }
 
 // The name the compiler was started with (for hints like "cshiftc run"): the file name of the executable without .exe.

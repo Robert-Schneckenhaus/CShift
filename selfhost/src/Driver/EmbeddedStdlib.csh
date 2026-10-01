@@ -10,6 +10,20 @@ const ReadOnlySlice<string> EmbeddedStdlibTexts = embed("../../../stdlib/*.csh")
 const ReadOnlySlice<string> EmbeddedM68kNames = embed_filenames("../../../stdlib/m68k/*.csh");
 const ReadOnlySlice<string> EmbeddedM68kTexts = embed("../../../stdlib/m68k/*.csh");
 
+// The operating system layer of the standard library (stdlib/os/<layer>/*.csh: time, file times, seeking, ...): one
+// of windows, or posix with the struct layouts of the architecture (posix-64, posix-32, posix-m68k), see OsLayers.
+// AmigaOS has its own in stdlib/amiga.
+const ReadOnlySlice<string> EmbeddedOsWindowsNames = embed_filenames("../../../stdlib/os/windows/*.csh");
+const ReadOnlySlice<string> EmbeddedOsWindowsTexts = embed("../../../stdlib/os/windows/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosixNames = embed_filenames("../../../stdlib/os/posix/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosixTexts = embed("../../../stdlib/os/posix/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosix64Names = embed_filenames("../../../stdlib/os/posix-64/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosix64Texts = embed("../../../stdlib/os/posix-64/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosix32Names = embed_filenames("../../../stdlib/os/posix-32/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosix32Texts = embed("../../../stdlib/os/posix-32/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosixM68kNames = embed_filenames("../../../stdlib/os/posix-m68k/*.csh");
+const ReadOnlySlice<string> EmbeddedOsPosixM68kTexts = embed("../../../stdlib/os/posix-m68k/*.csh");
+
 // The C library of AmigaOS programs (stdlib/amiga/*.csh), only added for an amigaos target.
 const ReadOnlySlice<string> EmbeddedAmigaNames = embed_filenames("../../../stdlib/amiga/*.csh");
 const ReadOnlySlice<string> EmbeddedAmigaTexts = embed("../../../stdlib/amiga/*.csh");

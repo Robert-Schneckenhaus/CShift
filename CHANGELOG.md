@@ -6,6 +6,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `DateTime`, `TimeSpan`, `DayOfWeek` and `Stopwatch`: the clock and time zone, calendar arithmetic, formatting
+  (`ToString("yyyy-MM-dd HH:mm")`, ISO 8601) and parsing; `Thread.Sleep`.
+- Streams: `FileStream` (reading and writing in pieces, seeking), `StreamReader` (`ReadLine`), `StreamWriter`.
+- `File.Move`, `File.GetLastWriteTime`/`GetLastWriteTimeUtc`, `Directory.Delete` (also recursive), `Directory.Move`;
+  `IoError.CannotMove`.
+- An operating system layer (`stdlib/os/`) that the compiler picks for the target (Windows, POSIX, AmigaOS).
+
 ## [0.18] - 2026-10-01
 
 ### m68k backend

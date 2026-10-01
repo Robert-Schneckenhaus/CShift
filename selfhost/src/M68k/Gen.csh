@@ -186,14 +186,18 @@ void ScanSymbols(string text, List<string> work, HashSet<string> seen)
         int lineEnd = text.IndexOf('\n', i);
         if (lineEnd < 0)
             lineEnd = n;
+        int scanEnd = lineEnd;
+        int bar = text.IndexOf('|', i); // a comment (runtime.s, amiga-startup.s)
+        if (bar >= 0 && bar < lineEnd)
+            scanEnd = bar;
         int tab = text.IndexOf('\t', i);
-        if (tab >= 0 && tab < lineEnd)
+        if (tab >= 0 && tab < scanEnd)
         {
             int ops = text.IndexOf('\t', tab + 1);
-            if (ops >= 0 && ops < lineEnd)
+            if (ops >= 0 && ops < scanEnd)
             {
                 int k = ops + 1;
-                while (k < lineEnd)
+                while (k < scanEnd)
                 {
                     char c = text[k];
                     bool start = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
@@ -201,7 +205,7 @@ void ScanSymbols(string text, List<string> work, HashSet<string> seen)
                     if (start && prevOk)
                     {
                         int e = k;
-                        while (e < lineEnd && IsSymbolChar(text[e]))
+                        while (e < scanEnd && IsSymbolChar(text[e]))
                             e += 1;
                         AddWork(text.Substring(k, e - k).ToString(), work, seen);
                         k = e;

@@ -575,6 +575,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
             Fail(cg, e.Loc, "cshc does not support '" + dotted + "." + m.Name + "' yet");
         if (LookupTypeDecl(cg, file, dotted, ref entry))
         {
+            UseBareThread(cg, file, dotted, LastTypeArgs(cg, m.Object).Length, ref entry);
             if (entry.Kind != DeclKind.Struct)
                 Fail(cg, e.Loc, "cshc does not support enums and interfaces yet ('" + dotted + "')");
             // Type.Method(...): a static method

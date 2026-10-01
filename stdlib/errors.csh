@@ -20,7 +20,8 @@ error IoError
     CannotDelete = 3,
     AlreadyExists = 4,   // File.Copy without overwrite
     InvalidText = 5,     // the content is not valid in the requested encoding (File.ReadAllText)
-    CannotCreate = 6     // the file cannot be created or truncated (missing folder, no permission)
+    CannotCreate = 6,    // the file cannot be created or truncated (missing folder, no permission)
+    CannotMove = 7       // File.Move / Directory.Move failed (e.g. to another drive on AmigaOS, no permission)
 }
 
 // Number parsing (string.ParseInt, ParseInt64, ParseDouble).

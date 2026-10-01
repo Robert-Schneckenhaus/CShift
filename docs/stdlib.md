@@ -17,6 +17,9 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System.Native` | `native.csh` | C imports (`fopen`, `sin`, `pthread_mutex/cond_*`, …), also usable by your own programs (`using System.Native;`) |
 | `System` | `thread.csh`, `mutex.csh` | `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>` (`using System;`, see [threading.md](language/threading.md)) |
 | `System` | `random.csh` | `Random`: seeded pseudo-random numbers |
+| `System` | `datetime.csh` | `DateTime`, `TimeSpan`, `DayOfWeek`, `Stopwatch` |
+| `System` | `stream.csh` | `FileStream`, `StreamReader`, `StreamWriter`, `SeekOrigin` |
+| `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 
 **`List<T>`** — a growable array. Create it with `List<int>.Create()` (or `new List<int>()`).
@@ -55,7 +58,8 @@ with up to two digits, see [number formats](language/arrays-strings-collections.
 also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
 (`Optional<string>`); `IsWindows()` reports the platform.
 **`Directory`** — `Exists(path)`, `Create(path)` (including parent directories), `GetEntries(path)` (names, sorted),
-`FindFiles(path, extension)` (recursive, sorted), `GetCurrentDirectory()` (C library calls, no shell).
+`FindFiles(path, extension)` (recursive, sorted), `GetCurrentDirectory()` (C library calls, no shell),
+`Delete(path [, recursive])` (an empty directory, or everything in it), `Move(source, target)` (`IoError<void>`).
 **`Path`** — `Combine`, `Normalize`, `GetDirectory`, `GetFileName`, `GetExtension`, `GetStem`, `ChangeExtension`,
 `IsRooted`, `GetFullPath` (absolute, without `.`/`..`), `GetRelativePath(from, to)`.
 **Command line:** `int Main(string[] args)` receives the arguments without the program name. `Console.WriteError(Line)`
@@ -63,7 +67,8 @@ writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `
 
 **`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
 `WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`,
-`Copy(source, target [, overwrite])`. Reading returns
+`Copy(source, target [, overwrite])`, `Move(source, target [, overwrite])`, `GetLastWriteTime(path)` /
+`GetLastWriteTimeUtc(path)` (`IoError<DateTime>`). Reading returns
 `IoError<string>` or `IoError<uint8[]>`, writing, copying and deleting return `IoError<void>` (see *Error codes*
 below); a UTF-8 BOM is skipped when reading text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
 
@@ -82,7 +87,7 @@ Error<string> Load(string path)
 
 | Enum | Members | Returned by |
 |---|---|---|
-| `IoError` | `CannotOpen` (1), `CannotWrite` (2), `CannotDelete` (3), `AlreadyExists` (4), `InvalidText` (5), `CannotCreate` (6) | `File.*` |
+| `IoError` | `CannotOpen` (1), `CannotWrite` (2), `CannotDelete` (3), `AlreadyExists` (4), `InvalidText` (5), `CannotCreate` (6), `CannotMove` (7) | `File.*`, `Directory.Delete/Move`, the streams |
 | `ParseError` | `Invalid` (1), `OutOfRange` (2) | `ParseInt`, `ParseInt64`, `ParseDouble` |
 | `EncodingError` | `OutOfBounds` (1), `NotAscii` (2), `InvalidUtf8` (3) | `Encoding.GetString` |
 
@@ -141,6 +146,43 @@ reference-counted handle, safe to share between threads (unlike strings/arrays/c
 **`Mutex<T>`** — `Create(value)`, `Lock()` (a `MutexGuard<T>` with `Get()`/`Set(v)`, released by `Dispose()`/`using`),
 `Get()`, `Set(v)`, `Update(change)` (`counter.Update(n => n + 1)`): a value shared by threads under a lock; values go
 in and out as copies (see [threading.md](language/threading.md)).
+
+**`DateTime`** — a date and time of day (0001-01-01 to 9999-12-31, ticks of 100 ns), local or UTC (`IsUtc`):
+`Now()`, `UtcNow()`, `Today()`, `Create(y, m, d [, h, min, s [, ms]])` (local), `CreateUtc(...)`,
+`FromUnixSeconds/FromUnixMilliseconds` and `ToUnixSeconds/ToUnixMilliseconds`; `Year()`, `Month()`, `Day()`, `Hour()`,
+`Minute()`, `Second()`, `Millisecond()`, `DayOfWeek()`, `DayOfYear()`, `Date()`, `TimeOfDay()`; `Add(TimeSpan)`,
+`AddDays/AddHours/AddMinutes/AddSeconds/AddMilliseconds(double)`, `AddMonths/AddYears(int)` (Jan 31 + 1 month =
+Feb 28/29), `Subtract(DateTime)` (a `TimeSpan`) and `Subtract(TimeSpan)`; `ToLocalTime()`, `ToUniversalTime()`;
+`CompareTo`, `Equals` (also for `Sort()` and `Dictionary` keys); `IsLeapYear(year)`, `DaysInMonth(year, month)`.
+`ToString()` is `2026-10-01 14:05:09`; `ToString(format)` knows `yyyy yy MMMM MMM MM M dddd ddd dd d HH H hh h mm m
+ss s fff ff f tt` (English names), `'text'` and `\x` are copied; `ToIsoString()` gives ISO 8601 with the zone
+(`…Z` or `…+02:00`). `DateTime.Parse(text)` (`ParseError<DateTime>`) reads `yyyy-MM-dd[(T| )HH:mm[:ss[.f…]]][Z|±hh:mm]`.
+On AmigaOS the clock has no time zone (UTC = local) and a resolution of 1/50 s.
+**`TimeSpan`** — a signed duration in ticks: `FromDays/FromHours/FromMinutes/FromSeconds/FromMilliseconds(double)`,
+`FromTicks`, `Create(h, m, s)`, `Create(d, h, m, s [, ms])`; the parts `Days()` … `Milliseconds()`, the totals
+`TotalDays()` … `TotalMilliseconds()`; `Add`, `Subtract`, `Negate`, `Duration` (absolute), `Multiply(factor)`;
+`ToString()` is `[-][d.]hh:mm:ss[.fffffff]`.
+**`Stopwatch`** — elapsed time from the monotonic clock: `StartNew()`, `Start()`, `Stop()`, `Reset()`, `Restart()`,
+`IsRunning()`, `Elapsed()` (`TimeSpan`), `ElapsedMilliseconds()`, `ElapsedTicks()`. `Thread.Sleep(milliseconds)`
+pauses the calling thread.
+
+**`FileStream`** — a file read or written piece by piece: `OpenRead(path)`, `OpenReadWrite(path)`, `Create(path)`,
+`Append(path)` (all `IoError<FileStream>`); `Read(buffer, offset, count)` (the number of bytes read, 0 at the end),
+`ReadByte()` (-1 at the end), `Write(bytes [, offset, count])`, `WriteByte(b)`, `WriteText(slice)` (UTF-8),
+`Position()`, `Seek(offset, SeekOrigin.Begin/Current/End)`, `Length()`, `Flush()`, `Close()` / `Dispose()`.
+**`StreamReader`** — `Open(path)`, `ReadLine()` (`Optional<string>`, without `\n` or `\r\n`; null at the end),
+`ReadToEnd()`, `EndOfStream()`; a UTF-8 BOM is skipped, invalid bytes become `?`. **`StreamWriter`** — `Create(path)`,
+`Append(path)`, `Write(text)`, `WriteLine([text])`, `Flush()`. All three are `IDisposable` (`using var r = try
+StreamReader.Open(path);`); a stream is a value around the C library's `FILE`, so keep one owner (copies share it).
+
+```csharp
+using var reader = try StreamReader.Open("log.txt");
+while (reader.ReadLine() is string line)
+{
+    if (line.StartsWith("ERROR"))
+        Console.WriteLine(line);
+}
+```
 
 **`Random`** — `Random.Create(seed)` (the same sequence for the same seed, on every system) or `Random.Create()`
 (seeded from the clock): `Next()`, `Next(max)`, `Next(min, max)`, `NextDouble()` (`[0, 1)`), `NextBool()`,
