@@ -18,6 +18,7 @@ options:
   -c               compile to an object file only (no linking)
   --emit-llvm      write LLVM IR (.ll) instead of an executable
   -O0 .. -O3       optimization level (default -O2)
+  -g               debug information (lines and functions for gdb/lldb; best with -O0)
   --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)
   --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)
   --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)

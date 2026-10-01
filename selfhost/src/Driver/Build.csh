@@ -37,6 +37,7 @@ struct BuildOptions
     bool Run;
     bool Verbose;
     bool ArcStats;
+    bool Debug;              // -g: debug information
     bool Unchecked;             // --unchecked: integer overflow wraps instead of a panic
     bool Checked;               // --checked: overflow panics even if the project file says "unchecked": true
     List<string> Libs;          // -l<name>
@@ -159,6 +160,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         }
         else if (a == "--arc-stats")
             o.ArcStats = true;
+        else if (a == "-g")
+            o.Debug = true;
         else if (a == "--unchecked")
             o.Unchecked = true;
         else if (a == "--checked")
@@ -302,6 +305,7 @@ int Cshc(string[] args)
             o.ProjectDir = project.Dir;
             o.Inputs = project.Sources;
             o.Unchecked = o.Unchecked || (project.Unchecked && !o.Checked);
+            o.Debug = o.Debug || project.Debug;
             if (o.Output.Length == 0)
                 o.Output = project.Output;
             if (!o.OptimizeGiven && project.HasOptimize)
@@ -570,6 +574,10 @@ int Build(BuildOptions o)
     }
     var cg = Compiler.Create(tree, diag, windows, o.Target, o.Backend);
     cg.St[0].ArcStats = o.ArcStats;
+    // the m68k backend reads the IR itself and has no use for debug information
+    cg.Ir.Debug = o.Debug && o.Backend != "m68k";
+    if (o.Debug && o.Backend == "m68k")
+        Console.WriteErrorLine("warning: -g has no effect with the m68k backend");
     cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";

@@ -2,7 +2,7 @@
 //
 //   { "name": "demo", "version": "0.1.0", "type": "executable", "sources": ["src"], "output": "bin/demo",
 //     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "",
-//     "unchecked": false }
+//     "unchecked": false, "debug": false }
 //
 // Only "name" is required. Paths are relative to the project file.
 
@@ -29,6 +29,7 @@ struct Project
     List<string> ApiPaths;
     string Target;               // target triple, "" = host
     bool Unchecked;              // integer overflow wraps instead of a panic
+    bool Debug;                  // debug information (-g)
     string Backend;              // "llvm", "m68k" or "" (the target's default)
     string Ndk;                  // the AmigaOS NDK (a path relative to the project)
 }
@@ -214,7 +215,7 @@ Error<Project> LoadProject(string location, string target)
     p.LibraryPaths = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk" };
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk", "debug" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -260,6 +261,14 @@ Error<Project> LoadProject(string location, string target)
         if (json.KindOf(uncheckedNode) != JsonKind.Bool)
             return error(file + ": 'unchecked' must be true or false");
         p.Unchecked = json.Nodes.Get(uncheckedNode).Flag;
+    }
+
+    int debugNode = json.Get(root, "debug");
+    if (debugNode >= 0)
+    {
+        if (json.KindOf(debugNode) != JsonKind.Bool)
+            return error(file + ": 'debug' must be true or false");
+        p.Debug = json.Nodes.Get(debugNode).Flag;
     }
 
     bool present = false;

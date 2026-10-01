@@ -127,6 +127,7 @@ string CompileProgram(Compiler cg, string triple)
     sb.Append(cg.Ir.Helpers.ToString());
     sb.Append(RuntimeFunctions(windows, cg.St[0].ArcStats, cg.Ir));
     sb.Append(cg.Ir.Declares.ToString());
+    sb.Append(cg.Ir.DebugModuleText());
     return sb.ToString();
 }
 

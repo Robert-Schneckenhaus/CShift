@@ -237,6 +237,23 @@ else
     report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
 fi
 
+# Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
+# gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace.
+printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    return twice(Square(3)) - 18;\n}\n' > "$TMP/debug_info.csh"
+if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
+    report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
+elif ! "$TMP/debug_info.exe"; then
+    report_fail "debug information" "the program built with -g does not run correctly"
+elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.csh" -o "$TMP/debug_info.ll" 2>> "$TMP/debug.err" ||
+     ! grep -q 'DISubprogram(name: "Square"' "$TMP/debug_info.ll"; then
+    report_fail "debug information" "no subprogram for Square in the IR"
+elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:12"; then
+    report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 12 in the backtrace"
+else
+    report_ok "debug information"
+fi
+
 # --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------
 #   tests/query/*.csh: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
 #   contains <text> (the file alone is the program). "cshiftc check" reports the errors of a program and generates

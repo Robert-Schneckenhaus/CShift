@@ -44,6 +44,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `target` | the target triple; a 32-bit triple (`i686-linux-gnu`, `m68k-…`, `arm…`) makes pointers, `nint`/`nuint` and sizes 32 bits; `m68k-amigaos` builds an Amiga program ([amiga.md](amiga.md)) | host |
 | `backend` | the code generator: `"llvm"` (LLVM IR, clang) or `"m68k"` (CShift's own 68000 backend, like `--backend`) | `m68k` for AmigaOS, else `llvm` |
 | `ndk` | the AmigaOS NDK folder, relative to `cshift.json` (like `--ndk`; `CSHIFT_NDK` is used if it is not set): SFD files for `using X from "lib.sfd";`, `Include_H` for C headers | – |
+| `debug` | `true`: debug information for gdb and lldb (like `-g`, see [debugging.md](debugging.md)) | `false` |
 | `unchecked` | `true`: integer overflow wraps around instead of a panic in the whole project (like `--unchecked`; division by zero and index checks stay; `--checked` on the command line overrides it) | `false` |
 | `platforms` | additions per platform: `{ "windows": {...}, "linux": {...}, "macos": {...} }`, each with `links`, `includePaths`, `libraryPaths` and/or `defines`, appended to the common lists when building for that platform (e.g. `"windows": { "links": ["opengl32"] }, "linux": { "links": ["GL"] }`) | none |
 
