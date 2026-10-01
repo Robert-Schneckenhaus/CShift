@@ -1,9 +1,13 @@
 # Debugging with gdb and lldb
 
-`cshiftc -g` (or `"debug": true` in `cshift.json`) adds debug information to the program: for every function its
-name and source file, and for every instruction its line and column. gdb and lldb can then stop on a line or a
-function, step through the code line by line and show the call stack with files and lines. The information is in
-DWARF, the format of every Linux and MinGW debugger.
+`cshiftc -g` (or `"debug": true` in `cshift.json`) adds debug information to the program:
+
+* every function with its name and source file, every instruction with its line and column;
+* parameters and local variables with their types: numbers, `bool`, `char`, enums (shown by name), structs with
+  their fields, `Optional<T>`, `Error<T>`, unions, `Fixed<T, N>`, strings, arrays, slices and the collections.
+
+gdb and lldb can then stop on a line or a function, step through the code, show the call stack with files and lines,
+and print variables. The information is in DWARF, the format of every Linux and MinGW debugger.
 
 ```
 cshiftc -g -O0 prog.csh -o prog
@@ -12,22 +16,66 @@ gdb ./prog
 (gdb) break Square               a function
 (gdb) break Counter.Add          a method (struct name, dot, method name)
 (gdb) run
-(gdb) bt                         where the program is: Square at prog.csh:15, called from Main at prog.csh:25
+(gdb) bt                         where the program is: Square (x=3) at prog.csh:15, called from Main at prog.csh:25
+(gdb) info args                  the parameters
+(gdb) info locals                the variables of the function
+(gdb) print person               {Name = "Ann", Age = 42, Home = {X = 3, Y = 4}, Favorite = Green, Lucky = 7}
+(gdb) print person.Home.X        a field
 (gdb) next / step / finish       the next line / into a call / out of the function
 ```
 
-With lldb: `breakpoint set -f prog.csh -l 15`, `breakpoint set -n Square`, `run`, `bt`, `next`, `step`.
+With lldb: `breakpoint set -f prog.csh -l 15`, `breakpoint set -n Square`, `run`, `bt`, `frame variable`,
+`frame variable person.Home`, `next`, `step`.
 
-* **Optimization:** with `-O2` the optimizer moves and merges code, so the debugger jumps between lines. For debugging,
-  use `-O0` (`"optimize": 0` in `cshift.json`).
+## Strings, arrays and collections
+
+A string or an array is a reference to a block in memory (`{ refcount, length, elements }`); the debugger alone would
+show its address. The **pretty printers** in `tools/debug` show the contents instead:
+
+```
+(gdb) info locals
+name = "Ann"
+numbers = int32[] of length 3 = {1, 2, 3}
+words = List with 2 elements = {"one", "two"}
+ages = Dictionary with 1 entries = {["Ann"] = 42}
+part = Slice<int32> of length 2 = {2, 3}
+text = "el"                       (a StringSlice)
+lucky = 7                         (Optional<int32>; null when it has no value)
+shape = Circle: {R = 1.5}         (a union: the member it holds)
+```
+
+* **gdb:** every program built with `-g` carries the printers itself (in its section `.debug_gdb_scripts`). gdb loads
+  them when the program's folder is allowed; the first time it explains how. Allow your projects once in
+  `~/.gdbinit`:
+
+  ```
+  add-auto-load-safe-path /home/me/projects
+  ```
+
+  Or load them by hand: `source <cshift>/tools/debug/cshift_gdb.py`.
+* **lldb:** `command script import <cshift>/tools/debug/cshift_lldb.py` (or put the line into `~/.lldbinit`).
+  lldb shows an array's first elements in its summary (`length 3 [1, 2, 3]`), `frame variable numbers[1]` one element.
+
+Covered: `string`, arrays, `Slice<T>`/`ReadOnlySlice<T>`/`StringSlice`, `List<T>`, `Stack<T>`, `Queue<T>`,
+`Dictionary<K, V>`, `HashSet<T>`, `StringBuilder`, `Optional<T>`, `SharedPtr<T>` and unions. Without the printers the
+fields can still be read: `print *name` shows `{refcount, length, chars}`, `print numbers->items[1]@2` two
+elements.
+
+## Good to know
+
+* **Optimization:** with `-O2` the optimizer moves and merges code, keeps variables in registers and removes them, so
+  the debugger jumps between lines and shows `<optimized out>`. For debugging, use `-O0` (`"optimize": 0`).
 * **Names:** functions in a namespace keep it (`CShift.CodeGen.EmitBlock`); gdb finds them with
   `break 'CShift.CodeGen.EmitBlock'`, by file and line, or with `rbreak EmitBlock`. Generic functions are named with
   their type arguments: `System.List<int32>.Add`.
+* **Blocks:** a variable is only visible in the block (`{ }`, loop) it is declared in; two variables with the same
+  name in different blocks do not mix.
+* **`ref` parameters and `this`** are pointers: `print *count`, `print this->Value` (or `print *this`).
 * **The standard library** is compiled into the program from the copy inside `cshiftc`; its functions appear as
   `<stdlib>/list.csh` without source text (with `--stdlib <dir>` the debugger finds the files).
 * **Panics:** `break __cs_panic_at` (and `__cs_panic_index`, `__cs_panic`) stops before the program ends with a panic;
   `bt` then shows where it happened.
 * Code that the compiler adds itself (reference counting helpers, the start of threads, the initialization of
   globals) has no lines.
-* **Not yet:** the values of variables and parameters (`print x`, `info locals`), and Windows PDB files for the
-  Visual Studio debugger. The m68k backend (AmigaOS) ignores `-g`.
+* **Not yet:** Windows PDB files for the Visual Studio debugger (gdb and lldb work with MinGW programs), and global
+  variables. The m68k backend (AmigaOS) ignores `-g`.

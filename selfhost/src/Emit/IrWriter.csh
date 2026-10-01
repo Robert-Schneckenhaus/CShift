@@ -35,13 +35,14 @@ struct IrWriter
     TargetInfo Target;
     // Debug information (-g): the metadata nodes of the module (shared with the writers of lambdas) and, per writer,
     // [0] the subprogram of the function being written, [1] the location of the next instructions, [2] the subprogram
-    // for the next BeginFunction; DbgLine[0] its line.
+    // for the next BeginFunction, [3] its file, [4] the file of the function being written; DbgScopes the lexical
+    // blocks that are open (innermost last).
     bool Debug;
     StringBuilder Meta;
     int[] MetaCount;
     Dictionary<string, string> MetaIds;
     string[] Dbg;
-    int[] DbgLine;
+    List<string> DbgScopes;
 
     static IrWriter Create(TargetInfo target)
     {
@@ -58,8 +59,8 @@ struct IrWriter
         w.Meta = StringBuilder.Create();
         w.MetaCount = new int[1];
         w.MetaIds = Dictionary<string, string>.Create();
-        w.Dbg = new string[] { "", "", "" };
-        w.DbgLine = new int[1];
+        w.Dbg = new string[] { "", "", "", "", "" };
+        w.DbgScopes = List<string>.Create();
         return w;
     }
 
@@ -187,10 +188,12 @@ struct IrWriter
         Dbg[0] = Dbg[2];
         Dbg[1] = "";
         Dbg[2] = "";
+        Dbg[4] = Dbg[3];
+        DbgScopes.Clear();
         if (Dbg[0].Length > 0)
         {
             header += " !dbg " + Dbg[0];
-            SetDebugLoc(DbgLine[0], 0);
+            SetDebugLocArtificial();
         }
         Functions.Append(header + "\n{\nentry:\n");
         S[0].Block = "entry";
@@ -209,6 +212,7 @@ struct IrWriter
         S[0].InFunction = false;
         Dbg[0] = "";
         Dbg[1] = "";
+        DbgScopes.Clear();
     }
 
     // Function definitions that are written on their own (runtime helpers).
@@ -518,10 +522,16 @@ struct IrWriter
     void DebugFunction(string name, string file, string unit, int line)
     {
         string type = MetaNode("!DISubroutineType(types: " + MetaNode("!{}") + ")");
+        Dbg[3] = file;
         Dbg[2] = MetaNode("distinct !DISubprogram(name: " + MetaString(name) + ", scope: " + file + ", file: " + file +
                           ", line: " + line.ToString() + ", type: " + type + ", scopeLine: " + line.ToString() +
                           ", spFlags: DISPFlagDefinition, unit: " + unit + ")");
-        DbgLine[0] = line;
+    }
+
+    // The innermost scope: the open lexical block, or the function.
+    string DebugScope()
+    {
+        return DbgScopes.Count() > 0 ? DbgScopes.Get(DbgScopes.Count() - 1) : Dbg[0];
     }
 
     // The source location of the instructions that follow (inside a function with a subprogram).
@@ -529,7 +539,56 @@ struct IrWriter
     {
         if (Dbg[0].Length == 0 || line <= 0)
             return;
-        Dbg[1] = MetaNode("!DILocation(line: " + line.ToString() + ", column: " + col.ToString() + ", scope: " + Dbg[0] + ")");
+        Dbg[1] = MetaNode("!DILocation(line: " + line.ToString() + ", column: " + col.ToString() + ", scope: " + DebugScope() + ")");
+    }
+
+    // Code that belongs to no line (line 0): the prologue that stores the parameters, so that a debugger stops after it
+    // (at the first line of the body) when it stops at a function.
+    void SetDebugLocArtificial()
+    {
+        if (Dbg[0].Length > 0)
+            Dbg[1] = MetaNode("!DILocation(line: 0, scope: " + DebugScope() + ")");
+    }
+
+    // A block of the source with variables of its own ({ ... }, a loop): variables declared in it are only visible
+    // while the program is in it, so two variables with the same name in different blocks do not mix.
+    void PushDebugScope(int line, int col)
+    {
+        if (Dbg[0].Length == 0)
+            return;
+        DbgScopes.Add(MetaNode("distinct !DILexicalBlock(scope: " + DebugScope() + ", file: " + Dbg[4] + ", line: " +
+                               line.ToString() + ", column: " + col.ToString() + ")"));
+    }
+
+    void PopDebugScope()
+    {
+        if (DbgScopes.Count() > 0)
+            DbgScopes.RemoveAt(DbgScopes.Count() - 1);
+    }
+
+    // A node whose text is written later (for types that refer to themselves).
+    string MetaReserve()
+    {
+        string id = "!" + MetaCount[0].ToString();
+        MetaCount[0] += 1;
+        return id;
+    }
+
+    void MetaDefine(string id, string text)
+    {
+        Meta.Append(id + " = " + text + "\n");
+    }
+
+    // A local variable (arg > 0: the parameter with this number) in the current scope; 'slot' is its alloca.
+    void DebugVariable(string name, int arg, string type, string slot, int line)
+    {
+        if (Dbg[0].Length == 0)
+            return;
+        string v = MetaNode("!DILocalVariable(name: " + MetaString(name) + (arg > 0 ? ", arg: " + arg.ToString() : "") +
+                            ", scope: " + (arg > 0 ? Dbg[0] : DebugScope()) + ", file: " + Dbg[4] + ", line: " + line.ToString() +
+                            ", type: " + type + ")");
+        Declare("@llvm.dbg.declare", "declare void @llvm.dbg.declare(metadata, metadata, metadata)");
+        Line("call void @llvm.dbg.declare(metadata ptr " + slot + ", metadata " + v + ", metadata !DIExpression())");
     }
 
     // The named metadata that tells LLVM about the debug information ("" without any).

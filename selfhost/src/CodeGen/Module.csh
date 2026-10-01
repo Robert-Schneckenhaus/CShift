@@ -128,6 +128,8 @@ string CompileProgram(Compiler cg, string triple)
     sb.Append(RuntimeFunctions(windows, cg.St[0].ArcStats, cg.Ir));
     sb.Append(cg.Ir.Declares.ToString());
     sb.Append(cg.Ir.DebugModuleText());
+    if (cg.Ir.Debug && !windows && cg.Ir.MetaIds.ContainsKey("unit"))
+        sb.Append(DebugGdbScriptGlobal(cg));
     return sb.ToString();
 }
 
