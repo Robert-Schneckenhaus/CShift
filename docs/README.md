@@ -12,4 +12,4 @@
 | [Language design](language-design.md) | the original design document: goals and rationale |
 
 The compiler's sources are described in [selfhost/README.md](../selfhost/README.md); open work is in
-[Todo.md](../Todo.md).
+[Todo.md](../Todo.md), the changes of each release in [CHANGELOG.md](../CHANGELOG.md).

@@ -55,7 +55,7 @@ int Main()
 
 **Documentation:** [docs/](docs/README.md) — the [language guide](docs/language/README.md), the
 [standard library](docs/stdlib.md), [C interop](docs/ffi.md), [projects](docs/build.md) and
-[the compiler](docs/compiler.md).
+[the compiler](docs/compiler.md). What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## Ready-made releases
 
@@ -88,7 +88,8 @@ itself once into a per-user cache directory (`cshiftc --clear-cache` deletes it,
 workflow [.github/workflows/release.yml](.github/workflows/release.yml) builds the compiler for both platforms, runs
 the tests (including once more against the fully assembled archive), and publishes the release. Pushing to the same
 branch again replaces the release. The branch has to contain the workflow file, so branch off from a commit at or
-after this one. The archives themselves are built by [packaging/](packaging/).
+after this one. The archives themselves are built by [packaging/](packaging/). The release text lists the changes of
+the version from [CHANGELOG.md](CHANGELOG.md) (its section, or "Unreleased" until that is renamed to the version).
 
 ## Building it
 
