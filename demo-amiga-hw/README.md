@@ -9,7 +9,7 @@ background. The program takes the machine over from the operating system, like a
 * the positions come from [`FastTrig`](../docs/stdlib.md) (sine tables and fixed point: no floating point on a 68000).
 
 It runs on every Amiga from the A500 (68000, 7 MHz, Kickstart 1.3) on, at 50 frames per second: a frame takes about
-129,000 of the 141,800 cycles an A500 has per frame. The **left mouse button** ends it and gives the machine back to
+122,000 of the 141,800 cycles an A500 has per frame. The **left mouse button** ends it and gives the machine back to
 the operating system.
 
 ```

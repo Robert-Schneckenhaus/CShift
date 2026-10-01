@@ -944,7 +944,7 @@ string CompilerName()
 int BuildM68k(BuildOptions o, string ir, string baseName)
 {
     bool amiga = o.Target.Contains("amigaos");
-    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144) : ""); // the startup code comes first
+    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144) : "", o.Optimize); // the startup code comes first
     if (text is error failed)
     {
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
@@ -1012,8 +1012,8 @@ int WriteBytesOutput(string path, uint8[] bytes)
     return 0;
 }
 
-Error<string> M68kAssembly(string ir, string prelude)
+Error<string> M68kAssembly(string ir, string prelude, int optimize)
 {
     var module = try ReadModule(ir);
-    return try GenerateModule(module, prelude);
+    return try GenerateModule(module, prelude, optimize);
 }

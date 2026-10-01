@@ -12,8 +12,13 @@ const int InlineSmall = 6;     // ... anywhere (not more code than the call itse
 const int InlineBudget = 40;    // inlined calls per function
 const int InlineGrowth = 160;   // instructions that inlining in loops may add to a function
 
+// -O0: nothing is inlined; -O1 (small code): only functions that are not larger than their call; -O2/-O3: also
+// larger ones in loops.
 void InlineCalls(Gen g, IrFunc f)
 {
+    int level = g.Counters[2];
+    if (level == 0)
+        return;
     int budget = InlineBudget;
     int growth = InlineGrowth;
     while (budget > 0)
@@ -42,7 +47,7 @@ void InlineCalls(Gen g, IrFunc f)
                 if (index < 0)
                     continue;
                 var fn = g.M.Funcs.Get(index);
-                int limit = depth[bi] > 0 ? (growth < InlineLimit ? growth : InlineLimit) : 0;
+                int limit = depth[bi] > 0 && level >= 2 ? (growth < InlineLimit ? growth : InlineLimit) : 0;
                 if (limit < InlineSmall)
                     limit = InlineSmall;
                 if (!Inlinable(g, fn, limit) || fn.Params.Length != inst.Args.Length)

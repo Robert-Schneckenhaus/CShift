@@ -29,6 +29,7 @@ window, written against the NDK 3.2).
 | `--backend m68k` | `"backend": "m68k"` | CShift's own 68000 code generator (the default for `m68k-amigaos`) |
 | `--ndk <dir>` | `"ndk": "<dir>"` | the AmigaOS NDK (also the environment variable `CSHIFT_NDK`); a path in cshift.json is relative to it |
 | `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable |
+| `-O0` … `-O3` | `"optimize": 0` … `3` | `-O2` (the default) and `-O3` inline larger functions in loops: faster, but bigger; `-O1` only inlines functions that are not larger than their call (smaller programs, e.g. for floppy disks); `-O0` inlines nothing |
 
 The m68k backend accepts m68k targets only:
 
@@ -121,15 +122,16 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 ```
 
 * **IrReader.csh** reads the LLVM IR the front end writes (types, constants, functions, instructions).
-* **Prepare.csh, Inline.csh**: small functions are inlined (up to 6 instructions everywhere, up to 80 in loops, the
-  deepest loops first, while the function grows by at most 160 instructions); variables written once become their
+* **Prepare.csh, Inline.csh**: small functions are inlined (up to 6 instructions everywhere; with `-O2`/`-O3` up to 80
+  in loops, the deepest loops first, while the function grows by at most 160 instructions); variables written once become their
   value; constants are folded; dead code is removed; a pointer that is only used by one load or store becomes an
   addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
 * **Regalloc.csh**: a linear scan over live intervals; values and variables get `d4`-`d7` and `a2`-`a5` by their uses,
   weighted by loop depth; a value loaded from a variable shares its register.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
-  fused with their branch (`bvs`), division by constants, `asl` for checked products by powers of two, only the
-  registers that are used are saved.
+  fused with their branch (`bvs`), division by constants (shifts for powers of two), `asl` for checked products by
+  powers of two, the length of a string or array for its bounds check without a call, only the registers that are
+  used are saved.
 * **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);
   **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
 * **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
