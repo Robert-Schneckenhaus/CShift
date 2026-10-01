@@ -17,6 +17,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   are folded; multiplications without overflow check use shifts or `muls.w`; the code that ends the program on an
   error is moved to the end of a function, so the normal path runs without branches.
 
+### Tools
+- VS Code: find all references, the outline of a file (structs with their members, functions, enums, constants), and
+  completion after `.` (fields, methods, enum members, static methods, string functions); `cshiftc query --references`,
+  `--members` and `--outline <file>`.
+
 ### Compiler
 - Casts between integers and pointers go through an integer as wide as a pointer of the target (also on 32-bit targets);
   unsigned values are zero-extended.

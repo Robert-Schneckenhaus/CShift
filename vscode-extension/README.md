@@ -13,12 +13,19 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
   signature they are called with.
 * **Go to definition** (F12, Ctrl+click) for the same names: into the file where they are declared; for a name
   imported from a C header, into the header at the line it is declared in.
+* **Find all references** (Shift+F12): every place where a variable, field, function, type or constant is written, in
+  all files of the program.
+* **Outline** (and breadcrumbs, *Go to Symbol in Editor*): the structs with their fields and methods, interfaces,
+  enums with their members, unions, functions, constants and globals of a file.
+* **Completion after `.`**: the fields and methods of a struct value (also inherited ones), the methods of an
+  interface, the members of an enum (`Color.`), the static methods of a struct (`List<int>.`), and `Length` and the
+  string functions for strings.
 * Syntax highlighting (keywords, types, generics, numbers with suffixes, strings, comments, `link`, `namespace`/`using`),
   bracket pairs, auto-indent, comment toggling, `// region` folding, snippets (`main`, `struct`, `fn`, `foreach`,
   `switch`, `try`, `ifis`, `dict`, …) and a schema for `cshift.json`.
 
-Errors, hover and go to definition come from the compiler itself (`cshiftc` 0.11 or later), so they always match
-what the build reports.
+Errors, hover and go to definition come from the compiler itself (`cshiftc` 0.11 or later; references, the outline
+and completion need 0.20 or later), so they always match what the build reports.
 
 ## Installation
 

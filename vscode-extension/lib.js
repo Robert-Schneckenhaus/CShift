@@ -112,19 +112,51 @@ async function runWithOverlays(compiler, args, dirty, tempDir, cwd, timeoutMs) {
     }
 }
 
-// 'cshiftc query --at <file> <line> <col> <target> [overlays]' -> { hover, definition: { file, line, col } } or null.
-async function query(compiler, project, file, line, col, dirty, tempDir) {
-    const args = ["query", "--at", file, String(line), String(col), ...targetArgs(project, file)];
-    const result = await runWithOverlays(compiler, args, dirty, tempDir, path.dirname(project || file), 30000);
+// Runs 'cshiftc query <args> <target> [overlays]' and returns its JSON answer (null if there is none).
+async function queryJson(compiler, project, file, args, dirty, tempDir) {
+    const result = await runWithOverlays(compiler, ["query", ...args, ...targetArgs(project, file)], dirty, tempDir,
+        path.dirname(project || file), 30000);
     const text = result.stdout.trim();
     if (!text)
         return null;
     try {
-        const answer = JSON.parse(text.split(/\r?\n/).pop());
-        return answer.hover ? answer : null;
+        return JSON.parse(text.split(/\r?\n/).pop());
     } catch (e) {
         return null;
     }
+}
+
+// 'cshiftc query --at <file> <line> <col> [--references] [--members]' -> { hover, definition: { file, line, col },
+// references: [{ file, line, col, length }], members: [{ name, kind, detail }] } or null.
+async function query(compiler, project, file, line, col, dirty, tempDir, extra) {
+    const answer = await queryJson(compiler, project, file, ["--at", file, String(line), String(col), ...(extra || [])], dirty, tempDir);
+    return answer && answer.hover ? answer : null;
+}
+
+// 'cshiftc query --outline <file>' -> [{ name, kind, line, col, children }] (the declarations of the file) or null.
+async function outline(compiler, project, file, dirty, tempDir) {
+    const answer = await queryJson(compiler, project, file, ["--outline", file], dirty, tempDir);
+    return answer && Array.isArray(answer.symbols) ? answer.symbols : null;
+}
+
+// Completion after 'name.': the text with what is typed after the '.' taken out, so that the program can be checked,
+// and the position of the name. 'offset' is the cursor in 'text'. Returns null if no 'name.' is before the cursor.
+function memberContext(text, offset) {
+    const before = text.substring(0, offset);
+    const m = /([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z0-9_]*)$/.exec(before);
+    if (!m)
+        return null;
+    const nameEnd = m.index + m[1].length;
+    const lineStart = before.lastIndexOf("\n") + 1;
+    // the rest of the member name after the cursor goes too
+    const end = offset + /^[A-Za-z0-9_]*/.exec(text.substring(offset))[0].length;
+    const lineEnd = text.indexOf("\n", end) < 0 ? text.length : text.indexOf("\n", end);
+    const restOfLine = text.substring(end, lineEnd);
+    // 'x.Fo' at the end of a line becomes 'x;' (a statement), inside a line just 'x'
+    const replacement = restOfLine.trim().length === 0 ? ";" : "";
+    const edited = text.substring(0, nameEnd) + replacement + text.substring(end);
+    const lineNumber = before.split("\n").length;
+    return { text: edited, line: lineNumber, nameColumn: nameEnd - lineStart, prefix: m[2] };
 }
 
 // The messages of cshiftc ("file:line:col: error: text") -> [{ file, line, col, severity, message }]; files as full
@@ -153,6 +185,6 @@ async function check(compiler, project, file, dirty, tempDir) {
 
 module.exports = {
     samePath, projectSources, projectContains, findProject, byteColumn, characterOf, overlayArgs, parseDiagnostics,
-    run, query, check,
+    run, query, queryJson, outline, memberContext, check,
     tempDirectory: () => path.join(os.tmpdir(), "cshift-vscode-" + process.pid),
 };

@@ -5,8 +5,10 @@ usage: cshiftc [options] file.csh [file2.csh ...]     compile single files
        cshiftc run   [project] [options]              build and run a project
        cshiftc new   <directory>                      create a new project
        cshiftc check [project | files] [options]      report the errors, generate nothing
-       cshiftc query --at <file> <line> <col> [project | files] [--overlay <file> <text file>]
-                                                      the name at a position (hover, definition) as JSON
+       cshiftc query --at <file> <line> <col> [--references] [--members] [project | files] [--overlay <file> <text file>]
+                                                      the name at a position (hover, definition; the places where it
+                                                      is written; what can follow 'name.') as JSON
+       cshiftc query --outline <file> [project | files]  the declarations of a file as JSON
 
 'project' is a directory containing cshift.json or the path of a project file;
 without it cshift.json is searched in the current directory and its parents.

@@ -85,7 +85,10 @@ errors without generating anything. `cshiftc query --at <file> <line> <col>` doe
 (`CgState.Indexing`, `Check/Index.csh`): every name the checker resolves (locals, parameters, fields, constants,
 globals, functions and methods, the functions the language provides, types, enum members; variables, parameters and
 functions also where they are declared) is recorded with its place, the place of its declaration and a hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
-"col"}}`). `--overlay <file> <text file>` replaces a source with the unsaved text of an editor. Columns count bytes
+"col"}}`). `--references` adds every place where the name is written (`"references"`: the entries with the same
+declaration), `--members` what can follow `name.` (`"members"`: fields, methods, enum members, from the type the index
+records for the name), and `--outline <file>` instead of `--at` answers with the declarations of a file
+(`"symbols"`). `--overlay <file> <text file>` replaces a source with the unsaved text of an editor. Columns count bytes
 (UTF-8), like the error messages.
 
 **Errors that still stop the compiler.** Everything that is not moved into the checker or `Recover` yet still fails
@@ -102,7 +105,7 @@ errors is limited (50); after that the compiler stops.
 | 4 | Declarations with recovery: constants, globals, struct fields and signatures (also of `thread` functions) report and continue | done: see *Declarations* above |
 | 5 | Code generation reads the checker's results (types, chosen overloads, conversions) and its own checks go away | in progress: the initializers of globals are checked by the checker (and generated after it), errors in constant values recover (`ConstError`: the value is unknown). Every error of the test cases is reported by the checker (all in one run) except those that need the whole program or its call graph: the order of the global initializers, a thread that reaches a global, the missing entry point (`cshiftc check` of a library file must not report it) and the inference of type arguments from a lambda with an error |
 | 6 | Generic bodies checked once against their constraints; type arguments inferred from lambdas | done: generic bodies are checked once (see *Generic bodies*), type arguments are inferred from lambdas (see *Lambdas*), and a method called on a variable whose declared type is a type parameter must be a method of one of its constraints (or `ToString`; `TypeParamMethodError`) |
-| 7 | Tooling on top of the checker's results | in progress: `cshiftc check` and `cshiftc query` with the symbol index (see *Tooling*), used by the VS Code extension for errors, hover and go to definition; outline, references and completion can follow |
+| 7 | Tooling on top of the checker's results | done: `cshiftc check` and `cshiftc query` with the symbol index (see *Tooling*), used by the VS Code extension for errors, hover, go to definition, find all references, the outline and completion after `.`; renaming and completion of names (not only members) can follow |
 
 Tests: a case can list several `// expect-error:` lines; all of them must be in the compiler's output
 (`tests/cases/err_several_*.csh`).

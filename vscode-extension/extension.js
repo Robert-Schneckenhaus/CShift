@@ -1,5 +1,6 @@
-// The CShift extension: hover, go to definition and the errors of the program, from cshiftc (the compiler's 'query'
-// and 'check' commands, which run the front end without generating code). The work that does not need VS Code is in
+// The CShift extension: hover, go to definition, find all references, the outline, completion after '.' and the errors
+// of the program, from cshiftc (the compiler's 'query' and 'check' commands, which run the front end without generating
+// code). The work that does not need VS Code is in
 // lib.js.
 "use strict";
 
@@ -91,6 +92,88 @@ const definitionProvider = {
 };
 
 // ---------------------------------------------------------------------------
+// Find all references, outline, completion after '.'
+// ---------------------------------------------------------------------------
+
+function locationOf(place) {
+    const line = lineOf(place.file, place.line);
+    const start = lib.characterOf(line, place.col);
+    const end = lib.characterOf(line, place.col + (place.length || 1));
+    return new vscode.Location(vscode.Uri.file(place.file), new vscode.Range(place.line - 1, start, place.line - 1, end));
+}
+
+const referenceProvider = {
+    async provideReferences(document, position) {
+        if (document.uri.scheme !== "file")
+            return null;
+        const file = document.uri.fsPath;
+        const lineText = document.lineAt(position.line).text;
+        const answer = await lib.query(compilerPath(), lib.findProject(projectFiles, file), file, position.line + 1,
+            lib.byteColumn(lineText, position.character), dirtyDocuments(), tempDir, ["--references"]);
+        if (!answer || !answer.references)
+            return null;
+        return answer.references.map(locationOf);
+    },
+};
+
+const symbolKinds = {
+    struct: vscode.SymbolKind.Struct, interface: vscode.SymbolKind.Interface, enum: vscode.SymbolKind.Enum,
+    union: vscode.SymbolKind.Class, function: vscode.SymbolKind.Function, method: vscode.SymbolKind.Method,
+    field: vscode.SymbolKind.Field, enumMember: vscode.SymbolKind.EnumMember, constant: vscode.SymbolKind.Constant,
+    variable: vscode.SymbolKind.Variable,
+};
+
+function documentSymbol(document, s) {
+    const line = Math.max(0, Math.min(document.lineCount - 1, s.line - 1));
+    const text = document.lineAt(line).text;
+    const start = lib.characterOf(text, s.col);
+    const range = new vscode.Range(line, 0, line, text.length);
+    const selection = new vscode.Range(line, start, line, Math.min(text.length, start + s.name.length));
+    const symbol = new vscode.DocumentSymbol(s.name, "", symbolKinds[s.kind] || vscode.SymbolKind.Variable, range, selection);
+    symbol.children = (s.children || []).map((c) => documentSymbol(document, c));
+    return symbol;
+}
+
+const symbolProvider = {
+    async provideDocumentSymbols(document) {
+        if (document.uri.scheme !== "file")
+            return null;
+        const file = document.uri.fsPath;
+        const symbols = await lib.outline(compilerPath(), lib.findProject(projectFiles, file), file, dirtyDocuments(), tempDir);
+        return symbols ? symbols.map((s) => documentSymbol(document, s)) : null;
+    },
+};
+
+const completionKinds = {
+    field: vscode.CompletionItemKind.Field, method: vscode.CompletionItemKind.Method,
+    enumMember: vscode.CompletionItemKind.EnumMember, property: vscode.CompletionItemKind.Property,
+};
+
+const completionProvider = {
+    async provideCompletionItems(document, position) {
+        if (document.uri.scheme !== "file")
+            return null;
+        const file = document.uri.fsPath;
+        const context = lib.memberContext(document.getText(), document.offsetAt(position));
+        if (!context)
+            return null;
+        // the program with the text after the '.' taken out, as an unsaved text of this file
+        const dirty = dirtyDocuments().filter((d) => lib.samePath(d.file) !== lib.samePath(file));
+        dirty.push({ file, text: context.text });
+        const lineText = context.text.split(/\r?\n/)[context.line - 1] || "";
+        const answer = await lib.query(compilerPath(), lib.findProject(projectFiles, file), file, context.line,
+            lib.byteColumn(lineText, context.nameColumn - 1), dirty, tempDir, ["--members"]);
+        if (!answer || !answer.members)
+            return null;
+        return answer.members.map((m) => {
+            const item = new vscode.CompletionItem(m.name, completionKinds[m.kind] || vscode.CompletionItemKind.Text);
+            item.detail = m.detail;
+            return item;
+        });
+    },
+};
+
+// ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
@@ -155,6 +238,9 @@ async function activate(context) {
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(selector, hoverProvider),
         vscode.languages.registerDefinitionProvider(selector, definitionProvider),
+        vscode.languages.registerReferenceProvider(selector, referenceProvider),
+        vscode.languages.registerDocumentSymbolProvider(selector, symbolProvider),
+        vscode.languages.registerCompletionItemProvider(selector, completionProvider, "."),
         vscode.workspace.onDidOpenTextDocument(checkDocument),
         vscode.workspace.onDidSaveTextDocument(checkDocument),
         vscode.workspace.onDidChangeTextDocument((e) => scheduleCheck(e.document)),

@@ -79,3 +79,46 @@ test("cshiftc check and query (with an unsaved text)", { skip: !compiler }, asyn
     assert.strictEqual(await lib.query(compiler, null, file, 8, 5, [], temp), null); // 'return'
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("completion: the name before '.' and the text without what follows it", () => {
+    const text = "int Main()\n{\n    var p = new Point();\n    p.Su\n    return 0;\n}\n";
+    const offset = text.indexOf("p.Su") + 4;
+    const c = lib.memberContext(text, offset);
+    assert.strictEqual(c.line, 4);
+    assert.strictEqual(c.nameColumn, 5); // just after 'p'
+    assert.strictEqual(c.prefix, "Su");
+    assert.ok(c.text.includes("\n    p;\n")); // at the end of a line: a statement
+    const inside = "int x = Max(p.X, 2);";
+    const c2 = lib.memberContext(inside, inside.indexOf("p.X") + 2);
+    assert.strictEqual(c2.text, "int x = Max(p, 2);"); // 'p.X' in the middle of a line: just 'p'
+    assert.strictEqual(lib.memberContext("int x = 1 + ", 12), null);
+});
+
+test("cshiftc query: references, members, outline", { skip: !compiler }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
+    const file = path.join(dir, "main.csh");
+    const saved = "struct Point\n{\n    int X;\n    int Sum() { return X; }\n}\n\n" +
+                  "int Twice(int v) { return v * 2; }\n\nint Main()\n{\n    var p = Point { X = 1 };\n" +
+                  "    return Twice(p.Sum()) + Twice(1);\n}\n";
+    fs.writeFileSync(file, saved);
+    const temp = path.join(dir, "tmp");
+
+    const refs = await lib.query(compiler, null, file, 7, 5, [], temp, ["--references"]);
+    assert.deepStrictEqual(refs.references.map((r) => [r.line, r.col]), [[7, 5], [12, 12], [12, 29]]);
+
+    const members = await lib.query(compiler, null, file, 12, 18, [], temp, ["--members"]);
+    assert.deepStrictEqual(members.members.map((m) => m.name), ["X", "Sum"]);
+
+    // completion after 'p.' in an unsaved text: the text without what follows the '.'
+    const typing = saved.replace("    return Twice(p.Sum()) + Twice(1);", "    p.S\n    return 0;");
+    const c = lib.memberContext(typing, typing.indexOf("p.S") + 3);
+    const lineText = c.text.split("\n")[c.line - 1];
+    const typed = await lib.query(compiler, null, file, c.line, lib.byteColumn(lineText, c.nameColumn - 1),
+        [{ file, text: c.text }], temp, ["--members"]);
+    assert.deepStrictEqual(typed.members.map((m) => m.name), ["X", "Sum"]);
+
+    const symbols = await lib.outline(compiler, null, file, [], temp);
+    assert.deepStrictEqual(symbols.map((s) => [s.name, s.kind]), [["Point", "struct"], ["Twice", "function"], ["Main", "function"]]);
+    assert.deepStrictEqual(symbols[0].children.map((s) => s.name), ["X", "Sum"]);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
