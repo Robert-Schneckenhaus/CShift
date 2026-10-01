@@ -29,7 +29,7 @@ struct Gen
     Dictionary<string, string> Symbols;
     Dictionary<string, string> Reverse;   // assembly name -> IR name
     List<string> Libraries;               // the AmigaOS libraries that are called (their bases: __cs_lib_<index>)
-    int[] Counters;                       // [0] labels, [1] symbols
+    int[] Counters;                       // [0] labels, [1] symbols, [2] the optimization level (-O0..-O3)
     List<string> Errors;
 
     // the function being written
@@ -51,7 +51,7 @@ struct Gen
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
                       Saved = List<string>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
-                      Counters = new int[2], Errors = List<string>.Create() };
+                      Counters = new int[3], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
         return g;
@@ -88,9 +88,10 @@ struct Gen
 
 // The assembly of a whole module, or the errors. Only what is used is written: the functions and globals that main,
 // the prelude (the startup code of AmigaOS) and the runtime refer to, and so on.
-Error<string> GenerateModule(IrModule m, string prelude)
+Error<string> GenerateModule(IrModule m, string prelude, int optimize)
 {
     var g = Gen.Create(m);
+    g.Counters[2] = optimize;
     var funcText = Dictionary<int, string>.Create();
     var globalText = Dictionary<int, string>.Create();
     var work = List<string>.Create();
@@ -1365,8 +1366,45 @@ void GenBinary32(Gen g, IrInst inst)
             StoreResult(g, inst);
         return;
     }
-    // division by a constant of 1..32767: one divs.w/divu.w; if the quotient does not fit in 16 bits (V), the helper
     var divisor = g.M.Vals.Get(inst.Args[1]);
+    // division by a power of two (2..2^30): shifts; signed division rounds towards zero, so a negative dividend gets
+    // 2^n-1 added first
+    int pow = divisor.Kind == ValKind.Int ? PowerOfTwo(divisor.Int) : -1;
+    if ((op == "sdiv" || op == "srem" || op == "udiv" || op == "urem") && pow >= 1 && pow <= 30)
+    {
+        bool signedDiv = op == "sdiv" || op == "srem";
+        int64 mask = ((int64)1 << pow) - 1;
+        Load32(g, inst.Args[0], "%d0");
+        Extend(g, "%d0", bits, signedDiv);
+        if (op == "urem")
+            g.Line("and.l\t#" + mask.ToString() + ",%d0");
+        else if (op == "udiv")
+            ShiftBy(g, "lsr", pow, "%d0");
+        else
+        {
+            if (op == "srem")
+                g.Line("move.l\t%d0,%d2");
+            string positive = g.NewLabel();
+            g.Line("tst.l\t%d0");
+            g.Line("bpl\t" + positive);
+            if (mask <= 8)
+                g.Line("addq.l\t#" + mask.ToString() + ",%d0");
+            else
+                g.Line("add.l\t#" + mask.ToString() + ",%d0");
+            g.Label(positive);
+            ShiftBy(g, "asr", pow, "%d0");
+            if (op == "srem")
+            {
+                // x - (x / 2^n) * 2^n
+                ShiftBy(g, "lsl", pow, "%d0");
+                g.Line("sub.l\t%d0,%d2");
+                g.Line("move.l\t%d2,%d0");
+            }
+        }
+        StoreResult(g, inst);
+        return;
+    }
+    // division by a constant of 1..32767: one divs.w/divu.w; if the quotient does not fit in 16 bits (V), the helper
     if ((op == "sdiv" || op == "srem" || op == "udiv" || op == "urem") && divisor.Kind == ValKind.Int && divisor.Int >= 1 &&
         divisor.Int <= 32767)
     {
@@ -1430,6 +1468,29 @@ void GenBinary32(Gen g, IrInst inst)
             g.Line("move.l\t%d1,%d0");
     }
     StoreResult(g, inst);
+}
+
+// n if v is 2^n (n >= 1), else -1
+int PowerOfTwo(int64 v)
+{
+    for (var n = 1; n <= 62; n += 1)
+    {
+        if (v == ((int64)1 << n))
+            return n;
+    }
+    return -1;
+}
+
+// reg shifted by n bits (an immediate count is 1..8, larger ones go through d1)
+void ShiftBy(Gen g, string op, int n, string reg)
+{
+    if (n <= 8)
+        g.Line(op + ".l\t#" + n.ToString() + "," + reg);
+    else
+    {
+        g.Line("moveq\t#" + n.ToString() + ",%d1");
+        g.Line(op + ".l\t%d1," + reg);
+    }
 }
 
 // add, sub, ... on i64: a in d0:d1, b in d2:d3.
@@ -1969,15 +2030,33 @@ void GenCall(Gen g, IrInst inst)
     }
     if (callee.Kind == ValKind.Global && callee.Name == "__cs_len" && inst.Args.Length == 1 && g.M.FuncIndex.ContainsKey("__cs_len"))
     {
-        // the length of a string or array (0 for null), inline: it is needed for every bounds check
+        // the length of a string or array (0 for null), inline: it is needed for every bounds check. The pointer goes
+        // into the result's register first: for null that already is the 0.
         string done = g.NewLabel();
-        LoadAddr(g, inst.Args[0], "%a0");
-        g.Line("moveq\t#0,%d0");
-        g.Line("move.l\t%a0,%d1");
-        g.Line("beq.s\t" + done);
-        g.Line("move.l\t(4,%a0),%d0");
+        string dst = inst.Res.Length > 0 ? ResultRegister(g, inst.Res) : "";
+        if (dst.Length == 0)
+            dst = "%d0";
+        string from = ValueRegister(g, inst.Args[0]);
+        if (from.StartsWith("%a"))
+        {
+            g.Line("move.l\t" + from + "," + dst);
+            g.Line("beq.s\t" + done);
+            g.Line("move.l\t(4," + from + ")," + dst);
+        }
+        else
+        {
+            // every move into a data register sets Z (Load32 writes nothing when the value is there already)
+            if (from == dst)
+                g.Line("tst.l\t" + dst);
+            else
+                Load32(g, inst.Args[0], dst);
+            g.Line("beq.s\t" + done);
+            g.Line("move.l\t" + dst + ",%a0");
+            g.Line("move.l\t(4,%a0)," + dst);
+        }
         g.Label(done);
-        StoreResult(g, inst);
+        if (dst == "%d0" && inst.Res.Length > 0)
+            StoreResult(g, inst);
         return;
     }
     int bytes = 0;
