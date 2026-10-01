@@ -53,8 +53,8 @@ const int Letters = "hello".Length;            // (also for constant strings)
   `ToArray()` gives a normal copy.
 * The elements are stored once in static memory: using a constant slice copies and allocates nothing.
 * An index or a range outside the slice is a compile error.
-* A `thread` function may read global constants, constant slices included (slices still cannot be *parameters* of a
-  thread).
+* A `thread` function may read global constants, constant slices included. As a *parameter* of a thread, a constant
+  slice is copied like any `ReadOnlySlice<T>`.
 * [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
 
 ### Embedded files: `embed` and `embed_filenames`

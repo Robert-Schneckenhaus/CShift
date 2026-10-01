@@ -5,23 +5,23 @@ the git log.
 
 ## Compiler
 
-- [ ] **A separate semantic pass** (in progress, see [docs/semantic-pass.md](docs/semantic-pass.md)). One run reports
-      all the errors (up to 50) of the declarations, function bodies, global initializers and constant values;
-      generic bodies are checked once and type arguments are inferred from lambdas. Next: generic bodies against
-      their constraints, code generation reading the checker's results, tooling.
 - [ ] Closures capture read-only copies. Capturing by reference (shared, mutable boxes, like C#) would need boxed
       locals; decide whether that is wanted.
-- [ ] `Mutex<T>` and `SharedPtr<T>` for containers: `T` must be copyable between threads today (no `List<T>`,
-      arrays). A way to share a container safely (e.g. access only inside `Update`, with a check that nothing
-      escapes) is open.
+- [ ] Sharing a container between threads: `Mutex<T>` and `SharedPtr<T>` need a `T` that can be copied between threads
+      (values, strings, `ReadOnlySlice<T>` of them; no `List<T>`, arrays, `Dictionary`). A way to share a container
+      safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
 - [ ] Debug information (DWARF/PDB).
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
 
+## Tooling
+
+- [ ] VS Code: renaming, and completion of names (not only of members after `.`), on top of the symbol index of
+      `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)).
+
 ## Standard library
 
-- [ ] Streams, date and time, more encodings.
-- [ ] `Directory`: deleting, moving; `File`: moving, timestamps.
+- [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
 
 ## Ideas (not started)
 

@@ -1,5 +1,5 @@
 // A slice cannot be passed to a thread: it refers to a block whose reference count is not atomic.
-// expect-error: a 'thread' function parameter must be a value type, a string or a SharedPtr<T> of a thread-safe type, not 'StringSlice' (parameter 'text')
+// expect-error: a 'thread' function parameter must be a value type, a string, a ReadOnlySlice<T> of them or a SharedPtr<T> of a thread-safe type, not 'StringSlice' (parameter 'text')
 
 using System;
 

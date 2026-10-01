@@ -141,7 +141,7 @@ as a function in `namespace String` (the first parameter is the `StringSlice`).
 **`Thread`/`Thread<T>`** — the handle returned by `start`ing a `thread` function (`start Foo(args)`; calling one
 directly, without `start`, is a compile-time error): `Join()`, `Cancel()`, `CancelAndWait()`, `IsCompleted()`,
 `IsCancelled()`, and (`Thread<T>` only) the non-blocking `t is T value` pattern. Real OS threads (pthreads on
-every supported platform), isolated from global state; parameters are values, strings (copied for the thread) and
+every supported platform), isolated from global state; parameters are values, strings and `ReadOnlySlice<T>` (copied for the thread) and
 `SharedPtr<T>`/`Mutex<T>` of thread-safe values — see [threading.md](language/threading.md), including
 `Thread.Cancelled`.
 **`SharedPtr<T>`** — `Create(value)`, `Get()`, `Ptr()` (`unsafe`), `IsNull()`: a box with an atomically

@@ -172,8 +172,9 @@ bool same = word == "world";     // slices and strings compare by their bytes
 * A whole string or array converts to a slice for free, so a function that takes `StringSlice` or `Slice<T>` accepts
   both: `int Sum(Slice<int> values)` can be called with `a` or `a[1..]`.
 * Ranges are checked: `0 <= start <= end <= Length`, otherwise the program panics like with an index out of range.
-* No slice (`Slice<T>`, `ReadOnlySlice<T>`, `StringSlice`) can be passed to a `thread` function (its block's reference count is not atomic); pass
-  `word.ToString()` instead. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL).
+* A `ReadOnlySlice<T>` can be passed to a `thread` function: the thread gets its own copy of the elements
+  ([threading.md](threading.md#isolation)). `Slice<T>` and `StringSlice` cannot (the block's reference count is
+  not atomic, and a `Slice<T>` could be written); pass `word.ToString()` for a `StringSlice`. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL).
 
 ## `List<T>`
 
