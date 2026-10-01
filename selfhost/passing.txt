@@ -265,6 +265,7 @@ switch_exhaustive.csh
 thread_basic.csh
 thread_cancel.csh
 thread_mutex.csh
+thread_read_only_slice.csh
 thread_start_contextual.csh
 thread_static_method.csh
 thread_strings.csh

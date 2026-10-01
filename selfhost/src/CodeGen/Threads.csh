@@ -68,13 +68,16 @@ bool IsThreadSafeType(Compiler cg, int t)
 
 // Values that can be handed to a new thread as parameters: thread-safe values, and strings, which are copied for the
 // thread (a new block that only the thread owns; strings cannot be changed, so the copy behaves exactly like the
-// original). The same goes for Optional<T>, Error<T> and structs made of such values.
+// original). The same goes for Optional<T>, Error<T> and structs made of such values, and for ReadOnlySlice<T> of
+// them: the thread gets a copy of the elements, which it cannot change either.
 bool IsThreadTransferable(Compiler cg, int t)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
     if (kind == TypeKind.String)
         return true;
+    if (kind == TypeKind.ReadOnlySlice)
+        return IsThreadTransferable(cg, types.Elem(t));
     if (kind == TypeKind.Optional)
         return IsThreadTransferable(cg, types.Elem(t));
     if (kind == TypeKind.Error)
@@ -107,6 +110,8 @@ string ThreadUnsafePart(Compiler cg, int t, bool shared)
     if (kind == TypeKind.SharedPtr)
         return ThreadUnsafeLeaf(cg, types.Elem(t), true);
     if (kind == TypeKind.Optional || kind == TypeKind.Error)
+        return ThreadUnsafeLeaf(cg, types.Elem(t), shared);
+    if (kind == TypeKind.ReadOnlySlice && !shared)
         return ThreadUnsafeLeaf(cg, types.Elem(t), shared);
     if (kind == TypeKind.Struct)
     {
@@ -149,7 +154,7 @@ void CheckThreadSignature(Compiler cg, FuncInfo fi)
             // the reason is only named when it is a string that would be shared (containers show their internals)
             string part = ThreadUnsafePart(cg, t, false);
             string why = part == "string" ? " ('string' is reference-counted without atomics and cannot be shared with another thread)" : "";
-            Recover(cg, p.Loc, "a 'thread' function parameter must be a value type, a string or a SharedPtr<T> of a thread-safe type, not '" +
+            Recover(cg, p.Loc, "a 'thread' function parameter must be a value type, a string, a ReadOnlySlice<T> of them or a SharedPtr<T> of a thread-safe type, not '" +
                                 cg.Types.Name(t) + "' (parameter '" + p.Name + "')" + why);
         }
     }
@@ -374,6 +379,8 @@ string ThreadCopy(Compiler cg, int t, string v)
     }
     string ty = LlvmType(cg, t);
     var kind = types.Kind(t);
+    if (kind == TypeKind.ReadOnlySlice)
+        return ThreadCopySlice(cg, t, v);
     if (kind == TypeKind.Union)
     {
         // only unions of thread-safe members are passed to threads: their counts are atomic
@@ -408,6 +415,57 @@ string ThreadCopy(Compiler cg, int t, string v)
         result = ir.InsertValue(ty, result, LlvmType(cg, f.Type), ThreadCopy(cg, f.Type, ir.ExtractValue(ty, v, index)), index);
     }
     return result;
+}
+
+// A ReadOnlySlice<T> for another thread: a new array with copies of the elements (strings in them copied as well),
+// and a view of all of it.
+string ThreadCopySlice(Compiler cg, int t, string v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    int elem = types.Elem(t);
+    string ty = LlvmType(cg, t);
+    string size = SizeIr(cg);
+    string copy;
+    string length;
+    if (!NeedsArc(cg, elem))
+    {
+        // plain values: one memcpy
+        Value array = SliceToArray(cg, Rvalue(t, v, false));
+        copy = array.V;
+        length = ArrayLength(cg, copy);
+    }
+    else
+    {
+        var p = PartsOf(cg, Rvalue(t, v, false));
+        length = p.Length;
+        copy = AllocArray(cg, elem, length);
+        string elemTy = LlvmType(cg, elem);
+        string dst = DataPtr(cg, copy);
+        string pre = ir.NewLabel("thread.copy.pre");
+        string check = ir.NewLabel("thread.copy.check");
+        string body = ir.NewLabel("thread.copy.body");
+        string latch = ir.NewLabel("thread.copy.next");
+        string done = ir.NewLabel("thread.copy.done");
+        ir.Br(pre);
+        ir.SetBlock(pre);
+        ir.Br(check);
+        ir.SetBlock(check);
+        string next = ir.NewTemp();
+        string i = ir.Phi(size, "[ 0, %" + pre + " ], [ " + next + ", %" + latch + " ]");
+        ir.CondBr(ir.ICmp("ult", size, i, length), body, done);
+        ir.SetBlock(body);
+        string item = ir.Load(elemTy, ir.Gep(elemTy, p.Data, size + " " + i));
+        ir.Store(elemTy, ThreadCopy(cg, elem, item), ir.Gep(elemTy, dst, size + " " + i));
+        ir.Br(latch); // the copy of an element can contain loops of its own (a slice in a struct)
+        ir.SetBlock(latch);
+        ir.Line(next + " = add " + size + " " + i + ", 1");
+        ir.Br(check);
+        ir.SetBlock(done);
+    }
+    string result = ir.InsertValue(ty, "undef", "ptr", copy, "0");
+    result = ir.InsertValue(ty, result, "ptr", DataPtr(cg, copy), "1");
+    return ir.InsertValue(ty, result, size, length, "2");
 }
 
 // A copy of a string in a new block (null stays null).

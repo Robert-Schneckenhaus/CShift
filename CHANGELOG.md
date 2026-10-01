@@ -6,6 +6,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- A `ReadOnlySlice<T>` can be a parameter of a `thread` function (and the value of a `Mutex<T>`) when its elements
+  can: the thread gets its own copy of the elements, like a string. So `start Sum(numbers)` works with an `int[]`.
+
 ### Standard library
 - JSON: `Json.Parse` and `JsonValue` (build, read and write JSON; objects keep the order of their keys).
 - Regular expressions: `Regex` (groups and named groups, sets, anchors, word boundaries, lazy and counted repetition,

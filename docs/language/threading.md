@@ -55,11 +55,17 @@ atomic. A `thread` function's parameters may be:
 * [`SharedPtr<T>`](#sharedptrt) of a **thread-safe** `T` (plain values, `SharedPtr`s of thread-safe values, and
   `Optional<T>`/structs made of them) - the value is *shared*, so a string inside it is not allowed:
   `SharedPtr<string>` is an error;
-* `Optional<T>`, `Error<T>` and structs made of the above (the strings in them are copied as well).
+* `Optional<T>`, `Error<T>` and structs made of the above (the strings in them are copied as well);
+* **`ReadOnlySlice<T>`** of the above: the thread gets its **own copy of the elements** (a new array that only the
+  thread owns; strings in it are copied as well). Arrays and `Slice<T>` convert to it for free, so a function
+  `thread int Sum(ReadOnlySlice<int> values)` can be started with an `int[]`. The thread cannot change the elements,
+  so the copy behaves like the original, except that it does not see changes the caller makes afterwards (which
+  would be a data race anyway). Copying costs time and memory proportional to the length, like for strings.
 
-Never `ref`/`const ref`, a raw pointer, an array, a slice, a built-in container or `Action`/`Func`: copying those would race on
-a reference count that was never meant to be touched from two threads at once (or, for a raw pointer or
-`Action`/`Func`, silently alias data the other thread does not expect). A `Thread<T>` handle holds a `SharedPtr` to
+Never `ref`/`const ref`, a raw pointer, an array or `Slice<T>` (both writable), a `StringSlice` (use `.ToString()`),
+a built-in container or `Action`/`Func`: copying those would race on a reference count that was never meant to be
+touched from two threads at once (or, for a raw pointer or `Action`/`Func`, silently alias data the other thread does
+not expect). A `Thread<T>` handle holds a `SharedPtr` to
 the result, so it can be passed to another thread only if `T` is thread-safe (`Thread<int>` yes, `Thread<string>`
 no). The return type has no such restriction - `Error<T>`, a string, anything - since the value only ever moves
 from the thread to whoever calls `Join()`.
@@ -179,8 +185,8 @@ Console.WriteLine(counter.Get());   // 2000
   `mutex.Set(value)` lock just for that one call.
 * The value only goes in and out as a copy that shares no reference count with anything else (strings are copied
   into new blocks, `Memory.CopyForThread`). So `T` must be copyable between threads: numbers, `bool`, `char`, enums,
-  strings, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs of them - not arrays or
-  containers (`Mutex<List<int>>` is an error).
+  strings, `SharedPtr<T>` of thread-safe values, `Optional<T>`/`Error<T>`/structs of them, and `ReadOnlySlice<T>` of
+  them (its elements are copied) - not arrays or containers (`Mutex<List<int>>` is an error).
 * A `MutexGuard<T>` cannot be passed to another thread: the thread that locked a mutex has to unlock it.
 
 Next: [Resources and `using`](resources.md).
