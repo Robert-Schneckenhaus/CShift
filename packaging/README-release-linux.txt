@@ -19,14 +19,13 @@ Installation
 
 Requirements
 ------------
-As with any C toolchain, the C library and the linker files come from the system (Ubuntu/Debian):
+As with any C toolchain, the C library, the linker and gcc's startup files come from the system. On Ubuntu 22.04+
+and Debian 12+:
 
-    sudo apt install build-essential
+    sudo apt install build-essential libffi8 libedit2 libz3-4 zlib1g libzstd1 libxml2
 
-(gcc startup files, libc6-dev, binutils). The libraries clang needs — libedit, libxml2, libzstd, zlib and libffi —
-are present on most systems; otherwise:
-
-    sudo apt install libedit2 libxml2 libzstd1 zlib1g libffi8
+(build-essential: linking; the others: libraries the bundled clang needs, present on most systems.) Other
+distributions, what each package is for and how to find a missing one: docs/install.md.
 
 clang, libclang and the LLVM libraries live in the "toolchain" folder and are found by cshiftc itself. An existing
 LLVM installation is neither needed nor used.
@@ -36,6 +35,7 @@ Contents
 cshiftc        the compiler
 toolchain/     clang, libclang, LLVM libraries (do not modify)
 README.md      language status, usage, the cshift.json project file
+docs/install.md  the dependencies (Linux: which packages, other distributions)
 docs/ffi.md    importing C headers (using Name from "header.h";), function pointers
 docs/          the language guide (docs/language), the standard library, the design documents
 

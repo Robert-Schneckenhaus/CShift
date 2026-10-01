@@ -18,11 +18,6 @@ the git log.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
 
-## Bootstrap and releases
-
-- [ ] Linux standalone executable: still needs the host's glibc and binutils (`build-essential`), like the regular
-      Linux archive; only Windows is zero-dependency.
-
 ## Standard library
 
 - [ ] Streams, date and time, more encodings.

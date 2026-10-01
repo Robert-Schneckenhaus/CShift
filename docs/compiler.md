@@ -103,7 +103,7 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshi
 | clang (+ libLLVM) | optimizing the IR, machine code, linking; compiling the C wrappers of the header import | bundled in the releases (`toolchain/`) |
 | lld | linking | bundled (Windows); Linux uses the system linker (`build-essential`) |
 | libclang | `using X from "header.h"` (loaded at run time, only when a header is imported) | bundled; `.ffi` files can be shipped instead |
-| C library and headers | the runtime of the programs (`malloc`, `printf`, `fopen`, pthreads) | Windows: MinGW-w64 in the release; Linux: the system |
+| C library and headers | the runtime of the programs (`malloc`, `printf`, `fopen`, pthreads) | Windows: MinGW-w64 in the release; Linux: the system ([install.md](install.md)) |
 | an earlier `cshiftc` release | stage 0, only to build the compiler from source | downloaded (`selfhost/fetch-stage0.sh`) |
 
 Possible reductions, none of them needed so far: calling lld directly instead of the clang driver (easy on Windows,
