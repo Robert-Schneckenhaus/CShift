@@ -70,43 +70,12 @@ struct BuildOptions
     }
 }
 
+// usage.txt, embedded when cshc is compiled
+const string UsageText = embed("usage.txt");
+
 void PrintUsage()
 {
-    Console.WriteErrorLine("cshiftc - CShift compiler\n\n" +
-        "usage: cshiftc [options] file.csh [file2.csh ...]     compile single files\n" +
-        "       cshiftc build [project] [options]              build a project (cshift.json)\n" +
-        "       cshiftc run   [project] [options]              build and run a project\n" +
-        "       cshiftc new   <directory>                      create a new project\n" +
-        "       cshiftc check [project | files] [options]      report the errors, generate nothing\n" +
-        "       cshiftc query --at <file> <line> <col> [project | files] [--overlay <file> <text file>]\n" +
-        "                                                      the name at a position (hover, definition) as JSON\n\n" +
-        "'project' is a directory containing cshift.json or the path of a project file;\n" +
-        "without it cshift.json is searched in the current directory and its parents.\n\n" +
-        "options:\n" +
-        "  -o <file>        output file\n" +
-        "  -c               compile to an object file only (no linking)\n" +
-        "  --emit-llvm      write LLVM IR (.ll) instead of an executable\n" +
-        "  -O0 .. -O3       optimization level (default -O2)\n" +
-        "  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)\n" +
-        "  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)\n" +
-        "  --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)\n" +
-        "  --emit-asm       m68k backend: write the assembly (.s) instead of an executable\n" +
-        "  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)\n" +
-        "  --stdlib <dir>   use this standard library instead of the embedded one\n" +
-        "  -l<name>         link an additional library\n" +
-        "  -L<dir>          library search path for the linker\n" +
-        "  -I<dir>          include path for C headers (using X from \"header.h\")\n" +
-        "  -D<name>[=value] define a macro when parsing C headers\n" +
-        "  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)\n" +
-        "  file.a, file.o   libraries and object files are passed to the linker\n" +
-        "  --run            run the program after building\n" +
-        "  --unchecked      integer overflow wraps around instead of ending the program with a panic\n" +
-        "  --checked        integer overflow panics (the default; overrides \"unchecked\": true in cshift.json)\n" +
-        "  --arc-stats      debug: print heap allocations/frees when the program exits\n" +
-        "  -v               verbose output\n" +
-        "  --version        print the version\n" +
-        "  --clear-cache    delete the toolchains a standalone cshiftc has unpacked (all versions)\n" +
-        "  -h, --help       show this help");
+    Console.WriteError(UsageText);
 }
 
 bool IsLinkerInput(string a)

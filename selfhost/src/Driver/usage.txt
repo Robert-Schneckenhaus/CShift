@@ -1,0 +1,38 @@
+cshiftc - CShift compiler
+
+usage: cshiftc [options] file.csh [file2.csh ...]     compile single files
+       cshiftc build [project] [options]              build a project (cshift.json)
+       cshiftc run   [project] [options]              build and run a project
+       cshiftc new   <directory>                      create a new project
+       cshiftc check [project | files] [options]      report the errors, generate nothing
+       cshiftc query --at <file> <line> <col> [project | files] [--overlay <file> <text file>]
+                                                      the name at a position (hover, definition) as JSON
+
+'project' is a directory containing cshift.json or the path of a project file;
+without it cshift.json is searched in the current directory and its parents.
+
+options:
+  -o <file>        output file
+  -c               compile to an object file only (no linking)
+  --emit-llvm      write LLVM IR (.ll) instead of an executable
+  -O0 .. -O3       optimization level (default -O2)
+  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)
+  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)
+  --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)
+  --emit-asm       m68k backend: write the assembly (.s) instead of an executable
+  --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)
+  --stdlib <dir>   use this standard library instead of the embedded one
+  -l<name>         link an additional library
+  -L<dir>          library search path for the linker
+  -I<dir>          include path for C headers (using X from "header.h")
+  -D<name>[=value] define a macro when parsing C headers
+  --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)
+  file.a, file.o   libraries and object files are passed to the linker
+  --run            run the program after building
+  --unchecked      integer overflow wraps around instead of ending the program with a panic
+  --checked        integer overflow panics (the default; overrides "unchecked": true in cshift.json)
+  --arc-stats      debug: print heap allocations/frees when the program exits
+  -v               verbose output
+  --version        print the version
+  --clear-cache    delete the toolchains a standalone cshiftc has unpacked (all versions)
+  -h, --help       show this help

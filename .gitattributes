@@ -2,6 +2,9 @@
 *.sh text eol=lf
 tests/test.expected text eol=lf
 selfhost/passing.txt text eol=lf
+# Text that cshc embeds (assembly of the m68k backend, the usage text): the same bytes on every checkout.
+selfhost/src/**/*.s text eol=lf
+selfhost/src/**/*.txt text eol=lf
 
 # Files that tests embed byte for byte (BOM, CRLF and LF mixed on purpose).
 tests/cases/embed/** -text

@@ -123,8 +123,26 @@ AsmItem NewItem(AsmParser p, ItemKind kind, int line)
                      Line = line, Section = p.State[0], Offset = 0, Long = false };
 }
 
+// a line without its comment: '|' up to the end of the line (as in GNU as for m68k), not inside "..."
+string WithoutComment(string raw)
+{
+    bool quoted = false;
+    for (var i = 0; i < raw.Length; i += 1)
+    {
+        char c = raw[i];
+        if (c == '\\' && quoted)
+            i += 1;
+        else if (c == '"')
+            quoted = !quoted;
+        else if (c == '|' && !quoted)
+            return raw.Substring(0, i).ToString();
+    }
+    return raw;
+}
+
 void ParseAsmLine(AsmParser p, string raw, int line)
 {
+    raw = WithoutComment(raw);
     string s = raw.Trim().ToString();
     if (s.Length == 0)
         return;
