@@ -33,6 +33,15 @@ struct IrWriter
     HashSet<string> Preds;     // labels that a branch jumps to (to know whether a block can be reached)
     Dictionary<string, string> Literals; // string literals and C strings by content
     TargetInfo Target;
+    // Debug information (-g): the metadata nodes of the module (shared with the writers of lambdas) and, per writer,
+    // [0] the subprogram of the function being written, [1] the location of the next instructions, [2] the subprogram
+    // for the next BeginFunction; DbgLine[0] its line.
+    bool Debug;
+    StringBuilder Meta;
+    int[] MetaCount;
+    Dictionary<string, string> MetaIds;
+    string[] Dbg;
+    int[] DbgLine;
 
     static IrWriter Create(TargetInfo target)
     {
@@ -46,6 +55,11 @@ struct IrWriter
         w.Declared = HashSet<string>.Create();
         w.Preds = HashSet<string>.Create();
         w.Literals = Dictionary<string, string>.Create();
+        w.Meta = StringBuilder.Create();
+        w.MetaCount = new int[1];
+        w.MetaIds = Dictionary<string, string>.Create();
+        w.Dbg = new string[] { "", "", "" };
+        w.DbgLine = new int[1];
         return w;
     }
 
@@ -169,6 +183,15 @@ struct IrWriter
         Allocas.Clear();
         S[0].Temp = 0;
         S[0].InFunction = true;
+        // with debug information: the subprogram that DebugFunction prepared, and its first line as the location
+        Dbg[0] = Dbg[2];
+        Dbg[1] = "";
+        Dbg[2] = "";
+        if (Dbg[0].Length > 0)
+        {
+            header += " !dbg " + Dbg[0];
+            SetDebugLoc(DbgLine[0], 0);
+        }
         Functions.Append(header + "\n{\nentry:\n");
         S[0].Block = "entry";
         S[0].BlockOpen = true;
@@ -184,6 +207,8 @@ struct IrWriter
         Functions.Append(Body.ToString());
         Functions.Append("}\n\n");
         S[0].InFunction = false;
+        Dbg[0] = "";
+        Dbg[1] = "";
     }
 
     // Function definitions that are written on their own (runtime helpers).
@@ -216,6 +241,12 @@ struct IrWriter
     {
         Body.Append("  ");
         Body.Append(text);
+        // the source location (LLVM requires one on every call in a function with debug information; phis have none)
+        if (Dbg[1].Length > 0 && !text.Contains(" = phi "))
+        {
+            Body.Append(", !dbg ");
+            Body.Append(Dbg[1]);
+        }
         Body.Append('\n');
     }
 
@@ -426,6 +457,91 @@ struct IrWriter
         string t = NewTemp();
         Line(t + " = phi " + type + " " + incoming);
         return t;
+    }
+
+    // ---- debug information ----
+
+    // A metadata node: "!<n> = <text>" (the same text gives the same node, unless it is distinct).
+    string MetaNode(string text)
+    {
+        bool distinct = text.StartsWith("distinct ");
+        if (!distinct)
+        {
+            var found = MetaIds.TryGet(text);
+            if (found is string existing)
+                return existing;
+        }
+        string id = "!" + MetaCount[0].ToString();
+        MetaCount[0] += 1;
+        Meta.Append(id + " = " + text + "\n");
+        if (!distinct)
+            MetaIds.Set(text, id);
+        return id;
+    }
+
+    // A metadata string: "...", with the characters LLVM needs escaped.
+    static string MetaString(string s)
+    {
+        var sb = StringBuilder.Create();
+        sb.Append('"');
+        for (var i = 0; i < s.Length; i += 1)
+        {
+            char c = s[i];
+            if (c >= 32 && c < 127 && c != '"' && c != '\\')
+                sb.Append(c);
+            else
+                sb.Append("\\" + Hex2((int)c));
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
+
+    // The file node of a source file ("dir/name.csh": the directory and the name).
+    string DebugFile(string directory, string name)
+    {
+        return MetaNode("!DIFile(filename: " + MetaString(name) + ", directory: " + MetaString(directory) + ")");
+    }
+
+    // The compile unit; it is created once, with the main file of the program.
+    string DebugUnit(string file)
+    {
+        var found = MetaIds.TryGet("unit");
+        if (found is string existing)
+            return existing;
+        string id = MetaNode("distinct !DICompileUnit(language: DW_LANG_C, file: " + file + ", producer: \"cshiftc\", " +
+                             "isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug)");
+        MetaIds.Set("unit", id);
+        return id;
+    }
+
+    // Prepares the subprogram of the function that the next BeginFunction starts.
+    void DebugFunction(string name, string file, string unit, int line)
+    {
+        string type = MetaNode("!DISubroutineType(types: " + MetaNode("!{}") + ")");
+        Dbg[2] = MetaNode("distinct !DISubprogram(name: " + MetaString(name) + ", scope: " + file + ", file: " + file +
+                          ", line: " + line.ToString() + ", type: " + type + ", scopeLine: " + line.ToString() +
+                          ", spFlags: DISPFlagDefinition, unit: " + unit + ")");
+        DbgLine[0] = line;
+    }
+
+    // The source location of the instructions that follow (inside a function with a subprogram).
+    void SetDebugLoc(int line, int col)
+    {
+        if (Dbg[0].Length == 0 || line <= 0)
+            return;
+        Dbg[1] = MetaNode("!DILocation(line: " + line.ToString() + ", column: " + col.ToString() + ", scope: " + Dbg[0] + ")");
+    }
+
+    // The named metadata that tells LLVM about the debug information ("" without any).
+    string DebugModuleText()
+    {
+        var unit = MetaIds.TryGet("unit");
+        string cu = unit is string found ? found : "";
+        if (cu.Length == 0)
+            return "";
+        string version = MetaNode("!{i32 7, !\"Dwarf Version\", i32 4}");
+        string info = MetaNode("!{i32 2, !\"Debug Info Version\", i32 3}");
+        return "\n!llvm.dbg.cu = !{" + cu + "}\n!llvm.module.flags = !{" + version + ", " + info + "}\n" + Meta.ToString();
     }
 
     // ---- the module ----

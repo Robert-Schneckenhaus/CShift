@@ -135,6 +135,8 @@ void EmitFunctionBody(Compiler cg, int instance)
         cg.Fn[0].CallerArg = "%caller.arg";
     }
     // an exported (extern "C" with a body) function is visible to the linker
+    if (ir.Debug)
+        ir.DebugFunction(fi.Name, DebugFileOf(cg, fi.File), DebugUnitOf(cg), d.Loc.Line);
     ir.BeginFunction("define " + (d.IsExtern ? "" : "internal ") + AbiReturn(cg, fi.Ret) + " " + bodyName + "(" + sb.ToString() + ")");
     PushScope(cg);
 
@@ -240,7 +242,7 @@ void EmitStmt(Compiler cg, Stmt s)
 {
     cg.Ir.EnsureInsertPoint();
     if (s.Loc.Line > 0)
-        cg.St[0].Loc = s.Loc;
+        SetLoc(cg, s.Loc);
     switch (s.Kind)
     {
     case StmtKind.Block: EmitBlock(cg, s, true); break;

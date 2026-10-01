@@ -16,9 +16,9 @@ Value EmitExpr(Compiler cg, Expr e)
 {
     SourceLoc outer = cg.St[0].Loc;
     if (e.Loc.Line > 0)
-        cg.St[0].Loc = e.Loc;
+        SetLoc(cg, e.Loc);
     Value v = EmitExprKind(cg, e);
-    cg.St[0].Loc = outer;
+    SetLoc(cg, outer);
     return v;
 }
 
@@ -738,10 +738,10 @@ Value EmitBinary(Compiler cg, Expr e)
         var sb = cg.Tree.GetBinary(step);
         Value r = EmitRValue(cg, sb.Rhs);
         if (step.Loc.Line > 0)
-            cg.St[0].Loc = step.Loc;
+            SetLoc(cg, step.Loc);
         l = EmitBinaryStep(cg, sb.Op, l, r, step.Loc);
     }
-    cg.St[0].Loc = outer;
+    SetLoc(cg, outer);
     return l;
 }
 
@@ -850,7 +850,7 @@ Value EmitFramed(Compiler cg, Expr e, int frame)
         return EmitRValue(cg, e);
     SourceLoc outer = cg.St[0].Loc;
     if (e.Loc.Line > 0)
-        cg.St[0].Loc = e.Loc;
+        SetLoc(cg, e.Loc);
     Value v;
     if (e.Kind == ExprKind.Conditional)
         v = EmitConditionalIn(cg, e, frame);
@@ -894,11 +894,11 @@ Value EmitFramed(Compiler cg, Expr e, int frame)
             // the count of a shift is not computed in the frame
             Value r = sb.Op == BinOp.Shl || sb.Op == BinOp.Shr ? EmitRValue(cg, sb.Rhs) : EmitFramed(cg, sb.Rhs, frame);
             if (step.Loc.Line > 0)
-                cg.St[0].Loc = step.Loc;
+                SetLoc(cg, step.Loc);
             v = EmitFramedStep(cg, sb.Op, v, r, frame, step.Loc);
         }
     }
-    cg.St[0].Loc = outer;
+    SetLoc(cg, outer);
     return v;
 }
 

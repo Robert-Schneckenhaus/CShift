@@ -45,6 +45,11 @@
 			"default": false,
 			"description": "Integer overflow wraps around instead of ending the program with a panic (like --unchecked). Division by zero and index checks stay."
 		},
+		"debug": {
+			"type": "boolean",
+			"default": false,
+			"description": "Debug information (like -g): source lines and functions for gdb and lldb. Best with \"optimize\": 0."
+		},
 		"backend": {
 			"enum": ["llvm", "m68k"],
 			"description": "Code generator: \"llvm\" (LLVM IR, compiled and linked by clang) or \"m68k\" (CShift's own 68000 code generator, assembler and linker, like --backend). Default: m68k for AmigaOS targets (m68k-amigaos), llvm for all others."
