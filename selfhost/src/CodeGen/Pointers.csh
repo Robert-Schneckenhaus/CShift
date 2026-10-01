@@ -116,19 +116,30 @@ bool EmitPointerCast(Compiler cg, Value v, int to, SourceLoc loc, ref Value resu
     if (types.IsPointer(from) && types.IsInt(to))
     {
         RequireUnsafe(cg, loc, "pointer cast");
-        string wide = ir.Cast("ptrtoint", "ptr", v.V, "i64");
+        // through an integer as wide as a pointer of the target
+        int pointerBits = cg.Ir.Target.PtrBytes * 8;
+        string pointerInt = "i" + pointerBits.ToString();
+        string wide = ir.Cast("ptrtoint", "ptr", v.V, pointerInt);
         int bits = types.Bits(to);
-        result = Rvalue(to, bits == 64 ? wide : ir.Cast("trunc", "i64", wide, LlvmType(cg, to)), false);
+        if (bits < pointerBits)
+            wide = ir.Cast("trunc", pointerInt, wide, LlvmType(cg, to));
+        else if (bits > pointerBits)
+            wide = ir.Cast("zext", pointerInt, wide, LlvmType(cg, to));
+        result = Rvalue(to, wide, false);
         return true;
     }
     if (types.IsInt(from) && types.IsPointer(to))
     {
         RequireUnsafe(cg, loc, "pointer cast");
+        int pointerBits = cg.Ir.Target.PtrBytes * 8;
+        string pointerInt = "i" + pointerBits.ToString();
         string wide = v.V;
         int bits = types.Bits(from);
-        if (bits < 64)
-            wide = ir.Cast("sext", LlvmType(cg, from), v.V, "i64");
-        result = Rvalue(to, ir.Cast("inttoptr", "i64", wide, "ptr"), false);
+        if (bits < pointerBits)
+            wide = ir.Cast(types.IsSigned(from) ? "sext" : "zext", LlvmType(cg, from), v.V, pointerInt);
+        else if (bits > pointerBits)
+            wide = ir.Cast("trunc", LlvmType(cg, from), v.V, pointerInt);
+        result = Rvalue(to, ir.Cast("inttoptr", pointerInt, wide, "ptr"), false);
         return true;
     }
     return false;

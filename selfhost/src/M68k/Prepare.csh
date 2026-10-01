@@ -60,11 +60,53 @@ int64 Normalize(int64 value, int bits, bool signed)
 void FoldConstants(Gen g, IrFunc f)
 {
     var known = Dictionary<string, int>.Create(); // result -> the value index of its constant
+    var checkedConst = Dictionary<string, int[]>.Create(); // a checked add/sub of constants -> { result, overflow }
     int i1 = g.T.IntType(1);
     foreach (var b in f.Blocks.ToArray())
     {
         foreach (var inst in b.Insts.ToArray())
         {
+            if (inst.Op == "extractvalue" && inst.Res.Length > 0 && inst.Args.Length == 1 && inst.Cases.Length == 1 &&
+                IsLocal(g, inst.Args[0]))
+            {
+                var folded = checkedConst.TryGet(g.M.Vals.Get(inst.Args[0]).Name);
+                if (folded is int[] parts && inst.Cases[0] >= 0 && inst.Cases[0] <= 1)
+                {
+                    known.Set(inst.Res, parts[(int)inst.Cases[0]]);
+                    g.Skip.Add(inst.Res);
+                    continue;
+                }
+            }
+            if (inst.Op == "call" && inst.Res.Length > 0 && inst.Args.Length == 2 && inst.Callee >= 0)
+            {
+                // llvm.[su](add|sub).with.overflow of two constants: the result and the flag are constants
+                for (var a = 0; a < 2; a += 1)
+                {
+                    var v = g.M.Vals.Get(inst.Args[a]);
+                    if (v.Kind == ValKind.Local && known.TryGet(v.Name) is int ci)
+                        inst.Args[a] = ci;
+                }
+                var callee = g.M.Vals.Get(inst.Callee);
+                int ot = g.M.Vals.Get(inst.Args[0]).Type;
+                int64 ox = 0;
+                int64 oy = 0;
+                if (callee.Kind == ValKind.Global && callee.Name.StartsWith("llvm.") && callee.Name.Contains(".with.overflow.") &&
+                    !callee.Name.Contains("mul") && g.T.Kind(ot) == IrKind.Int && g.T.Bits(ot) <= 32 &&
+                    ConstInt(g, inst.Args[0], ref ox) && ConstInt(g, inst.Args[1], ref oy))
+                {
+                    int obits = g.T.Bits(ot);
+                    bool osigned = callee.Name.StartsWith("llvm.s");
+                    int64 ox2 = Normalize(ox, obits, osigned);
+                    int64 oy2 = Normalize(oy, obits, osigned);
+                    int64 sum = callee.Name.Contains("add") ? ox2 + oy2 : ox2 - oy2;
+                    bool overflow = Normalize(sum, obits, osigned) != sum;
+                    int value = g.M.AddVal(IrVal { Kind = ValKind.Int, Type = ot, Int = Normalize(sum, obits, false) });
+                    int flag = g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i1, Int = overflow ? 1 : 0 });
+                    checkedConst.Set(inst.Res, [value, flag]);
+                    g.Skip.Add(inst.Res);
+                }
+                continue;
+            }
             // uses of folded values get the constant
             for (var a = 0; a < inst.Args.Length; a += 1)
             {
@@ -75,6 +117,17 @@ void FoldConstants(Gen g, IrFunc f)
                     if (c is int ci)
                         inst.Args[a] = ci;
                 }
+            }
+            if (inst.Op == "inttoptr" && inst.Res.Length > 0 && inst.Args.Length == 1)
+            {
+                // a constant address (a custom chip register, ...): loads and stores use it as an absolute address
+                int64 address = 0;
+                if (ConstInt(g, inst.Args[0], ref address))
+                {
+                    known.Set(inst.Res, g.M.AddVal(IrVal { Kind = ValKind.Int, Type = inst.Type, Int = Normalize(address, 32, false) }));
+                    g.Skip.Add(inst.Res);
+                }
+                continue;
             }
             if (inst.Res.Length == 0 || inst.Args.Length != 2)
                 continue;
