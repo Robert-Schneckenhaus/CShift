@@ -76,7 +76,8 @@ cshiftc run hello
 ```
 
 `cshiftc` first looks for clang in a `toolchain` folder next to itself; an existing LLVM/MSYS2 installation is then
-not needed. On Linux, the C library and linker come from the system (`build-essential`).
+not needed. On Linux, the C library and linker come from the system (`build-essential`); which packages exactly, for
+other distributions too, is in [docs/install.md](docs/install.md).
 
 **Standalone executable:** each release also has a single, self-contained file - `cshift-1.05-windows-x64-standalone.exe`
 / `cshift-1.05-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:

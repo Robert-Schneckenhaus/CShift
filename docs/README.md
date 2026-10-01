@@ -2,6 +2,7 @@
 
 | Document | For |
 |---|---|
+| [Installation](install.md) | what `cshiftc` needs on Windows and Linux, the packages per distribution |
 | [Language guide](language/README.md) | learning the language: a tour with examples, chapter by chapter |
 | [Language status](language/status.md) | what is implemented, and the decisions the design leaves open |
 | [Standard library](stdlib.md) | `List`, `Dictionary`, `File`, `Path`, `Math`, `Random`, threads, `Mutex`, ... |
