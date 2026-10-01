@@ -62,6 +62,7 @@ selfhost/
 │       ├── Peephole.csh     simplifications of the assembly
 │       ├── Asm.csh          the assembler: 68000 encoding, branch relaxation
 │       ├── Hunk.csh, Elf.csh    AmigaOS executables, ELF objects (m68k Linux, for the tests)
+│       ├── Chunks.csh       the startup code and the runtime in pieces: only the pieces a program uses
 │       └── Runtime.csh, AmigaRuntime.csh    multiplication/division helpers; startup, library stubs, printf
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
 ├── version/version.txt      the version cshc reports (written by build-release.sh)

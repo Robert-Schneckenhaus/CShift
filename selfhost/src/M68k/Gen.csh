@@ -96,14 +96,26 @@ Error<string> GenerateModule(IrModule m, string prelude, int optimize)
     var globalText = Dictionary<int, string>.Create();
     var work = List<string>.Create();
     var seen = HashSet<string>.Create();
-    string runtime = RuntimeAsm();
-    ScanSymbols(prelude, work, seen);
-    ScanSymbols(runtime, work, seen);
+    // the startup code and the runtime in pieces: only the pieces that are used (the first piece of the startup code
+    // is where the program starts)
+    var chunks = AsmChunks.Create();
+    int preludeFirst = chunks.Add(prelude);
+    int runtimeFirst = chunks.Add(RuntimeAsm());
+    int chunkEnd = chunks.Pieces.Count();
+    var found = List<string>.Create();
+    if (preludeFirst >= 0)
+        chunks.Keep(preludeFirst, found);
+    foreach (var text in found.ToArray())
+        ScanSymbols(text, work, seen);
     AddWork("main", work, seen);
     var output = g.Out;
     for (var next = 0; next < work.Count(); next += 1)
     {
         string name = work.Get(next);
+        found = List<string>.Create();
+        chunks.Use(name, found);
+        foreach (var text in found.ToArray())
+            ScanSymbols(text, work, seen);
         var irName = g.Reverse.TryGet(name);
         string ir = irName is string known ? known : name;
         var fi = m.FuncIndex.TryGet(ir);
@@ -129,7 +141,7 @@ Error<string> GenerateModule(IrModule m, string prelude, int optimize)
         }
     }
     g.Out = output;
-    g.Out.Append(prelude);
+    g.Out.Append(chunks.Text(preludeFirst, runtimeFirst >= 0 ? runtimeFirst : chunkEnd));
     g.Out.Append("\t.text\n");
     for (var i = 0; i < m.Funcs.Count(); i += 1)
     {
@@ -137,7 +149,7 @@ Error<string> GenerateModule(IrModule m, string prelude, int optimize)
         if (text is string code)
             g.Out.Append(code);
     }
-    g.Out.Append(runtime);
+    g.Out.Append(chunks.Text(runtimeFirst, chunkEnd));
     g.Out.Append("\t.data\n");
     for (var i = 0; i < m.Globals.Count(); i += 1)
     {

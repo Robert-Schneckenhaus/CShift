@@ -51,6 +51,10 @@ The whole language and the standard library work, with these differences:
 * **The C library** (`stdlib/amiga/libc.csh`) is written on exec.library and dos.library: memory, `printf`, files,
   directories, `Process.GetEnv`, time, `Process.Run`. Functions that need a newer dos.library (environment
   variables, the current directory, the exit code of a command) check its version.
+* **Only what is used.** An executable contains the functions of the program, the standard library and the C library
+  that it calls, nothing else: the startup code and the runtime are taken in pieces as well. `printf`'s formatting
+  (with the code for `double`) is only in a program that calls `printf` or formats floating point numbers;
+  `Console.WriteLine` and the integer `ToString` do not need it.
 * **The stack.** A program gets its own stack of 256 KB at startup (the stack of a CLI program is often only 4 KB).
 * **`int` is 32 bits, pointers are 32 bits** (`nint`, `sizeof`, lengths). 64-bit integers work, in software.
 
@@ -184,7 +188,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 * **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);
   **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
 * **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
-  32/64-bit multiplication and division.
+  32/64-bit multiplication and division. **Chunks.csh** cuts them into pieces at their labels; only the pieces that
+  the program reaches are written.
 
 The calling convention is the one of GCC for m68k: arguments on the stack, results in `d0` (and `d1`), `a0` as well
 for pointers; `d2`-`d7` and `a2`-`a6` are kept.

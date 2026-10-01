@@ -15,6 +15,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Compiler
 - A struct can contain a `Dictionary` (and other collections) of itself: a struct reached through an array is no longer
   taken for one contained by value.
+- Smaller programs: `Console.Write`, panics, error messages and the integer `ToString` no longer go through `printf`
+  (they write with `fwrite` and convert numbers themselves).
+- AmigaOS: an executable contains only what it uses, also of the startup code and the runtime (they are taken in
+  pieces). `printf`'s formatting is only in programs that call `printf` or format floating point numbers. Hello world
+  shrinks from 71 KB to 8 KB, demo-amiga-hw from 89 KB to 28 KB, demo-amiga-gfx from 137 KB to 76 KB.
 
 ## [0.20] - 2026-10-01
 

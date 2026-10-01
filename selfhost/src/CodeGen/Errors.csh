@@ -34,14 +34,6 @@ bool IsVoidResult(Compiler cg, int t)
     return cg.Types.IsError(t) && cg.Types.IsVoid(cg.Types.Elem(t));
 }
 
-// The handle of stderr in the current function.
-string StderrHandle(Compiler cg)
-{
-    if (cg.St[0].Windows)
-        return cg.Ir.Call("ptr", "@__acrt_iob_func", "i32 2");
-    return cg.Ir.Load("ptr", "@stderr");
-}
-
 // error("message"), error("message", code), error(E.Member) and error("message", E.Member). The type of the literal
 // remembers what the code is (none, an int, a member of the error enum E), so that it only converts to a result with
 // a matching code type (see ConversionCost).
@@ -304,7 +296,7 @@ Value EmitTry(Compiler cg, Expr e)
     if (intMain)
     {
         string text = ir.Call("ptr", "@__cs_data", "ptr " + msg);
-        ir.CallVariadic("i32", "ptr, ptr", "@fprintf", "ptr " + StderrHandle(cg) + ", ptr " + ir.CString("error: %s\n") + ", ptr " + text);
+        ir.Call("void", "@__cs_report", "ptr @.cs.error, ptr " + text);
         ir.Ret(LlvmType(cg, retType), "1");
     }
     else

@@ -17,24 +17,32 @@ string StderrLoad(bool windows)
     return "  %err = load ptr, ptr @stderr\n";
 }
 
+// ... and stdout.
+string StdoutLoad(bool windows)
+{
+    if (windows)
+        return "  %out = call ptr @__acrt_iob_func(i32 1)\n";
+    return "  %out = load ptr, ptr @stdout\n";
+}
+
 string RuntimeGlobals(bool windows, bool arcStats, IrWriter ir)
 {
     string text =
-        "@.cs.panic = private constant [11 x i8] c\"panic: %s\\0A\\00\"\n" +
-        "@.cs.panic.at = private constant [9 x i8] c\"  at %s\\0A\\00\"\n" +
-        "@.cs.panic.from = private constant [18 x i8] c\"  called from %s\\0A\\00\"\n" +
-        "@.cs.panic.index = private constant [37 x i8] c\"panic: %s (index %lld, length %lld)\\0A\\00\"\n" +
+        "@.cs.panic = private constant [8 x i8] c\"panic: \\00\"\n" +
+        "@.cs.panic.at = private constant [6 x i8] c\"  at \\00\"\n" +
+        "@.cs.panic.from = private constant [15 x i8] c\"  called from \\00\"\n" +
+        "@.cs.panic.index = private constant [9 x i8] c\" (index \\00\"\n" +
+        "@.cs.panic.length = private constant [10 x i8] c\", length \\00\"\n" +
+        "@.cs.panic.end = private constant [3 x i8] c\")\\0A\\00\"\n" +
+        "@.cs.error = private constant [8 x i8] c\"error: \\00\"\n" +
+        "@.cs.nl = private constant [2 x i8] c\"\\0A\\00\"\n" +
         "@.cs.empty = private constant [1 x i8] zeroinitializer\n" +
         "@.cs.oom = private constant [14 x i8] c\"out of memory\\00\"\n" +
-        "@.cs.line = private constant [6 x i8] c\"%.*s\\0A\\00\"\n" +
-        "@.cs.text = private constant [5 x i8] c\"%.*s\\00\"\n" +
-        "@.cs.fmt.i64 = private constant [5 x i8] c\"%lld\\00\"\n" +
-        "@.cs.fmt.u64 = private constant [5 x i8] c\"%llu\\00\"\n" +
         "@.cs.fmt.g = private constant [5 x i8] c\"%.*g\\00\"\n" +
         Sized("@.cs.true = private global { $S, $S, [5 x i8] } { $S $I, $S 4, [5 x i8] c\"true\\00\" }\n" +
               "@.cs.false = private global { $S, $S, [6 x i8] } { $S $I, $S 5, [6 x i8] c\"false\\00\" }\n", ir);
     if (!windows)
-        text += "@stderr = external global ptr\n";
+        text += "@stdout = external global ptr\n@stderr = external global ptr\n";
     if (arcStats)
         text += Sized("@__cs_allocs = internal global $S 0\n@__cs_frees = internal global $S 0\n@__cs_threads = internal global $S 0\n", ir) +
                 "@.cs.arc = private constant [40 x i8] c\"[arc] allocs=%lld frees=%lld live=%lld\\0A\\00\"\n";
@@ -58,8 +66,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
         CDeclare(ir, "exit", "declare void @exit(i32)") +
         CDeclare(ir, "memcmp", "declare i32 @memcmp(ptr, ptr, $S)") +
         CDeclare(ir, "strlen", "declare $S @strlen(ptr)") +
-        CDeclare(ir, "printf", "declare i32 @printf(ptr, ...)") +
-        CDeclare(ir, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)") +
+        CDeclare(ir, "fwrite", "declare $S @fwrite(ptr, $S, $S, ptr)") +
         CDeclare(ir, "snprintf", "declare i32 @snprintf(ptr, $S, ptr, ...)") +
         CDeclare(ir, "strtod", "declare double @strtod(ptr, ptr)") +
         "declare void @llvm.memcpy.p0.p0.$S(ptr, ptr, $S, i1)\n" +
@@ -68,28 +75,71 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
         text += CDeclare(ir, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)");
     text += "\n";
 
+    // The runtime writes with fwrite only, so a program that does not call printf itself does not need it (on AmigaOS
+    // the formatting code of printf is a part of the program).
+    // write(file, data, length, newline): a line of up to 255 bytes is written in one piece
+    text += "define internal void @__cs_write(ptr %file, ptr %data, $S %len, i1 %nl) {\nentry:\n  %buf = alloca [256 x i8]\n" +
+            "  br i1 %nl, label %line, label %plain\n" +
+            "plain:\n  call $S @fwrite(ptr %data, $S 1, $S %len, ptr %file)\n  ret void\n" +
+            "line:\n  %small = icmp ult $S %len, 256\n  br i1 %small, label %join, label %two\n" +
+            "join:\n  call void @llvm.memcpy.p0.p0.$S(ptr %buf, ptr %data, $S %len, i1 false)\n" +
+            "  %end = getelementptr i8, ptr %buf, $S %len\n  store i8 10, ptr %end\n  %n = add $S %len, 1\n" +
+            "  call $S @fwrite(ptr %buf, $S 1, $S %n, ptr %file)\n  ret void\n" +
+            "two:\n  call $S @fwrite(ptr %data, $S 1, $S %len, ptr %file)\n" +
+            "  call $S @fwrite(ptr @.cs.nl, $S 1, $S 1, ptr %file)\n  ret void\n}\n\n";
+    // puts(file, C string) without a newline
+    text += "define internal void @__cs_puts(ptr %file, ptr %s) {\nentry:\n  %len = call $S @strlen(ptr %s)\n" +
+            "  call void @__cs_write(ptr %file, ptr %s, $S %len, i1 false)\n  ret void\n}\n\n";
+    // report(prefix, C string): "<prefix><text>\n" to stderr
+    text += "define internal void @__cs_report(ptr %prefix, ptr %s) {\nentry:\n" + StderrLoad(windows) +
+            "  call void @__cs_puts(ptr %err, ptr %prefix)\n" +
+            "  %len = call $S @strlen(ptr %s)\n  call void @__cs_write(ptr %err, ptr %s, $S %len, i1 true)\n  ret void\n}\n\n";
+
+    // digits(value, signed, end): writes the decimal digits of the value (with '-') backwards before 'end' (24 bytes
+    // are enough) and returns where they start. Below 2^32 it divides with 32 bits (much faster on a 32-bit CPU).
+    text += "define internal ptr @__cs_digits(i64 %v, i1 %signed, ptr %end) {\nentry:\n" +
+            "  %neg0 = icmp slt i64 %v, 0\n  %neg = and i1 %neg0, %signed\n  %minus = sub i64 0, %v\n" +
+            "  %mag = select i1 %neg, i64 %minus, i64 %v\n  br label %big\n" +
+            "big:\n  %bv = phi i64 [ %mag, %entry ], [ %bq, %bigbody ]\n  %bp = phi ptr [ %end, %entry ], [ %bp1, %bigbody ]\n" +
+            "  %wide = icmp ugt i64 %bv, 4294967295\n  br i1 %wide, label %bigbody, label %small\n" +
+            "bigbody:\n  %bq = udiv i64 %bv, 10\n  %br = urem i64 %bv, 10\n  %bc = trunc i64 %br to i8\n  %bd = add i8 %bc, 48\n" +
+            "  %bp1 = getelementptr i8, ptr %bp, i32 -1\n  store i8 %bd, ptr %bp1\n  br label %big\n" +
+            "small:\n  %w0 = trunc i64 %bv to i32\n  br label %loop\n" +
+            "loop:\n  %w = phi i32 [ %w0, %small ], [ %q, %loop ]\n  %p = phi ptr [ %bp, %small ], [ %p1, %loop ]\n" +
+            "  %q = udiv i32 %w, 10\n  %r = urem i32 %w, 10\n  %c = trunc i32 %r to i8\n  %d = add i8 %c, 48\n" +
+            "  %p1 = getelementptr i8, ptr %p, i32 -1\n  store i8 %d, ptr %p1\n" +
+            "  %more = icmp ne i32 %q, 0\n  br i1 %more, label %loop, label %sign\n" +
+            "sign:\n  br i1 %neg, label %addminus, label %done\n" +
+            "addminus:\n  %m = getelementptr i8, ptr %p1, i32 -1\n  store i8 45, ptr %m\n  ret ptr %m\n" +
+            "done:\n  ret ptr %p1\n}\n\n";
+
     // panic: prints "panic: <message>" to stderr and exits with code 101
-    text += "define internal void @__cs_panic(ptr %msg) noinline noreturn {\nentry:\n" + StderrLoad(windows) +
-            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic, ptr %msg)\n" +
+    text += "define internal void @__cs_panic(ptr %msg) noinline noreturn {\nentry:\n" +
+            "  call void @__cs_report(ptr @.cs.panic, ptr %msg)\n" +
             "  call void @exit(i32 101)\n  unreachable\n}\n\n";
 
     // A failed check in the program: "panic: <message>", the line "  at <file:line:column in Function>" and, for a check
     // inside a library function that reports its caller, "  called from <call site>" (null: none).
-    text += "define internal void @__cs_panic_where(ptr %err, ptr %where, ptr %caller) {\nentry:\n" +
-            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.at, ptr %where)\n" +
+    text += "define internal void @__cs_panic_where(ptr %where, ptr %caller) {\nentry:\n" +
+            "  call void @__cs_report(ptr @.cs.panic.at, ptr %where)\n" +
             "  %known = icmp ne ptr %caller, null\n" +
             "  br i1 %known, label %called, label %done\n" +
-            "called:\n  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.from, ptr %caller)\n  br label %done\n" +
+            "called:\n  call void @__cs_report(ptr @.cs.panic.from, ptr %caller)\n  br label %done\n" +
             "done:\n  ret void\n}\n\n";
-    text += "define internal void @__cs_panic_at(ptr %msg, ptr %where, ptr %caller) noinline noreturn {\nentry:\n" + StderrLoad(windows) +
-            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic, ptr %msg)\n" +
-            "  call void @__cs_panic_where(ptr %err, ptr %where, ptr %caller)\n" +
+    text += "define internal void @__cs_panic_at(ptr %msg, ptr %where, ptr %caller) noinline noreturn {\nentry:\n" +
+            "  call void @__cs_report(ptr @.cs.panic, ptr %msg)\n" +
+            "  call void @__cs_panic_where(ptr %where, ptr %caller)\n" +
             "  call void @exit(i32 101)\n  unreachable\n}\n\n";
     // ... and for an index: "panic: <message> (index i, length n)"
     text += "define internal void @__cs_panic_index(ptr %msg, i64 %index, i64 %length, ptr %where, ptr %caller) noinline noreturn {\nentry:\n" +
-            StderrLoad(windows) +
-            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr @.cs.panic.index, ptr %msg, i64 %index, i64 %length)\n" +
-            "  call void @__cs_panic_where(ptr %err, ptr %where, ptr %caller)\n" +
+            "  %buf = alloca [24 x i8]\n  %end = getelementptr i8, ptr %buf, i32 23\n  store i8 0, ptr %end\n" + StderrLoad(windows) +
+            "  call void @__cs_puts(ptr %err, ptr @.cs.panic)\n  call void @__cs_puts(ptr %err, ptr %msg)\n" +
+            "  call void @__cs_puts(ptr %err, ptr @.cs.panic.index)\n" +
+            "  %i = call ptr @__cs_digits(i64 %index, i1 true, ptr %end)\n  call void @__cs_puts(ptr %err, ptr %i)\n" +
+            "  call void @__cs_puts(ptr %err, ptr @.cs.panic.length)\n" +
+            "  %n = call ptr @__cs_digits(i64 %length, i1 true, ptr %end)\n  call void @__cs_puts(ptr %err, ptr %n)\n" +
+            "  call void @__cs_puts(ptr %err, ptr @.cs.panic.end)\n" +
+            "  call void @__cs_panic_where(ptr %where, ptr %caller)\n" +
             "  call void @exit(i32 101)\n  unreachable\n}\n\n";
 
     // alloc(payload size, length): a zeroed block with reference count 1
@@ -162,16 +212,12 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "ne:\n  ret i1 false\n}\n\n";
 
     // print(string, newline)
-    text += "define internal void @__cs_print(ptr %s, i1 %nl) {\nentry:\n" +
-            "  %len = call $S @__cs_len(ptr %s)\n  " + SizeToI32Line(ir, "%len32", "%len").Trim() + "\n" +
-            "  %fmt = select i1 %nl, ptr @.cs.line, ptr @.cs.text\n" +
-            "  %d = call ptr @__cs_data(ptr %s)\n" +
-            "  call i32 (ptr, ...) @printf(ptr %fmt, i32 %len32, ptr %d)\n  ret void\n}\n\n";
+    text += "define internal void @__cs_print(ptr %s, i1 %nl) {\nentry:\n" + StdoutLoad(windows) +
+            "  %len = call $S @__cs_len(ptr %s)\n  %d = call ptr @__cs_data(ptr %s)\n" +
+            "  call void @__cs_write(ptr %out, ptr %d, $S %len, i1 %nl)\n  ret void\n}\n\n";
     text += "define internal void @__cs_eprint(ptr %s, i1 %nl) {\nentry:\n" + StderrLoad(windows) +
-            "  %len = call $S @__cs_len(ptr %s)\n  " + SizeToI32Line(ir, "%len32", "%len").Trim() + "\n" +
-            "  %fmt = select i1 %nl, ptr @.cs.line, ptr @.cs.text\n" +
-            "  %d = call ptr @__cs_data(ptr %s)\n" +
-            "  call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr %fmt, i32 %len32, ptr %d)\n  ret void\n}\n\n";
+            "  %len = call $S @__cs_len(ptr %s)\n  %d = call ptr @__cs_data(ptr %s)\n" +
+            "  call void @__cs_write(ptr %err, ptr %d, $S %len, i1 %nl)\n  ret void\n}\n\n";
 
     // from_cstr(char*): copies a NUL-terminated C string into a new string (null stays null)
     text += "define internal ptr @__cs_from_cstr(ptr %p) {\nentry:\n" +
@@ -198,8 +244,8 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "done:\n  ret ptr %arr\n}\n\n";
 
     // number to string
-    text += FormatHelper(ir, "i64", "i64", "@.cs.fmt.i64");
-    text += FormatHelper(ir, "u64", "i64", "@.cs.fmt.u64");
+    text += FormatHelper("i64", true);
+    text += FormatHelper("u64", false);
     text += RoundTripHelper(ir, "f64", 15, 17, false);
     text += RoundTripHelper(ir, "f32", 6, 9, true);
 
@@ -207,7 +253,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     // has finished, the worker then drops its reference to the control block). Before the balance is printed, wait
     // until every started thread has done so (@__cs_threads counts them), at most ~0.5 s for threads that still run.
     if (arcStats)
-        text += CDeclare(ir, "usleep", "declare i32 @usleep(i32)") +
+        text += CDeclare(ir, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)") + CDeclare(ir, "usleep", "declare i32 @usleep(i32)") +
             "define internal void @__cs_arc_wait_threads() {\nentry:\n  br label %loop\n" +
             "loop:\n  %i = phi i32 [ 0, %entry ], [ %next, %wait ]\n" +
             "  %running = load atomic $S, ptr @__cs_threads seq_cst, align $P\n" +
@@ -274,14 +320,15 @@ string RoundTripHelper(IrWriter ir, string name, int first, int last, bool singl
     return text;
 }
 
-// __cs_fmt_<name>(argType): formats one number with snprintf into a new string.
-string FormatHelper(IrWriter ir, string name, string argType, string format)
+// __cs_fmt_<name>(i64): the decimal digits of an integer as a new string.
+string FormatHelper(string name, bool signed)
 {
-    return "define internal ptr @__cs_fmt_" + name + "(" + argType + " %v) {\nentry:\n" +
-           "  %n = call i32 (ptr, $S, ptr, ...) @snprintf(ptr null, $S 0, ptr " + format + ", " + argType + " %v)\n" +
-           "  " + SizeFromI32(ir, "%n64", "%n") + "  %size = add $S %n64, 1\n" +
-           "  %r = call ptr @__cs_alloc($S %size, $S %n64)\n" +
+    return "define internal ptr @__cs_fmt_" + name + "(i64 %v) {\nentry:\n  %buf = alloca [24 x i8]\n" +
+           "  %end = getelementptr i8, ptr %buf, i32 24\n" +
+           "  %start = call ptr @__cs_digits(i64 %v, i1 " + (signed ? "true" : "false") + ", ptr %end)\n" +
+           "  %a = ptrtoint ptr %start to $S\n  %b = ptrtoint ptr %end to $S\n  %n = sub $S %b, %a\n  %size = add $S %n, 1\n" +
+           "  %r = call ptr @__cs_alloc($S %size, $S %n)\n" +
            "  %dst = getelementptr i8, ptr %r, $S $H\n" +
-           "  call i32 (ptr, $S, ptr, ...) @snprintf(ptr %dst, $S %size, ptr " + format + ", " + argType + " %v)\n" +
+           "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %start, $S %n, i1 false)\n" +
            "  ret ptr %r\n}\n\n";
 }

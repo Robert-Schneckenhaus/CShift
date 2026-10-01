@@ -221,6 +221,22 @@ else
     report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
 fi
 
+# An AmigaOS executable contains only what it uses (needs no clang): hello world without printf's formatting code
+printf 'using System;\nint Main()\n{\n    Console.WriteLine("Hello " + 42.ToString());\n    return 0;\n}\n' > "$TMP/amiga_hello.csh"
+if "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" --emit-asm -o "$TMP/amiga_hello.s" 2> "$TMP/amiga.err" &&
+   "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" -o "$TMP/amiga_hello" 2>> "$TMP/amiga.err"; then
+    size=$(wc -c < "$TMP/amiga_hello" | tr -d ' ')
+    if grep -q "__cs_vformat\|^printf:" "$TMP/amiga_hello.s"; then
+        report_fail "amiga trimming" "hello world contains printf"
+    elif [ "$size" -gt 12000 ]; then
+        report_fail "amiga trimming" "hello world has $size bytes (more than 12000)"
+    else
+        report_ok "amiga trimming"
+    fi
+else
+    report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
+fi
+
 # --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------
 #   tests/query/*.csh: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
 #   contains <text> (the file alone is the program). "cshiftc check" reports the errors of a program and generates
