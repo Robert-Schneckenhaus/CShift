@@ -118,6 +118,25 @@ void CheckFunction(Compiler cg, int instance)
     f.Temps = List<TempRelease>.Create();
     f.Loops = List<LoopCtx>.Create();
     f.ThisSlot = fi.HasThis ? "%this" : "";
+    // a generic body: the methods that its type parameters offer are those of their constraints (TypeParamMethodError)
+    var names = List<string>.Create();
+    var constraints = List<Constraint>.Create();
+    foreach (var tp in d.TypeParams)
+        names.Add(tp);
+    foreach (var c in d.Constraints)
+        constraints.Add(c);
+    if (fi.Owner != 0 && cg.Types.IsStruct(fi.Owner))
+    {
+        var od = cg.Structs.Get(GetStructInfo(cg, fi.Owner).Entry).Decl;
+        foreach (var tp in od.TypeParams)
+            names.Add(tp);
+        foreach (var c in od.Constraints)
+            constraints.Add(c);
+    }
+    f.Generic = names.Count() > 0;
+    f.TypeParamNames = names.ToArray();
+    f.TypeParamConstraints = constraints.ToArray();
+    f.TypeParamVars = List<string>.Create();
     cg.Fn[0] = f;
     cg.Ir.BeginFunction("define void @check()");
     PushScope(cg);
@@ -132,6 +151,7 @@ void CheckFunction(Compiler cg, int instance)
         else
             DeclareVar(cg, name, pt, "%p");
         NoteDeclared(cg, d.Params[i].NameLoc, d.Params[i].Loc, true, d.Params[i].Type, d.Params[i].Ref);
+        NoteTypeParamVar(cg, name, d.Params[i].Type);
     }
     if (d.NameLoc.Line > 0)
         IndexFunction(cg, d.NameLoc, d.Name.Length, instance); // the name where the function is declared
@@ -192,4 +212,70 @@ string TypeParamList(string[] names)
     if (names.Length == 0)
         return "";
     return "<" + string.Join(", ", names) + ">";
+}
+
+// In a generic body: remembers that the variable 'name' has the type parameter its declared type names (or forgets it).
+void NoteTypeParamVar(Compiler cg, string name, TypeRef declared)
+{
+    var f = cg.Fn[0];
+    if (!f.Generic)
+        return;
+    for (var i = f.TypeParamVars.Count() - 1; i >= 0; i -= 1)
+    {
+        if (f.TypeParamVars.Get(i).StartsWith(name + "="))
+            f.TypeParamVars.RemoveAt(i);
+    }
+    if (declared.IsNull())
+        return;
+    var node = cg.Tree.GetType(declared);
+    if (node.Kind != TypeRefKind.Named || node.Path.Length != 1 || node.Args.Length > 0)
+        return;
+    foreach (var tp in f.TypeParamNames)
+    {
+        if (tp == node.Path[0])
+            f.TypeParamVars.Add(name + "=" + tp);
+    }
+}
+
+// In a generic body, a method call on a variable whose type is a type parameter: "" if one of the constraints of the
+// type parameter has the method (or it cannot be told), otherwise the error. Every type has ToString.
+string TypeParamMethodError(Compiler cg, string variable, string method)
+{
+    var f = cg.Fn[0];
+    if (!f.Generic || method == "ToString")
+        return "";
+    string tp = "";
+    foreach (var entry in f.TypeParamVars)
+    {
+        if (entry.StartsWith(variable + "="))
+            tp = entry.Substring(variable.Length + 1).ToString();
+    }
+    if (tp.Length == 0)
+        return "";
+    var bounds = List<string>.Create();
+    foreach (var c in f.TypeParamConstraints)
+    {
+        if (c.Param != tp)
+            continue;
+        foreach (var b in c.Bounds)
+        {
+            var node = cg.Tree.GetType(b);
+            if (node.Kind != TypeRefKind.Named)
+                return "";
+            var decl = TypeDeclEntry { };
+            if (!LookupTypeDecl(cg, f.File, string.Join(".", node.Path), ref decl) || decl.Kind != DeclKind.Interface)
+                return "";
+            foreach (var m in cg.Interfaces.Get(decl.Index).Decl.Methods)
+            {
+                if (m.Name == method)
+                    return "";
+            }
+            bounds.Add(cg.Tree.TypeToString(b));
+        }
+    }
+    if (bounds.Count() == 0)
+        return "'" + variable + "' has the type parameter '" + tp + "', which has no method '" + method + "': a type parameter " +
+               "only offers the methods of its constraints, and '" + tp + "' has none (add 'where " + tp + " : I...')";
+    return "'" + variable + "' has the type parameter '" + tp + "', which has no method '" + method + "': a type parameter " +
+           "only offers the methods of its constraints ('" + tp + " : " + string.Join(", ", bounds.ToArray()) + "')";
 }

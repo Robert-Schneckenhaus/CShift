@@ -134,7 +134,10 @@ T Max<T>(T a, T b) where T : IComparable<T>
 }
 ```
 
-The compiler checks, at compile time, that every type used for `T` actually implements the required interfaces.
+The compiler checks, at compile time, that every type used for `T` actually implements the required interfaces. In the
+body, a value of type `T` offers the methods of its constraints (here `CompareTo`) and `ToString()`; calling another
+method on it is an error, also if nothing calls `Max` yet. Operators (`==`, `<`, `+`, ...) on `T` are checked for every
+type the function is used with.
 Numbers and `string` already implement `IComparable<T>`/`IEquatable<T>`/`IHashable` out of the box; your own structs
 implement them by defining the matching methods (`int CompareTo(T other)`, `bool Equals(T other)`,
 `int GetHashCode()`).

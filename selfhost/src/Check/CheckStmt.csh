@@ -177,10 +177,12 @@ void CheckIf(Compiler cg, Stmt s)
     CheckBranch(cg, n.Then);
     bool thenLive = cg.Fn[0].Live;
     if (guard && bound >= 0)
-        SetVarVisible(cg, bound, true);
+        SetVarVisible(cg, bound, true); // assigned in the 'else' branch
     cg.Fn[0].Live = reached;
     if (!n.Else.IsNull())
         CheckBranch(cg, n.Else);
+    if (guard && bound >= 0)
+        SetVarVisible(cg, bound, !thenLive); // after the 'if' only when its branch does not go on there
     cg.Fn[0].Live = thenLive || cg.Fn[0].Live;
     if (!guard)
         PopScope(cg, false);
@@ -224,6 +226,11 @@ void CheckVarDecl(Compiler cg, Stmt s)
     Value init = Value { };
     if (!d.Init.IsNull())
         init = t != 0 ? CheckExprAs(cg, d.Init, t) : CheckExpr(cg, d.Init);
+    if (t == 0 && !d.Init.IsNull() && d.Init.Kind == ExprKind.Lambda)
+    {
+        CheckError(cg, s.Loc, "cannot infer the type of '" + d.Name + "' from a lambda; declare it with its Action/Func type");
+        t = types.Unknown;
+    }
     if (t == 0)
     {
         if (d.Init.IsNull())
@@ -247,6 +254,9 @@ void CheckVarDecl(Compiler cg, Stmt s)
         CheckConversion(cg, init, t, d.Init.Loc);
     DeclareVar(cg, d.Name, t, "%v");
     NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
+    NoteTypeParamVar(cg, d.Name, d.Type);
+    if (d.IsUsing && !types.IsUnknown(t) && !ImplementsDisposable(cg, t))
+        CheckError(cg, s.Loc, "'using' requires a struct that implements IDisposable, but '" + types.Name(t) + "' does not");
 }
 
 // Reports if the value does not convert implicitly to the type (see ConvertValue).
@@ -261,7 +271,15 @@ void CheckConversion(Compiler cg, Value v, int to, SourceLoc loc)
         CheckCollectionAs(cg, v.CollectionNode, to, loc);
         return;
     }
-    // lambdas and function names are converted by code generation for now
+    if (k == TypeKind.MethodGroup && types.IsFunction(to))
+    {
+        // a function name: the function with exactly the signature of the Action/Func (see ConvertGroup)
+        string reason = "";
+        if (ResolveGroup(cg, v, to, ref reason) < 0)
+            CheckError(cg, loc, "cannot convert function '" + v.GroupName + "' to '" + types.Name(to) + "': " + reason);
+        return;
+    }
+    // lambdas are checked where their target type is known (CheckExprAs); C function pointers by code generation
     if (k == TypeKind.Lambda || k == TypeKind.MethodGroup || types.IsCFunction(to))
         return;
     string why = ConversionError(cg, v, to);
@@ -337,8 +355,8 @@ void CheckForeach(Compiler cg, Stmt s)
     cg.Fn[0].Live = reached;
 }
 
-// switch: the subject, the labels and every section (see EmitSwitch); whether the switch is exhaustive and whether a
-// section falls through are checked by code generation for now.
+// switch: the subject, the labels and every section (see EmitSwitch), whether the switch is exhaustive and whether a
+// section falls through.
 void CheckSwitch(Compiler cg, Stmt s)
 {
     var types = cg.Types;
@@ -379,6 +397,10 @@ void CheckSwitch(Compiler cg, Stmt s)
                         failureCovered = true;
                     else if (IsUnionType(cg, st) && UnionMemberIndex(cg, st, pt) >= 0)
                         coveredMembers.Add(UnionMemberIndex(cg, st, pt));
+                    else if (types.IsResultLike(st) && types.Elem(st) == pt)
+                    {
+                        // 'case T value:' covers the success, which the exhaustiveness check does not count
+                    }
                     else
                         allKnown = false; // an error in the label: the coverage is not checked
                 }

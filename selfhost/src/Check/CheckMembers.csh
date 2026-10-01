@@ -123,11 +123,20 @@ Value CheckMember(Compiler cg, Expr e)
                     IndexGlobal(cg, m.NameLoc, m.Name.Length, g);
                     return GlobalUse(cg, g);
                 }
-                // Type.Method or Namespace.Function as a value: converted by code generation for now
+                // Type.Method or Namespace.Function as a value: it converts to a matching Action/Func type
                 if (isTypeName && entry.Kind == DeclKind.Struct)
+                {
+                    if (m.TypeArgs.Length > 0 || LastTypeArgs(cg, m.Object).Length > 0 || cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0)
+                        return UnknownValue(cg);
+                    int owner = GetStructType(cg, entry.Index, new int[0], e.Loc);
+                    var methods = MethodCandidates(cg, owner, m.Name);
+                    if (methods.Length > 0)
+                        return GroupValue(cg, methods, new int[0], cg.Types.Name(owner) + "." + m.Name);
                     return UnknownValue(cg);
-                if (FreeCandidates(cg, file, dotted + "." + m.Name).Length > 0)
-                    return UnknownValue(cg);
+                }
+                var functions = FreeCandidates(cg, file, dotted + "." + m.Name);
+                if (functions.Length > 0)
+                    return m.TypeArgs.Length > 0 ? UnknownValue(cg) : GroupValue(cg, functions, new int[0], dotted + "." + m.Name);
                 CheckError(cg, e.Loc, "'" + dotted + "' has no value member '" + m.Name + "'");
                 return UnknownValue(cg);
             }
@@ -314,6 +323,8 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
     }
     var args = types.IsStruct(t) && !m.ViaArrow ? CheckArgsFor(cg, call.Args, MethodCandidates(cg, t, m.Name), ref known) : CheckArgs(cg, call.Args, ref known);
+    if (types.IsUnknown(t) && !m.ViaArrow && m.Object.Kind == ExprKind.Name)
+        ReportIf(cg, e.Loc, TypeParamMethodError(cg, cg.Tree.GetName(m.Object).Name, m.Name));
     if (types.IsUnknown(t) || m.ViaArrow || (IsCallableType(cg, t) && m.Name == "Invoke"))
         return UnknownValue(cg);
     if (types.Kind(t) == TypeKind.Interface)
@@ -713,8 +724,11 @@ Value CheckIndex(Compiler cg, Expr e)
     }
     if (types.IsFixed(t))
     {
-        CheckExpr(cg, n.Index); // a constant index is also checked against the size by code generation
-        return Lvalue(types.Elem(t), "%e", false);
+        CheckExpr(cg, n.Index);
+        ReportIf(cg, n.Index.Loc, FixedIndexError(cg, t, n.Index, n.FromEnd));
+        if (!obj.IsLValue)
+            return Rvalue(types.Elem(t), "", false);
+        return Lvalue(types.Elem(t), "%e", obj.IsConst);
     }
     if (n.FromEnd && !types.IsArray(t) && !types.IsString(t))
     {

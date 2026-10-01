@@ -14,11 +14,23 @@ Value DerefPointer(Compiler cg, Value p, SourceLoc loc)
     var types = cg.Types;
     RequireUnsafe(cg, loc, "pointer dereference");
     Value pv = ToRValue(cg, p);
-    if (!types.IsPointer(pv.Type))
-        Fail(cg, loc, "cannot dereference a value of type '" + types.Name(pv.Type) + "'");
-    if (types.IsVoid(types.Elem(pv.Type)))
-        Fail(cg, loc, "cannot dereference 'void*'");
+    string why = DerefError(cg, pv.Type);
+    if (why.Length > 0)
+        Fail(cg, loc, why);
     return Lvalue(types.Elem(pv.Type), pv.V, false);
+}
+
+// *p: "" if a value of type t can be dereferenced, otherwise the error.
+string DerefError(Compiler cg, int t)
+{
+    var types = cg.Types;
+    if (types.IsUnknown(t))
+        return "";
+    if (!types.IsPointer(t))
+        return "cannot dereference a value of type '" + types.Name(t) + "'";
+    if (types.IsVoid(types.Elem(t)))
+        return "cannot dereference 'void*'";
+    return "";
 }
 
 // &x
