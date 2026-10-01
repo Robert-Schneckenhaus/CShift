@@ -215,6 +215,44 @@ struct Directory
         return Exists(path);
     }
 
+    // Deletes an empty directory, or with 'recursive' a directory with everything in it.
+    static IoError<void> Delete(string path, bool recursive)
+    {
+        if (!Exists(path))
+            return error("the directory '" + path + "' does not exist", IoError.CannotOpen);
+        if (recursive)
+        {
+            foreach (var name in GetEntries(path))
+            {
+                string full = Path.Combine(path, name);
+                if (Exists(full))
+                    try Delete(full, true);
+                else
+                    try File.Delete(full);
+            }
+        }
+        if (!_Os.RemoveDirectory(path))
+            return error("cannot delete the directory '" + path + "'" + (recursive ? "" : " (is it empty?)"), IoError.CannotDelete);
+        return;
+    }
+
+    static IoError<void> Delete(string path)
+    {
+        return Delete(path, false);
+    }
+
+    // Moves (renames) a directory; the target must not exist.
+    static IoError<void> Move(string source, string target)
+    {
+        if (!Exists(source))
+            return error("the directory '" + source + "' does not exist", IoError.CannotOpen);
+        if (Exists(target) || File.Exists(target))
+            return error("'" + target + "' already exists", IoError.AlreadyExists);
+        if (!_Os.Rename(source, target))
+            return error("cannot move '" + source + "' to '" + target + "'", IoError.CannotMove);
+        return;
+    }
+
     // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system.
     static int _NameOffset()
     {

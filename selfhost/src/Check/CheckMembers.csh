@@ -224,6 +224,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
         }
         if (LookupTypeDecl(cg, file, dotted, ref entry))
         {
+            UseBareThread(cg, file, dotted, LastTypeArgs(cg, m.Object).Length, ref entry);
             if (entry.Kind != DeclKind.Struct)
             {
                 CheckArgs(cg, call.Args, ref known);

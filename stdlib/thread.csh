@@ -150,6 +150,12 @@ struct _ThreadVoid
 {
     SharedPtr<_ThreadCore> _core;
 
+    // Pauses the calling thread (Thread.Sleep(100): a tenth of a second).
+    static void Sleep(int milliseconds)
+    {
+        _Os.Wait(milliseconds);
+    }
+
     static _ThreadVoid _Wrap(SharedPtr<_ThreadCore> core)
     {
         return _ThreadVoid { _core = core };

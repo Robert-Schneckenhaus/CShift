@@ -115,6 +115,37 @@ struct File
         return Copy(source, target, false);
     }
 
+    // Moves (renames) a file; an existing target is replaced only with 'overwrite'.
+    static IoError<void> Move(string source, string target, bool overwrite)
+    {
+        if (!Exists(source))
+            return error("the file '" + source + "' does not exist", IoError.CannotOpen);
+        if (!overwrite && Exists(target))
+            return error("the file '" + target + "' already exists", IoError.AlreadyExists);
+        if (!_Os.Rename(source, target))
+            return error("cannot move '" + source + "' to '" + target + "'", IoError.CannotMove);
+        return;
+    }
+
+    static IoError<void> Move(string source, string target)
+    {
+        return Move(source, target, false);
+    }
+
+    // When the file was last written (local time).
+    static IoError<DateTime> GetLastWriteTime(string path)
+    {
+        var utc = try GetLastWriteTimeUtc(path);
+        return utc.ToLocalTime();
+    }
+
+    static IoError<DateTime> GetLastWriteTimeUtc(string path)
+    {
+        if (_Os.FileWriteTime(path) is int64 ticks)
+            return DateTime { Ticks = ticks + _UnixEpochTicks, IsUtc = true };
+        return error("cannot read the time of '" + path + "'", IoError.CannotOpen);
+    }
+
     static IoError<void> WriteAllText(string path, string text)
     {
         return WriteAllText(path, text, Encoding.UTF8());

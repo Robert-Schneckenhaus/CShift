@@ -21,6 +21,7 @@ extern "C" int __dos_Input();
 extern "C" int __dos_Output();
 extern "C" int __dos_Seek(int file, int position, int mode);
 extern "C" int __dos_DeleteFile(char* name);
+extern "C" int __dos_Rename(char* from, char* to);
 extern "C" int __dos_Lock(char* name, int mode);
 extern "C" void __dos_UnLock(int lock);
 extern "C" int __dos_Examine(int lock, void* info);

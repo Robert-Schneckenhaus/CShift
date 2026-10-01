@@ -607,6 +607,15 @@ int Build(BuildOptions o)
             for (var i = 0; i < EmbeddedAmigaNames.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/amiga/" + EmbeddedAmigaNames[i], EmbeddedAmigaTexts[i], true, o.Imports);
         }
+        foreach (var layer in OsLayers(o.Target, o.Backend, windows).ToArray())
+        {
+            var names = layer == "windows" ? EmbeddedOsWindowsNames : layer == "posix" ? EmbeddedOsPosixNames :
+                        layer == "posix-64" ? EmbeddedOsPosix64Names : layer == "posix-32" ? EmbeddedOsPosix32Names : EmbeddedOsPosixM68kNames;
+            var texts = layer == "windows" ? EmbeddedOsWindowsTexts : layer == "posix" ? EmbeddedOsPosixTexts :
+                        layer == "posix-64" ? EmbeddedOsPosix64Texts : layer == "posix-32" ? EmbeddedOsPosix32Texts : EmbeddedOsPosixM68kTexts;
+            for (var i = 0; i < names.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/os/" + layer + "/" + names[i], texts[i], true, o.Imports);
+        }
         cg.St[0].StdlibLoaded = EmbeddedStdlibNames.Length > 0;
     }
     else if (o.Stdlib != "-")
@@ -618,6 +627,9 @@ int Build(BuildOptions o)
             if (libFile.Contains("/m68k/") && o.Backend != "m68k")
                 continue;
             if (libFile.Contains("/amiga/") && !(o.Backend == "m68k" && o.Target.Contains("amigaos")))
+                continue;
+            int osAt = Path.Normalize(libFile).IndexOf("/os/");
+            if (osAt >= 0 && !OsLayers(o.Target, o.Backend, windows).Contains(Path.GetDirectory(libFile.Substring(osAt + 4).ToString())))
                 continue;
             if (!AddSource(cg, diag, tree, libFile, true, o.Imports))
                 return 1;
@@ -929,6 +941,33 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
     return answer + "}";
+}
+
+// The folders of stdlib/os that a target uses: windows; posix and the struct layouts of its architecture; none for
+// AmigaOS (stdlib/amiga has the same functions).
+List<string> OsLayers(string target, string backend, bool windows)
+{
+    var layers = List<string>.Create();
+    string lower = target.ToLower();
+    if (lower.Contains("amigaos"))
+        return layers;
+    if (windows)
+    {
+        layers.Add("windows");
+        return layers;
+    }
+    layers.Add("posix");
+    string arch = lower;
+    int dash = arch.IndexOf('-');
+    if (dash >= 0)
+        arch = arch.Substring(0, dash).ToString();
+    if (arch == "m68k" || backend == "m68k")
+        layers.Add("posix-m68k");
+    else if (target.Length > 0 && TargetInfo.Has32BitPointers(arch))
+        layers.Add("posix-32");
+    else
+        layers.Add("posix-64");
+    return layers;
 }
 
 // The name the compiler was started with (for hints like "cshiftc run"): the file name of the executable without .exe.
