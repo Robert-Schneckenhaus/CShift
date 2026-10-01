@@ -13,6 +13,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - Pretty printers for gdb and lldb (`tools/debug`): strings as text, arrays, slices, `List`, `Dictionary`, `HashSet`,
   `Stack`, `Queue`, `StringBuilder`, `Optional`, `SharedPtr` and unions by their contents. Programs built with `-g`
   carry the gdb printers themselves.
+- VS Code: **F5** debugs the program of a `.csh` file (built with `-g -O0`, run under lldb through the CodeLLDB
+  extension): breakpoints, stepping, the call stack and the variables with the pretty printers; launch configurations
+  of the type `cshift`.
 
 ### Language
 - A `ReadOnlySlice<T>` can be a parameter of a `thread` function (and the value of a `Mutex<T>`) when its elements

@@ -4,4 +4,5 @@ build/
 *.o
 *.ll
 *.vsix
+vscode-extension/debug/
 obj/

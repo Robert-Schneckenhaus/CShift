@@ -20,6 +20,10 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
 * **Completion after `.`**: the fields and methods of a struct value (also inherited ones), the methods of an
   interface, the members of an enum (`Color.`), the static methods of a struct (`List<int>.`), and `Length` and the
   string functions for strings.
+* **Debugging (F5)**: builds the program with `-g -O0` (into `bin/debug/`) and runs it under lldb, through the
+  [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension (it brings its own
+  lldb): breakpoints in `.csh` files, stepping, the call stack, and variables with their values (strings as text,
+  arrays and collections with their elements).
 * Syntax highlighting (keywords, types, generics, numbers with suffixes, strings, comments, `link`, `namespace`/`using`),
   bracket pairs, auto-indent, comment toggling, `// region` folding, snippets (`main`, `struct`, `fn`, `foreach`,
   `switch`, `try`, `ifis`, `dict`, …) and a schema for `cshift.json`.
@@ -49,6 +53,25 @@ To build the package yourself: `cd vscode-extension`, then `npx @vscode/vsce pac
 | `cshift.checkDelay` | `700` | the pause in milliseconds |
 
 The command **CShift: Check the program of the current file** checks on demand.
+
+## Debugging
+
+Install CodeLLDB (`vadimcn.vscode-lldb`; the extension offers it the first time). Then **F5** in a `.csh` file debugs
+its program: the project it belongs to, or the file alone. For more control, add a launch configuration (*Run → Add
+Configuration… → CShift (lldb)*):
+
+```json
+{
+    "type": "cshift",
+    "request": "launch",
+    "name": "Debug CShift program",
+    "project": "${workspaceFolder}",
+    "args": ["--verbose"]
+}
+```
+
+`project` is a `cshift.json` or its folder; `args`, `cwd`, `env` and `stopOnEntry` are passed to the program. The
+build output is in the output panel *CShift*. More in [docs/debugging.md](../docs/debugging.md).
 
 ## Which program a file belongs to
 

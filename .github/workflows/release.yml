@@ -274,6 +274,7 @@ jobs:
         shell: bash
         run: |
           cp source/LICENSE source/vscode-extension/LICENSE
+          mkdir -p source/vscode-extension/debug && cp source/tools/debug/cshift_lldb.py source/vscode-extension/debug/   # lldb formatters for F5
           cd source/vscode-extension
           # the extension's version is the release's (0.14 -> 0.14.0; VS Code wants three numbers)
           ext_version="$VERSION"

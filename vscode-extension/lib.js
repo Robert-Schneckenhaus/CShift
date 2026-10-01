@@ -183,8 +183,78 @@ async function check(compiler, project, file, dirty, tempDir) {
     return { diagnostics: parseDiagnostics(result.stderr, cwd), failed: false };
 }
 
+// ---------------------------------------------------------------------------
+// Debugging (F5): build with -g -O0, then run the program under lldb (the CodeLLDB extension)
+// ---------------------------------------------------------------------------
+
+// The name of a project (cshift.json "name"), or null.
+function projectName(projectFile) {
+    try {
+        const json = JSON.parse(fs.readFileSync(projectFile, "utf8").replace(/^\uFEFF/, ""));
+        return typeof json.name === "string" && json.name.length > 0 ? json.name : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// What F5 builds: the project of the launch configuration ("project": a cshift.json or its folder), else the project
+// of the active file, else the active file alone. Returns { project, file } (one of them null) or null.
+function debugTarget(projectFiles, activeFile, configuredProject) {
+    if (configuredProject) {
+        const file = configuredProject.endsWith(".json") ? configuredProject : path.join(configuredProject, "cshift.json");
+        return fs.existsSync(file) ? { project: path.resolve(file), file: null } : null;
+    }
+    if (!activeFile)
+        return projectFiles.length === 1 ? { project: projectFiles[0], file: null } : null;
+    const project = findProject(projectFiles, activeFile);
+    return project ? { project, file: null } : { project: null, file: activeFile };
+}
+
+// The cshiftc command line of a debug build and the program it writes: a project goes to <folder>/bin/debug/<name>,
+// a single file to bin/debug/<stem> next to it (so the normal build of the program stays as it is).
+function debugBuild(target, platform) {
+    const exe = (platform || process.platform) === "win32" ? ".exe" : "";
+    if (target.project) {
+        const dir = path.dirname(target.project);
+        const name = projectName(target.project) || path.basename(dir);
+        const program = path.join(dir, "bin", "debug", name) + exe;
+        return { args: ["build", dir, "-g", "-O0", "-o", program], program, cwd: dir };
+    }
+    const dir = path.dirname(target.file);
+    const program = path.join(dir, "bin", "debug", path.basename(target.file, ".csh")) + exe;
+    return { args: [target.file, "-g", "-O0", "-o", program], program, cwd: dir };
+}
+
+// The lldb formatters for CShift values (tools/debug/cshift_lldb.py): packaged with the extension, next to the
+// extension in the repository, or in the tools folder of the cshiftc release.
+function findLldbScript(extensionPath, compiler) {
+    const candidates = [
+        path.join(extensionPath, "debug", "cshift_lldb.py"),
+        path.join(extensionPath, "..", "tools", "debug", "cshift_lldb.py"),
+    ];
+    if (compiler && path.isAbsolute(compiler))
+        candidates.push(path.join(path.dirname(compiler), "tools", "debug", "cshift_lldb.py"));
+    return candidates.find((c) => fs.existsSync(c)) || null;
+}
+
+// The launch configuration for CodeLLDB.
+function lldbConfiguration(config, build, script) {
+    return {
+        type: "lldb",
+        request: "launch",
+        name: config.name || "Debug CShift program",
+        program: build.program,
+        args: Array.isArray(config.args) ? config.args : [],
+        cwd: config.cwd || build.cwd,
+        env: config.env || {},
+        stopOnEntry: !!config.stopOnEntry,
+        initCommands: script ? ["command script import \"" + script.replace(/\\/g, "/") + "\""] : [],
+    };
+}
+
 module.exports = {
     samePath, projectSources, projectContains, findProject, byteColumn, characterOf, overlayArgs, parseDiagnostics,
-    run, query, queryJson, outline, memberContext, check,
+    run, query, queryJson, outline, memberContext, check, projectName, debugTarget, debugBuild, findLldbScript,
+    lldbConfiguration,
     tempDirectory: () => path.join(os.tmpdir(), "cshift-vscode-" + process.pid),
 };

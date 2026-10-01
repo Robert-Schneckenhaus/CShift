@@ -94,5 +94,6 @@ jobs:
       - name: Package the VS Code extension
         run: |
           cp LICENSE vscode-extension/LICENSE
+          mkdir -p vscode-extension/debug && cp tools/debug/cshift_lldb.py vscode-extension/debug/   # lldb formatters for F5
           cd vscode-extension
           npx --yes @vscode/vsce package --allow-missing-repository -o "$RUNNER_TEMP/cshift-vscode.vsix"
