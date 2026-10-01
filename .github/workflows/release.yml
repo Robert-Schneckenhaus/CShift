@@ -314,6 +314,14 @@ jobs:
           Built from commit ${GITHUB_SHA} on branch \`${GITHUB_REF_NAME}\`.
           EOF
 
+          # The changes: this version's section of CHANGELOG.md, or "Unreleased" while it has none yet.
+          section() { awk -v h="## [$1]" 'index($0, "## [") == 1 { p = (index($0, h) == 1); next } p' source/CHANGELOG.md; }
+          changes="$(section "$VERSION")"
+          [ -z "$(echo "$changes" | tr -d '[:space:]')" ] && changes="$(section Unreleased)"
+          if [ -n "$(echo "$changes" | tr -d '[:space:]')" ]; then
+            printf '\n## Changes\n%s\n' "$changes" >> notes.md
+          fi
+
           # A new push to the release branch replaces the release of the same version (and moves its tag).
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
