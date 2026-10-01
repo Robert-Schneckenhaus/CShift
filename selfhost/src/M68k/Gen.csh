@@ -449,6 +449,27 @@ bool ReturnsStruct(Gen g, int t)
     return g.T.IsAggregate(t);
 }
 
+// The order the blocks are written in: blocks that end the program (a panic, then 'unreachable') go to the end of
+// the function, so the normal path falls through its overflow and bounds checks without a branch.
+IrBlock[] BlockOrder(IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    var order = List<IrBlock>.Create();
+    var last = List<IrBlock>.Create();
+    for (var i = 0; i < blocks.Length; i += 1)
+    {
+        var insts = blocks[i].Insts;
+        bool ends = i > 0 && insts.Count() > 0 && insts.Get(insts.Count() - 1).Op == "unreachable";
+        if (ends)
+            last.Add(blocks[i]);
+        else
+            order.Add(blocks[i]);
+    }
+    foreach (var b in last)
+        order.Add(b);
+    return order.ToArray();
+}
+
 void GenFunction(Gen g, IrFunc f)
 {
     g.Slot = Dictionary<string, int>.Create();
@@ -542,7 +563,7 @@ void GenFunction(Gen g, IrFunc f)
     g.Label(name);
     g.Line("link.w\t%a6,#-" + frame.ToString());
     g.Line("movem.l\t@SAVE@,-(%sp)"); // the registers the function uses (FinishSaves)
-    foreach (var b in f.Blocks.ToArray())
+    foreach (var b in BlockOrder(f))
     {
         g.Fn[1] = b.Label;
         g.Label(g.BlockLabel.Get(b.Label));
@@ -1057,6 +1078,28 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         g.Line("move" + suffix + "\t" + src + "," + dest);
         return;
     }
+    // an access to a constant address (inttoptr of a constant, FoldConstants): absolute addressing
+    if ((op == "load" || op == "store") && g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Kind == ValKind.Int &&
+        !g.T.IsAggregate(op == "load" ? inst.Type : inst.OpType) && g.L.Size(op == "load" ? inst.Type : inst.OpType) <= 4)
+    {
+        string absolute = g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Int.ToString();
+        int size = g.L.Size(op == "load" ? inst.Type : inst.OpType);
+        string suffix = SizeSuffix(size);
+        if (op == "load")
+        {
+            g.Line("move" + suffix + "\t" + absolute + ",%d0");
+            StoreResult(g, inst);
+            return;
+        }
+        string src = SourceOperand(g, inst.Args[0], size * 8);
+        if (src.Length == 0)
+        {
+            Load32(g, inst.Args[0], "%d0");
+            src = "%d0";
+        }
+        g.Line("move" + suffix + "\t" + src + "," + absolute);
+        return;
+    }
     // a value that lives in its variable's slot (Regalloc.csh): the load and the store are that slot already
     if (op == "load" && IsLocal(g, inst.Args[0]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[0]).Name))
     {
@@ -1433,6 +1476,53 @@ void GenBinary32(Gen g, IrInst inst)
         if (rem)
             g.Line("move.l\t%d1,%d0");
         g.Label(done);
+        StoreResult(g, inst);
+        return;
+    }
+    if (op == "mul" && bits <= 32)
+    {
+        // by a power of two: a shift
+        for (var side = 1; side >= 0; side -= 1)
+        {
+            var cv = g.M.Vals.Get(inst.Args[side]);
+            if (cv.Kind != ValKind.Int)
+                continue;
+            int64 factor = Normalize(cv.Int, bits, false);
+            for (var n = 1; n < bits; n += 1)
+            {
+                if (factor == ((int64)1 << n))
+                {
+                    Load32(g, inst.Args[1 - side], "%d0");
+                    if (n <= 8)
+                        g.Line("lsl.l\t#" + n.ToString() + ",%d0");
+                    else
+                    {
+                        g.Line("moveq\t#" + n.ToString() + ",%d1");
+                        g.Line("lsl.l\t%d1,%d0");
+                    }
+                    StoreResult(g, inst);
+                    return;
+                }
+            }
+        }
+        // both factors in 16 bits: muls.w gives the exact product, else the helper
+        Load32(g, inst.Args[0], "%d0");
+        Load32(g, inst.Args[1], "%d1");
+        string slowMul = g.NewLabel();
+        string doneMul = g.NewLabel();
+        g.Line("move.w\t%d0,%d2");
+        g.Line("ext.l\t%d2");
+        g.Line("cmp.l\t%d0,%d2");
+        g.Line("bne\t" + slowMul);
+        g.Line("move.w\t%d1,%d2");
+        g.Line("ext.l\t%d2");
+        g.Line("cmp.l\t%d1,%d2");
+        g.Line("bne\t" + slowMul);
+        g.Line("muls.w\t%d1,%d0");
+        g.Line("bra\t" + doneMul);
+        g.Label(slowMul);
+        g.Line("jsr\t__cs68k_mul32");
+        g.Label(doneMul);
         StoreResult(g, inst);
         return;
     }

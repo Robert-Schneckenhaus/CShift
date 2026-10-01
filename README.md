@@ -152,7 +152,8 @@ tasks: [demo-minifb/](demo-minifb/) (a MiniFB window) and [demo-opengl/](demo-op
 CShift also runs on the **Amiga**: `--target m68k-amigaos` builds an AmigaOS executable with CShift's own 68000
 backend, AmigaOS libraries are imported from the NDK's SFD files (`using Gfx from "graphics_lib.sfd";`)
 ([docs/amiga.md](docs/amiga.md)). Demos: [demo-amiga-hw/](demo-amiga-hw/README.md) (copper raster bars, 50 frames per
-second on an A500) and [demo-amiga-ndk/](demo-amiga-ndk/README.md) (a rotating cube in an Intuition window).
+second on an A500), [demo-amiga-gfx/](demo-amiga-gfx/README.md) (bouncing balls with the blitter, a sprite and text;
+`Amiga.Screen`) and [demo-amiga-ndk/](demo-amiga-ndk/README.md) (a rotating cube in an Intuition window).
 
 ## VS Code
 

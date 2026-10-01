@@ -17,8 +17,9 @@ cshiftc --target m68k-amigaos hello.csh -o hello        # an AmigaOS executable 
 }
 ```
 
-Two demos show what is possible: [demo-amiga-hw](../demo-amiga-hw/README.md) (copper raster bars on the custom chips,
-50 frames per second on an A500) and [demo-amiga-ndk](../demo-amiga-ndk/README.md) (a rotating cube in an Intuition
+Three demos show what is possible: [demo-amiga-hw](../demo-amiga-hw/README.md) (copper raster bars on the custom chips,
+50 frames per second on an A500), [demo-amiga-gfx](../demo-amiga-gfx/README.md) (bouncing balls with the blitter, double
+buffering, a sprite and text) and [demo-amiga-ndk](../demo-amiga-ndk/README.md) (a rotating cube in an Intuition
 window, written against the NDK 3.2).
 
 ## Choosing the backend
@@ -112,6 +113,53 @@ unsafe
 | `LeftMouseButton()` | the left button (port 1) |
 | `AllocChip(size)` / `FreeChip(memory, size)` | chip memory for copper lists, bitplanes, sprites and sounds |
 
+## Graphics: `Amiga.Screen`, `Bitmap`, the blitter and sprites
+
+On top of `Amiga.Hardware`, `stdlib/amiga/graphics.csh` has what a game or a demo draws with (low resolution PAL,
+OCS/ECS, every Amiga from the A500 on). [demo-amiga-gfx](../demo-amiga-gfx/README.md) shows all of it.
+
+```csharp
+using Amiga;
+
+Hardware.TakeOver();
+if (Screen.Open(320, 256, 4, true) is Screen screen)   // 16 colors, double buffering
+{
+    screen.SetColor(1, 0xFFF);
+    screen.Copper.Wait(100);                            // own copper instructions after the screen's setup
+    screen.Copper.Color(0, 0x00F);                      // from line 100 on the background is blue
+    screen.Show();
+    while (!Hardware.LeftMouseButton())
+    {
+        Bitmap b = screen.Back;
+        b.Clear();
+        b.FillRect(10, 10, 100, 50, 2);
+        b.DrawLine(0, 0, 319, 255, 3);
+        b.DrawText(20, 100, "Hello, Amiga", 1);
+        screen.Swap();                                  // Back is shown from the next frame on
+    }
+    Hardware.Restore();
+    screen.Close();
+}
+```
+
+| Type | |
+|---|---|
+| `Screen` | `Open(width, height, depth, doubleBuffer)` (width 128..320, a multiple of 16; height up to 256; 2..32 colors), `Front`/`Back` (the bitmaps), `SetColor(index, 0xRGB)`, `Show()`, `Swap()` (shows `Back`, waits for the vertical blank), `ShowSprite(n, sprite)`/`HideSprite(n)`, `Copper` (own instructions; `Copper.Reset()` removes them), `Close()` |
+| `Bitmap` | `Create(width, height, depth)` (chip memory, `Free()`), `Width`, `Height`, `Depth`, `BytesPerRow`, `Plane(p)`; with the blitter: `Clear()`, `FillRect`, `DrawRect`, `Copy(source, sx, sy, x, y, w, h)`, `DrawMasked(source, mask, sx, sy, x, y, w, h)` (a "bob": only where the mask has a 1; `MakeMask()` makes it from the colors that are not 0); with the CPU: `SetPixel`, `GetPixel`, `DrawLine`, `DrawPattern(x, y, rows)` (pixels from strings), `DrawText(x, y, text, color)` |
+| `Sprite` | a hardware sprite, 16 pixels wide, 3 colors: `Create(rows)` (`'1'`..`'3'`, others transparent), `MoveTo(x, y)`, `Free()` |
+| `SystemFont` | the font of `DrawText` (Topaz 8 from the ROM, or the one of the preferences): `Height()`, `TextWidth(text)` |
+| `CopperList` | a copper list of its own: `Create(n)`, `Move(register, value)`, `Color(index, rgb)`, `MovePointer`, `Wait(line)`, `Change(index, value)`, `Mark()`/`Reset()`, `Address()` for `Hardware.StartCopper` |
+| `Blitter` | `Wait()`: until the blitter is done, before the CPU touches what it draws (the CPU functions of `Bitmap` wait themselves) |
+
+* The blitter works in parallel with the CPU: a blitter function of `Bitmap` starts the blit and returns; the next one
+  waits for it. It needs `Hardware.TakeOver()` (the program owns the blitter then).
+* Drawing is clipped to the bitmap. `Copy` uses the blitter when `x % 16 >= sx % 16` (e.g. the same positions in a
+  background bitmap, or sources at multiples of 16), otherwise the CPU; `DrawMasked` needs `sx % 16 == 0` and uses the
+  CPU when the shape is not completely inside from left to right.
+* Coordinates of sprites and copper waits count from the top left corner of the picture (the standard PAL display
+  window: raster line 44, horizontal position 0x81). Sprites 0/1 use the colors 17-19, 2/3 21-23, 4/5 25-27, 6/7 29-31.
+* Bitmaps are planar: one bitplane after the other (`Plane(p)`), 1 bit per pixel each.
+
 ## How the backend works
 
 The sources are in [selfhost/src/M68k](../selfhost/src/M68k); the compiler writes its IR as always, and the backend
@@ -129,7 +177,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 * **Regalloc.csh**: a linear scan over live intervals; values and variables get `d4`-`d7` and `a2`-`a5` by their uses,
   weighted by loop depth; a value loaded from a variable shares its register.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
-  fused with their branch (`bvs`), division by constants (shifts for powers of two), `asl` for checked products by
+  fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
+  pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by
   powers of two, the length of a string or array for its bounds check without a call, only the registers that are
   used are saved.
 * **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);

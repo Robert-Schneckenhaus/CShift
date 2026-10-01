@@ -6,6 +6,23 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Amiga
+- `Amiga.Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont` (`stdlib/amiga/graphics.csh`): screens with
+  double buffering and their own copper instructions, bitmaps in chip memory, the blitter (clear, fill, copy, bobs with
+  a mask), lines, pixels, text in the system font, hardware sprites.
+- demo-amiga-gfx: bouncing balls with the blitter, a sprite and a copper sky at 50 frames per second on an A500.
+
+### m68k backend
+- Loads and stores at constant addresses (custom chip registers) are one instruction; checked additions of constants
+  are folded; multiplications without overflow check use shifts or `muls.w`; the code that ends the program on an
+  error is moved to the end of a function, so the normal path runs without branches.
+
+### Compiler
+- Casts between integers and pointers go through an integer as wide as a pointer of the target (also on 32-bit targets);
+  unsigned values are zero-extended.
+
+## [0.19] - 2026-10-01
+
 ### Standard library
 - `DateTime`, `TimeSpan`, `DayOfWeek` and `Stopwatch`: the clock and time zone, calendar arithmetic, formatting
   (`ToString("yyyy-MM-dd HH:mm")`, ISO 8601) and parsing; `Thread.Sleep`.

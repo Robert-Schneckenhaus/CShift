@@ -1,0 +1,8 @@
+{
+	"name": "demo-amiga-gfx",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/demo-amiga-gfx",
+	"target": "m68k-amigaos"
+}

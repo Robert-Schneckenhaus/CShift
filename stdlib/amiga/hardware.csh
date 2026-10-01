@@ -41,6 +41,22 @@ enum Custom : int32
     JOY1DAT = 0x00C,
     INTENAR = 0x01C,
     INTREQR = 0x01E,
+    BLTCON0 = 0x040,
+    BLTCON1 = 0x042,
+    BLTAFWM = 0x044,
+    BLTALWM = 0x046,
+    BLTCPTH = 0x048,
+    BLTBPTH = 0x04C,
+    BLTAPTH = 0x050,
+    BLTDPTH = 0x054,
+    BLTSIZE = 0x058,
+    BLTCMOD = 0x060,
+    BLTBMOD = 0x062,
+    BLTAMOD = 0x064,
+    BLTDMOD = 0x066,
+    BLTCDAT = 0x070,
+    BLTBDAT = 0x072,
+    BLTADAT = 0x074,
     COP1LCH = 0x080,
     COP2LCH = 0x084,
     COPJMP1 = 0x088,
@@ -53,11 +69,14 @@ enum Custom : int32
     INTENA = 0x09A,
     INTREQ = 0x09C,
     BPL1PTH = 0x0E0,
+    BPL1PTL = 0x0E2,
     BPLCON0 = 0x100,
     BPLCON1 = 0x102,
     BPLCON2 = 0x104,
     BPL1MOD = 0x108,
     BPL2MOD = 0x10A,
+    SPR0PTH = 0x120,
+    SPR0PTL = 0x122,
     COLOR00 = 0x180,
     COLOR01 = 0x182,
 }
@@ -178,6 +197,12 @@ struct Hardware
         WriteLong(Custom.COP1LCH, list);
         Write(Custom.COPJMP1, 0);
         Write(Custom.DMACON, DmaSet | DmaMaster | DmaCopper);
+    }
+
+    // True between TakeOver and Restore.
+    static bool IsTakenOver()
+    {
+        return _active;
     }
 
     // The current raster line (0..312 on PAL).
