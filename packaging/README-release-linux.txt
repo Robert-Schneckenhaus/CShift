@@ -37,6 +37,7 @@ toolchain/     clang, libclang, LLVM libraries (do not modify)
 README.md      language status, usage, the cshift.json project file
 docs/install.md  the dependencies (Linux: which packages, other distributions)
 docs/ffi.md    importing C headers (using Name from "header.h";), function pointers
+tools/debug/   pretty printers for gdb and lldb (programs built with -g, see docs/debugging.md)
 docs/          the language guide (docs/language), the standard library, the design documents
 
 Your own C libraries: see docs/ffi.md and the includePaths/libraryPaths/links keys in cshift.json.

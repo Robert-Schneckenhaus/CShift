@@ -238,8 +238,9 @@ else
 fi
 
 # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
-# gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace.
-printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    return twice(Square(3)) - 18;\n}\n' > "$TMP/debug_info.csh"
+# gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
+# and, with the pretty printers that the program carries, a string as its text.
+printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3;\n}\n' > "$TMP/debug_info.csh"
 if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
     report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
 elif ! "$TMP/debug_info.exe"; then
@@ -248,8 +249,14 @@ elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.csh" -o "$TMP/debug_info.ll" 
      ! grep -q 'DISubprogram(name: "Square"' "$TMP/debug_info.ll"; then
     report_fail "debug information" "no subprogram for Square in the IR"
 elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:12"; then
-    report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 12 in the backtrace"
+     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:13"; then
+    report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 13 in the backtrace"
+elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
+    report_fail "debug information" "gdb does not show the parameter x = 3"
+elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 && gdb -batch -ex 'python print(1)' > /dev/null 2>&1 &&
+     ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.csh:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
+    report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
 else
     report_ok "debug information"
 fi
@@ -341,6 +348,7 @@ else
     work="$TMP/selfhost"
     cp -r "$DIR/../selfhost" "$work"
     cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by embed (../../../stdlib from selfhost/src/Driver)
+    mkdir -p "$TMP/tools" && cp -r "$DIR/../tools/debug" "$TMP/tools/debug" # the gdb pretty printers (CodeGen/Debug.csh)
     if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
         report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
     else

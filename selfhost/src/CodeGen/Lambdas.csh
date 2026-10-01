@@ -157,8 +157,8 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
     sub.Allocas = StringBuilder.Create();
     sub.Preds = HashSet<string>.Create();
     sub.Functions = StringBuilder.Create();
-    sub.Dbg = new string[] { "", "", "" }; // the lambda is a function of its own (the metadata is shared)
-    sub.DbgLine = new int[1];
+    sub.Dbg = new string[] { "", "", "", "", "" }; // the lambda is a function of its own (the metadata is shared)
+    sub.DbgScopes = List<string>.Create();
     var lcg = cg;
     lcg.Ir = sub;
 
@@ -180,6 +180,9 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
     if (sub.Debug)
         sub.DebugFunction("lambda in " + outerFi.Name, DebugFileOf(cg, outerState.File), DebugUnitOf(cg), loc.Line);
     sub.BeginFunction("define internal " + AbiReturn(lcg, ret) + " " + fnName + "(" + header.ToString() + ")");
+    SetLoc(lcg, loc);
+    if (sub.Debug)
+        sub.SetDebugLocArtificial();
     PushScope(lcg);
     for (var i = 0; i < ptypes.Length; i += 1)
     {

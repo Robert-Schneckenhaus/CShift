@@ -8,8 +8,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ### Tools
 - Debug information: `-g` (or `"debug": true` in `cshift.json`) lets gdb and lldb stop on lines and functions, step
-  through the program and show the call stack with files and lines ([docs/debugging.md](docs/debugging.md)). Values of
-  variables follow later.
+  through the program, show the call stack with files and lines and print parameters and variables with their types
+  ([docs/debugging.md](docs/debugging.md)).
+- Pretty printers for gdb and lldb (`tools/debug`): strings as text, arrays, slices, `List`, `Dictionary`, `HashSet`,
+  `Stack`, `Queue`, `StringBuilder`, `Optional`, `SharedPtr` and unions by their contents. Programs built with `-g`
+  carry the gdb printers themselves.
 
 ### Language
 - A `ReadOnlySlice<T>` can be a parameter of a `thread` function (and the value of a `Mutex<T>`) when its elements

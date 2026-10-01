@@ -14,6 +14,8 @@ using CShift.Emit;
 void PushScope(Compiler cg)
 {
     cg.Fn[0].ScopeStarts.Add(cg.Fn[0].Vars.Count());
+    if (cg.Ir.Debug)
+        cg.Ir.PushDebugScope(cg.St[0].Loc.Line, cg.St[0].Loc.Col);
 }
 
 // The number of open scopes.
@@ -53,6 +55,8 @@ void PopScope(Compiler cg, bool emitCleanup)
     while (f.Vars.Count() > start)
         f.Vars.RemoveAt(f.Vars.Count() - 1);
     f.ScopeStarts.RemoveAt(scope);
+    if (cg.Ir.Debug)
+        cg.Ir.PopDebugScope();
 }
 
 // Cleanup code for all scopes above 'depth' without popping them (used by return/break/continue).
@@ -65,6 +69,8 @@ void EmitCleanupsDownTo(Compiler cg, int depth)
 void DeclareVar(Compiler cg, string name, int type, string slot)
 {
     cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = type, Slot = slot, OwnsArc = NeedsArc(cg, type) });
+    if (cg.Ir.Debug)
+        DebugDeclare(cg, name, type, slot, false, 0);
 }
 
 // The zero value of a type as an IR constant.
@@ -138,6 +144,9 @@ void EmitFunctionBody(Compiler cg, int instance)
     if (ir.Debug)
         ir.DebugFunction(fi.Name, DebugFileOf(cg, fi.File), DebugUnitOf(cg), d.Loc.Line);
     ir.BeginFunction("define " + (d.IsExtern ? "" : "internal ") + AbiReturn(cg, fi.Ret) + " " + bodyName + "(" + sb.ToString() + ")");
+    SetLoc(cg, d.Loc);
+    if (ir.Debug)
+        ir.SetDebugLocArtificial();
     PushScope(cg);
 
     if (fi.HasThis)
@@ -145,6 +154,8 @@ void EmitFunctionBody(Compiler cg, int instance)
         string thisSlot = ir.Alloca("ptr", "this");
         ir.Store("ptr", "%this.arg", thisSlot);
         cg.Fn[0].ThisSlot = thisSlot;
+        if (ir.Debug)
+            DebugDeclare(cg, "this", fi.Owner, thisSlot, true, 0);
     }
     for (var i = 0; i < fi.ParamTypes.Length; i += 1)
     {
@@ -157,19 +168,25 @@ void EmitFunctionBody(Compiler cg, int instance)
             string slot = ir.Alloca("{ ptr, ptr }", name);
             ir.Store("{ ptr, ptr }", arg, slot);
             cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = slot, IsConst = true });
+            if (ir.Debug)
+                DebugDeclare(cg, name, pt, slot, false, i + 1);
         }
         else if (fi.ParamRefs[i] != 0)
         {
             string slot = ir.Alloca("ptr", name);
             ir.Store("ptr", arg, slot);
             cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = slot, IsRef = true, IsConst = fi.ParamRefs[i] == 2 });
+            if (ir.Debug)
+                DebugDeclare(cg, name, pt, slot, true, i + 1);
         }
         else
         {
             string slot = ir.Alloca(LlvmType(cg, pt), name);
             ir.Store(LlvmType(cg, pt), arg, slot);
             EmitRetain(cg, pt, arg); // the callee owns its copy of the parameter
-            DeclareVar(cg, name, pt, slot);
+            cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = slot, OwnsArc = NeedsArc(cg, pt) });
+            if (ir.Debug)
+                DebugDeclare(cg, name, pt, slot, false, i + 1);
         }
     }
 

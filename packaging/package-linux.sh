@@ -26,6 +26,7 @@ cp "$build/cshiftc" "$dist/"
 cp "$root/README.md" "$dist/"
 cp "$root/LICENSE" "$dist/"
 cp -r "$root/docs" "$dist/docs"
+mkdir -p "$dist/tools" && cp -r "$root/tools/debug" "$dist/tools/debug"   # pretty printers for gdb and lldb
 cp "$root/packaging/README-release-linux.txt" "$dist/README.txt"
 sed -i "s/@VERSION@/$version/g" "$dist/README.txt"
 echo "$version" > "$dist/VERSION"
