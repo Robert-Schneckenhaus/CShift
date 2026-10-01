@@ -26,6 +26,7 @@ struct StructInfo
     FieldInfo[] Fields;               // own fields only
     int[] Interfaces;                 // interface types the struct lists in its base list
     bool LayoutInProgress;
+    int LayoutContext;                // ... in this layout context (CgState.LayoutContext)
     bool Opaque;                      // an incomplete C type: only usable through pointers
     string IrName;                    // %"Name"
     bool UnknownBase;                 // the base struct is the unknown type (the checker's instance of a generic struct)
@@ -55,7 +56,7 @@ StructInfo GetStructInfo(Compiler cg, int structType)
 string StructIrName(Compiler cg, int t)
 {
     var si = GetStructInfo(cg, t);
-    if (si.LayoutInProgress)
+    if (si.LayoutInProgress && si.LayoutContext == cg.St[0].LayoutContext)
         Fail(cg, cg.Structs.Get(si.Entry).Decl.Loc, "struct '" + si.Name + "' contains itself by value");
     return si.IrName;
 }
@@ -171,6 +172,7 @@ void LayoutStruct(Compiler cg, int index)
     var se = cg.Structs.Get(si.Entry);
     var decl = se.Decl;
     si.LayoutInProgress = true;
+    si.LayoutContext = cg.St[0].LayoutContext;
     cg.StructInfos.Set(index, si);
     if (decl.ExplicitLayout)
     {
@@ -217,7 +219,18 @@ void LayoutStruct(Compiler cg, int index)
     var fields = List<FieldInfo>.Create();
     foreach (var f in decl.Fields)
     {
+        // an array or a pointer is a new layout context: a struct whose layout is still running further out is not
+        // contained by value through it ('struct Node { Dictionary<string, Node> Fields; }' reaches Node's entries
+        // through the dictionary's array)
+        var fnode = cg.Tree.GetType(f.Type);
+        int outerContext = cg.St[0].LayoutContext;
+        if (fnode.Kind == TypeRefKind.Array || fnode.Kind == TypeRefKind.Pointer)
+        {
+            cg.St[0].LayoutContexts += 1;
+            cg.St[0].LayoutContext = cg.St[0].LayoutContexts;
+        }
         int ft = ResolveValueType(cg, f.Type.Id, se.File, si.Env);
+        cg.St[0].LayoutContext = outerContext;
         if (types.IsVoid(ft))
             ft = RecoverType(cg, f.Loc, "field '" + f.Name + "' cannot have type 'void'");
         // a field declared twice, or hiding an inherited one, is reported and left out

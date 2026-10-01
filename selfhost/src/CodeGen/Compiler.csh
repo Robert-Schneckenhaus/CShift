@@ -232,6 +232,8 @@ struct CgState
     bool InitActive;
     int Imports;          // number of "using X from header" declarations in the program
     int LayoutDepth;      // struct layouts that are running (the methods of new structs wait until it is 0)
+    int LayoutContext;    // the layout context: a field of an array or pointer type starts a new one (LayoutStruct)
+    int LayoutContexts;   // the number of contexts started
     bool InstantiatingMethods;
     int LambdaCount;
 }
@@ -886,6 +888,8 @@ bool NeedsArc(Compiler cg, int t)
         r = NeedsArc(cg, info.Elem);
         break;
     case TypeKind.Struct:
+        if (GetStructInfo(cg, t).LayoutInProgress)
+            return false; // asked again (and remembered) once its fields are known
         r = StructNeedsArc(cg, t);
         break;
     case TypeKind.Union:

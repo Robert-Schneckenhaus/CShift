@@ -6,6 +6,18 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- JSON: `Json.Parse` and `JsonValue` (build, read and write JSON; objects keep the order of their keys).
+- Regular expressions: `Regex` (groups and named groups, sets, anchors, word boundaries, lazy and counted repetition,
+  `(?i)`/`(?m)`, UTF-8) with `IsMatch`, `Match`, `Matches`, `Replace` (`$1`, `${name}`) and `Split`; a search is
+  linear in the pattern size times the text length.
+
+### Compiler
+- A struct can contain a `Dictionary` (and other collections) of itself: a struct reached through an array is no longer
+  taken for one contained by value.
+
+## [0.20] - 2026-10-01
+
 ### Amiga
 - `Amiga.Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont` (`stdlib/amiga/graphics.csh`): screens with
   double buffering and their own copper instructions, bitmaps in chip memory, the blitter (clear, fill, copy, bobs with

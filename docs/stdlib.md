@@ -19,6 +19,8 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System` | `random.csh` | `Random`: seeded pseudo-random numbers |
 | `System` | `datetime.csh` | `DateTime`, `TimeSpan`, `DayOfWeek`, `Stopwatch` |
 | `System` | `stream.csh` | `FileStream`, `StreamReader`, `StreamWriter`, `SeekOrigin` |
+| `System` | `json.csh` | `Json`, `JsonValue`, `JsonKind`, `JsonError` |
+| `System` | `regex.csh` | `Regex`, `RegexMatch`, `RegexError` |
 | `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
@@ -183,6 +185,38 @@ while (reader.ReadLine() is string line)
     if (line.StartsWith("ERROR"))
         Console.WriteLine(line);
 }
+```
+
+**`Json`, `JsonValue`** — JSON text (RFC 8259): `Json.Parse(text)` (`JsonError<JsonValue>`; the message says the line
+and column, `JsonError.TooDeep` above 512 nested arrays/objects); a `JsonValue` has a `Kind` (`JsonKind.Null`, `Bool`,
+`Number`, `String`, `Array`, `Object`) and is made with `JsonValue.Null()`, `Bool(b)`, `Number(d)`, `String(s)`,
+`NewArray()`, `NewObject()`. Reading: `IsNull()` … `IsObject()`, `AsBool()`, `AsNumber()`, `AsInt()`, `AsInt64()`,
+`AsString()` (a panic for another kind), `Count()`; arrays: `v[i]` / `Get(i)`, `Set(i, x)`, `Add(x)`, `Items()`;
+objects: `v["key"]` / `Get(key)` (JSON null if missing, so `doc["a"]["b"]` needs no checks), `Has(key)`, `Set(key, x)`,
+`Remove(key)`, `Keys()` (in the order they were added). Writing: `ToString()` (compact), `ToIndentedString([spaces])`.
+Numbers are doubles (written as integers when they are whole); copies of an array or object share its elements.
+
+```csharp
+var doc = try Json.Parse(try File.ReadAllText("config.json"));
+int port = doc["server"]["port"].IsNumber() ? doc["server"]["port"].AsInt() : 8080;
+var o = JsonValue.NewObject();
+o.Set("port", JsonValue.Number(port));
+Console.WriteLine(o.ToIndentedString());
+```
+
+**`Regex`** — regular expressions: `Regex.Create(pattern)` (`RegexError<Regex>`; the message says what is wrong and
+where), `IsMatch(text)`, `Match(text [, start])` (`Optional<RegexMatch>`), `Matches(text)`, `Replace(text,
+replacement)` (`$0`, `$1`…`$9`, `${n}`, `${name}`, `$$`), `Split(text)`. A **`RegexMatch`** has `Index`, `Length`,
+`Value`, `Group(n)` / `Group(name)` (`""` if the group did not take part), `GroupMatched(n)`, `GroupIndex(n)`,
+`GroupCount()`. Syntax: characters and escapes (`\.`, `\n`, `\xHH`, `\uHHHH`), `.`, sets `[a-z]` `[^...]`, `\d \w \s`
+`\D \W \S`, `^ $` (lines with `(?m)`), `\A \z`, `\b \B`, groups `(...)`, `(?<name>...)`, `(?:...)`, `|`, `* + ? {n}
+{n,} {n,m}` and their lazy forms (`*?`, ...), `(?i)` (ASCII letters) at the start. No backreferences or lookaround.
+UTF-8 aware (`.` and sets match a whole character; positions are bytes). A search takes at most (pattern size) x
+(text length) steps: the matcher remembers the states it tried, so patterns like `(a*)*b` cannot take exponential time.
+
+```csharp
+var date = try Regex.Create("(?<y>\\d{4})-(?<m>\\d{2})-(?<d>\\d{2})");
+Console.WriteLine(date.Replace("due 2026-10-01", "${d}.${m}.${y}"));   // due 01.10.2026
 ```
 
 **`Random`** — `Random.Create(seed)` (the same sequence for the same seed, on every system) or `Random.Create()`
