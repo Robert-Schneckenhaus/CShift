@@ -193,6 +193,14 @@ struct FnState
     bool Live;                         // the checker: the current statement can be reached (structurally)
     bool CollectReturns;               // the checker: the body of a lambda whose result type is inferred (LambdaResultType)
     int LambdaReturn;                  // ... the type of its first 'return x' (0: none yet)
+    int LambdaVars;                    // the checker: in the body of a lambda, where its own variables start in Vars
+                                       // (+1; 0 outside of lambdas)
+    // the checker, in a generic body (checked once): its type parameters, their constraints and the variables whose
+    // declared type is one of them ("name=T")
+    bool Generic;
+    string[] TypeParamNames;
+    Constraint[] TypeParamConstraints;
+    List<string> TypeParamVars;
 }
 
 struct LambdaCapture

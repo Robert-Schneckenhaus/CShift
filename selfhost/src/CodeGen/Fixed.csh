@@ -86,6 +86,21 @@ string FixedAddress(Compiler cg, Value v)
     return slot;
 }
 
+// A constant index into a Fixed<T, N> is checked when the program is compiled: "" or the error.
+string FixedIndexError(Compiler cg, int fixedType, Expr index, bool fromEnd)
+{
+    var types = cg.Types;
+    if (index.Kind != ExprKind.IntLit)
+        return "";
+    int n = types.Count(fixedType);
+    uint64 raw = cg.Tree.GetIntLit(index).Value;
+    bool bad = fromEnd ? (raw < 1ul || raw > (uint64)n) : raw >= (uint64)n;
+    if (!bad)
+        return "";
+    return "index " + (fromEnd ? "^" : "") + raw.ToString() + " is out of range for '" + types.Name(fixedType) + "' (" +
+           n.ToString() + " elements)";
+}
+
 // f[i] and f[^i]: bounds-checked (a constant index when the program is compiled). An element of a variable or field is
 // assignable unless the Fixed is read-only (a 'const ref' parameter).
 Value EmitFixedElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
@@ -94,14 +109,9 @@ Value EmitFixedElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
     var ir = cg.Ir;
     int n = types.Count(obj.Type);
     int elem = types.Elem(obj.Type);
-    if (index.Kind == ExprKind.IntLit)
-    {
-        uint64 raw = cg.Tree.GetIntLit(index).Value;
-        bool bad = fromEnd ? (raw < 1ul || raw > (uint64)n) : raw >= (uint64)n;
-        if (bad)
-            Fail(cg, index.Loc, "index " + (fromEnd ? "^" : "") + raw.ToString() + " is out of range for '" + types.Name(obj.Type) + "' (" +
-                                n.ToString() + " elements)");
-    }
+    string why = FixedIndexError(cg, obj.Type, index, fromEnd);
+    if (why.Length > 0)
+        Fail(cg, index.Loc, why);
     string addr = FixedAddress(cg, obj);
     string i = SliceBound(cg, index, fromEnd, n.ToString());
     EmitIndexPanicIf(cg, ir.ICmp("uge", SizeIr(cg), i, n.ToString()), "fixed array index out of range", i, n.ToString());

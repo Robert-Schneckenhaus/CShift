@@ -20,6 +20,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Compiler
 - Casts between integers and pointers go through an integer as wide as a pointer of the target (also on 32-bit targets);
   unsigned values are zero-extended.
+- More errors are reported in one run (by the semantic pass instead of code generation): pointers outside `unsafe`,
+  constant indexes out of the range of a `Fixed<T, N>`, `using` without `IDisposable`, union members in `is`, `switch`
+  over error codes, function names and lambdas converted to `Action`/`Func` (signature, parameters, `ref` parameters,
+  `thread` functions), calls through function values, variables changed in a lambda, interface parameters in a lambda,
+  `var` with a lambda, the binding of `is not`.
+- Generic bodies: a value of a type parameter offers only the methods of its constraints (and `ToString`); calling
+  another one is an error, also if the generic function is never used.
 
 ## [0.19] - 2026-10-01
 

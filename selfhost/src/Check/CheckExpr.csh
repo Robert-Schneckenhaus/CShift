@@ -80,7 +80,7 @@ Value CheckExpr(Compiler cg, Expr e)
     case ExprKind.Is: return CheckIs(cg, e);
     case ExprKind.Collection: return CheckCollectionExpr(cg, e);
     case ExprKind.Lambda:
-        CheckLambdaBody(cg, e);
+        CheckLambdaBody(cg, e, new int[0]);
         return UnknownValue(cg); // its type comes from the Action/Func it is converted to (code generation for now)
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
@@ -110,6 +110,9 @@ Value CheckName(Compiler cg, Expr e)
     if (!v.IsNone())
     {
         IndexLocal(cg, e.Loc, n.Name);
+        if (IsInterfaceType(cg, v.Type) && IsCapturedName(cg, n.Name))
+            CheckError(cg, e.Loc, "a lambda cannot use the interface parameter '" + n.Name + "' (the lambda could outlive the " +
+                                  "struct it points to)");
         return v;
     }
     int owner = CurrentOwner(cg);
@@ -135,8 +138,14 @@ Value CheckName(Compiler cg, Expr e)
         IndexGlobal(cg, e.Loc, n.Name.Length, g);
         return GlobalUse(cg, g);
     }
-    if ((owner != 0 && MethodCandidates(cg, owner, n.Name).Length > 0) || FreeCandidates(cg, cg.Fn[0].File, n.Name).Length > 0)
-        return UnknownValue(cg); // a function name as a value: converted by code generation for now
+    // a function name as a value: it converts to a matching Action/Func type (see CheckConversion)
+    var group = new Candidate[0];
+    if (owner != 0)
+        group = MethodCandidates(cg, owner, n.Name);
+    if (group.Length == 0)
+        group = FreeCandidates(cg, cg.Fn[0].File, n.Name);
+    if (group.Length > 0)
+        return n.TypeArgs.Length > 0 ? UnknownValue(cg) : GroupValue(cg, group, new int[0], n.Name);
     if (!cg.St[0].StdlibLoaded && IsStdlibName(n.Name))
         CheckError(cg, e.Loc, "cshc does not support the standard library yet ('" + n.Name + "')");
     else if (FindLocal(cg, n.Name + " (not assigned here)") >= 0)
@@ -211,6 +220,30 @@ Value CheckCall(Compiler cg, Expr e, bool viaStart)
     return UnknownValue(cg);
 }
 
+// A call through a function value (see EmitIndirectCall): the number of arguments and their conversions.
+Value CheckIndirectCall(Compiler cg, int ft, Expr[] args, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ptypes = types.Params(ft);
+    if (args.Length != ptypes.Length)
+    {
+        CheckError(cg, loc, "a call of '" + types.Name(ft) + "' needs " + ptypes.Length.ToString() + " argument(s), got " +
+                            args.Length.ToString());
+        foreach (var a in args)
+            CheckExpr(cg, a);
+        return UnknownValue(cg);
+    }
+    for (var i = 0; i < args.Length; i += 1)
+    {
+        Value v = CheckExprAs(cg, args[i], ptypes[i]);
+        if (v.IsRefArg)
+            CheckError(cg, args[i].Loc, "function values (Action/Func) have no 'ref' parameters");
+        else
+            CheckConversion(cg, v, ptypes[i], args[i].Loc);
+    }
+    return Rvalue(types.Elem(ft), "", false);
+}
+
 Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
 {
     bool known = true;
@@ -219,6 +252,8 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
     {
         if (!IsUnknown(cg, variable) && !IsCallableType(cg, variable.Type))
             CheckError(cg, e.Loc, "'" + n.Name + "' is a variable, not a function");
+        if (!IsUnknown(cg, variable) && cg.Types.IsFunction(variable.Type))
+            return CheckIndirectCall(cg, variable.Type, call.Args, e.Loc);
         CheckArgs(cg, call.Args, ref known);
         return UnknownValue(cg);
     }
@@ -287,10 +322,21 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
 Value CheckUnary(Compiler cg, Expr e)
 {
     var u = cg.Tree.GetUnary(e);
-    if (u.Op == UnOp.Deref || u.Op == UnOp.AddrOf)
+    if (u.Op == UnOp.Deref)
     {
-        CheckExpr(cg, u.Operand);
-        return UnknownValue(cg);
+        bool unsafeError = ReportIf(cg, e.Loc, UnsafeError(cg, "pointer dereference"));
+        Value p = CheckRValue(cg, u.Operand);
+        if (unsafeError || cg.Types.IsUnknown(p.Type) || ReportIf(cg, e.Loc, DerefError(cg, p.Type)))
+            return UnknownValue(cg);
+        return Lvalue(cg.Types.Elem(p.Type), "", false);
+    }
+    if (u.Op == UnOp.AddrOf)
+    {
+        bool unsafeError = ReportIf(cg, e.Loc, UnsafeError(cg, "taking an address"));
+        Value o = CheckExpr(cg, u.Operand);
+        if (unsafeError || cg.Types.IsUnknown(o.Type))
+            return UnknownValue(cg);
+        return Rvalue(cg.Types.PointerTo(o.Type), "", false);
     }
     Value v = CheckRValue(cg, u.Operand);
     string why = "";
@@ -360,6 +406,20 @@ Value CheckExprAs(Compiler cg, Expr e, int target)
 {
     if (IsTypelessNew(cg, e))
         return CheckTypelessNew(cg, e, target);
+    if (e.Kind == ExprKind.Lambda && cg.Types.IsFunction(target))
+    {
+        // a lambda converted to an Action/Func: its parameters must fit, its body gets their types
+        SourceLoc where = e.Loc;
+        string wrong = LambdaSignatureError(cg, e, target, ref where);
+        if (wrong.Length > 0)
+        {
+            CheckError(cg, where, wrong);
+            CheckLambdaBody(cg, e, new int[0]);
+            return UnknownValue(cg);
+        }
+        CheckLambdaBody(cg, e, cg.Types.Params(target));
+        return Rvalue(target, "", false);
+    }
     int frame = ArithmeticFrame(cg, target);
     if (frame == 0 || !IsFramable(cg, e))
         return CheckExpr(cg, e);
@@ -468,7 +528,9 @@ Value CheckAssign(Compiler cg, Expr e)
             CheckExpr(cg, a.Value);
             return UnknownValue(cg);
         }
-        target = Lvalue(SliceElemType(cg, ht), "%e", false);
+        if (types.IsFixed(ht))
+            ReportIf(cg, ix.Index.Loc, FixedIndexError(cg, ht, ix.Index, ix.FromEnd));
+        target = Lvalue(SliceElemType(cg, ht), "%e", types.IsFixed(ht) && holder.IsConst);
     }
     else
         target = CheckExpr(cg, a.Target);
@@ -476,6 +538,13 @@ Value CheckAssign(Compiler cg, Expr e)
     {
         CheckExpr(cg, a.Value);
         return target;
+    }
+    if (a.Target.Kind == ExprKind.Name && IsCapturedName(cg, cg.Tree.GetName(a.Target).Name))
+    {
+        CheckError(cg, e.Loc, "cannot assign to '" + cg.Tree.GetName(a.Target).Name + "': a lambda gets a read-only copy of " +
+                              "the variables it uses (return the new value instead)");
+        CheckExpr(cg, a.Value);
+        return UnknownValue(cg);
     }
     if (!target.IsLValue)
     {
@@ -494,7 +563,12 @@ Value CheckAssign(Compiler cg, Expr e)
     }
     if (target.IsConst)
     {
-        CheckError(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
+        if (a.Target.Kind == ExprKind.Name && FindLocal(cg, cg.Tree.GetName(a.Target).Name) < 0 &&
+            IsOuterName(cg, cg.Tree.GetName(a.Target).Name))
+            CheckError(cg, e.Loc, "cannot assign to '" + cg.Tree.GetName(a.Target).Name + "': a lambda gets a read-only copy of " +
+                                  "the variables it uses (return the new value instead)");
+        else
+            CheckError(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
         CheckExpr(cg, a.Value);
         return UnknownValue(cg);
     }
@@ -665,6 +739,19 @@ Value CheckIs(Compiler cg, Expr e)
             }
         }
     }
+    else if (!types.IsUnknown(t) && IsUnionType(cg, t) && !n.Type.IsNull())
+    {
+        // 'u is M m': M must be one of the union's members
+        int pattern = DeclTypeOf(cg, n.Type);
+        if (!types.IsUnknown(pattern))
+        {
+            if (UnionMemberIndex(cg, t, pattern) < 0)
+                CheckError(cg, cg.Tree.GetType(n.Type).Loc, "'" + types.Name(pattern) + "' is not a member of union '" +
+                                                            types.Name(t) + "'");
+            else
+                bound = pattern;
+        }
+    }
     if (n.BindName.Length > 0)
     {
         DeclareVar(cg, n.BindName, bound, "%v");
@@ -676,10 +763,12 @@ Value CheckIs(Compiler cg, Expr e)
 // The body of a lambda, in a scope of its own: its parameters (with the unknown type unless they are written), and the
 // variables of the enclosing function, which a lambda reads. Its 'return' belongs to the lambda, whose result type is
 // not known here, and 'break'/'continue' cannot leave it.
-void CheckLambdaBody(Compiler cg, Expr e)
+void CheckLambdaBody(Compiler cg, Expr e, int[] paramTypes)
 {
     var l = cg.Tree.GetLambda(e);
     int savedRet = cg.Fn[0].RetType;
+    int savedLambdaVars = cg.Fn[0].LambdaVars;
+    cg.Fn[0].LambdaVars = cg.Fn[0].Vars.Count() + 1;
     var savedLoops = cg.Fn[0].Loops;
     bool savedLive = cg.Fn[0].Live;
     bool savedCollect = cg.Fn[0].CollectReturns;
@@ -688,10 +777,13 @@ void CheckLambdaBody(Compiler cg, Expr e)
     cg.Fn[0].RetType = cg.Types.Unknown;
     cg.Fn[0].Loops = List<LoopCtx>.Create();
     PushScope(cg);
-    foreach (var p in l.Params)
+    for (var i = 0; i < l.Params.Length; i += 1)
     {
-        DeclareVar(cg, p.Name, p.Type.IsNull() ? cg.Types.Unknown : DeclTypeOf(cg, p.Type), "%p");
+        var p = l.Params[i];
+        int pt = !p.Type.IsNull() ? DeclTypeOf(cg, p.Type) : i < paramTypes.Length ? paramTypes[i] : cg.Types.Unknown;
+        DeclareVar(cg, p.Name, pt, "%p");
         NoteDeclared(cg, p.NameLoc, p.Loc, true, p.Type, p.Ref);
+        NoteTypeParamVar(cg, p.Name, p.Type);
     }
     if (!l.Block.IsNull())
         CheckBlock(cg, l.Block, true);
@@ -702,4 +794,15 @@ void CheckLambdaBody(Compiler cg, Expr e)
     cg.Fn[0].Loops = savedLoops;
     cg.Fn[0].Live = savedLive;
     cg.Fn[0].CollectReturns = savedCollect;
+    cg.Fn[0].LambdaVars = savedLambdaVars;
+}
+
+// True if the local variable 'name' belongs to a function or lambda around the lambda whose body is checked.
+bool IsCapturedName(Compiler cg, string name)
+{
+    int start = cg.Fn[0].LambdaVars - 1;
+    if (start < 0)
+        return false;
+    int local = FindLocal(cg, name);
+    return local >= 0 && local < start;
 }

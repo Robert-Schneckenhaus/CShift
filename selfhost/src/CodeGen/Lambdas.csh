@@ -85,6 +85,31 @@ string EnvField(Compiler cg, int index)
     return cg.Ir.Gep(cg.Fn[0].EnvType, "%lambda.env", "i32 0, i32 " + index.ToString());
 }
 
+// "" if the lambda's parameters fit the function type 'ft' (their number, the written types), otherwise the error
+// (and its place in 'loc').
+string LambdaSignatureError(Compiler cg, Expr e, int ft, ref SourceLoc loc)
+{
+    var types = cg.Types;
+    var n = cg.Tree.GetLambda(e);
+    var ptypes = types.Params(ft);
+    if (n.Params.Length != ptypes.Length)
+        return "the lambda has " + n.Params.Length.ToString() + " parameter(s), '" + types.Name(ft) + "' needs " +
+               ptypes.Length.ToString();
+    for (var i = 0; i < n.Params.Length; i += 1)
+    {
+        if (n.Params[i].Type.IsNull())
+            continue;
+        int written = ResolveValueType(cg, n.Params[i].Type.Id, cg.Fn[0].File, cg.Fn[0].Env);
+        if (written != ptypes[i] && !types.IsUnknown(written) && !types.IsUnknown(ptypes[i]))
+        {
+            loc = n.Params[i].Loc;
+            return "parameter '" + n.Params[i].Name + "' of the lambda has type '" + types.Name(written) + "', but '" +
+                   types.Name(ft) + "' needs '" + types.Name(ptypes[i]) + "'";
+        }
+    }
+    return "";
+}
+
 // Compiles the lambda as a value of the function type 'ft'.
 Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
 {
@@ -92,18 +117,10 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
     var n = cg.Tree.GetLambda(e);
     var ptypes = types.Params(ft);
     int ret = types.Elem(ft);
-    if (n.Params.Length != ptypes.Length)
-        Fail(cg, loc, "the lambda has " + n.Params.Length.ToString() + " parameter(s), '" + types.Name(ft) + "' needs " +
-                          ptypes.Length.ToString());
-    for (var i = 0; i < n.Params.Length; i += 1)
-    {
-        if (n.Params[i].Type.IsNull())
-            continue;
-        int written = ResolveValueType(cg, n.Params[i].Type.Id, cg.Fn[0].File, cg.Fn[0].Env);
-        if (written != ptypes[i])
-            Fail(cg, n.Params[i].Loc, "parameter '" + n.Params[i].Name + "' of the lambda has type '" + types.Name(written) + "', but '" +
-                                          types.Name(ft) + "' needs '" + types.Name(ptypes[i]) + "'");
-    }
+    SourceLoc whereWrong = loc;
+    string wrong = LambdaSignatureError(cg, e, ft, ref whereWrong);
+    if (wrong.Length > 0)
+        Fail(cg, whereWrong, wrong);
 
     cg.St[0].LambdaCount += 1;
     string id = cg.St[0].LambdaCount.ToString();
