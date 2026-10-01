@@ -16,14 +16,22 @@ struct IndexEntry
     int Length;         // its length in characters
     SourceLoc Def;      // where it is declared (Line 0: nowhere to go, e.g. a builtin)
     string Hover;       // what it is: a declaration-like line, e.g. "int32 Add(int32 a, int32 b)"
+    int Type;           // the type of its value (0: none), for the members after a '.'
+    bool IsTypeName;    // a type name: after a '.' come its static members (enum members, static methods)
 }
 
 // Records a use of a name (only in the 'check'/'query' mode, and not while the result type of a lambda is inferred).
 void IndexAt(Compiler cg, SourceLoc at, int length, SourceLoc def, string hover)
 {
+    IndexAtTyped(cg, at, length, def, hover, 0, false);
+}
+
+// ... with the type of the name's value (or the type it names).
+void IndexAtTyped(Compiler cg, SourceLoc at, int length, SourceLoc def, string hover, int type, bool isTypeName)
+{
     if (!cg.St[0].Indexing || cg.St[0].Muted || at.Line <= 0 || length <= 0)
         return;
-    cg.Index.Add(IndexEntry { At = at, Length = length, Def = def, Hover = hover });
+    cg.Index.Add(IndexEntry { At = at, Length = length, Def = def, Hover = hover, Type = type, IsTypeName = isTypeName });
 }
 
 // The last declared variable is declared at 'loc' (a parameter if isParam).
@@ -72,7 +80,8 @@ void IndexLocal(Compiler cg, SourceLoc at, string name)
     var v = cg.Fn[0].Vars.Get(i);
     string kind = v.IsConstant ? "const " : v.IsParam ? "(parameter) " + v.RefText : "";
     string type = cg.Types.IsUnknown(v.Type) && v.TypeText != null && v.TypeText.Length > 0 ? v.TypeText : HoverType(cg, v.Type);
-    IndexAt(cg, at, name.Length, v.Loc, kind + type + " " + name + (v.IsConstant ? ConstValueHover(cg, v.ConstValue) : ""));
+    IndexAtTyped(cg, at, name.Length, v.Loc, kind + type + " " + name + (v.IsConstant ? ConstValueHover(cg, v.ConstValue) : ""),
+                 v.Type, false);
 }
 
 // A field of a struct type (its own or an inherited one).
@@ -87,7 +96,7 @@ void IndexField(Compiler cg, SourceLoc at, int structType, string name)
             if (f.Name == name)
             {
                 var p = FindField(cg, structType, name);
-                IndexAt(cg, at, name.Length, f.Loc, FieldHover(cg, p.Type, si.Name + "." + name));
+                IndexAtTyped(cg, at, name.Length, f.Loc, FieldHover(cg, p.Type, si.Name + "." + name), p.Type, false);
                 return;
             }
         }
@@ -126,7 +135,8 @@ void IndexConst(Compiler cg, SourceLoc at, int length, int c)
         return;
     var entry = cg.Consts.Get(c);
     ConstVal v = ConstEvalDecl(cg, c);
-    IndexAt(cg, at, length, entry.Decl.Loc, "const " + HoverType(cg, v.Type) + " " + entry.Decl.Name + ConstValueHover(cg, v));
+    IndexAtTyped(cg, at, length, entry.Decl.Loc, "const " + HoverType(cg, v.Type) + " " + entry.Decl.Name + ConstValueHover(cg, v),
+                 v.Type, false);
 }
 
 // The value of a constant in a hover: " = 42", " = \"text\"", or for a longer string (an embedded file) its size and
@@ -167,7 +177,8 @@ string ConstValueHover(Compiler cg, ConstVal v)
 void IndexGlobal(Compiler cg, SourceLoc at, int length, int g)
 {
     var entry = cg.Globals.Get(g);
-    IndexAt(cg, at, length, entry.Decl.Loc, HoverType(cg, GlobalValue(cg, g).Type) + " " + entry.Name + " (global)");
+    int type = GlobalValue(cg, g).Type;
+    IndexAtTyped(cg, at, length, entry.Decl.Loc, HoverType(cg, type) + " " + entry.Name + " (global)", type, false);
 }
 
 // A call of a function or method instance: its signature.
@@ -196,7 +207,7 @@ void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
         sb.Append(d.Params[i].Name);
     }
     sb.Append(')');
-    IndexAt(cg, at, length, d.NameLoc.Line > 0 ? d.NameLoc : d.Loc, sb.ToString());
+    IndexAtTyped(cg, at, length, d.NameLoc.Line > 0 ? d.NameLoc : d.Loc, sb.ToString(), fi.Ret, false);
 }
 
 // A type in a hover; the type as written when it is not known (a generic body is checked with unknown type arguments).
@@ -211,7 +222,8 @@ string DeclaredHoverType(Compiler cg, int t, TypeRef written)
 // a hover, nowhere to go. Returns the value.
 Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string suffix)
 {
-    IndexAt(cg, m.NameLoc, m.Name.Length, SourceLoc { }, HoverType(cg, v.Type) + " " + cg.Types.Name(objType) + "." + m.Name + suffix);
+    IndexAtTyped(cg, m.NameLoc, m.Name.Length, SourceLoc { }, HoverType(cg, v.Type) + " " + cg.Types.Name(objType) + "." + m.Name +
+                 suffix, v.Type, false);
     return v;
 }
 
@@ -262,7 +274,7 @@ void IndexBuiltinCall(Compiler cg, SourceLoc at, string owner, string method, Ar
         }
     }
     sb.Append(')');
-    IndexAt(cg, at, method.Length, SourceLoc { }, sb.ToString());
+    IndexAtTyped(cg, at, method.Length, SourceLoc { }, sb.ToString(), result.Type, false);
 }
 
 // The name of parameter i of a function the language provides ("" if it has none to show).
@@ -332,15 +344,19 @@ void IndexTypeName(Compiler cg, SourceLoc at, int length, TypeDeclEntry entry, s
     switch (entry.Kind)
     {
     case DeclKind.Struct:
-        IndexAt(cg, at, length, cg.Structs.Get(entry.Index).Decl.Loc, "struct " + name);
+    {
+        var sd = cg.Structs.Get(entry.Index).Decl;
+        int st = sd.TypeParams.Length == 0 ? GetStructType(cg, entry.Index, new int[0], sd.Loc) : 0;
+        IndexAtTyped(cg, at, length, sd.Loc, "struct " + name, st, true);
         break;
+    }
     case DeclKind.Interface:
         IndexAt(cg, at, length, cg.Interfaces.Get(entry.Index).Decl.Loc, "interface " + name);
         break;
     case DeclKind.Enum:
     {
         var d = cg.Enums.Get(entry.Index).Decl;
-        IndexAt(cg, at, length, d.Loc, (d.IsError ? "error " : "enum ") + name);
+        IndexAtTyped(cg, at, length, d.Loc, (d.IsError ? "error " : "enum ") + name, GetEnumType(cg, entry.Index), true);
         break;
     }
     default:
@@ -405,4 +421,212 @@ string JsonString(string s)
     }
     sb.Append('"');
     return sb.ToString();
+}
+
+// ---------------------------------------------------------------------------
+// References, members, outline ('cshiftc query --references / --members / --outline')
+// ---------------------------------------------------------------------------
+
+// "file": "...", "line": n, "col": n (empty if the place is not in a file)
+string JsonPlace(Compiler cg, Diagnostics diag, SourceLoc at)
+{
+    if (at.Line <= 0 || at.File < 0 || at.File >= diag.Files.Count() || diag.Files.Get(at.File).StartsWith("<"))
+        return "";
+    return "\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(at.File))) + ", \"line\": " + at.Line.ToString() +
+           ", \"col\": " + at.Col.ToString();
+}
+
+// Every place where the name of entry 'found' is written, the declaration included: the entries with the same
+// declaration.
+string ReferencesJson(Compiler cg, Diagnostics diag, int found)
+{
+    var def = cg.Index.Get(found).Def;
+    var seen = HashSet<string>.Create();
+    var sb = StringBuilder.Create();
+    sb.Append("[");
+    for (var i = 0; i < cg.Index.Count(); i += 1)
+    {
+        var e = cg.Index.Get(i);
+        if (def.Line <= 0 ? i != found : (e.Def.File != def.File || e.Def.Line != def.Line || e.Def.Col != def.Col))
+            continue;
+        string place = JsonPlace(cg, diag, e.At);
+        if (place.Length == 0 || seen.Contains(place))
+            continue;
+        seen.Add(place);
+        sb.Append(seen.Count() > 1 ? ", " : "");
+        sb.Append("{" + place + ", \"length\": " + e.Length.ToString() + "}");
+    }
+    sb.Append("]");
+    return sb.ToString();
+}
+
+// One member for completion: {"name": ..., "kind": "field"/"method"/"enumMember"/"property", "detail": ...}.
+void AddMember(StringBuilder sb, HashSet<string> seen, string name, string kind, string detail)
+{
+    if (name.Length == 0 || name[0] == '_' || seen.Contains(name))
+        return;
+    seen.Add(name);
+    sb.Append(seen.Count() > 1 ? ", " : "");
+    sb.Append("{\"name\": " + JsonString(name) + ", \"kind\": \"" + kind + "\", \"detail\": " + JsonString(detail) + "}");
+}
+
+// A method as it is shown in a completion list: "int32 Add(int32 a, int32 b)".
+string MethodDetail(Compiler cg, FuncDecl d)
+{
+    var sb = StringBuilder.Create();
+    if (d.IsStatic)
+        sb.Append("static ");
+    sb.Append(d.Ret.IsNull() ? "void" : cg.Tree.TypeToString(d.Ret));
+    sb.Append(' ');
+    sb.Append(d.Name);
+    sb.Append('(');
+    for (var i = 0; i < d.Params.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(d.Params[i].Type.IsNull() ? "?" : cg.Tree.TypeToString(d.Params[i].Type));
+        sb.Append(' ');
+        sb.Append(d.Params[i].Name);
+    }
+    sb.Append(')');
+    return sb.ToString();
+}
+
+// What can follow 'x.' when x has type t (or names the type t: its static members): a JSON list.
+string MembersJson(Compiler cg, int t, bool isTypeName)
+{
+    var types = cg.Types;
+    var sb = StringBuilder.Create();
+    var seen = HashSet<string>.Create();
+    sb.Append("[");
+    if (t != 0 && !types.IsUnknown(t))
+    {
+        if (types.IsEnum(t) && isTypeName)
+        {
+            var info = GetEnumInfo(cg, t);
+            for (var i = 0; i < info.Names.Length; i += 1)
+                AddMember(sb, seen, info.Names[i], "enumMember", types.Name(t) + "." + info.Names[i] + " = " + info.Values[i].ToString());
+        }
+        else if (types.IsStruct(t))
+        {
+            int s = t;
+            while (s != 0 && types.IsStruct(s))
+            {
+                var si = GetStructInfo(cg, s);
+                var sd = cg.Structs.Get(si.Entry).Decl;
+                if (!isTypeName)
+                {
+                    foreach (var f in sd.Fields)
+                    {
+                        var p = FindField(cg, t, f.Name);
+                        AddMember(sb, seen, f.Name, "field", HoverType(cg, p.Type) + " " + f.Name);
+                    }
+                }
+                foreach (var m in sd.Methods)
+                {
+                    if (m.IsStatic == isTypeName)
+                        AddMember(sb, seen, m.Name, "method", MethodDetail(cg, m));
+                }
+                s = si.Base;
+            }
+        }
+        else if (types.Kind(t) == TypeKind.Interface)
+        {
+            foreach (var m in cg.Interfaces.Get(cg.InterfaceInfos.Get(types.Decl(t)).Entry).Decl.Methods)
+                AddMember(sb, seen, m.Name, "method", MethodDetail(cg, m));
+        }
+        else if (!isTypeName)
+        {
+            if (types.IsString(t) || types.IsStringSlice(t) || types.IsArray(t) || types.IsSlice(t) || types.IsFixed(t))
+                AddMember(sb, seen, "Length", "property", "int32 Length");
+            if (types.IsString(t) || types.IsStringSlice(t))
+            {
+                // the String namespace of the standard library: its functions are methods of strings
+                foreach (var key in cg.FuncDecls.Keys())
+                {
+                    if (!key.StartsWith("String.") || key.IndexOf('.', 7) >= 0)
+                        continue;
+                    var list = cg.FuncDecls.Get(key);
+                    if (list.Count() > 0)
+                    {
+                        var d = cg.Funcs.Get(list.Get(0)).Decl;
+                        AddMember(sb, seen, key.Substring(7).ToString(), "method", MethodDetail(cg, d));
+                    }
+                }
+            }
+            AddMember(sb, seen, "ToString", "method", "string ToString()");
+        }
+    }
+    sb.Append("]");
+    return sb.ToString();
+}
+
+// One symbol of the outline: {"name", "kind", "line", "col", "children": [...]}.
+string OutlineSymbol(string name, string kind, SourceLoc loc, string children)
+{
+    return "{\"name\": " + JsonString(name) + ", \"kind\": \"" + kind + "\", \"line\": " + loc.Line.ToString() + ", \"col\": " +
+           loc.Col.ToString() + (children.Length > 0 ? ", \"children\": [" + children + "]" : "") + "}";
+}
+
+// The declarations of a file, for the outline of an editor: types with their members, functions, constants, globals.
+string OutlineJson(Compiler cg, int file)
+{
+    var items = List<string>.Create();
+    for (var i = 0; i < cg.Structs.Count(); i += 1)
+    {
+        var se = cg.Structs.Get(i);
+        if (se.File != file)
+            continue;
+        var kids = List<string>.Create();
+        foreach (var f in se.Decl.Fields)
+            kids.Add(OutlineSymbol(f.Name, "field", f.Loc, ""));
+        foreach (var m in se.Decl.Methods)
+            kids.Add(OutlineSymbol(m.Name, "method", m.NameLoc.Line > 0 ? m.NameLoc : m.Loc, ""));
+        items.Add(OutlineSymbol(se.Decl.Name, "struct", se.Decl.Loc, string.Join(", ", kids.ToArray())));
+    }
+    for (var i = 0; i < cg.Interfaces.Count(); i += 1)
+    {
+        var ie = cg.Interfaces.Get(i);
+        if (ie.File != file)
+            continue;
+        var kids = List<string>.Create();
+        foreach (var m in ie.Decl.Methods)
+            kids.Add(OutlineSymbol(m.Name, "method", m.NameLoc.Line > 0 ? m.NameLoc : m.Loc, ""));
+        items.Add(OutlineSymbol(ie.Decl.Name, "interface", ie.Decl.Loc, string.Join(", ", kids.ToArray())));
+    }
+    for (var i = 0; i < cg.Enums.Count(); i += 1)
+    {
+        var ee = cg.Enums.Get(i);
+        if (ee.File != file)
+            continue;
+        var kids = List<string>.Create();
+        foreach (var m in ee.Decl.Members)
+            kids.Add(OutlineSymbol(m.Name, "enumMember", m.Loc, ""));
+        items.Add(OutlineSymbol(ee.Decl.Name, "enum", ee.Decl.Loc, string.Join(", ", kids.ToArray())));
+    }
+    for (var i = 0; i < cg.Unions.Count(); i += 1)
+    {
+        var ue = cg.Unions.Get(i);
+        if (ue.File == file)
+            items.Add(OutlineSymbol(ue.Decl.Name, "union", ue.Decl.Loc, ""));
+    }
+    for (var i = 0; i < cg.Funcs.Count(); i += 1)
+    {
+        var fe = cg.Funcs.Get(i);
+        if (fe.File == file && fe.OwnerStruct == -1 && fe.Decl.Loc.Line > 0)
+            items.Add(OutlineSymbol(fe.Decl.Name, "function", fe.Decl.NameLoc.Line > 0 ? fe.Decl.NameLoc : fe.Decl.Loc, ""));
+    }
+    for (var i = 0; i < cg.Consts.Count(); i += 1)
+    {
+        var ce = cg.Consts.Get(i);
+        if (ce.File == file)
+            items.Add(OutlineSymbol(ce.Decl.Name, "constant", ce.Decl.Loc, ""));
+    }
+    for (var i = 0; i < cg.Globals.Count(); i += 1)
+    {
+        var ge = cg.Globals.Get(i);
+        if (ge.File == file)
+            items.Add(OutlineSymbol(ge.Decl.Name, "variable", ge.Decl.Loc, ""));
+    }
+    return "[" + string.Join(", ", items.ToArray()) + "]";
 }

@@ -51,12 +51,15 @@ struct BuildOptions
     string AtFile;              // query: the position
     int AtLine;
     int AtCol;
+    bool References;            // query: also every place where the name is written
+    bool Members;               // query: what can follow 'name.' (completion)
+    string OutlineFile;         // query: the declarations of this file instead of a position
     Dictionary<string, string> Overlays; // the full path of a source -> a file with its current (unsaved) text
 
     static BuildOptions Create()
     {
         var o = BuildOptions { Output = "", Target = "", Backend = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
-                               AtFile = "" };
+                               AtFile = "", OutlineFile = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
@@ -118,6 +121,15 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.AtLine = (int)ParseNumber(args[i + 2]);
             o.AtCol = (int)ParseNumber(args[i + 3]);
             i += 3;
+        }
+        else if (a == "--references")
+            o.References = true;
+        else if (a == "--members")
+            o.Members = true;
+        else if (a == "--outline" && i + 1 < args.Length)
+        {
+            o.OutlineFile = args[i + 1];
+            i += 1;
         }
         else if (a == "--overlay" && i + 2 < args.Length)
         {
@@ -236,11 +248,13 @@ int Cshc(string[] args)
     if (command == "check" || command == "query")
     {
         o.Mode = command;
-        if (command == "query" && o.AtFile.Length == 0)
+        if (command == "query" && o.AtFile.Length == 0 && o.OutlineFile.Length == 0)
         {
-            Console.WriteErrorLine("error: 'query' needs --at <file> <line> <col>");
+            Console.WriteErrorLine("error: 'query' needs --at <file> <line> <col> or --outline <file>");
             return 2;
         }
+        if (o.AtFile.Length == 0)
+            o.AtFile = o.OutlineFile;
         // single files, or a project like 'build' (the project of the queried file if none is named)
         bool files = o.Inputs.Count() > 0 && o.Inputs.Get(0).EndsWith(".csh");
         if (!files)
@@ -901,6 +915,8 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
     }
     if (file < 0)
         return "{}";
+    if (o.OutlineFile.Length > 0)
+        return "{\"symbols\": " + OutlineJson(cg, file) + "}";
     int found = FindIndexEntry(cg, file, o.AtLine, o.AtCol);
     if (found < 0)
         return "{}";
@@ -909,6 +925,10 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
     if (e.Def.Line > 0 && e.Def.File >= 0 && e.Def.File < diag.Files.Count() && !diag.Files.Get(e.Def.File).StartsWith("<"))
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
+    if (o.References)
+        answer += ", \"references\": " + ReferencesJson(cg, diag, found);
+    if (o.Members)
+        answer += ", \"members\": " + MembersJson(cg, e.Type, e.IsTypeName);
     return answer + "}";
 }
 

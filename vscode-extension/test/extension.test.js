@@ -19,14 +19,23 @@ function makeVscode(root, settings) {
     const documents = [];
     class Position { constructor(line, character) { this.line = line; this.character = character; } }
     class Range { constructor(a, b, c, d) { this.start = new Position(a, b); this.end = new Position(c, d); } }
-    class Location { constructor(uri, pos) { this.uri = uri; this.range = new Range(pos.line, pos.character, pos.line, pos.character); } }
+    class Location {
+        constructor(uri, where) {
+            this.uri = uri;
+            this.range = where.start ? where : new Range(where.line, where.character, where.line, where.character);
+        }
+    }
+    class DocumentSymbol { constructor(name, detail, kind, range, selection) { Object.assign(this, { name, detail, kind, range, selection, children: [] }); } }
+    class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
     class MarkdownString { constructor() { this.value = ""; } appendCodeblock(code, lang) { this.value += "```" + lang + "\n" + code + "\n```\n"; return this; } }
     class Hover { constructor(contents) { this.contents = [contents]; } }
     class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
     const Uri = { file: (p) => ({ fsPath: p, scheme: "file", toString: () => "file://" + p }) };
     const vscode = {
-        Position, Range, Location, MarkdownString, Hover, Diagnostic, Uri,
+        Position, Range, Location, MarkdownString, Hover, Diagnostic, Uri, DocumentSymbol, CompletionItem,
         DiagnosticSeverity: { Error: 0, Warning: 1 },
+        SymbolKind: { Struct: 22, Interface: 10, Enum: 9, Class: 4, Function: 11, Method: 5, Field: 7, EnumMember: 21, Constant: 13, Variable: 12 },
+        CompletionItemKind: { Field: 4, Method: 1, EnumMember: 19, Property: 9, Text: 0 },
         workspace: {
             textDocuments: documents,
             getConfiguration: () => ({ get: (k) => settings[k] }),
@@ -45,6 +54,9 @@ function makeVscode(root, settings) {
             }),
             registerHoverProvider: (sel, p) => { providers.hover = p; return { dispose() {} }; },
             registerDefinitionProvider: (sel, p) => { providers.definition = p; return { dispose() {} }; },
+            registerReferenceProvider: (sel, p) => { providers.references = p; return { dispose() {} }; },
+            registerDocumentSymbolProvider: (sel, p) => { providers.symbols = p; return { dispose() {} }; },
+            registerCompletionItemProvider: (sel, p) => { providers.completion = p; return { dispose() {} }; },
         },
         commands: { registerCommand: () => ({ dispose() {} }) },
         window: { showWarningMessage: (m) => { throw new Error("warning: " + m); }, activeTextEditor: null },
@@ -57,6 +69,7 @@ function makeVscode(root, settings) {
             getText: () => text,
             get lineCount() { return text.split("\n").length; },
             lineAt: (n) => ({ text: text.split("\n")[n] }),
+            offsetAt: (pos) => text.split("\n").slice(0, pos.line).reduce((sum, l) => sum + l.length + 1, 0) + pos.character,
             setText(t) { text = t; this.isDirty = true; },
         };
         documents.push(doc);
@@ -91,6 +104,26 @@ test("extension: hover, definition and errors while editing", { skip: !compiler 
     const def = await env.providers.definition.provideDefinition(doc, at);
     assert.strictEqual(path.basename(def.uri.fsPath), "Person.csh");
     assert.deepStrictEqual([def.range.start.line, def.range.start.character], [6, 7]); // the name "Describe"
+
+    // find all references: the declaration and the call
+    const refs = await env.providers.references.provideReferences(doc, at);
+    assert.deepStrictEqual(refs.map((r) => [path.basename(r.uri.fsPath), r.range.start.line]).sort(),
+        [["Main.csh", 5], ["Person.csh", 6]]);
+
+    // the outline of Person.csh
+    const personDoc = env.openDocument(path.join(root, "src", "Person.csh"));
+    const symbols = await env.providers.symbols.provideDocumentSymbols(personDoc);
+    assert.deepStrictEqual(symbols.map((s) => s.name), ["Person", "Describe"]);
+    assert.deepStrictEqual(symbols[0].children.map((s) => s.name), ["Name", "Age"]);
+
+    // completion after 'p.' while typing
+    const typed = doc.getText().replace("    return 0;", "    p.\n    return 0;");
+    doc.setText(typed);
+    const dotLine = typed.split("\n").findIndex((l) => l === "    p.");
+    const items0 = await env.providers.completion.provideCompletionItems(doc, new env.vscode.Position(dotLine, 6));
+    assert.deepStrictEqual(items0.map((i) => i.label), ["Name", "Age"]);
+    doc.setText(typed.replace("    p.\n", ""));
+    doc.isDirty = false;
 
     // opening the (correct) document reports nothing
     for (const h of env.handlers.open) await h(doc);
