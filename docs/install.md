@@ -84,6 +84,7 @@ libclang (only for `using X from "header.h"`) is looked for in `CSHIFT_LIBCLANG`
 | running Amiga programs on the PC | vamos, FS-UAE or WinUAE | `pip install amitools`, `fs-uae` |
 | the tests of the m68k backend under Linux | qemu and the m68k cross C library | `qemu-user gcc-m68k-linux-gnu` |
 | the VS Code extension | VS Code; `cshiftc` in `PATH` or `cshift.compilerPath` | |
+| debugging (`-g`, [debugging.md](debugging.md)) | gdb or lldb; in VS Code the CodeLLDB extension, which brings its own lldb | `gdb`, `lldb` |
 
 ## Building the compiler from source
 

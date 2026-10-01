@@ -1,7 +1,6 @@
 // The CShift extension: hover, go to definition, find all references, the outline, completion after '.' and the errors
 // of the program, from cshiftc (the compiler's 'query' and 'check' commands, which run the front end without generating
-// code). The work that does not need VS Code is in
-// lib.js.
+// code), and debugging (F5) through CodeLLDB. The work that does not need VS Code is in lib.js.
 "use strict";
 
 const vscode = require("vscode");
@@ -223,8 +222,69 @@ function scheduleCheck(document) {
 }
 
 // ---------------------------------------------------------------------------
+// Debugging: F5 builds the program with -g -O0 and runs it under lldb (the CodeLLDB extension)
+// ---------------------------------------------------------------------------
+
+const codeLldb = "vadimcn.vscode-lldb";
+let extensionPath = "";
+let buildOutput = null;
+
+function output() {
+    if (!buildOutput)
+        buildOutput = vscode.window.createOutputChannel("CShift");
+    return buildOutput;
+}
+
+const debugProvider = {
+    provideDebugConfigurations() {
+        return [{ type: "cshift", request: "launch", name: "Debug CShift program", project: "${workspaceFolder}" }];
+    },
+
+    async resolveDebugConfiguration(folder, config) {
+        // F5 without a launch.json: the program of the active CShift file
+        if (!config.type && !config.request) {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.languageId !== "cshift")
+                return config;
+            config = { type: "cshift", request: "launch", name: "Debug CShift program" };
+        }
+        if (!vscode.extensions.getExtension(codeLldb)) {
+            const choice = await vscode.window.showErrorMessage("CShift: debugging needs the CodeLLDB extension (" + codeLldb + ").",
+                "Install CodeLLDB");
+            if (choice)
+                await vscode.commands.executeCommand("workbench.extensions.installExtension", codeLldb);
+            return undefined;
+        }
+        const editor = vscode.window.activeTextEditor;
+        const active = editor && editor.document.languageId === "cshift" && editor.document.uri.scheme === "file"
+            ? editor.document.uri.fsPath : null;
+        const target = lib.debugTarget(projectFiles, active, config.project);
+        if (!target) {
+            vscode.window.showErrorMessage("CShift: no program to debug (open a .csh file, or set \"project\" in launch.json).");
+            return undefined;
+        }
+        await vscode.workspace.saveAll(false);
+        const build = lib.debugBuild(target);
+        const channel = output();
+        channel.appendLine("> " + compilerPath() + " " + build.args.join(" "));
+        const result = await lib.run(compilerPath(), build.args, build.cwd, 600000);
+        channel.append(result.stdout + result.stderr);
+        if (result.code !== 0) {
+            channel.show(true);
+            if (result.code === -1)
+                reportMissingCompiler(result.error);
+            else
+                vscode.window.showErrorMessage("CShift: the debug build failed (see the output 'CShift').");
+            return undefined;
+        }
+        return lib.lldbConfiguration(config, build, lib.findLldbScript(extensionPath, compilerPath()));
+    },
+};
+
+// ---------------------------------------------------------------------------
 
 async function activate(context) {
+    extensionPath = context.extensionPath || __dirname;
     diagnostics = vscode.languages.createDiagnosticCollection("cshift");
     context.subscriptions.push(diagnostics);
     await refreshProjects();
@@ -248,6 +308,7 @@ async function activate(context) {
             if (e.affectsConfiguration("cshift.compilerPath"))
                 warnedMissing = false;
         }),
+        vscode.debug.registerDebugConfigurationProvider("cshift", debugProvider),
         vscode.commands.registerCommand("cshift.checkProgram", () => {
             const editor = vscode.window.activeTextEditor;
             if (editor)

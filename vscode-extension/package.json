@@ -1,7 +1,7 @@
 {
 	"name": "cshift",
 	"displayName": "CShift",
-	"description": "CShift (.csh): syntax highlighting, snippets, the errors of the program, hover, go to definition, find all references, the outline and completion after '.' (with cshiftc).",
+	"description": "CShift (.csh): syntax highlighting, snippets, the errors of the program, hover, go to definition, find all references, the outline, completion after '.' (with cshiftc), and debugging with F5 (with CodeLLDB).",
 	"version": "0.13.0",
 	"publisher": "Robert-Schneckenhaus",
 	"license": "MIT",
@@ -15,7 +15,8 @@
 	"categories": [
 		"Programming Languages",
 		"Snippets",
-		"Linters"
+		"Linters",
+		"Debuggers"
 	],
 	"keywords": [
 		"cshift",
@@ -25,7 +26,10 @@
 	"main": "./extension.js",
 	"activationEvents": [
 		"onLanguage:cshift",
-		"workspaceContains:**/cshift.json"
+		"workspaceContains:**/cshift.json",
+		"onDebugResolve:cshift",
+		"onDebugInitialConfigurations",
+		"onDebugDynamicConfigurations:cshift"
 	],
 	"contributes": {
 		"languages": [
@@ -104,6 +108,72 @@
 					"description": "The pause in milliseconds after typing before the program is checked."
 				}
 			}
-		}
+		},
+		"breakpoints": [
+			{
+				"language": "cshift"
+			}
+		],
+		"debuggers": [
+			{
+				"type": "cshift",
+				"label": "CShift (lldb)",
+				"languages": [
+					"cshift"
+				],
+				"configurationAttributes": {
+					"launch": {
+						"properties": {
+							"project": {
+								"type": "string",
+								"description": "The project to debug: a cshift.json or its folder. Without it: the project of the active .csh file, or the file alone.",
+								"default": "${workspaceFolder}"
+							},
+							"args": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "The arguments of the program.",
+								"default": []
+							},
+							"cwd": {
+								"type": "string",
+								"description": "The working directory of the program (default: the folder of the project or file)."
+							},
+							"env": {
+								"type": "object",
+								"description": "Additional environment variables."
+							},
+							"stopOnEntry": {
+								"type": "boolean",
+								"description": "Stop at the start of the program.",
+								"default": false
+							}
+						}
+					}
+				},
+				"initialConfigurations": [
+					{
+						"type": "cshift",
+						"request": "launch",
+						"name": "Debug CShift program",
+						"project": "${workspaceFolder}"
+					}
+				],
+				"configurationSnippets": [
+					{
+						"label": "CShift: Debug program",
+						"description": "Build with -g -O0 and run under lldb",
+						"body": {
+							"type": "cshift",
+							"request": "launch",
+							"name": "Debug CShift program",
+							"project": "^\"\\${workspaceFolder}\""
+						}
+					}
+				]
+			}
+		]
 	}
 }

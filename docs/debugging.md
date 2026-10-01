@@ -24,6 +24,17 @@ gdb ./prog
 (gdb) next / step / finish       the next line / into a call / out of the function
 ```
 
+## VS Code
+
+With the CShift extension and [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb)
+(`vadimcn.vscode-lldb`), **F5** in a `.csh` file builds its program with `-g -O0` (into `bin/debug/`, next to the
+normal build) and runs it under lldb: breakpoints in the editor, stepping, the call stack, and the variables with the
+pretty printers below. CodeLLDB brings its own lldb, also on Windows, so nothing else has to be installed. A launch
+configuration (`"type": "cshift"`) can name the project and the program's arguments, see the
+[extension's README](../vscode-extension/README.md#debugging).
+
+## gdb and lldb
+
 With lldb: `breakpoint set -f prog.csh -l 15`, `breakpoint set -n Square`, `run`, `bt`, `frame variable`,
 `frame variable person.Home`, `next`, `step`.
 
@@ -77,5 +88,8 @@ elements.
   `bt` then shows where it happened.
 * Code that the compiler adds itself (reference counting helpers, the start of threads, the initialization of
   globals) has no lines.
-* **Not yet:** Windows PDB files for the Visual Studio debugger (gdb and lldb work with MinGW programs), and global
-  variables. The m68k backend (AmigaOS) ignores `-g`.
+* **Windows:** the programs are MinGW programs with DWARF debug information, for gdb and lldb, not for the Visual
+  Studio debugger (which reads PDB files). The release contains no debugger: use VS Code with CodeLLDB, or install lldb
+  (part of LLVM, `winget install LLVM.LLVM`) or gdb (MSYS2: `pacman -S mingw-w64-ucrt-x86_64-gdb`). The gdb printers
+  are not in Windows programs (that needs an ELF section); load them with `source`.
+* **Not yet:** global variables. The m68k backend (AmigaOS) ignores `-g`.

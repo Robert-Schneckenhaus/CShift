@@ -122,3 +122,33 @@ test("cshiftc query: references, members, outline", { skip: !compiler }, async (
     assert.deepStrictEqual(symbols[0].children.map((s) => s.name), ["X", "Sum"]);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("debugging: target, build command and the lldb configuration", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
+    fs.mkdirSync(path.join(root, "app", "src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "app", "cshift.json"), JSON.stringify({ name: "demo", sources: ["src"] }));
+    const main = path.join(root, "app", "src", "main.csh");
+    const alone = path.join(root, "tool.csh");
+    fs.writeFileSync(main, "");
+    fs.writeFileSync(alone, "");
+    const projects = [path.join(root, "app", "cshift.json")];
+
+    // the project of the active file, the file alone, the configured project
+    assert.deepStrictEqual(lib.debugTarget(projects, main, null), { project: projects[0], file: null });
+    assert.deepStrictEqual(lib.debugTarget(projects, alone, null), { project: null, file: alone });
+    assert.deepStrictEqual(lib.debugTarget(projects, alone, path.join(root, "app")), { project: path.resolve(projects[0]), file: null });
+    assert.strictEqual(lib.debugTarget(projects, null, path.join(root, "missing")), null);
+
+    const p = lib.debugBuild({ project: projects[0], file: null }, "linux");
+    assert.deepStrictEqual(p.args, ["build", path.join(root, "app"), "-g", "-O0", "-o", path.join(root, "app", "bin", "debug", "demo")]);
+    assert.strictEqual(lib.debugBuild({ project: null, file: alone }, "win32").program, path.join(root, "bin", "debug", "tool.exe"));
+
+    const config = lib.lldbConfiguration({ name: "x", args: ["a"] }, p, "C:\\cshift\\tools\\debug\\cshift_lldb.py");
+    assert.deepStrictEqual([config.type, config.request, config.program, config.cwd], ["lldb", "launch", p.program, p.cwd]);
+    assert.deepStrictEqual(config.args, ["a"]);
+    assert.deepStrictEqual(config.initCommands, ['command script import "C:/cshift/tools/debug/cshift_lldb.py"']);
+
+    // the formatters: next to the extension in the repository
+    assert.strictEqual(lib.findLldbScript(path.join(__dirname, ".."), null), path.join(__dirname, "..", "..", "tools", "debug", "cshift_lldb.py"));
+    fs.rmSync(root, { recursive: true, force: true });
+});

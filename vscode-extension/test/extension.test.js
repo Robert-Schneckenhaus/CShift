@@ -14,6 +14,8 @@ const compiler = process.env.CSHIFTC;
 // ---- the stand-in ----
 function makeVscode(root, settings) {
     const handlers = { open: [], save: [], change: [] };
+    const errors = [];               // error messages shown
+    const installed = new Set();     // the ids of installed extensions
     const providers = {};
     const diagnostics = new Map();
     const documents = [];
@@ -45,6 +47,7 @@ function makeVscode(root, settings) {
             onDidSaveTextDocument: (f) => { handlers.save.push(f); return { dispose() {} }; },
             onDidChangeTextDocument: (f) => { handlers.change.push(f); return { dispose() {} }; },
             onDidChangeConfiguration: () => ({ dispose() {} }),
+            saveAll: async () => true,
         },
         languages: {
             createDiagnosticCollection: () => ({
@@ -58,8 +61,15 @@ function makeVscode(root, settings) {
             registerDocumentSymbolProvider: (sel, p) => { providers.symbols = p; return { dispose() {} }; },
             registerCompletionItemProvider: (sel, p) => { providers.completion = p; return { dispose() {} }; },
         },
-        commands: { registerCommand: () => ({ dispose() {} }) },
-        window: { showWarningMessage: (m) => { throw new Error("warning: " + m); }, activeTextEditor: null },
+        commands: { registerCommand: () => ({ dispose() {} }), executeCommand: async () => undefined },
+        window: {
+            showWarningMessage: (m) => { throw new Error("warning: " + m); },
+            showErrorMessage: async (m) => { errors.push(m); return undefined; },
+            createOutputChannel: () => ({ appendLine() {}, append() {}, show() {} }),
+            activeTextEditor: null,
+        },
+        debug: { registerDebugConfigurationProvider: (type, p) => { providers.debug = p; return { dispose() {} }; } },
+        extensions: { getExtension: (id) => (installed.has(id) ? {} : undefined) },
     };
     // a document with an editable text
     function openDocument(file) {
@@ -75,7 +85,7 @@ function makeVscode(root, settings) {
         documents.push(doc);
         return doc;
     }
-    return { vscode, handlers, providers, diagnostics, openDocument };
+    return { vscode, handlers, providers, diagnostics, openDocument, errors, installed };
 }
 
 test("extension: hover, definition and errors while editing", { skip: !compiler }, async () => {
@@ -142,6 +152,18 @@ test("extension: hover, definition and errors while editing", { skip: !compiler 
     doc.setText(doc.getText().replace("    int bad = \"x\";\n", ""));
     for (const h of env.handlers.save) await h(doc);
     assert.ok(!env.diagnostics.get(mainFile) || env.diagnostics.get(mainFile).length === 0);
+
+    // F5: without CodeLLDB an error (and nothing is started); with it the program is built with -g -O0 and the
+    // configuration for CodeLLDB comes back
+    env.vscode.window.activeTextEditor = { document: doc };
+    assert.strictEqual(await env.providers.debug.resolveDebugConfiguration(undefined, {}), undefined);
+    assert.match(env.errors.pop(), /CodeLLDB/);
+    env.installed.add("vadimcn.vscode-lldb");
+    const launch = await env.providers.debug.resolveDebugConfiguration(undefined, {});
+    assert.strictEqual(launch.type, "lldb");
+    assert.strictEqual(launch.program, path.join(root, "bin", "debug", "demo") + (process.platform === "win32" ? ".exe" : ""));
+    assert.ok(fs.existsSync(launch.program), "the debug build exists");
+    assert.match(launch.initCommands[0], /cshift_lldb\.py"$/);
 
     Module._load = load;
     extension.deactivate();
