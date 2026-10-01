@@ -81,7 +81,8 @@ not needed. On Linux, the C library and linker come from the system (`build-esse
 **Standalone executable:** each release also has a single, self-contained file - `cshift-1.05-windows-x64-standalone.exe`
 / `cshift-1.05-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:
 run it, and the first time it actually needs the toolchain (linking, or `using X from "header.h";`) it unpacks
-itself once into a per-user cache directory. See [packaging/make-standalone.sh](packaging/make-standalone.sh).
+itself once into a per-user cache directory (`cshiftc --clear-cache` deletes it, all versions). See
+[packaging/make-standalone.sh](packaging/make-standalone.sh).
 
 **Publishing a release:** push a `release/vX.XX` branch (e.g. `release/v1.05` → version `1.05`, tag `v1.05`). The
 workflow [.github/workflows/release.yml](.github/workflows/release.yml) builds the compiler for both platforms, runs

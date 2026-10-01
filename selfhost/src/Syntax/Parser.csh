@@ -303,10 +303,7 @@ struct Parser
                 g.Loc = Cur().Loc;
                 g.Name = try ExpectIdent("variable name");
                 if (Match(TokenKind.Assign))
-                {
                     g.Init = try ParseExpr();
-                    TakeDeclaredType(g.Init, g.Type);
-                }
                 try Expect(TokenKind.Semi, "';' after variable declaration");
                 Unit.Globals.Add(g);
             }
@@ -735,23 +732,6 @@ struct Parser
         return Tree.AddBlock(loc, BlockStmt { Stmts = stmts.ToArray() });
     }
 
-    // "Player p = new { X = 1 };" and "Player p = new();": a 'new' without a type gets the declared one
-    void TakeDeclaredType(Expr init, TypeRef type)
-    {
-        if (init.Kind == ExprKind.StructInit && Tree.GetStructInit(init).Type.IsNull())
-        {
-            var n = Tree.GetStructInit(init);
-            n.Type = type;
-            Tree.StructInits.Set(init.Index, n);
-        }
-        else if (init.Kind == ExprKind.NewObject && Tree.GetNewObject(init).Type.IsNull())
-        {
-            var n = Tree.GetNewObject(init);
-            n.Type = type;
-            Tree.NewObjects.Set(init.Index, n);
-        }
-    }
-
     // unsafe on a function or method: its body is an unsafe block (extern functions have none)
     void MarkUnsafe(Stmt body)
     {
@@ -900,10 +880,7 @@ struct Parser
                 }
             }
             if (!IsVarType(t))
-            {
                 d.Type = t;
-                TakeDeclaredType(d.Init, t);
-            }
             return Tree.AddVarDecl(loc, d);
         }
         Pos = save;
@@ -1738,14 +1715,14 @@ struct Parser
         SourceLoc loc = Advance().Loc; // new
         if (Check(TokenKind.LBrace))
         {
-            // new { X = 1 }: the type comes from the declaration (TakeDeclaredType)
+            // new { X = 1 }: the type comes from where it is used (IsTypelessNew)
             var typed = StructInitExpr { };
             typed.Fields = try ParseStructInitBody();
             return Tree.AddStructInit(loc, typed);
         }
         if (Check(TokenKind.LParen) && PeekKind(1) == TokenKind.RParen)
         {
-            // new(): the same, zero-initialized
+            // new(): the same, the zero value
             Advance();
             Advance();
             return Tree.AddNewObject(loc, NewObjectExpr { });

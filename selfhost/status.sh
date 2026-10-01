@@ -23,9 +23,11 @@ pass=(); unsupported=(); fail=()
 for file in "$ROOT"/tests/cases/*.csh; do
     name="$(basename "$file")"
     want_error="$(directives "$file" expect-error | head -n 1)"
+    # the case's own compiler options (// options: --unchecked), like tests/run_tests.sh
+    read -r -a opts <<< "$(directives "$file" options | head -n 1)"
     exe="$TMP/case.exe"
     rm -f "$exe"
-    if "$CSHC" -O0 --arc-stats "${CC_ARGS[@]}" "$file" -o "$exe" > "$TMP/c.out" 2> "$TMP/c.err"; then compiled=1; else compiled=0; fi
+    if "$CSHC" -O0 --arc-stats "${CC_ARGS[@]}" ${opts[@]+"${opts[@]}"} "$file" -o "$exe" > "$TMP/c.out" 2> "$TMP/c.err"; then compiled=1; else compiled=0; fi
     if [ -n "$want_error" ]; then
         all=1
         while IFS= read -r text; do

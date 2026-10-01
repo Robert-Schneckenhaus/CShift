@@ -263,5 +263,6 @@ thread_mutex.csh
 thread_start_contextual.csh
 thread_static_method.csh
 thread_strings.csh
+unchecked_option.csh
 unions.csh
 unsafe_forms.csh

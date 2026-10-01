@@ -835,6 +835,8 @@ Value EmitUnaryOn(Compiler cg, UnOp op, Value v, SourceLoc loc)
 // allow; everything else is EmitExpr.
 Value EmitExprAs(Compiler cg, Expr e, int target)
 {
+    if (IsTypelessNew(cg, e))
+        return EmitTypelessNew(cg, e, target);
     int frame = ArithmeticFrame(cg, target);
     if (frame == 0 || !IsFramable(cg, e))
         return EmitExpr(cg, e);
