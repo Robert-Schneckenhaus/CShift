@@ -1,44 +1,29 @@
-// Graphics on the Amiga's custom chips (only for amigaos targets, after Hardware.TakeOver): bitmaps in chip memory, a
-// screen with its copper list and double buffering, the blitter, hardware sprites and the system font.
-//
-//     using Amiga;
-//
-//     Hardware.TakeOver();
-//     if (Screen.Open(320, 256, 4, true) is Screen screen)
-//     {
-//         screen.SetColor(1, 0xFFF);
-//         screen.Show();
-//         while (!Hardware.LeftMouseButton())
-//         {
-//             screen.Back.Clear();                            // the blitter
-//             screen.Back.FillRect(10, 10, 100, 50, 2);
-//             screen.Back.DrawText(20, 100, "Hello", 1);     // Topaz, from the ROM
-//             screen.Swap();                                  // shows Back, waits for the vertical blank
-//         }
-//         Hardware.Restore();
-//         screen.Close();
-//     }
-//
-// Coordinates are pixels, (0, 0) is the top left corner; drawing is clipped to the bitmap. Colors are numbers of the
-// palette (0 .. 2^depth - 1); the palette has 12-bit colors (0xRGB).
-
 namespace Amiga;
 
 using System;
 
-// A picture in chip memory: Depth bitplanes of Width x Height pixels, one after the other (plane p starts at
-// Plane(p)). Width is a multiple of 16.
+/// A picture in chip memory: Depth bitplanes of Width x Height pixels, one after the other (plane p starts at
+/// Plane(p)). Width is a multiple of 16.
 struct Bitmap
 {
     uint8* _planes;
+    /// The width in pixels (a multiple of 16).
     int Width;
+    /// The height in pixels.
     int Height;
+    /// The number of bitplanes (1 to 6): the bitmap has 2^Depth colors.
     int Depth;
+    /// The bytes of one row of a plane (`Width / 8`).
     int BytesPerRow;
+    /// The bytes of one plane (`BytesPerRow * Height`).
     int PlaneSize;
 
-    // A cleared bitmap; null if there is not enough chip memory. width: a multiple of 16 up to 1024, height up to
-    // 1024, depth 1..6.
+    /// A cleared bitmap in chip memory.
+    /// @param width a multiple of 16, up to 1024.
+    /// @param height up to 1024.
+    /// @param depth the number of bitplanes, 1 to 6.
+    /// @returns nothing (`null`) if there is not enough chip memory.
+    /// @panics when a size is out of range.
     static unsafe Optional<Bitmap> Create(int width, int height, int depth)
     {
         if (width <= 0 || width > 1024 || width % 16 != 0 || height <= 0 || height > 1024 || depth < 1 || depth > 6)
@@ -54,7 +39,7 @@ struct Bitmap
                         BytesPerRow = bytesPerRow, PlaneSize = planeSize };
     }
 
-    // gives the chip memory back
+    /// Gives the chip memory back (after the blitter is done with it).
     unsafe void Free()
     {
         Blitter.Wait();
@@ -62,12 +47,13 @@ struct Bitmap
         _planes = null;
     }
 
+    /// The address of bitplane `p` (0 to `Depth - 1`).
     unsafe uint8* Plane(int p)
     {
         return _planes + p * PlaneSize;
     }
 
-    // all pixels color 0 (the blitter)
+    /// Sets all pixels to color 0 (with the blitter).
     unsafe void Clear()
     {
         unchecked
@@ -88,7 +74,7 @@ struct Bitmap
         }
     }
 
-    // a filled rectangle (the blitter)
+    /// A filled rectangle of `w` x `h` pixels at (`x`, `y`) in `color` (with the blitter).
     unsafe void FillRect(int x, int y, int w, int h, int color)
     {
         unchecked
@@ -125,7 +111,7 @@ struct Bitmap
         }
     }
 
-    // the outline of a rectangle
+    /// The outline of a rectangle of `w` x `h` pixels at (`x`, `y`) in `color`.
     void DrawRect(int x, int y, int w, int h, int color)
     {
         if (w <= 0 || h <= 0)
@@ -136,13 +122,15 @@ struct Bitmap
         FillRect(x + w - 1, y + 1, 1, h - 2, color);
     }
 
+    /// Sets the pixel at (`x`, `y`) to `color` (nothing happens outside of the bitmap).
     void SetPixel(int x, int y, int color)
     {
         Blitter.Wait();
         _Plot(x, y, color);
     }
 
-    // the color of a pixel (0 outside the bitmap)
+    /// The color of the pixel at (`x`, `y`).
+    /// @returns 0 outside of the bitmap.
     unsafe int GetPixel(int x, int y)
     {
         unchecked
@@ -182,7 +170,7 @@ struct Bitmap
         }
     }
 
-    // a line from (x0, y0) to (x1, y1), both ends included
+    /// A line from (`x0`, `y0`) to (`x1`, `y1`) in `color`, both ends included.
     void DrawLine(int x0, int y0, int x1, int y1, int color)
     {
         Blitter.Wait();
@@ -210,8 +198,8 @@ struct Bitmap
         }
     }
 
-    // Pixels from text, one string per row: '0'..'9' and 'A'..'V' are the colors 0..31, every other character ('.',
-    // ' ') leaves the pixel as it is.
+    /// Pixels from text, one string per row: '0'..'9' and 'A'..'V' are the colors 0..31, every other character ('.',
+    /// ' ') leaves the pixel as it is.
     void DrawPattern(int x, int y, ReadOnlySlice<string> rows)
     {
         Blitter.Wait();
@@ -238,9 +226,9 @@ struct Bitmap
         return -1;
     }
 
-    // Copies w x h pixels from (sx, sy) of source to (x, y) (the planes both have; source and destination must not
-    // overlap). The blitter does it when x % 16 >= sx % 16 (e.g. sources at multiples of 16), the CPU otherwise; it is
-    // fastest for whole words (x, sx and w multiples of 16).
+    /// Copies w x h pixels from (sx, sy) of source to (x, y) (the planes both have; source and destination must not
+    /// overlap). The blitter does it when x % 16 >= sx % 16 (e.g. sources at multiples of 16), the CPU otherwise; it is
+    /// fastest for whole words (x, sx and w multiples of 16).
     unsafe void Copy(const ref Bitmap source, int sx, int sy, int x, int y, int w, int h)
     {
         unchecked
@@ -307,10 +295,10 @@ struct Bitmap
         }
     }
 
-    // Draws a shape (a "bob"): w x h pixels from (sx, sy) of source to (x, y), only where mask (a bitmap with one
-    // plane, the same size as source, e.g. source.MakeMask()) has a 1. sx must be a multiple of 16; the pixels
-    // right of the shape up to the next multiple of 16 are drawn too where the mask has a 1. The blitter does it
-    // when the shape is inside the bitmap from left to right, the CPU otherwise.
+    /// Draws a shape (a "bob"): w x h pixels from (sx, sy) of source to (x, y), only where mask (a bitmap with one
+    /// plane, the same size as source, e.g. source.MakeMask()) has a 1. sx must be a multiple of 16; the pixels
+    /// right of the shape up to the next multiple of 16 are drawn too where the mask has a 1. The blitter does it
+    /// when the shape is inside the bitmap from left to right, the CPU otherwise.
     unsafe void DrawMasked(const ref Bitmap source, const ref Bitmap mask, int sx, int sy, int x, int y, int w, int h)
     {
         unchecked
@@ -386,8 +374,8 @@ struct Bitmap
         }
     }
 
-    // A mask for DrawMasked: a bitmap with one plane that is 1 where this bitmap's color is not 0; null if there is
-    // not enough chip memory.
+    /// A mask for DrawMasked: a bitmap with one plane that is 1 where this bitmap's color is not 0; null if there is
+    /// not enough chip memory.
     unsafe Optional<Bitmap> MakeMask()
     {
         if (Bitmap.Create(Width, Height, 1) is Bitmap mask)
@@ -405,9 +393,9 @@ struct Bitmap
         return null;
     }
 
-    // Text in the system font (Topaz 8 or the font set in the preferences), at (x, y) = the top left corner of the
-    // first character; the pixels around the letters stay. UTF-8 characters up to U+00FF are shown, others as '?'.
-    // The x after the text is returned.
+    /// Text in the system font (Topaz 8 or the font set in the preferences), at (x, y) = the top left corner of the
+    /// first character; the pixels around the letters stay. UTF-8 characters up to U+00FF are shown, others as '?'.
+    /// The x after the text is returned.
     unsafe int DrawText(int x, int y, StringSlice text, int color)
     {
         uint8* font = _FontGet();
@@ -477,10 +465,11 @@ struct Bitmap
     }
 }
 
-// The font of the system (GfxBase->DefaultFont, in ROM): Topaz 8, or the one set in the preferences.
+/// The font of the system (GfxBase->DefaultFont, in ROM): Topaz 8, or the one set in the preferences.
 struct SystemFont
 {
-    // the height of a line of text in pixels (0 if there is no font)
+    /// The height of a line of text in pixels.
+    /// @returns 0 if there is no font.
     static int Height()
     {
         unsafe
@@ -490,7 +479,7 @@ struct SystemFont
         }
     }
 
-    // the width of the text in pixels
+    /// The width of `text` in pixels.
     static int TextWidth(StringSlice text)
     {
         unsafe
@@ -572,10 +561,11 @@ unsafe int _FontAdvance(uint8* font, int glyph)
     return space == null ? (int)*(uint16*)(font + 24) : (int)space[glyph];
 }
 
-// The blitter: draws into chip memory while the CPU goes on. Bitmap's drawing functions start it; Wait() before the
-// CPU touches what it draws (the CPU drawing functions of Bitmap do that themselves).
+/// The blitter: draws into chip memory while the CPU goes on. Bitmap's drawing functions start it; Wait() before the
+/// CPU touches what it draws (the CPU drawing functions of Bitmap do that themselves).
 struct Blitter
 {
+    /// Waits until the blitter has finished its last blit.
     static void Wait()
     {
         unsafe
@@ -616,8 +606,8 @@ int _BlitSize(int rows, int words)
     return ((rows & 1023) << 6) | (words & 63);
 }
 
-// A copper list in chip memory: MOVEs to the custom chip registers and WAITs for raster lines. It always ends with
-// the copper's end instruction, so it can run while it grows.
+/// A copper list in chip memory: MOVEs to the custom chip registers and WAITs for raster lines. It always ends with
+/// the copper's end instruction, so it can run while it grows.
 struct CopperList
 {
     uint16* _words;
@@ -627,7 +617,8 @@ struct CopperList
     bool _wrapped;
     bool _markWrapped;
 
-    // room for 'instructions' MOVEs and WAITs; null if there is not enough chip memory
+    /// An empty copper list in chip memory with room for `instructions` MOVEs and WAITs.
+    /// @returns nothing (`null`) if there is not enough chip memory.
     static unsafe Optional<CopperList> Create(int instructions)
     {
         void* memory = Hardware.AllocChip((instructions + 1) * 4);
@@ -638,30 +629,35 @@ struct CopperList
         return list;
     }
 
+    /// The address of the list, for [Hardware.StartCopper].
     unsafe void* Address()
     {
         return _words;
     }
 
-    // the number of instructions
+    /// The number of instructions in the list.
     int Count()
     {
         return _count;
     }
 
-    // MOVE value to a register; the result is the instruction's index for Change
+    /// Adds a MOVE of `value` to `register`.
+    /// @returns the index of the instruction, for [CopperList.Change].
     int Move(Custom register, int value)
     {
         return _Add((int)register & 0x1FE, value);
     }
 
-    // MOVE to the color register 0..31 (0xRGB)
+    /// Adds a MOVE of the color `rgb` (`0xRGB`) to the color register `index` (0 to 31).
+    /// @returns the index of the instruction, for [CopperList.Change].
     int Color(int index, int rgb)
     {
         return _Add(0x180 + 2 * (index & 31), rgb);
     }
 
-    // MOVE to a bitplane or sprite pointer (BPL1PTH, SPR0PTH, ... + 4 * number): two instructions, high and low word
+    /// Adds the MOVEs of an address to a bitplane or sprite pointer (`BPL1PTH`, `SPR0PTH`, ... + 4 * `number`): two
+    /// instructions, the high and the low word.
+    /// @returns the index of the first instruction, for [CopperList.ChangePointer].
     int MovePointer(Custom register, int number, void* address)
     {
         unsafe
@@ -673,8 +669,8 @@ struct CopperList
         }
     }
 
-    // WAIT until the beam reaches line y of the picture (y = 0: the first line of the standard PAL display window,
-    // raster line 44; up to 268). Lines must come in order.
+    /// WAIT until the beam reaches line y of the picture (y = 0: the first line of the standard PAL display window,
+    /// raster line 44; up to 268). Lines must come in order.
     void Wait(int y)
     {
         int beam = 0x2C + y;
@@ -686,7 +682,7 @@ struct CopperList
         _Instruction(((beam & 0xFF) << 8) | 0x07, 0xFFFE);
     }
 
-    // a new value for the MOVE at index
+    /// A new value for the MOVE at `index`.
     void Change(int index, int value)
     {
         unsafe
@@ -698,7 +694,7 @@ struct CopperList
         }
     }
 
-    // a new address for the pointer MOVEs at index (from MovePointer)
+    /// A new address for the pointer MOVEs at `index` (from [CopperList.MovePointer]).
     void ChangePointer(int index, void* address)
     {
         unsafe
@@ -709,14 +705,14 @@ struct CopperList
         }
     }
 
-    // Reset goes back to here
+    /// Remembers the end of the list: [CopperList.Reset] goes back to here.
     void Mark()
     {
         _mark = _count;
         _markWrapped = _wrapped;
     }
 
-    // removes the instructions after the mark (all without one)
+    /// Removes the instructions after the mark ([CopperList.Mark]); all of them if there is none.
     void Reset()
     {
         _count = _mark;
@@ -724,6 +720,7 @@ struct CopperList
         _End();
     }
 
+    /// Gives the chip memory back.
     unsafe void Free()
     {
         Hardware.FreeChip(_words, (_capacity + 1) * 4);
@@ -761,15 +758,16 @@ struct CopperList
     }
 }
 
-// A hardware sprite: 16 pixels wide, as high as needed, three colors (sprites 0 and 1 use the colors 17-19, 2 and 3
-// 21-23, 4 and 5 25-27, 6 and 7 29-31). Screen.ShowSprite shows it.
+/// A hardware sprite: 16 pixels wide, as high as needed, three colors (sprites 0 and 1 use the colors 17-19, 2 and 3
+/// 21-23, 4 and 5 25-27, 6 and 7 29-31). Screen.ShowSprite shows it.
 struct Sprite
 {
     uint16* _data;
+    /// The height of the sprite in pixels.
     int Height;
 
-    // One string per row (up to 16 characters): '1'..'3' are the sprite's colors, every other character ('.', ' ')
-    // is transparent. Null if there is not enough chip memory.
+    /// One string per row (up to 16 characters): '1'..'3' are the sprite's colors, every other character ('.', ' ')
+    /// is transparent. Null if there is not enough chip memory.
     static Optional<Sprite> Create(ReadOnlySlice<string> rows)
     {
         unsafe
@@ -803,7 +801,7 @@ struct Sprite
         }
     }
 
-    // the top left corner at (x, y) of the picture
+    /// Moves the top left corner of the sprite to (`x`, `y`) of the picture.
     void MoveTo(int x, int y)
     {
         unsafe
@@ -816,11 +814,13 @@ struct Sprite
         }
     }
 
+    /// The address of the sprite's data in chip memory.
     unsafe void* Address()
     {
         return _data;
     }
 
+    /// Gives the chip memory back.
     unsafe void Free()
     {
         Hardware.FreeChip(_data, (Height + 2) * 4);
@@ -828,24 +828,60 @@ struct Sprite
     }
 }
 
-// A low resolution PAL screen: a bitmap (two with double buffering) shown by a copper list that also sets the
-// palette and the sprites. After the setup, Copper takes your own instructions (Copper.Wait(y), Copper.Color(0,
-// 0xF00), ...; Copper.Reset() removes them again).
+/// A low resolution PAL screen: a bitmap (two with double buffering) shown by a copper list that also sets the palette
+/// and the sprites. With [Bitmap], [Blitter], [Sprite], [CopperList] and [SystemFont] it is the graphics on the
+/// Amiga's custom chips (only for amigaos targets, after [Hardware.TakeOver]).
+///
+/// ```
+/// using Amiga;
+///
+/// Hardware.TakeOver();
+/// if (Screen.Open(320, 256, 4, true) is Screen screen)
+/// {
+///     screen.SetColor(1, 0xFFF);
+///     screen.Show();
+///     while (!Hardware.LeftMouseButton())
+///     {
+///         screen.Back.Clear();                            // the blitter
+///         screen.Back.FillRect(10, 10, 100, 50, 2);
+///         screen.Back.DrawText(20, 100, "Hello", 1);     // Topaz, from the ROM
+///         screen.Swap();                                  // shows Back, waits for the vertical blank
+///     }
+///     Hardware.Restore();
+///     screen.Close();
+/// }
+/// ```
+///
+/// Coordinates are pixels, (0, 0) is the top left corner; drawing is clipped to the bitmap. Colors are numbers of the
+/// palette (0 .. 2^depth - 1); the palette has 12-bit colors (0xRGB).
 struct Screen
 {
-    Bitmap Front;          // what is shown
-    Bitmap Back;           // where to draw (the same as Front without double buffering)
+    /// The bitmap that is shown.
+    Bitmap Front;
+    /// The bitmap to draw into; the same as `Front` without double buffering.
+    Bitmap Back;
+    /// The copper list of the screen. After the setup it takes your own instructions (`Copper.Wait(y)`,
+    /// `Copper.Color(0, 0xF00)`, ...; `Copper.Reset()` removes them again).
     CopperList Copper;
+    /// The width in pixels.
     int Width;
+    /// The height in pixels.
     int Height;
+    /// The number of bitplanes.
     int Depth;
     int _planesAt;
     int _spritesAt;
     int _colorsAt;
     void* _noSprite;
 
-    // width: a multiple of 16, 128..320; height 1..256; depth 1..5 (2..32 colors). Null if there is not enough chip
-    // memory.
+    /// Opens a low resolution PAL screen: a bitmap (two with `doubleBuffer`) shown by a copper list that also sets the
+    /// palette and the sprites.
+    /// @param width a multiple of 16, 128 to 320.
+    /// @param height 1 to 256.
+    /// @param depth 1 to 5 (2 to 32 colors).
+    /// @param doubleBuffer draw into `Back` while `Front` is shown, and swap them with [Screen.Swap].
+    /// @returns nothing (`null`) if there is not enough chip memory.
+    /// @panics when a size is out of range.
     static Optional<Screen> Open(int width, int height, int depth, bool doubleBuffer)
     {
         if (width < 128 || width > 320 || width % 16 != 0 || height < 1 || height > 256 || depth < 1 || depth > 5)
@@ -910,7 +946,7 @@ struct Screen
         Copper.Mark();
     }
 
-    // color 0..31 as 0xRGB (from the next frame on)
+    /// color 0..31 as 0xRGB (from the next frame on)
     void SetColor(int index, int rgb)
     {
         if (index < 0 || index > 31)
@@ -918,8 +954,8 @@ struct Screen
         Copper.Change(_colorsAt + index, rgb);
     }
 
-    // Shows the screen: starts its copper list and the DMA for bitplanes, copper, blitter and sprites (after
-    // Hardware.TakeOver).
+    /// Shows the screen: starts its copper list and the DMA for bitplanes, copper, blitter and sprites (after
+    /// Hardware.TakeOver).
     void Show()
     {
         if (!Hardware.IsTakenOver())
@@ -928,8 +964,8 @@ struct Screen
         Hardware.Write(Custom.DMACON, DmaSet | DmaMaster | DmaBitplanes | DmaCopper | DmaBlitter | DmaSprites);
     }
 
-    // Shows Back from the next frame on (Front and Back swap) and waits for the vertical blank: then the new Back is
-    // no longer on the screen. Without double buffering it only waits.
+    /// Shows Back from the next frame on (Front and Back swap) and waits for the vertical blank: then the new Back is
+    /// no longer on the screen. Without double buffering it only waits.
     void Swap()
     {
         Blitter.Wait();
@@ -941,7 +977,7 @@ struct Screen
         Hardware.WaitVBlank();
     }
 
-    // sprite 'number' (0..7) shows sprite (from the next frame on)
+    /// sprite 'number' (0..7) shows sprite (from the next frame on)
     void ShowSprite(int number, Sprite sprite)
     {
         if (number < 0 || number > 7)
@@ -949,6 +985,7 @@ struct Screen
         Copper.ChangePointer(_spritesAt + number * 2, sprite.Address());
     }
 
+    /// Hides sprite `number` (0 to 7) from the next frame on.
     void HideSprite(int number)
     {
         if (number < 0 || number > 7)
@@ -956,7 +993,7 @@ struct Screen
         Copper.ChangePointer(_spritesAt + number * 2, _noSprite);
     }
 
-    // frees the bitmaps and the copper list (after Hardware.Restore, when the screen is no longer shown)
+    /// frees the bitmaps and the copper list (after Hardware.Restore, when the screen is no longer shown)
     void Close()
     {
         Blitter.Wait();

@@ -1,30 +1,37 @@
-// Text encodings: conversion between strings (always UTF-8 in memory) and raw bytes.
-//
-//     var bytes = Encoding.UTF8().GetBytes("héllo");
-//     if (Encoding.ASCII().GetString(bytes) is string text) { ... }
-
 namespace System;
 
+/// The encodings that [Encoding] knows.
 enum EncodingKind : uint8
 {
+    /// UTF-8, the encoding of every string in memory.
     UTF8,
+    /// ASCII: one byte per character, 0 to 127.
     ASCII
 }
 
+/// Conversion between strings (always UTF-8 in memory) and raw bytes.
+///
+/// ```
+/// var bytes = Encoding.UTF8().GetBytes("héllo");
+/// if (Encoding.ASCII().GetString(bytes) is string text) { ... }
+/// ```
 struct Encoding
 {
     EncodingKind _kind;
 
+    /// The UTF-8 encoding.
     static Encoding UTF8()
     {
         return Encoding { _kind = EncodingKind.UTF8 };
     }
 
+    /// The ASCII encoding.
     static Encoding ASCII()
     {
         return Encoding { _kind = EncodingKind.ASCII };
     }
 
+    /// The name of the encoding: `"UTF-8"` or `"ASCII"`.
     string Name()
     {
         if (_kind == EncodingKind.ASCII)
@@ -32,7 +39,8 @@ struct Encoding
         return "UTF-8";
     }
 
-    // UTF-8: the bytes of the string. ASCII: one byte per character, characters above 127 become '?'.
+    /// The bytes of `s` in this encoding. UTF-8: the bytes of the string as they are. ASCII: one byte per character;
+    /// characters above 127 become `?`.
     uint8[] GetBytes(string s)
     {
         if (_kind == EncodingKind.UTF8)
@@ -69,6 +77,7 @@ struct Encoding
         return result;
     }
 
+    /// The number of bytes [Encoding.GetBytes] returns for `s`.
     int GetByteCount(string s)
     {
         if (_kind == EncodingKind.UTF8)
@@ -76,12 +85,18 @@ struct Encoding
         return GetBytes(s).Length;
     }
 
+    /// Decodes all of `bytes` into a string.
+    /// @error EncodingError.NotAscii a byte above 127 for ASCII.
+    /// @error EncodingError.InvalidUtf8 malformed UTF-8.
     EncodingError<string> GetString(uint8[] bytes)
     {
         return GetString(bytes, 0, bytes.Length);
     }
 
-    // Decodes count bytes starting at start. Invalid input (malformed UTF-8, bytes above 127 for ASCII) is an error.
+    /// Decodes `count` bytes of `bytes`, starting at `start`, into a string.
+    /// @error EncodingError.OutOfBounds the range is not inside of `bytes`.
+    /// @error EncodingError.NotAscii a byte above 127 for ASCII.
+    /// @error EncodingError.InvalidUtf8 malformed UTF-8.
     EncodingError<string> GetString(uint8[] bytes, int start, int count)
     {
         if (start < 0 || count < 0 || start + count > bytes.Length)

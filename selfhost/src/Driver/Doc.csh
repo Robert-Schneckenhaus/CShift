@@ -371,6 +371,13 @@ struct DocWriter
     HashSet<string> Names;
     bool RequireDocs;
     StringBuilder Out;
+    HashSet<string> Used;   // the namespaces with documented declarations
+
+    void Namespace(string ns)
+    {
+        Out.Append(", \"namespace\": " + JsonString(ns));
+        Used.Add(ns);
+    }
 
     // The "doc" member of a declaration: null without a comment. 'what' names the declaration in errors; 'fn' is set
     // for functions (their @param tags are checked).
@@ -563,37 +570,9 @@ string DocConstValue(Compiler cg, int index)
 // The documentation of the standard library (stdlib) or of the other sources, as JSON.
 string DocJson(Compiler cg, bool stdlib, bool requireDocs)
 {
-    var w = DocWriter { Cg = cg, Names = DocNames(cg), RequireDocs = requireDocs, Out = StringBuilder.Create() };
+    var w = DocWriter { Cg = cg, Names = DocNames(cg), RequireDocs = requireDocs, Out = StringBuilder.Create(), Used = HashSet<string>.Create() };
     var o = w.Out;
     var none = new FuncDecl[0];
-    o.Append("{\"version\": " + JsonString(CshcVersion()) + ",\n\"namespaces\": [");
-    var nsDocs = Dictionary<string, string>.Create();
-    var nsOrder = List<string>.Create();
-    foreach (var f in cg.Files.ToArray())
-    {
-        if (f.IsPrelude != stdlib)
-            continue;
-        string doc = DocText(f.Doc).Trim().ToString();
-        var known = nsDocs.TryGet(f.Ns);
-        if (known is string before)
-        {
-            if (doc.Length > 0)
-                nsDocs.Set(f.Ns, before.Length > 0 ? before + "\n\n" + doc : doc);
-        }
-        else
-        {
-            nsOrder.Add(f.Ns);
-            nsDocs.Set(f.Ns, doc);
-        }
-    }
-    for (var i = 0; i < nsOrder.Count(); i += 1)
-    {
-        string ns = nsOrder.Get(i);
-        o.Append((i > 0 ? ",\n" : "\n") + "{\"name\": " + JsonString(ns) + ", \"doc\": ");
-        w.Doc(nsDocs.GetOrDefault(ns, ""), SourceLoc { }, "namespace " + ns, none);
-        o.Append("}");
-    }
-    o.Append("],\n\"items\": [");
     bool first = true;
 
     for (var si = 0; si < cg.Structs.Count(); si += 1)
@@ -606,7 +585,8 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("struct", d.Name, "struct " + d.Name + TypeParamsText(d.TypeParams) + TypeListText(cg, d.Bases, " : ") + ConstraintsText(cg, d.Constraints), d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"doc\": ");
         w.Doc(d.Doc, d.Loc, "struct " + d.Name, none);
         o.Append(", \"members\": [");
         bool firstMember = true;
@@ -646,7 +626,8 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("interface", d.Name, "interface " + d.Name + TypeParamsText(d.TypeParams), d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"doc\": ");
         w.Doc(d.Doc, d.Loc, "interface " + d.Name, none);
         o.Append(", \"members\": [");
         bool firstMember = true;
@@ -674,7 +655,8 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         first = false;
         string signature = d.IsError ? "error " + d.Name : "enum " + d.Name + " : " + cg.Tree.TypeToString(d.Base);
         w.Begin(d.IsError ? "error" : "enum", d.Name, signature, d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"doc\": ");
         w.Doc(d.Doc, d.Loc, (d.IsError ? "error " : "enum ") + d.Name, none);
         o.Append(", \"members\": [");
         var info = GetEnumInfo(cg, GetEnumType(cg, ei));
@@ -704,7 +686,8 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("union", d.Name, "union " + d.Name + TypeListText(cg, d.Interfaces, " : ") + " { " + TypeListText(cg, d.Members, "") + " }", d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"cases\": [");
+        w.Namespace(file.Ns);
+        o.Append(", \"cases\": [");
         for (var k = 0; k < d.Members.Length; k += 1)
             o.Append((k > 0 ? ", " : "") + JsonString(cg.Tree.TypeToString(d.Members[k])));
         o.Append("], \"doc\": ");
@@ -717,15 +700,16 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         var entry = cg.Funcs.Get(fi);
         var file = cg.Files.Get(entry.File);
         var d = entry.Decl;
-        // C functions that are only declared are the plumbing of the library, unless they are documented
+        // C functions (declared, or defined for the C runtime) are the plumbing of the library, unless they are documented
         // ... and so is the entry point of a program
         if (entry.OwnerStruct != -1 || file.IsPrelude != stdlib || !DocPublic(d.Name, d.Doc) || (!stdlib && d.Name == "Main") ||
-            (d.IsExtern && d.Body.IsNull() && DocText(d.Doc).Length == 0))
+            (d.IsExtern && DocText(d.Doc).Length == 0))
             continue;
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("function", d.Name, FuncSignature(cg, d), FuncDocLoc(d));
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"doc\": ");
         var one = new FuncDecl[] { d };
         w.Doc(d.Doc, FuncDocLoc(d), "function " + d.Name, one);
         o.Append("}");
@@ -741,7 +725,8 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("const", d.Name, "const " + cg.Tree.TypeToString(d.Type) + " " + d.Name, d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"value\": " + DocConstValue(cg, ci) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"value\": " + DocConstValue(cg, ci) + ", \"doc\": ");
         w.Doc(d.Doc, d.Loc, "constant " + d.Name, none);
         o.Append("}");
     }
@@ -756,10 +741,49 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
         o.Append(first ? "\n" : ",\n");
         first = false;
         w.Begin("global", d.Name, cg.Tree.TypeToString(d.Type) + " " + d.Name, d.Loc);
-        o.Append(", \"namespace\": " + JsonString(file.Ns) + ", \"doc\": ");
+        w.Namespace(file.Ns);
+        o.Append(", \"doc\": ");
         w.Doc(d.Doc, d.Loc, "variable " + d.Name, none);
         o.Append("}");
     }
     o.Append("\n]}\n");
+
+    // the namespaces (their //! comments) that have documented declarations or a comment of their own
+    var nsDocs = Dictionary<string, string>.Create();
+    var nsOrder = List<string>.Create();
+    foreach (var f in cg.Files.ToArray())
+    {
+        if (f.IsPrelude != stdlib)
+            continue;
+        string doc = DocText(f.Doc).Trim().ToString();
+        var known = nsDocs.TryGet(f.Ns);
+        if (known is string before)
+        {
+            if (doc.Length > 0)
+                nsDocs.Set(f.Ns, before.Length > 0 ? before + "\n\n" + doc : doc);
+        }
+        else
+        {
+            nsOrder.Add(f.Ns);
+            nsDocs.Set(f.Ns, doc);
+        }
+    }
+    var items = o;
+    o = StringBuilder.Create();
+    w.Out = o;
+    o.Append("{\"version\": " + JsonString(CshcVersion()) + ",\n\"namespaces\": [");
+    bool firstNs = true;
+    foreach (var ns in nsOrder.ToArray())
+    {
+        string doc = nsDocs.GetOrDefault(ns, "");
+        if (!w.Used.Contains(ns) && doc.Length == 0)
+            continue;
+        o.Append((firstNs ? "\n" : ",\n") + "{\"name\": " + JsonString(ns) + ", \"doc\": ");
+        firstNs = false;
+        w.Doc(doc, SourceLoc { }, "namespace " + ns, none);
+        o.Append("}");
+    }
+    o.Append("],\n\"items\": [");
+    o.Append(items.ToString());
     return o.ToString();
 }

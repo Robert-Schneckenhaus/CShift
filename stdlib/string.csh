@@ -1,18 +1,23 @@
-// String helpers. The compiler forwards unknown string methods to this namespace:
-//
-//     "a,b".Contains(",")      is    String.Contains("a,b", ",")
-//     string.Join(", ", parts) is    String.Join(", ", parts)
-//
-// The helpers take StringSlice (a string converts to one for free, and s[i..j] is one), so they work on parts of a
-// string without copying; Trim and Split return slices as well. Copy a result with .ToString() to keep it as a string.
-// Strings are UTF-8. Positions and lengths are byte offsets (like string.Length and s[i]).
-// Case conversion only handles ASCII letters.
+//! The methods of strings. The compiler forwards the string methods it does not know itself to this namespace:
+//!
+//! ```
+//! "a,b".Contains(",")        // is String.Contains("a,b", ",")
+//! string.Join(", ", parts)   // is String.Join(", ", parts)
+//! ```
+//!
+//! The functions take a `StringSlice` (a string converts to one for free, and `s[i..j]` is one), so they work on parts
+//! of a string without copying; [String.Trim], [String.Split] and [String.Substring] return slices as well. Copy a
+//! result with `.ToString()` to keep it as a string.
+//!
+//! Strings are UTF-8. Positions and lengths are byte offsets (like `s.Length` and `s[i]`). Case conversion only
+//! handles ASCII letters.
 
 namespace String;
 
 using System;
 using System.Native;
 
+/// Whether `s` is empty (a `null` string is empty too).
 bool IsNullOrEmpty(StringSlice s)
 {
     return s.Length == 0; // a null string is an empty slice
@@ -20,12 +25,13 @@ bool IsNullOrEmpty(StringSlice s)
 
 // ---- IEquatable<string>, IHashable and IComparable<string> (used by generic containers) ----
 
+/// Whether `a` and `b` have the same bytes (`a == b`).
 bool Equals(string a, string b)
 {
     return a == b;
 }
 
-// FNV-1a
+/// A hash code of `s` (FNV-1a), for [Dictionary] keys: equal strings have equal codes.
 int GetHashCode(string s)
 {
     uint hash = 2166136261;
@@ -34,7 +40,8 @@ int GetHashCode(string s)
     return (int)hash;
 }
 
-// Ordinal comparison of the UTF-8 bytes: -1, 0 or 1.
+/// Compares `a` and `b` by their UTF-8 bytes (ordinal, no locale).
+/// @returns -1 if `a` comes first, 0 if they are equal, 1 if `b` comes first.
 int CompareTo(string a, string b)
 {
     int la = a.Length;
@@ -58,7 +65,8 @@ int CompareTo(string a, string b)
 
 // ---- Searching ----
 
-// Index of the first occurrence of value at or after start, or -1.
+/// The position of the first occurrence of `value` in `s` at or after `start`.
+/// @returns -1 if there is none.
 int IndexOf(StringSlice s, StringSlice value, int start)
 {
     int n = s.Length;
@@ -74,17 +82,22 @@ int IndexOf(StringSlice s, StringSlice value, int start)
     return -1;
 }
 
+/// The position of the first occurrence of `value` in `s`.
+/// @returns -1 if there is none.
 int IndexOf(StringSlice s, StringSlice value)
 {
     return IndexOf(s, value, 0);
 }
 
+/// The position of the first occurrence of the character `value` in `s`.
+/// @returns -1 if there is none.
 int IndexOf(StringSlice s, char value)
 {
     return IndexOf(s, value, 0);
 }
 
-// Index of the first occurrence of the character at or after start, or -1.
+/// The position of the first occurrence of the character `value` in `s` at or after `start`.
+/// @returns -1 if there is none.
 int IndexOf(StringSlice s, char value, int start)
 {
     for (var i = start < 0 ? 0 : start; i < s.Length; i += 1)
@@ -95,6 +108,8 @@ int IndexOf(StringSlice s, char value, int start)
     return -1;
 }
 
+/// The position of the last occurrence of the character `value` in `s`.
+/// @returns -1 if there is none.
 int LastIndexOf(StringSlice s, char value)
 {
     for (var i = s.Length - 1; i >= 0; i -= 1)
@@ -105,21 +120,25 @@ int LastIndexOf(StringSlice s, char value)
     return -1;
 }
 
+/// Whether `value` occurs in `s`.
 bool Contains(StringSlice s, StringSlice value)
 {
     return IndexOf(s, value, 0) >= 0;
 }
 
+/// Whether the character `value` occurs in `s`.
 bool Contains(StringSlice s, char value)
 {
     return IndexOf(s, value) >= 0;
 }
 
+/// Whether `s` starts with `prefix`.
 bool StartsWith(StringSlice s, StringSlice prefix)
 {
     return prefix.Length <= s.Length && s[..prefix.Length] == prefix;
 }
 
+/// Whether `s` ends with `suffix`.
 bool EndsWith(StringSlice s, StringSlice suffix)
 {
     return suffix.Length <= s.Length && s[s.Length - suffix.Length..] == suffix;
@@ -127,23 +146,26 @@ bool EndsWith(StringSlice s, StringSlice suffix)
 
 // ---- Transforming ----
 
-// Part of a slice, as a view (string.Substring is built in and copies): s[start..], s[start..start + count].
+/// The part of `s` from `start` to the end, as a view: `s[start..]`. (`string.Substring` of a string is built in and
+/// copies.)
 StringSlice Substring(StringSlice s, int start)
 {
     return s[start..];
 }
 
+/// The `count` bytes of `s` from `start`, as a view: `s[start..start + count]`.
 StringSlice Substring(StringSlice s, int start, int count)
 {
     return s[start..start + count];
 }
 
+/// Whether `c` is a space, a tab or a line break (`\n`, `\r`): the white space that [String.Trim] removes.
 bool IsSpace(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-// Without the white space at both ends (a view of s, nothing is copied).
+/// `s` without the white space at both ends (a view of `s`, nothing is copied).
 StringSlice Trim(StringSlice s)
 {
     int start = 0;
@@ -155,7 +177,7 @@ StringSlice Trim(StringSlice s)
     return s[start..end];
 }
 
-// Without the white space at the start.
+/// `s` without the white space at the start (a view).
 StringSlice TrimStart(StringSlice s)
 {
     int start = 0;
@@ -164,7 +186,7 @@ StringSlice TrimStart(StringSlice s)
     return s[start..];
 }
 
-// Without the white space at the end.
+/// `s` without the white space at the end (a view).
 StringSlice TrimEnd(StringSlice s)
 {
     int end = s.Length;
@@ -173,7 +195,7 @@ StringSlice TrimEnd(StringSlice s)
     return s[..end];
 }
 
-// Without the given characters at the start / at the end: "007".TrimStart('0') is "7".
+/// `s` without the character `c` at the start (a view): `"007".TrimStart('0')` is `"7"`.
 StringSlice TrimStart(StringSlice s, char c)
 {
     int start = 0;
@@ -182,6 +204,7 @@ StringSlice TrimStart(StringSlice s, char c)
     return s[start..];
 }
 
+/// `s` without the character `c` at the end (a view): `"1.500".TrimEnd('0')` is `"1.5"`.
 StringSlice TrimEnd(StringSlice s, char c)
 {
     int end = s.Length;
@@ -190,12 +213,13 @@ StringSlice TrimEnd(StringSlice s, char c)
     return s[..end];
 }
 
-// Filled up to 'width' characters (bytes) with spaces or 'fill' on the left / on the right: "7".PadLeft(3, '0') is "007".
+/// `s` filled up to `width` characters (bytes) with spaces on the left: `"7".PadLeft(3)` is `"  7"`.
 string PadLeft(StringSlice s, int width)
 {
     return PadLeft(s, width, ' ');
 }
 
+/// `s` filled up to `width` characters (bytes) with `fill` on the left: `"7".PadLeft(3, '0')` is `"007"`.
 string PadLeft(StringSlice s, int width, char fill)
 {
     if (s.Length >= width)
@@ -203,11 +227,13 @@ string PadLeft(StringSlice s, int width, char fill)
     return Repeat(fill.ToString(), width - s.Length) + s;
 }
 
+/// `s` filled up to `width` characters (bytes) with spaces on the right.
 string PadRight(StringSlice s, int width)
 {
     return PadRight(s, width, ' ');
 }
 
+/// `s` filled up to `width` characters (bytes) with `fill` on the right.
 string PadRight(StringSlice s, int width, char fill)
 {
     if (s.Length >= width)
@@ -215,6 +241,7 @@ string PadRight(StringSlice s, int width, char fill)
     return s + Repeat(fill.ToString(), width - s.Length);
 }
 
+/// `s` with the ASCII letters in upper case.
 string ToUpper(StringSlice s)
 {
     var bytes = new uint8[s.Length];
@@ -228,6 +255,7 @@ string ToUpper(StringSlice s)
     return string.FromBytes(bytes);
 }
 
+/// `s` with the ASCII letters in lower case.
 string ToLower(StringSlice s)
 {
     var bytes = new uint8[s.Length];
@@ -241,6 +269,8 @@ string ToLower(StringSlice s)
     return string.FromBytes(bytes);
 }
 
+/// `s` with every occurrence of `oldValue` replaced by `newValue`.
+/// @returns `s` unchanged if `oldValue` is empty.
 string Replace(StringSlice s, StringSlice oldValue, StringSlice newValue)
 {
     if (oldValue.Length == 0)
@@ -260,6 +290,7 @@ string Replace(StringSlice s, StringSlice oldValue, StringSlice newValue)
     return result.ToString();
 }
 
+/// `s` repeated `count` times: `"ab".Repeat(3)` is `"ababab"`.
 string Repeat(StringSlice s, int count)
 {
     var result = StringBuilder.Create();
@@ -270,7 +301,8 @@ string Repeat(StringSlice s, int count)
 
 // ---- Splitting and joining ----
 
-// The parts between the separators, as views of s (nothing is copied).
+/// The parts of `s` between the occurrences of `separator`, as views of `s` (nothing is copied):
+/// `"a,,b".Split(",")` is `["a", "", "b"]`.
 StringSlice[] Split(StringSlice s, StringSlice separator)
 {
     if (separator.Length == 0)
@@ -300,6 +332,7 @@ StringSlice[] Split(StringSlice s, StringSlice separator)
     return result;
 }
 
+/// The parts of `s` between the occurrences of the character `separator`, as views of `s`.
 StringSlice[] Split(StringSlice s, char separator)
 {
     int parts = 1;
@@ -325,6 +358,7 @@ StringSlice[] Split(StringSlice s, char separator)
     return result;
 }
 
+/// The `parts` joined into one string, with `separator` between them: `string.Join(", ", names)`.
 string Join(StringSlice separator, string[] parts)
 {
     var result = StringBuilder.Create();
@@ -337,7 +371,7 @@ string Join(StringSlice separator, string[] parts)
     return result.ToString();
 }
 
-// Joins slices, e.g. the parts of Split.
+/// The `parts` (e.g. the result of [String.Split]) joined into one string, with `separator` between them.
 string Join(StringSlice separator, StringSlice[] parts)
 {
     var result = StringBuilder.Create();
@@ -352,6 +386,9 @@ string Join(StringSlice separator, StringSlice[] parts)
 
 // ---- Parsing ----
 
+/// The integer in `s`: decimal digits with an optional `+` or `-` sign, nothing else (no spaces).
+/// @error ParseError.Invalid `s` is not an integer.
+/// @error ParseError.OutOfRange the number does not fit into an `int64`.
 ParseError<int64> ParseInt64(StringSlice s)
 {
     int n = s.Length;
@@ -387,6 +424,9 @@ ParseError<int64> ParseInt64(StringSlice s)
     return value;
 }
 
+/// The integer in `s`: decimal digits with an optional `+` or `-` sign, nothing else (no spaces).
+/// @error ParseError.Invalid `s` is not an integer.
+/// @error ParseError.OutOfRange the number does not fit into an `int`.
 ParseError<int> ParseInt(StringSlice s)
 {
     var value = try ParseInt64(s);
@@ -395,6 +435,9 @@ ParseError<int> ParseInt(StringSlice s)
     return (int)value;
 }
 
+/// The floating point number in `s` (`"3.5"`, `"-1e-3"`, `"inf"`, ...; the C library's `strtod`, without spaces
+/// around it).
+/// @error ParseError.Invalid `s` is not a number.
 ParseError<double> ParseDouble(StringSlice s)
 {
     if (s.Length == 0)

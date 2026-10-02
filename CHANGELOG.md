@@ -17,6 +17,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   public declaration.
 - VS Code: the hover shows the doc comment of a declaration.
 
+### Standard library
+- Every public declaration has a doc comment (also the AmigaOS graphics and hardware), so the hover in VS Code
+  explains the functions, their parameters, results, errors and panics; `cshiftc doc` writes the reference.
+
 ## [0.21] - 2026-10-02
 
 ### Tools

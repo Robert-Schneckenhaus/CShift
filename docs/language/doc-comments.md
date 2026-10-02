@@ -62,7 +62,9 @@ Other tags are errors.
 ## What is documented
 
 Declarations whose name starts with `_` are private and are not documented, nor is anything marked `@internal`.
-Functions declared with `extern "C"` without a body are left out unless they have a doc comment, and so is `Main`.
+`extern "C"` functions (declarations of C functions, and functions that implement one for the C runtime) are left
+out unless they have a doc comment, and so is `Main`. A namespace is listed when it has documented declarations or a
+`//!` comment.
 
 ## cshiftc doc
 

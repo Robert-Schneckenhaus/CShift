@@ -1,54 +1,63 @@
-// Reading and writing files piece by piece: FileStream (bytes, with seeking), StreamReader (lines of text) and
-// StreamWriter (text). All of them are IDisposable, so 'using' closes them:
-//
-//     using var reader = try StreamReader.Open("data.txt");
-//     while (reader.ReadLine() is string line)
-//         Console.WriteLine(line);
-//
-//     using var writer = try StreamWriter.Create("out.txt");
-//     writer.WriteLine("first line");
-//
-//     using var stream = try FileStream.OpenRead("image.bin");
-//     var header = new uint8[16];
-//     int got = stream.Read(header, 0, 16);
-//
-// A stream is a struct around the C library's FILE: copies of it share the open file, and Close (or Dispose) of one
-// copy closes it for all; keep one owner. Text is UTF-8.
-
 namespace System;
 
 using System.Native;
 
+/// Where [FileStream.Seek] counts from.
 enum SeekOrigin : int
 {
+    /// From the start of the file.
     Begin = 0,
+    /// From the current position.
     Current = 1,
+    /// From the end of the file.
     End = 2
 }
 
+/// A file, read and written as bytes, with seeking. [StreamReader] reads lines of text, [StreamWriter] writes text.
+/// All of them are [IDisposable], so `using` closes them:
+///
+/// ```
+/// using var reader = try StreamReader.Open("data.txt");
+/// while (reader.ReadLine() is string line)
+///     Console.WriteLine(line);
+///
+/// using var writer = try StreamWriter.Create("out.txt");
+/// writer.WriteLine("first line");
+///
+/// using var stream = try FileStream.OpenRead("image.bin");
+/// var header = new uint8[16];
+/// int got = stream.Read(header, 0, 16);
+/// ```
+///
+/// A stream is a struct around the C library's `FILE`: copies of it share the open file, and `Close` (or `Dispose`) of
+/// one copy closes it for all; keep one owner. Text is UTF-8.
 struct FileStream : IDisposable
 {
     void* _file;
 
-    // an existing file, for reading
+    /// Opens an existing file for reading.
+    /// @error IoError.CannotOpen the file does not exist or cannot be read.
     static IoError<FileStream> OpenRead(string path)
     {
         return _Open(path, "rb", IoError.CannotOpen, "cannot open file '");
     }
 
-    // an existing file, for reading and writing (from the start, without truncating it)
+    /// Opens an existing file for reading and writing, from the start, without truncating it.
+    /// @error IoError.CannotOpen the file does not exist or cannot be opened.
     static IoError<FileStream> OpenReadWrite(string path)
     {
         return _Open(path, "r+b", IoError.CannotOpen, "cannot open file '");
     }
 
-    // a new, empty file (an existing one is truncated), for writing
+    /// Creates a new, empty file for writing (an existing one is truncated).
+    /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     static IoError<FileStream> Create(string path)
     {
         return _Open(path, "wb", IoError.CannotCreate, "cannot create file '");
     }
 
-    // for writing at the end (the file is created if it does not exist)
+    /// Opens a file for writing at its end; it is created if it does not exist.
+    /// @error IoError.CannotCreate the file cannot be opened or created.
     static IoError<FileStream> Append(string path)
     {
         return _Open(path, "ab", IoError.CannotCreate, "cannot open file '");
@@ -65,9 +74,12 @@ struct FileStream : IDisposable
         }
     }
 
+    /// Whether the stream is open (not closed yet).
     bool IsOpen() { return _file != null; }
 
-    // reads up to 'count' bytes into buffer[offset..]; the number read, 0 at the end of the file
+    /// Reads up to `count` bytes into `buffer[offset..]`.
+    /// @returns the number of bytes read; 0 at the end of the file.
+    /// @panics when `offset..offset + count` is not inside of `buffer`.
     int Read(uint8[] buffer, int offset, int count)
     {
         if (offset < 0 || count < 0 || offset + count > buffer.Length)
@@ -81,13 +93,17 @@ struct FileStream : IDisposable
         }
     }
 
-    // the next byte, -1 at the end of the file
+    /// Reads one byte.
+    /// @returns the byte, or -1 at the end of the file.
     int ReadByte()
     {
         var one = new uint8[1];
         return Read(one, 0, 1) == 1 ? (int)one[0] : -1;
     }
 
+    /// Writes `count` bytes of `buffer` from `offset`.
+    /// @error IoError.CannotWrite the stream is closed or writing failed.
+    /// @panics when `offset..offset + count` is not inside of `buffer`.
     IoError<void> Write(uint8[] buffer, int offset, int count)
     {
         if (offset < 0 || count < 0 || offset + count > buffer.Length)
@@ -105,11 +121,15 @@ struct FileStream : IDisposable
         return;
     }
 
+    /// Writes all of `buffer`.
+    /// @error IoError.CannotWrite the stream is closed or writing failed.
     IoError<void> Write(uint8[] buffer)
     {
         return Write(buffer, 0, buffer.Length);
     }
 
+    /// Writes one byte.
+    /// @error IoError.CannotWrite the stream is closed or writing failed.
     IoError<void> WriteByte(uint8 value)
     {
         var one = new uint8[1];
@@ -117,7 +137,8 @@ struct FileStream : IDisposable
         return Write(one, 0, 1);
     }
 
-    // the text as UTF-8 bytes
+    /// Writes `text` as UTF-8 bytes.
+    /// @error IoError.CannotWrite the stream is closed or writing failed.
     IoError<void> WriteText(StringSlice text)
     {
         if (text.Length == 0)
@@ -132,7 +153,7 @@ struct FileStream : IDisposable
         return;
     }
 
-    // the position in bytes from the start
+    /// The position in bytes from the start of the file.
     int64 Position()
     {
         if (_file == null)
@@ -143,7 +164,8 @@ struct FileStream : IDisposable
         }
     }
 
-    // moves the position; false if that is not possible
+    /// Moves the position to `offset` bytes from `origin`.
+    /// @returns `false` if that is not possible.
     bool Seek(int64 offset, SeekOrigin origin)
     {
         if (_file == null)
@@ -154,7 +176,7 @@ struct FileStream : IDisposable
         }
     }
 
-    // the size of the file in bytes (the position stays)
+    /// The size of the file in bytes (the position stays).
     int64 Length()
     {
         if (_file == null)
@@ -169,7 +191,7 @@ struct FileStream : IDisposable
         }
     }
 
-    // writes what the C library still holds in its buffer
+    /// Writes what the C library still holds in its buffer to the file.
     void Flush()
     {
         if (_file == null)
@@ -180,6 +202,7 @@ struct FileStream : IDisposable
         }
     }
 
+    /// Closes the file; the copies of the stream are closed as well. Closing it again does nothing.
     void Close()
     {
         if (_file == null)
@@ -191,13 +214,14 @@ struct FileStream : IDisposable
         _file = null;
     }
 
+    /// Closes the file ([FileStream.Close]); `using` calls it.
     void Dispose()
     {
         Close();
     }
 }
 
-// Reads a UTF-8 text file line by line (or all of it).
+/// Reads a UTF-8 text file line by line (or all of it).
 struct StreamReader : IDisposable
 {
     FileStream _stream;
@@ -205,6 +229,8 @@ struct StreamReader : IDisposable
     int _pos;
     int _count;
 
+    /// Opens a UTF-8 text file for reading; a byte order mark at its start is skipped.
+    /// @error IoError.CannotOpen the file does not exist or cannot be read.
     static IoError<StreamReader> Open(string path)
     {
         var stream = try FileStream.OpenRead(path);
@@ -225,12 +251,14 @@ struct StreamReader : IDisposable
         return _count > 0;
     }
 
+    /// Whether the end of the file is reached.
     bool EndOfStream()
     {
         return !_Fill();
     }
 
-    // the next line without its line break ("\n" or "\r\n"); null at the end of the file
+    /// The next line, without its line break (`\n` or `\r\n`): `while (reader.ReadLine() is string line) ...`.
+    /// @returns nothing (`null`) at the end of the file.
     Optional<string> ReadLine()
     {
         if (!_Fill())
@@ -257,7 +285,7 @@ struct StreamReader : IDisposable
         return _Decode(line, length);
     }
 
-    // the rest of the file
+    /// The rest of the file. Bytes that are not valid UTF-8 become `?`.
     string ReadToEnd()
     {
         var all = new uint8[_buffer.Length];
@@ -290,62 +318,75 @@ struct StreamReader : IDisposable
         return Encoding.UTF8().GetString(copy, 0, length) is string ascii ? ascii : "";
     }
 
+    /// Closes the file.
     void Close()
     {
         _stream.Close();
     }
 
+    /// Closes the file ([StreamReader.Close]); `using` calls it.
     void Dispose()
     {
         Close();
     }
 }
 
-// Writes text to a file as UTF-8.
+/// Writes text to a file as UTF-8.
 struct StreamWriter : IDisposable
 {
     FileStream _stream;
 
-    // a new, empty file (an existing one is truncated)
+    /// Creates a new, empty text file (an existing one is truncated).
+    /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     static IoError<StreamWriter> Create(string path)
     {
         var stream = try FileStream.Create(path);
         return StreamWriter { _stream = stream };
     }
 
-    // writes at the end of the file (it is created if it does not exist)
+    /// Opens a text file for writing at its end; it is created if it does not exist.
+    /// @error IoError.CannotCreate the file cannot be opened or created.
     static IoError<StreamWriter> Append(string path)
     {
         var stream = try FileStream.Append(path);
         return StreamWriter { _stream = stream };
     }
 
+    /// Writes `text`.
+    /// @error IoError.CannotWrite writing failed.
     IoError<void> Write(StringSlice text)
     {
         return _stream.WriteText(text);
     }
 
+    /// Writes `text` and a line break (`\n`).
+    /// @error IoError.CannotWrite writing failed.
     IoError<void> WriteLine(StringSlice text)
     {
         try _stream.WriteText(text);
         return _stream.WriteText("\n");
     }
 
+    /// Writes a line break (`\n`).
+    /// @error IoError.CannotWrite writing failed.
     IoError<void> WriteLine()
     {
         return _stream.WriteText("\n");
     }
 
+    /// Writes what is still buffered to the file.
     void Flush()
     {
         _stream.Flush();
     }
 
+    /// Closes the file.
     void Close()
     {
         _stream.Close();
     }
 
+    /// Closes the file ([StreamWriter.Close]); `using` calls it.
     void Dispose()
     {
         Close();

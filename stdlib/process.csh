@@ -1,8 +1,3 @@
-// Running other programs.
-//
-//     int code = Process.Run("clang -c a.c -o a.o");
-//     var text = Process.RunCapture("clang --version");   // the text the program writes to stdout
-
 namespace System;
 
 extern "C" int system(char* command);
@@ -12,10 +7,16 @@ extern "C" int pclose(void* stream);
 
 using System.Native;
 
+/// Runs other programs and reads environment variables (static functions).
+///
+/// ```
+/// int code = Process.Run("clang -c a.c -o a.o");
+/// var text = Process.RunCapture("clang --version");   // the text the program writes to stdout
+/// ```
 struct Process
 {
-    // Runs a command line through the system shell and waits for it. Returns the exit code of the program
-    // (-1 if it could not be started).
+    /// Runs a command line through the system shell (`sh` or `cmd.exe`) and waits for it.
+    /// @returns the exit code of the program, or -1 if it could not be started.
     static int Run(string command)
     {
         int result = 0;
@@ -32,8 +33,8 @@ struct Process
         return result;
     }
 
-    // True on Windows. The environment variable OS is not always passed on (e.g. by an MSYS2 login shell), so the
-    // system's cmd.exe is looked for as well.
+    /// True on Windows. The environment variable OS is not always passed on (e.g. by an MSYS2 login shell), so the
+    /// system's cmd.exe is looked for as well.
     static bool IsWindows()
     {
         unsafe
@@ -45,7 +46,8 @@ struct Process
         return File.Exists("C:\\Windows\\System32\\cmd.exe");
     }
 
-    // Runs a command line and returns everything it writes to stdout (null if it could not be started).
+    /// Runs a command line through the system shell and returns everything the program writes to stdout.
+    /// @returns nothing (`null`) if the program could not be started.
     static Optional<string> RunCapture(string command)
     {
         var sb = StringBuilder.Create();
@@ -72,7 +74,8 @@ struct Process
         return sb.ToString();
     }
 
-    // The value of an environment variable (null if it is not set).
+    /// The value of the environment variable `name`.
+    /// @returns nothing (`null`) if it is not set.
     static Optional<string> GetEnv(string name)
     {
         unsafe

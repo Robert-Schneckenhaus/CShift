@@ -1,15 +1,17 @@
-// File operations (static). All paths are passed to the C library as they are; text is UTF-8 unless an
-// Encoding is given.
-//
-//     var text = try File.ReadAllText("config.txt");
-//     try File.WriteAllText("out.txt", text + "\n");
-
 namespace System;
 
 using System.Native;
 
+/// Whole files: reading, writing, copying, moving and deleting them (static functions). The paths are passed to the C
+/// library as they are; text is UTF-8 unless an [Encoding] is given.
+///
+/// ```
+/// var text = try File.ReadAllText("config.txt");
+/// try File.WriteAllText("out.txt", text + "\n");
+/// ```
 struct File
 {
+    /// Whether a file (or directory) exists at `path`.
     static bool Exists(string path)
     {
         unsafe
@@ -22,6 +24,8 @@ struct File
         }
     }
 
+    /// Deletes the file at `path`.
+    /// @error IoError.CannotDelete the file does not exist or cannot be deleted.
     static IoError<void> Delete(string path)
     {
         unsafe
@@ -32,6 +36,8 @@ struct File
         return;
     }
 
+    /// The contents of a file as bytes.
+    /// @error IoError.CannotOpen the file does not exist or cannot be read.
     static IoError<uint8[]> ReadAllBytes(string path)
     {
         unsafe
@@ -63,12 +69,17 @@ struct File
         }
     }
 
-    // Reads a UTF-8 file. A leading byte order mark is removed.
+    /// The contents of a UTF-8 text file. A leading byte order mark is removed.
+    /// @error IoError.CannotOpen the file does not exist or cannot be read.
+    /// @error IoError.InvalidText the file is not valid UTF-8.
     static IoError<string> ReadAllText(string path)
     {
         return ReadAllText(path, Encoding.UTF8());
     }
 
+    /// The contents of a text file in `encoding`. A leading UTF-8 byte order mark is removed.
+    /// @error IoError.CannotOpen the file does not exist or cannot be read.
+    /// @error IoError.InvalidText the file is not valid in the encoding.
     static IoError<string> ReadAllText(string path, Encoding encoding)
     {
         var bytes = try ReadAllBytes(path);
@@ -81,7 +92,9 @@ struct File
         return text;
     }
 
-    // Creates the file or replaces its contents.
+    /// Creates the file or replaces its contents with `bytes`.
+    /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
+    /// @error IoError.CannotWrite writing failed (the disk is full, ...).
     static IoError<void> WriteAllBytes(string path, uint8[] bytes)
     {
         unsafe
@@ -101,7 +114,10 @@ struct File
         return;
     }
 
-    // Copies a file; an existing target is replaced only with 'overwrite'.
+    /// Copies a file; an existing `target` is replaced only with `overwrite`.
+    /// @error IoError.AlreadyExists `target` exists and `overwrite` is `false`.
+    /// @error IoError.CannotOpen `source` cannot be read.
+    /// @error IoError.CannotCreate `target` cannot be created.
     static IoError<void> Copy(string source, string target, bool overwrite)
     {
         if (!overwrite && Exists(target))
@@ -110,12 +126,19 @@ struct File
         return WriteAllBytes(target, bytes);
     }
 
+    /// Copies a file; an existing `target` is not replaced.
+    /// @error IoError.AlreadyExists `target` exists.
+    /// @error IoError.CannotOpen `source` cannot be read.
+    /// @error IoError.CannotCreate `target` cannot be created.
     static IoError<void> Copy(string source, string target)
     {
         return Copy(source, target, false);
     }
 
-    // Moves (renames) a file; an existing target is replaced only with 'overwrite'.
+    /// Moves (renames) a file; an existing `target` is replaced only with `overwrite`.
+    /// @error IoError.CannotOpen `source` does not exist.
+    /// @error IoError.AlreadyExists `target` exists and `overwrite` is `false`.
+    /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
     static IoError<void> Move(string source, string target, bool overwrite)
     {
         if (!Exists(source))
@@ -127,18 +150,25 @@ struct File
         return;
     }
 
+    /// Moves (renames) a file; an existing `target` is not replaced.
+    /// @error IoError.CannotOpen `source` does not exist.
+    /// @error IoError.AlreadyExists `target` exists.
+    /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
     static IoError<void> Move(string source, string target)
     {
         return Move(source, target, false);
     }
 
-    // When the file was last written (local time).
+    /// When the file was last written, in local time.
+    /// @error IoError.CannotOpen the file does not exist.
     static IoError<DateTime> GetLastWriteTime(string path)
     {
         var utc = try GetLastWriteTimeUtc(path);
         return utc.ToLocalTime();
     }
 
+    /// When the file was last written, in UTC.
+    /// @error IoError.CannotOpen the file does not exist.
     static IoError<DateTime> GetLastWriteTimeUtc(string path)
     {
         if (_Os.FileWriteTime(path) is int64 ticks)
@@ -146,11 +176,17 @@ struct File
         return error("cannot read the time of '" + path + "'", IoError.CannotOpen);
     }
 
+    /// Creates the file or replaces its contents with `text` (UTF-8).
+    /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
+    /// @error IoError.CannotWrite writing failed (the disk is full, ...).
     static IoError<void> WriteAllText(string path, string text)
     {
         return WriteAllText(path, text, Encoding.UTF8());
     }
 
+    /// Creates the file or replaces its contents with `text` in `encoding`.
+    /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
+    /// @error IoError.CannotWrite writing failed (the disk is full, ...).
     static IoError<void> WriteAllText(string path, string text, Encoding encoding)
     {
         return WriteAllBytes(path, encoding.GetBytes(text));

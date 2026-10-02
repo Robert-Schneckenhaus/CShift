@@ -1,18 +1,3 @@
-// Dates, times and durations: DateTime, TimeSpan, DayOfWeek and Stopwatch (like their .NET namesakes, with methods
-// instead of properties).
-//
-//     var now = DateTime.Now();
-//     Console.WriteLine(now.ToString("yyyy-MM-dd HH:mm"));
-//     var deadline = now.AddDays(3);
-//     TimeSpan left = deadline.Subtract(now);           // 3.00:00:00
-//     var sw = Stopwatch.StartNew();
-//     ...
-//     Console.WriteLine(sw.ElapsedMilliseconds());
-//
-// Both count in ticks of 100 ns. A DateTime is a date and time of day from 0001-01-01 to 9999-12-31 (the Gregorian
-// calendar), either in local time or in UTC (IsUtc); Now() is local, UtcNow() UTC. The clock and the time zone come from
-// the operating system layer (_Os, stdlib/os/).
-
 namespace System;
 
 const int64 _TicksPerMillisecond = 10000;
@@ -23,14 +8,22 @@ const int64 _TicksPerDay = 864000000000;
 const int64 _UnixEpochTicks = 621355968000000000;   // 1970-01-01 in ticks since 0001-01-01
 const int64 _MaxDateTicks = 3155378975999999999;    // 9999-12-31 23:59:59.9999999
 
+/// The days of the week, with the numbers of .NET (Sunday is 0).
 enum DayOfWeek : int
 {
+    /// Sunday.
     Sunday = 0,
+    /// Monday.
     Monday = 1,
+    /// Tuesday.
     Tuesday = 2,
+    /// Wednesday.
     Wednesday = 3,
+    /// Thursday.
     Thursday = 4,
+    /// Friday.
     Friday = 5,
+    /// Saturday.
     Saturday = 6
 }
 
@@ -62,16 +55,30 @@ struct _Calendar
     }
 }
 
-// A duration (or a time of day): a signed number of ticks (100 ns).
+/// A duration (or a time of day): a signed number of ticks of 100 ns, like .NET's `TimeSpan` (with methods instead of
+/// properties).
+///
+/// ```
+/// TimeSpan t = TimeSpan.Create(1, 30, 0);       // 01:30:00
+/// Console.WriteLine(t.TotalMinutes());           // 90
+/// TimeSpan left = deadline.Subtract(DateTime.Now());
+/// ```
 struct TimeSpan : IComparable<TimeSpan>, IEquatable<TimeSpan>, IHashable
 {
+    /// The duration in ticks of 100 ns.
     int64 Ticks;
 
+    /// A duration of `ticks` ticks (100 ns each).
     static TimeSpan FromTicks(int64 ticks) { return TimeSpan { Ticks = ticks }; }
+    /// A duration of `days` days (rounded to whole ticks).
     static TimeSpan FromDays(double days) { return _From(days, _TicksPerDay); }
+    /// A duration of `hours` hours (rounded to whole ticks).
     static TimeSpan FromHours(double hours) { return _From(hours, _TicksPerHour); }
+    /// A duration of `minutes` minutes (rounded to whole ticks).
     static TimeSpan FromMinutes(double minutes) { return _From(minutes, _TicksPerMinute); }
+    /// A duration of `seconds` seconds (rounded to whole ticks).
     static TimeSpan FromSeconds(double seconds) { return _From(seconds, _TicksPerSecond); }
+    /// A duration of `milliseconds` milliseconds (rounded to whole ticks).
     static TimeSpan FromMilliseconds(double milliseconds) { return _From(milliseconds, _TicksPerMillisecond); }
 
     static TimeSpan _From(double value, int64 scale)
@@ -80,47 +87,67 @@ struct TimeSpan : IComparable<TimeSpan>, IEquatable<TimeSpan>, IHashable
         return TimeSpan { Ticks = (int64)(ticks < 0.0 ? ticks - 0.5 : ticks + 0.5) };
     }
 
+    /// A duration of the given hours, minutes and seconds.
     static TimeSpan Create(int hours, int minutes, int seconds)
     {
         return Create(0, hours, minutes, seconds, 0);
     }
 
+    /// A duration of the given days, hours, minutes and seconds.
     static TimeSpan Create(int days, int hours, int minutes, int seconds)
     {
         return Create(days, hours, minutes, seconds, 0);
     }
 
+    /// A duration of the given days, hours, minutes, seconds and milliseconds.
     static TimeSpan Create(int days, int hours, int minutes, int seconds, int milliseconds)
     {
         return TimeSpan { Ticks = (int64)days * _TicksPerDay + (int64)hours * _TicksPerHour + (int64)minutes * _TicksPerMinute +
                                   (int64)seconds * _TicksPerSecond + (int64)milliseconds * _TicksPerMillisecond };
     }
 
-    // the parts (with the sign of the whole: -1.02:03:04 has Days -1, Hours -2, ...)
+    /// The days part of the duration. The parts have the sign of the whole: -1.02:03:04 has the days -1, the hours -2,
+    /// ...
     int Days() { return (int)(Ticks / _TicksPerDay); }
+    /// The hours part of the duration (-23 to 23).
     int Hours() { return (int)(Ticks / _TicksPerHour % 24); }
+    /// The minutes part of the duration (-59 to 59).
     int Minutes() { return (int)(Ticks / _TicksPerMinute % 60); }
+    /// The seconds part of the duration (-59 to 59).
     int Seconds() { return (int)(Ticks / _TicksPerSecond % 60); }
+    /// The milliseconds part of the duration (-999 to 999).
     int Milliseconds() { return (int)(Ticks / _TicksPerMillisecond % 1000); }
 
-    // the whole duration in one unit
+    /// The whole duration in days, with fractions.
     double TotalDays() { return (double)Ticks / (double)_TicksPerDay; }
+    /// The whole duration in hours, with fractions.
     double TotalHours() { return (double)Ticks / (double)_TicksPerHour; }
+    /// The whole duration in minutes, with fractions.
     double TotalMinutes() { return (double)Ticks / (double)_TicksPerMinute; }
+    /// The whole duration in seconds, with fractions.
     double TotalSeconds() { return (double)Ticks / (double)_TicksPerSecond; }
+    /// The whole duration in milliseconds, with fractions.
     double TotalMilliseconds() { return (double)Ticks / (double)_TicksPerMillisecond; }
 
+    /// The sum of this duration and `other`.
     TimeSpan Add(TimeSpan other) { return TimeSpan { Ticks = Ticks + other.Ticks }; }
+    /// This duration minus `other`.
     TimeSpan Subtract(TimeSpan other) { return TimeSpan { Ticks = Ticks - other.Ticks }; }
+    /// The duration with the opposite sign.
     TimeSpan Negate() { return TimeSpan { Ticks = -Ticks }; }
+    /// The absolute value of the duration.
     TimeSpan Duration() { return TimeSpan { Ticks = Ticks < 0 ? -Ticks : Ticks }; }
+    /// The duration times `factor` (rounded to whole ticks).
     TimeSpan Multiply(double factor) { return _From((double)Ticks * factor, 1); }
 
+    /// Compares the lengths of the durations ([IComparable]).
     int CompareTo(TimeSpan other) { return Ticks < other.Ticks ? -1 : Ticks > other.Ticks ? 1 : 0; }
+    /// Whether the durations are equal ([IEquatable]).
     bool Equals(TimeSpan other) { return Ticks == other.Ticks; }
+    /// A hash code of the duration ([IHashable]).
     int GetHashCode() { return unchecked((int)Ticks ^ (int)(Ticks >> 32)); }
 
-    // [-][d.]hh:mm:ss[.fffffff], like .NET's "c" format: 1.02:03:04.5000000
+    /// The duration as text, like .NET's `"c"` format: `[-][d.]hh:mm:ss[.fffffff]`, e.g. `1.02:03:04.5000000`.
     string ToString()
     {
         int64 t = Ticks < 0 ? -Ticks : Ticks;
@@ -162,25 +189,40 @@ struct _TimeText
     }
 }
 
-// A date and time of day, local or UTC.
+/// A date and time of day, local or UTC.
+///
+/// ```
+/// var now = DateTime.Now();
+/// Console.WriteLine(now.ToString("yyyy-MM-dd HH:mm"));
+/// var deadline = now.AddDays(3);
+/// TimeSpan left = deadline.Subtract(now);           // 3.00:00:00
+/// ```
+///
+/// A `DateTime` counts ticks of 100 ns from 0001-01-01 to 9999-12-31 (the Gregorian calendar), either in local time
+/// or in UTC ([DateTime.IsUtc]); [DateTime.Now] is local, [DateTime.UtcNow] UTC. The clock and the time zone come from
+/// the operating system. Like the .NET type, with methods instead of properties.
 struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 {
-    int64 Ticks;    // 100 ns since 0001-01-01 00:00
+    /// The ticks of 100 ns since 0001-01-01 00:00.
+    int64 Ticks;
+    /// Whether the time is UTC (otherwise it is local time).
     bool IsUtc;
 
     // ---- now ----
 
+    /// The current date and time in UTC.
     static DateTime UtcNow()
     {
         return DateTime { Ticks = _Os.NowTicks() + _UnixEpochTicks, IsUtc = true };
     }
 
+    /// The current date and time in local time.
     static DateTime Now()
     {
         return UtcNow().ToLocalTime();
     }
 
-    // today's date (local) at 00:00
+    /// today's date (local) at 00:00
     static DateTime Today()
     {
         return Now().Date();
@@ -188,17 +230,22 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 
     // ---- creating ----
 
+    /// A local date at 00:00.
+    /// @panics when the date does not exist.
     static DateTime Create(int year, int month, int day)
     {
         return Create(year, month, day, 0, 0, 0, 0);
     }
 
+    /// A local date and time.
+    /// @panics when the date or time does not exist.
     static DateTime Create(int year, int month, int day, int hour, int minute, int second)
     {
         return Create(year, month, day, hour, minute, second, 0);
     }
 
-    // a local date and time; a value out of range ends the program with a panic
+    /// A local date and time with milliseconds.
+    /// @panics when the date or time does not exist.
     static DateTime Create(int year, int month, int day, int hour, int minute, int second, int millisecond)
     {
         if (!_Valid(year, month, day, hour, minute, second, millisecond))
@@ -208,6 +255,8 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
                                   (int64)second * _TicksPerSecond + (int64)millisecond * _TicksPerMillisecond };
     }
 
+    /// A date and time in UTC.
+    /// @panics when the date or time does not exist.
     static DateTime CreateUtc(int year, int month, int day, int hour, int minute, int second)
     {
         var d = Create(year, month, day, hour, minute, second, 0);
@@ -228,22 +277,25 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return _Calendar.DaysFromCivil(year, month, day) * _TicksPerDay + _UnixEpochTicks;
     }
 
-    // seconds or milliseconds since 1970-01-01 00:00 UTC (Unix time) as a UTC DateTime
+    /// The UTC date and time `seconds` seconds after 1970-01-01 00:00 UTC (Unix time).
     static DateTime FromUnixSeconds(int64 seconds)
     {
         return DateTime { Ticks = seconds * _TicksPerSecond + _UnixEpochTicks, IsUtc = true };
     }
 
+    /// The UTC date and time `milliseconds` milliseconds after 1970-01-01 00:00 UTC.
     static DateTime FromUnixMilliseconds(int64 milliseconds)
     {
         return DateTime { Ticks = milliseconds * _TicksPerMillisecond + _UnixEpochTicks, IsUtc = true };
     }
 
+    /// The seconds since 1970-01-01 00:00 UTC (Unix time); a local time is converted to UTC first.
     int64 ToUnixSeconds()
     {
         return _FloorDiv(ToUniversalTime().Ticks - _UnixEpochTicks, _TicksPerSecond);
     }
 
+    /// The milliseconds since 1970-01-01 00:00 UTC; a local time is converted to UTC first.
     int64 ToUnixMilliseconds()
     {
         return _FloorDiv(ToUniversalTime().Ticks - _UnixEpochTicks, _TicksPerMillisecond);
@@ -255,11 +307,13 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return a % b < 0 ? q - 1 : q;
     }
 
+    /// Whether `year` is a leap year in the Gregorian calendar.
     static bool IsLeapYear(int year)
     {
         return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
     }
 
+    /// The number of days of `month` (1 to 12) in `year`.
     static int DaysInMonth(int year, int month)
     {
         if (month == 2)
@@ -269,12 +323,19 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 
     // ---- parts ----
 
+    /// The year (1 to 9999).
     int Year() { int y = 0; int m = 0; int d = 0; _Parts(ref y, ref m, ref d); return y; }
+    /// The month (1 to 12).
     int Month() { int y = 0; int m = 0; int d = 0; _Parts(ref y, ref m, ref d); return m; }
+    /// The day of the month (1 to 31).
     int Day() { int y = 0; int m = 0; int d = 0; _Parts(ref y, ref m, ref d); return d; }
+    /// The hour (0 to 23).
     int Hour() { return (int)(Ticks / _TicksPerHour % 24); }
+    /// The minute (0 to 59).
     int Minute() { return (int)(Ticks / _TicksPerMinute % 60); }
+    /// The second (0 to 59).
     int Second() { return (int)(Ticks / _TicksPerSecond % 60); }
+    /// The millisecond (0 to 999).
     int Millisecond() { return (int)(Ticks / _TicksPerMillisecond % 1000); }
 
     void _Parts(ref int year, ref int month, ref int day)
@@ -282,25 +343,26 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         _Calendar.CivilFromDays(Ticks / _TicksPerDay - 719162, ref year, ref month, ref day);
     }
 
+    /// The day of the week.
     DayOfWeek DayOfWeek()
     {
         return (DayOfWeek)(int)((Ticks / _TicksPerDay + 1) % 7); // 0001-01-01 was a Monday
     }
 
-    // 1 to 366
+    /// The day of the year (1 to 366).
     int DayOfYear()
     {
         int y = Year();
         return (int)((Ticks - _TicksOf(y, 1, 1)) / _TicksPerDay) + 1;
     }
 
-    // the date at 00:00
+    /// The date at 00:00 (the same zone).
     DateTime Date()
     {
         return DateTime { Ticks = Ticks - Ticks % _TicksPerDay, IsUtc = IsUtc };
     }
 
-    // the time since 00:00
+    /// The time since 00:00.
     TimeSpan TimeOfDay()
     {
         return TimeSpan { Ticks = Ticks % _TicksPerDay };
@@ -308,15 +370,23 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 
     // ---- arithmetic ----
 
+    /// The date and time `span` later (earlier for a negative span).
     DateTime Add(TimeSpan span) { return _Plus(span.Ticks); }
+    /// The date and time `ticks` ticks of 100 ns later.
     DateTime AddTicks(int64 ticks) { return _Plus(ticks); }
+    /// The date and time `days` days later (fractions are possible).
     DateTime AddDays(double days) { return _Plus(TimeSpan.FromDays(days).Ticks); }
+    /// The date and time `hours` hours later.
     DateTime AddHours(double hours) { return _Plus(TimeSpan.FromHours(hours).Ticks); }
+    /// The date and time `minutes` minutes later.
     DateTime AddMinutes(double minutes) { return _Plus(TimeSpan.FromMinutes(minutes).Ticks); }
+    /// The date and time `seconds` seconds later.
     DateTime AddSeconds(double seconds) { return _Plus(TimeSpan.FromSeconds(seconds).Ticks); }
+    /// The date and time `milliseconds` milliseconds later.
     DateTime AddMilliseconds(double milliseconds) { return _Plus(TimeSpan.FromMilliseconds(milliseconds).Ticks); }
 
-    // whole months: the day stays, or becomes the last day of a shorter month (Jan 31 + 1 month = Feb 28/29)
+    /// The date `months` whole months later: the day stays, or becomes the last day of a shorter month (Jan 31 + 1
+    /// month is Feb 28 or 29).
     DateTime AddMonths(int months)
     {
         int y = 0;
@@ -334,6 +404,7 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return DateTime { Ticks = _TicksOf(year, month, d) + Ticks % _TicksPerDay, IsUtc = IsUtc };
     }
 
+    /// The date `years` years later (Feb 29 becomes Feb 28 in a year that is not a leap year).
     DateTime AddYears(int years)
     {
         return AddMonths(years * 12);
@@ -347,7 +418,7 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return DateTime { Ticks = t, IsUtc = IsUtc };
     }
 
-    // the time between two dates (both are taken in UTC if one of them is)
+    /// The time from `other` to this date (both are taken in UTC if one of them is).
     TimeSpan Subtract(DateTime other)
     {
         if (IsUtc != other.IsUtc)
@@ -355,6 +426,7 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return TimeSpan { Ticks = Ticks - other.Ticks };
     }
 
+    /// The date and time `span` earlier.
     DateTime Subtract(TimeSpan span)
     {
         return _Plus(-span.Ticks);
@@ -362,6 +434,8 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 
     // ---- time zones ----
 
+    /// The same instant in UTC (a UTC value stays as it is). Near a change of daylight saving time, the offset of the
+    /// result decides.
     DateTime ToUniversalTime()
     {
         if (IsUtc)
@@ -373,6 +447,7 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return DateTime { Ticks = Ticks - (int64)offset * _TicksPerSecond, IsUtc = true };
     }
 
+    /// The same instant in local time (a local value stays as it is).
     DateTime ToLocalTime()
     {
         if (!IsUtc)
@@ -383,7 +458,7 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
 
     // ---- comparing ----
 
-    // compares the instants (a local and a UTC value are compared in UTC)
+    /// compares the instants (a local and a UTC value are compared in UTC)
     int CompareTo(DateTime other)
     {
         int64 a = Ticks;
@@ -396,18 +471,20 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return a < b ? -1 : a > b ? 1 : 0;
     }
 
+    /// Whether both are the same instant and zone ([IEquatable]).
     bool Equals(DateTime other) { return CompareTo(other) == 0; }
+    /// A hash code of the date and time ([IHashable]).
     int GetHashCode() { return unchecked((int)Ticks ^ (int)(Ticks >> 32)); }
 
     // ---- text ----
 
-    // 2026-10-01 14:05:09
+    /// The date and time as text: `2026-10-01 14:05:09`.
     string ToString()
     {
         return ToString("yyyy-MM-dd HH:mm:ss");
     }
 
-    // ISO 8601 with the zone: 2026-10-01T12:05:09.250Z (UTC) or 2026-10-01T14:05:09.250+02:00 (local)
+    /// ISO 8601 with the zone: 2026-10-01T12:05:09.250Z (UTC) or 2026-10-01T14:05:09.250+02:00 (local)
     string ToIsoString()
     {
         string text = ToString("yyyy-MM-ddTHH:mm:ss.fff");
@@ -420,8 +497,21 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return text + sign + _TimeText.Pad(offset / 60, 2) + ":" + _TimeText.Pad(offset % 60, 2);
     }
 
-    // yyyy yy MMMM MMM MM M dddd ddd dd d HH H hh h mm m ss s fff ff f tt; other letters and '...' are copied,
-    // \x copies x
+    /// The date and time in a custom format: `d.ToString("dd.MM.yyyy HH:mm")`.
+    ///
+    /// | Letters | Meaning |
+    /// |---|---|
+    /// | `yyyy` `yy` | the year with 4 or 2 digits |
+    /// | `MMMM` `MMM` `MM` `M` | the month: its name, the short name, 2 digits, the number |
+    /// | `dddd` `ddd` `dd` `d` | the day: the name of the weekday, its short name, 2 digits, the number |
+    /// | `HH` `H` | the hour, 0 to 23 (2 digits or the number) |
+    /// | `hh` `h` | the hour, 1 to 12 |
+    /// | `mm` `m` | the minute |
+    /// | `ss` `s` | the second |
+    /// | `fff` `ff` `f` | fractions of a second |
+    /// | `tt` | `AM` or `PM` |
+    ///
+    /// Other letters and text in `'...'` are copied; `\x` copies `x`. The names are English.
     string ToString(string format)
     {
         int y = 0;
@@ -491,8 +581,10 @@ struct DateTime : IComparable<DateTime>, IEquatable<DateTime>, IHashable
         return sb.ToString();
     }
 
-    // yyyy-MM-dd, optionally followed by T or a space and HH:mm[:ss[.fffffff]], then Z (UTC) or +hh:mm / -hh:mm (UTC,
-    // converted from that offset); without a zone the time is local
+    /// Reads a date and time: `yyyy-MM-dd`, optionally followed by `T` or a space and `HH:mm[:ss[.fffffff]]`, then `Z`
+    /// (UTC) or `+hh:mm` / `-hh:mm` (UTC, converted from that offset). Without a zone the time is local.
+    /// @error ParseError.Invalid the text has another format.
+    /// @error ParseError.OutOfRange the date or time does not exist.
     static ParseError<DateTime> Parse(string text)
     {
         var p = _DateParser { Text = text.Trim().ToString(), Pos = 0 };
@@ -605,13 +697,14 @@ struct _DateParser
     }
 }
 
-// Measures elapsed time with the monotonic clock of the system (not affected by changes of the time of day).
+/// Measures elapsed time with the monotonic clock of the system (not affected by changes of the time of day).
 struct Stopwatch
 {
     int64 _start;     // MonotonicTicks when it was started (while running)
     int64 _elapsed;   // the time of the earlier runs
     bool _running;
 
+    /// A new stopwatch that is running.
     static Stopwatch StartNew()
     {
         var sw = Stopwatch { };
@@ -619,6 +712,7 @@ struct Stopwatch
         return sw;
     }
 
+    /// Starts measuring (or continues after [Stopwatch.Stop]).
     void Start()
     {
         if (!_running)
@@ -628,6 +722,7 @@ struct Stopwatch
         }
     }
 
+    /// Stops measuring; the elapsed time stays.
     void Stop()
     {
         if (_running)
@@ -637,12 +732,14 @@ struct Stopwatch
         }
     }
 
+    /// Stops measuring and sets the elapsed time to zero.
     void Reset()
     {
         _elapsed = 0;
         _running = false;
     }
 
+    /// Sets the elapsed time to zero and starts measuring.
     void Restart()
     {
         _elapsed = 0;
@@ -650,14 +747,18 @@ struct Stopwatch
         _running = true;
     }
 
+    /// Whether the stopwatch is measuring.
     bool IsRunning() { return _running; }
 
+    /// The elapsed time in ticks of 100 ns.
     int64 ElapsedTicks()
     {
         return _running ? _elapsed + _Os.MonotonicTicks() - _start : _elapsed;
     }
 
+    /// The elapsed time in milliseconds.
     int64 ElapsedMilliseconds() { return ElapsedTicks() / _TicksPerMillisecond; }
 
+    /// The elapsed time.
     TimeSpan Elapsed() { return TimeSpan { Ticks = ElapsedTicks() }; }
 }

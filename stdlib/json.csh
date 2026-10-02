@@ -1,43 +1,54 @@
-// JSON: reading (Json.Parse), building and writing (JsonValue.ToString / ToIndentedString).
-//
-//     var doc = try Json.Parse("{\"name\": \"Ann\", \"tags\": [\"a\", \"b\"], \"age\": 30}");
-//     string name = doc["name"].AsString();          // "Ann"
-//     int age = doc["age"].AsInt();                    // 30
-//     foreach (var tag in doc["tags"].Items())         // the elements of an array
-//         Console.WriteLine(tag.AsString());
-//
-//     var o = JsonValue.NewObject();
-//     o.Set("ok", JsonValue.Bool(true));
-//     o.Set("list", JsonValue.NewArray());
-//     o["list"].Add(JsonValue.Number(1.5));
-//     Console.WriteLine(o.ToString());                 // {"ok":true,"list":[1.5]}
-//
-// A JsonValue is a small struct: copies of an array or object share its elements (like List<T>). Objects keep the
-// order in which their keys were added. Numbers are doubles. Asking a missing key of an object gives a JSON null, so
-// chains like doc["a"]["b"] need no checks in between; AsString(), AsInt(), ... end the program with a panic if the
-// value has another kind (check it with IsString(), Kind, ...).
-
 namespace System;
 
+/// The kind of a [JsonValue].
 enum JsonKind : uint8
 {
+    /// `null`.
     Null = 0,
+    /// `true` or `false`.
     Bool = 1,
+    /// A number (a `double`).
     Number = 2,
+    /// A string.
     String = 3,
+    /// An array of values.
     Array = 4,
+    /// An object: keys and their values, in the order in which they were added.
     Object = 5
 }
 
-// Json.Parse: the text is not valid JSON (the message says where: line and column).
+/// The errors of [Json.Parse]; the message says where the problem is (line and column).
 error JsonError
 {
+    /// The text is not valid JSON.
     InvalidSyntax = 1,
-    TooDeep = 2          // more than 512 nested arrays and objects
+    /// More than 512 nested arrays and objects.
+    TooDeep = 2
 }
 
+/// Reading (Json.Parse), building and writing (JsonValue.ToString / ToIndentedString).
+///
+/// ```
+/// var doc = try Json.Parse("{\"name\": \"Ann\", \"tags\": [\"a\", \"b\"], \"age\": 30}");
+/// string name = doc["name"].AsString();          // "Ann"
+/// int age = doc["age"].AsInt();                    // 30
+/// foreach (var tag in doc["tags"].Items())         // the elements of an array
+///     Console.WriteLine(tag.AsString());
+///
+/// var o = JsonValue.NewObject();
+/// o.Set("ok", JsonValue.Bool(true));
+/// o.Set("list", JsonValue.NewArray());
+/// o["list"].Add(JsonValue.Number(1.5));
+/// Console.WriteLine(o.ToString());                 // {"ok":true,"list":[1.5]}
+/// ```
+///
+/// A JsonValue is a small struct: copies of an array or object share its elements (like List<T>). Objects keep the
+/// order in which their keys were added. Numbers are doubles. Asking a missing key of an object gives a JSON null, so
+/// chains like doc["a"]["b"] need no checks in between; AsString(), AsInt(), ... end the program with a panic if the
+/// value has another kind (check it with IsString(), Kind, ...).
 struct JsonValue
 {
+    /// The kind of the value: null, bool, number, string, array or object.
     JsonKind Kind;
     bool _bool;
     double _number;
@@ -46,58 +57,73 @@ struct JsonValue
     List<string> _keys;                      // an object: the keys in their order
     Dictionary<string, JsonValue> _fields;   // an object: the values
 
+    /// The JSON value `null`.
     static JsonValue Null()
     {
         return JsonValue { Kind = JsonKind.Null };
     }
 
+    /// The JSON value `true` or `false`.
     static JsonValue Bool(bool value)
     {
         return JsonValue { Kind = JsonKind.Bool, _bool = value };
     }
 
+    /// A JSON number.
     static JsonValue Number(double value)
     {
         return JsonValue { Kind = JsonKind.Number, _number = value };
     }
 
+    /// A JSON string.
     static JsonValue String(string value)
     {
         return JsonValue { Kind = JsonKind.String, _string = value };
     }
 
-    // an empty array (Add appends elements)
+    /// A new, empty array ([JsonValue.Add] appends elements).
     static JsonValue NewArray()
     {
         return JsonValue { Kind = JsonKind.Array, _items = List<JsonValue>.Create() };
     }
 
-    // an empty object (Set adds members)
+    /// A new, empty object ([JsonValue.Set] adds members).
     static JsonValue NewObject()
     {
         return JsonValue { Kind = JsonKind.Object, _keys = List<string>.Create(), _fields = Dictionary<string, JsonValue>.Create() };
     }
 
+    /// Whether the value is `null` (also a missing member of an object).
     bool IsNull() { return Kind == JsonKind.Null; }
+    /// Whether the value is `true` or `false`.
     bool IsBool() { return Kind == JsonKind.Bool; }
+    /// Whether the value is a number.
     bool IsNumber() { return Kind == JsonKind.Number; }
+    /// Whether the value is a string.
     bool IsString() { return Kind == JsonKind.String; }
+    /// Whether the value is an array.
     bool IsArray() { return Kind == JsonKind.Array; }
+    /// Whether the value is an object.
     bool IsObject() { return Kind == JsonKind.Object; }
 
+    /// The value of a bool.
+    /// @panics when the value is not a bool.
     bool AsBool()
     {
         _Expect(JsonKind.Bool, "AsBool");
         return _bool;
     }
 
+    /// The value of a number.
+    /// @panics when the value is not a number.
     double AsNumber()
     {
         _Expect(JsonKind.Number, "AsNumber");
         return _number;
     }
 
-    // the number as an int (it must be a whole number in the range of int)
+    /// The value of a number as an `int`.
+    /// @panics when the value is not a number, not a whole number or not in the range of `int`.
     int AsInt()
     {
         _Expect(JsonKind.Number, "AsInt");
@@ -106,7 +132,8 @@ struct JsonValue
         return (int)_number;
     }
 
-    // the number as an int64 (it must be a whole number)
+    /// The value of a number as an `int64`.
+    /// @panics when the value is not a number, not a whole number or not in the range of `int64`.
     int64 AsInt64()
     {
         _Expect(JsonKind.Number, "AsInt64");
@@ -115,6 +142,8 @@ struct JsonValue
         return (int64)_number;
     }
 
+    /// The text of a string.
+    /// @panics when the value is not a string.
     string AsString()
     {
         _Expect(JsonKind.String, "AsString");
@@ -140,7 +169,7 @@ struct JsonValue
         }
     }
 
-    // the number of elements of an array or members of an object (0 for the other kinds)
+    /// The number of elements of an array or members of an object (0 for the other kinds).
     int Count()
     {
         if (Kind == JsonKind.Array)
@@ -152,7 +181,8 @@ struct JsonValue
 
     // ---- arrays ----
 
-    // element i of an array
+    /// Element `index` of an array (also `value[index]`).
+    /// @panics when the value is not an array or `index` is outside of it.
     JsonValue Get(int index)
     {
         _Expect(JsonKind.Array, "Get(int)");
@@ -161,6 +191,8 @@ struct JsonValue
         return _items.Get(index);
     }
 
+    /// Replaces element `index` of an array (also `value[index] = x`).
+    /// @panics when the value is not an array or `index` is outside of it.
     void Set(int index, JsonValue value)
     {
         _Expect(JsonKind.Array, "Set(int)");
@@ -169,14 +201,15 @@ struct JsonValue
         _items.Set(index, value);
     }
 
-    // appends an element to an array
+    /// Appends `value` to an array.
+    /// @panics when the value is not an array.
     void Add(JsonValue value)
     {
         _Expect(JsonKind.Array, "Add");
         _items.Add(value);
     }
 
-    // the elements of an array (none for the other kinds)
+    /// The elements of an array (none for the other kinds).
     JsonValue[] Items()
     {
         if (Kind != JsonKind.Array)
@@ -186,7 +219,9 @@ struct JsonValue
 
     // ---- objects ----
 
-    // the member 'key' of an object; null if there is none (also for the other kinds)
+    /// The member `key` of an object (also `value["key"]`).
+    /// @returns the JSON `null` if there is no such member (also for the other kinds), so chains like `doc["a"]["b"]`
+    /// need no checks in between.
     JsonValue Get(string key)
     {
         if (Kind != JsonKind.Object)
@@ -197,12 +232,14 @@ struct JsonValue
         return JsonValue.Null();
     }
 
+    /// Whether an object has the member `key` (`false` for the other kinds).
     bool Has(string key)
     {
         return Kind == JsonKind.Object && _fields.ContainsKey(key);
     }
 
-    // adds or replaces the member 'key' of an object
+    /// Adds or replaces the member `key` of an object (also `value["key"] = x`).
+    /// @panics when the value is not an object.
     void Set(string key, JsonValue value)
     {
         _Expect(JsonKind.Object, "Set(string)");
@@ -211,6 +248,8 @@ struct JsonValue
         _fields.Set(key, value);
     }
 
+    /// Removes the member `key` of an object (nothing happens if it has none).
+    /// @panics when the value is not an object.
     void Remove(string key)
     {
         _Expect(JsonKind.Object, "Remove");
@@ -220,7 +259,7 @@ struct JsonValue
         _keys.RemoveAt(_keys.IndexOf(key));
     }
 
-    // the keys of an object in their order (none for the other kinds)
+    /// The keys of an object in their order (none for the other kinds).
     string[] Keys()
     {
         if (Kind != JsonKind.Object)
@@ -230,7 +269,7 @@ struct JsonValue
 
     // ---- text ----
 
-    // the value as compact JSON text
+    /// The value as compact JSON text: `{"ok":true,"list":[1.5]}`.
     string ToString()
     {
         var sb = StringBuilder.Create();
@@ -238,7 +277,7 @@ struct JsonValue
         return sb.ToString();
     }
 
-    // the value as JSON text with line breaks and 'indent' spaces per level
+    /// The value as JSON text with line breaks and `indent` spaces per level.
     string ToIndentedString(int indent)
     {
         var sb = StringBuilder.Create();
@@ -246,6 +285,7 @@ struct JsonValue
         return sb.ToString();
     }
 
+    /// The value as JSON text with line breaks and 2 spaces per level.
     string ToIndentedString()
     {
         return ToIndentedString(2);
@@ -369,9 +409,12 @@ struct JsonValue
     }
 }
 
+/// Reading JSON text: see [Json.Parse] and [JsonValue].
 struct Json
 {
-    // Reads JSON text (RFC 8259): objects, arrays, strings (with \u escapes), numbers, true, false, null.
+    /// Reads JSON text (RFC 8259): objects, arrays, strings (with `\u` escapes), numbers, `true`, `false` and `null`.
+    /// @error JsonError.InvalidSyntax the text is not valid JSON; the message says where (line and column).
+    /// @error JsonError.TooDeep more than 512 nested arrays and objects.
     static JsonError<JsonValue> Parse(StringSlice text)
     {
         var p = _JsonParser { Text = text, Pos = 0 };

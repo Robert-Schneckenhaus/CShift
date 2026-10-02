@@ -1,21 +1,3 @@
-// Mutex<T>: a value that several threads share, guarded by a lock.
-//
-//     var counter = Mutex<int>.Create(0);
-//
-//     thread void Count(Mutex<int> counter, int times)
-//     {
-//         for (var i = 0; i < times; i += 1)
-//         {
-//             counter.Update(n => n + 1);            // or: using (var guard = counter.Lock()) guard.Set(guard.Get() + 1);
-//         }
-//     }
-//
-// A Mutex<T> is a handle: copies share the same value and lock, and it can be passed to 'thread' functions. The value
-// only goes in and out as a copy that shares no reference count with anything else (Memory.CopyForThread: strings are
-// copied into new blocks), so T must be a type that can be copied between threads: numbers, bool, char, enums,
-// strings, SharedPtr<T> of thread-safe values, and Optional<T>/Error<T>/structs made of them - not arrays or
-// containers. While a guard is held, Get/Set are safe from every thread; Mutex.Get/Set lock just for the one call.
-//
 // The generic bodies here are only compiled when Mutex<T> is used, which the frozen C++ compiler never does (it does
 // not know Memory.CopyForThread).
 
@@ -56,10 +38,29 @@ struct _MutexState<T>
     }
 }
 
+/// A value that several threads share, guarded by a lock.
+///
+/// ```
+/// thread void Count(Mutex<int> counter, int times)
+/// {
+///     for (var i = 0; i < times; i += 1)
+///         counter.Update(n => n + 1);     // or: using (var guard = counter.Lock()) guard.Set(guard.Get() + 1);
+/// }
+///
+/// var counter = Mutex<int>.Create(0);
+/// ```
+///
+/// A `Mutex<T>` is a handle: copies share the same value and lock, and it can be passed to `thread` functions. The
+/// value only goes in and out as a copy that shares no reference count with anything else (strings are copied into
+/// new blocks), so `T` must be a type that can be copied between threads: numbers, `bool`, `char`, enums, strings,
+/// `ReadOnlySlice<T>` of them, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs made of
+/// them - not arrays or containers. While a guard ([Mutex<T>.Lock]) is held, its `Get`/`Set` are safe from every
+/// thread; [Mutex<T>.Get] and [Mutex<T>.Set] lock just for the one call.
 struct Mutex<T>
 {
     SharedPtr<_MutexState<T>> _state;
 
+    /// A new mutex that holds a copy of `value`.
     static Mutex<T> Create(T value)
     {
         var state = SharedPtr<_MutexState<T>>.Create(_MutexState<T> { Value = Memory.CopyForThread(value) });
@@ -67,13 +68,13 @@ struct Mutex<T>
         return Mutex<T> { _state = state };
     }
 
-    // Waits for the lock and returns a guard that holds it; Dispose() (e.g. through 'using') releases it.
+    /// Waits for the lock and returns a guard that holds it; the guard's `Dispose` (e.g. through `using`) releases it.
     MutexGuard<T> Lock()
     {
         return MutexGuard<T>.Acquire(_state);
     }
 
-    // A copy of the value (locks for the duration of the call).
+    /// A copy of the value (locks for the duration of the call).
     T Get()
     {
         unsafe
@@ -86,7 +87,7 @@ struct Mutex<T>
         }
     }
 
-    // Replaces the value with change(value), under the lock: counter.Update(n => n + 1).
+    /// Replaces the value with `change(value)`, under the lock: `counter.Update(n => n + 1)`.
     void Update(Func<T, T> change)
     {
         unsafe
@@ -98,7 +99,7 @@ struct Mutex<T>
         }
     }
 
-    // Replaces the value (locks for the duration of the call).
+    /// Replaces the value (locks for the duration of the call).
     void Set(T value)
     {
         unsafe
@@ -111,32 +112,38 @@ struct Mutex<T>
     }
 }
 
-// Holds the lock of a Mutex<T> until Dispose(). Copies of a guard share the "held" flag, so the lock is released once.
-// A guard cannot be passed to another thread (the thread that locked a mutex has to unlock it).
+/// Holds the lock of a Mutex<T> until Dispose(). Copies of a guard share the "held" flag, so the lock is released once.
+/// A guard cannot be passed to another thread (the thread that locked a mutex has to unlock it).
 struct MutexGuard<T> : IDisposable
 {
     SharedPtr<_MutexState<T>> _state;
     bool[] _held;
 
-    // Used by Mutex<T>.Lock().
+    /// Takes the lock of a mutex; [Mutex<T>.Lock] calls it.
+    /// @internal
     static MutexGuard<T> Acquire(SharedPtr<_MutexState<T>> state)
     {
         unsafe { state.Ptr()->Lock(); }
         return MutexGuard<T> { _state = state, _held = new bool[] { true } };
     }
 
+    /// A copy of the guarded value.
+    /// @panics when the guard was disposed already.
     T Get()
     {
         _CheckHeld();
         unsafe { return _state.Ptr()->Read(); }
     }
 
+    /// Replaces the guarded value.
+    /// @panics when the guard was disposed already.
     void Set(T value)
     {
         _CheckHeld();
         unsafe { _state.Ptr()->Write(value); }
     }
 
+    /// Releases the lock (once; disposing a guard again does nothing).
     void Dispose()
     {
         if (_held == null || !_held[0])

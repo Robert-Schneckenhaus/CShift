@@ -1,32 +1,37 @@
-// Stack<T>: last in, first out.
-//
-//     var undo = Stack<string>.Create();
-//     undo.Push("move");
-//     undo.Push("delete");
-//     string last = undo.Pop();        // "delete"
-//     if (undo.TryPop() is string s)   // no panic when the stack is empty
-//         ...
-//
-// Like List<T>, a Stack is a small handle to shared storage: copies see the same elements. foreach and Get(i)
-// go from the top (the next Pop) to the bottom.
-
 namespace System;
 
+/// The storage behind a [Stack]; use [Stack] instead.
+/// @internal
 struct StackState<T>
 {
     T[] Items;
     int Count;
 }
 
+/// A stack of values: last in, first out.
+///
+/// ```
+/// var undo = Stack<string>.Create();
+/// undo.Push("move");
+/// undo.Push("delete");
+/// string last = undo.Pop();        // "delete"
+/// if (undo.TryPop() is string s)   // no panic when the stack is empty
+///     ...
+/// ```
+///
+/// Like List<T>, a Stack is a small handle to shared storage: copies see the same elements. foreach and Get(i)
+/// go from the top (the next Pop) to the bottom.
 struct Stack<T>
 {
     StackState<T>[] _state;
 
+    /// A new, empty stack.
     static Stack<T> Create()
     {
         return Stack<T> { _state = new StackState<T>[1] };
     }
 
+    /// A new, empty stack with room for `capacity` elements before it has to grow.
     static Stack<T> Create(int capacity)
     {
         var stack = Create();
@@ -34,6 +39,7 @@ struct Stack<T>
         return stack;
     }
 
+    /// The number of elements.
     int Count()
     {
         if (_state == null)
@@ -41,6 +47,7 @@ struct Stack<T>
         return _state[0].Count;
     }
 
+    /// Puts `value` on top of the stack.
     void Push(T value)
     {
         _Grow(Count() + 1);
@@ -48,7 +55,8 @@ struct Stack<T>
         _state[0].Count += 1;
     }
 
-    // Removes and returns the top element; panics if the stack is empty (TryPop does not).
+    /// Removes and returns the top element.
+    /// @panics when the stack is empty ([Stack<T>.TryPop] does not).
     T Pop()
     {
         if (Count() == 0)
@@ -56,6 +64,8 @@ struct Stack<T>
         return _Take();
     }
 
+    /// Removes and returns the top element, if there is one.
+    /// @returns nothing (`null`) when the stack is empty.
     Optional<T> TryPop()
     {
         if (Count() == 0)
@@ -63,7 +73,8 @@ struct Stack<T>
         return _Take();
     }
 
-    // The top element without removing it; panics if the stack is empty (TryPeek does not).
+    /// The top element, without removing it.
+    /// @panics when the stack is empty ([Stack<T>.TryPeek] does not).
     T Peek()
     {
         if (Count() == 0)
@@ -71,6 +82,8 @@ struct Stack<T>
         return _state[0].Items[_state[0].Count - 1];
     }
 
+    /// The top element without removing it, if there is one.
+    /// @returns nothing (`null`) when the stack is empty.
     Optional<T> TryPeek()
     {
         if (Count() == 0)
@@ -78,7 +91,8 @@ struct Stack<T>
         return _state[0].Items[_state[0].Count - 1];
     }
 
-    // The element 'index' places below the top (0 = the top).
+    /// The element `index` places below the top (0 is the top).
+    /// @panics when `index` is not in 0 to `Count() - 1`.
     T Get(int index)
     {
         int count = Count();
@@ -87,6 +101,7 @@ struct Stack<T>
         return _state[0].Items[count - 1 - index];
     }
 
+    /// Whether an element equals `value` ([IEquatable]).
     bool Contains(T value)
         where T : IEquatable<T>
     {
@@ -99,6 +114,7 @@ struct Stack<T>
         return false;
     }
 
+    /// Removes all elements.
     void Clear()
     {
         if (_state == null)
@@ -107,7 +123,7 @@ struct Stack<T>
         _state[0].Count = 0;
     }
 
-    // The elements from the top to the bottom (the order Pop would return them).
+    /// The elements from the top to the bottom (the order Pop would return them).
     T[] ToArray()
     {
         int count = Count();

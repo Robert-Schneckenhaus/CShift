@@ -1,19 +1,21 @@
-// Number formats: value.ToString("F2") and $"{value:F2}" (the compiler calls these functions).
-//
-//     D[n]  integers: at least n digits, filled with zeros               42.ToString("D5")        "00042"
-//     X[n]  integers: hexadecimal (x: lower case), at least n digits     255.ToString("X4")       "00FF"
-//     B[n]  integers: binary, at least n digits                          5.ToString("B8")         "00000101"
-//     F[n]  fixed point with n decimals (default 2)                      3.14159.ToString("F2")   "3.14"
-//     N[n]  like F with ',' between groups of thousands                  1234567.ToString("N0")   "1,234,567"
-//     E[n]  scientific, n decimals (default 6; e: lower case)            1234.5.ToString("E2")    "1.23E+003"
-//     P[n]  percent: times 100, n decimals (default 2)                   0.256.ToString("P1")     "25.6 %"
-//     G     the same text as ToString()
-//
-// The text does not depend on the platform or a locale ('.' and ','). Floating point values are formatted from their
-// exact binary value and rounded half away from zero, like .NET: 0.125.ToString("F2") is "0.13", 2.5.ToString("F0")
-// is "3". A result that is zero has no minus sign. Negative values in X and B are written in two's complement of the
-// type's size ((-1).ToString("X") of an int32 is "FFFFFFFF").
-
+//! Number formats: `value.ToString("F2")` and `$"{value:F2}"` (the compiler calls the functions of this
+//! namespace).
+//!
+//! | Format | Meaning | Example | Result |
+//! |---|---|---|---|
+//! | `D`*n* | integers: at least *n* digits, filled with zeros | `42.ToString("D5")` | `00042` |
+//! | `X`*n* | integers: hexadecimal (`x`: lower case), at least *n* digits | `255.ToString("X4")` | `00FF` |
+//! | `B`*n* | integers: binary, at least *n* digits | `5.ToString("B8")` | `00000101` |
+//! | `F`*n* | fixed point with *n* decimals (default 2) | `3.14159.ToString("F2")` | `3.14` |
+//! | `N`*n* | like `F` with `,` between groups of thousands | `1234567.ToString("N0")` | `1,234,567` |
+//! | `E`*n* | scientific, *n* decimals (default 6; `e`: lower case) | `1234.5.ToString("E2")` | `1.23E+003` |
+//! | `P`*n* | percent: times 100, *n* decimals (default 2) | `0.256.ToString("P1")` | `25.6 %` |
+//! | `G` | the same text as `ToString()` | | |
+//!
+//! The text does not depend on the platform or a locale (`.` and `,`). Floating point values are formatted from their
+//! exact binary value and rounded half away from zero, like .NET: `0.125.ToString("F2")` is `"0.13"`,
+//! `2.5.ToString("F0")` is `"3"`. A result that is zero has no minus sign. Negative values in `X` and `B` are written
+//! in two's complement of the type's size (`(-1).ToString("X")` of an `int32` is `"FFFFFFFF"`).
 namespace NumberFormat;
 
 using System;
@@ -64,8 +66,9 @@ _Spec _Parse(string format)
     return spec;
 }
 
-// "" if the format is valid for integers (floatingPoint false) or floating point numbers, otherwise why it is not.
-// The compiler uses it to check a format that is written as a string literal.
+/// "" if the format is valid for integers (floatingPoint false) or floating point numbers, otherwise why it is not.
+/// The compiler uses it to check a format that is written as a string literal.
+/// @internal
 string Check(string format, bool floatingPoint)
 {
     var spec = _Parse(format);
@@ -78,6 +81,7 @@ string Check(string format, bool floatingPoint)
 
 // ---- integers ----
 
+/// @internal
 string FormatInt(int64 value, int bits, string format)
 {
     var spec = _Parse(format);
@@ -95,6 +99,7 @@ string FormatInt(int64 value, int bits, string format)
     return _Integer(negative, magnitude, spec, value.ToString());
 }
 
+/// @internal
 string FormatUInt(uint64 value, int bits, string format)
 {
     var spec = _Parse(format);
@@ -151,6 +156,7 @@ string _Integer(bool negative, uint64 magnitude, _Spec spec, string plain)
 
 // ---- floating point ----
 
+/// @internal
 string FormatFloat(double value, bool single, string format)
 {
     var spec = _Parse(format);

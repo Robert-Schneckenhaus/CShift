@@ -188,7 +188,18 @@ struct _ThreadVoid
     }
 }
 
-// The handle returned by calling a 'thread T' function (T other than void).
+/// The handle of a running `thread` function that returns a `T`: calling `thread int Square(int x)` starts it on its
+/// own OS thread and returns a `Thread<int>` right away.
+///
+/// ```
+/// thread int Square(int x) { return x * x; }
+///
+/// Thread<int> t = Square(6);
+/// Console.WriteLine(t.Join());   // 36
+/// ```
+///
+/// A `thread void` function returns the non-generic `Thread`, which has the same methods except that `Join` returns
+/// nothing. See the language guide (docs/language/threading.md) for what a thread function may see.
 struct Thread<T>
 {
     SharedPtr<_ThreadControl<T>> _core;
@@ -198,8 +209,8 @@ struct Thread<T>
         return Thread<T> { _core = core };
     }
 
-    // Waits until the thread has finished and returns what it returned - even if it was cancelled: a cancelled
-    // thread still has to return a value of type T (see the language guide).
+    /// Waits until the thread has finished and returns what it returned - also if it was cancelled (a cancelled thread
+    /// still returns a value of type `T`).
     T Join()
     {
         unsafe
@@ -210,22 +221,27 @@ struct Thread<T>
         }
     }
 
+    /// Requests cancellation and does not wait: the thread notices it by reading `Thread.Cancelled` and decides itself
+    /// when to stop.
     void Cancel()
     {
         unsafe { _core.Ptr()->Core.RequestCancel(); }
     }
 
+    /// Requests cancellation and waits until the thread has finished.
     void CancelAndWait()
     {
         Cancel();
         Join();
     }
 
+    /// Whether the thread has finished: by returning, or after a cancellation request.
     bool IsCompleted()
     {
         unsafe { return _core.Ptr()->Core.IsCompleted(); }
     }
 
+    /// Whether [Thread<T>.Cancel] or [Thread<T>.CancelAndWait] was called; the thread may still be running.
     bool IsCancelled()
     {
         unsafe { return _core.Ptr()->Core.IsCancelled(); }
