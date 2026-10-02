@@ -1,40 +1,54 @@
-// The error codes of the standard library (error enums, see docs/language/error-handling.md): the fallible functions
-// return typed results, e.g. IoError<string> File.ReadAllText(...), so a caller can match a code directly:
-//
-//     switch (File.ReadAllText(path))
-//     {
-//         case string text: ...
-//         case IoError.CannotOpen: ...
-//         case error e: ...
-//     }
-//
-// A typed result converts to a plain Error<T> (the code becomes an int), so existing Error<T> code keeps working.
-
 namespace System;
 
-// File operations (File.*).
+/// The errors of file and folder operations ([File], [Directory], [FileStream]).
+///
+/// A function returns `IoError<T>`: the result, or one of these codes. A `switch` can handle each code:
+///
+/// ```
+/// switch (File.ReadAllText(path))
+/// {
+///     case string text: Console.WriteLine(text); break;
+///     case IoError.CannotOpen: Console.WriteLine("no such file"); break;
+///     case error e: Console.WriteLine(e.Message); break;
+/// }
+/// ```
+///
+/// A typed result converts to a plain `Error<T>` (the code becomes an `int`).
 error IoError
 {
-    CannotOpen = 1,      // the file does not exist or cannot be read
-    CannotWrite = 2,     // writing or closing failed (disk full, ...)
+    /// The file does not exist or cannot be read.
+    CannotOpen = 1,
+    /// Writing or closing failed (the disk is full, ...).
+    CannotWrite = 2,
+    /// The file or folder cannot be deleted.
     CannotDelete = 3,
-    AlreadyExists = 4,   // File.Copy without overwrite
-    InvalidText = 5,     // the content is not valid in the requested encoding (File.ReadAllText)
-    CannotCreate = 6,    // the file cannot be created or truncated (missing folder, no permission)
-    CannotMove = 7       // File.Move / Directory.Move failed (e.g. to another drive on AmigaOS, no permission)
+    /// The target exists already (e.g. [File.Copy] without overwriting).
+    AlreadyExists = 4,
+    /// The content is not valid in the requested encoding ([File.ReadAllText] with an [Encoding]).
+    InvalidText = 5,
+    /// The file cannot be created or truncated (a missing folder, no permission).
+    CannotCreate = 6,
+    /// Moving or renaming failed ([File.Move], [Directory.Move]), e.g. to another drive on AmigaOS or without
+    /// permission.
+    CannotMove = 7
 }
 
-// Number parsing (string.ParseInt, ParseInt64, ParseDouble).
+/// The errors of parsing numbers ([String.ParseInt], [String.ParseInt64], [String.ParseDouble]).
 error ParseError
 {
-    Invalid = 1,         // not a number
-    OutOfRange = 2       // a number, but too large for the type
+    /// The text is not a number.
+    Invalid = 1,
+    /// The text is a number, but too large or too small for the type.
+    OutOfRange = 2
 }
 
-// Decoding bytes (Encoding.GetString).
+/// The errors of decoding bytes into text ([Encoding.GetString]).
 error EncodingError
 {
-    OutOfBounds = 1,     // the byte range is outside the array
-    NotAscii = 2,        // a byte above 127 for ASCII
-    InvalidUtf8 = 3      // malformed UTF-8 (invalid byte, truncated or overlong sequence, surrogate)
+    /// The byte range is outside of the array.
+    OutOfBounds = 1,
+    /// A byte above 127 in ASCII.
+    NotAscii = 2,
+    /// Malformed UTF-8: an invalid byte, a truncated or overlong sequence, or a surrogate.
+    InvalidUtf8 = 3
 }

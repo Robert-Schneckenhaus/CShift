@@ -2,8 +2,9 @@
 
 namespace System.Native;
 
-// Called by the generated entry point: builds the argument array from C's argc/argv. The program name
-// (argv[0]) is not part of it, like in C#.
+/// Called by the generated entry point: builds the argument array from C's argc/argv. The program name
+/// (argv[0]) is not part of it, like in C#.
+/// @internal
 string[] MakeArgs(int argc, char** argv)
 {
     int count = argc > 1 ? argc - 1 : 0;

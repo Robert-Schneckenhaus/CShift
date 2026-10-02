@@ -1,52 +1,37 @@
-// Regular expressions: matching, searching, replacing and splitting text.
-//
-//     var re = try Regex.Create("(?<year>\\d{4})-(\\d{2})-(\\d{2})");
-//     if (re.Match("due 2026-10-01!") is RegexMatch m)
-//         Console.WriteLine(m.Value + " " + m.Group("year") + " " + m.Group(2));   // 2026-10-01 2026 10
-//     string s = re.Replace("2026-10-01", "$3.$2.${year}");                        // 01.10.2026
-//     foreach (var word in (try Regex.Create("\\s*,\\s*")).Split("a , b,c"))         // a b c
-//         Console.WriteLine(word);
-//
-// The syntax (a subset of .NET's and Perl's):
-//   x            a character; \. \* \\ ... a character that is special otherwise; \n \r \t \f \v \0 \xHH \uHHHH
-//   .            any character but '\n'
-//   [abc] [a-z] [^0-9]   a character of the set, or not of it ([\d_], [\w-] work too)
-//   \d \w \s     a digit, a word character [A-Za-z0-9_], white space; \D \W \S the opposite
-//   ^ $          the start and end of the text (of each line with (?m)); \A \z always of the text
-//   \b \B        a word boundary, not a word boundary
-//   (x)          a group (numbered from 1); (?<name>x) a named group; (?:x) a group that captures nothing
-//   x|y          x or y
-//   x* x+ x? x{n} x{n,} x{n,m}   repetition; with a '?' after it (x*?, x+?, ...) as few times as possible
-//   (?i) (?m) (?im)   at the start of the pattern: ignore case (ASCII letters), ^ and $ match at line breaks
-// Backreferences (\1) and lookaround are not supported. The text is UTF-8: '.', a set and \w etc. match one character
-// (code point), positions and lengths are in bytes. The matcher is a backtracking one that remembers which states it
-// has tried, so a search takes at most (pattern size) x (text length) steps, also for patterns like (a*)*.
-
 namespace System;
 
-// Regex.Create: the pattern is not valid (the message says what and where).
+/// The error of [Regex.Create].
 error RegexError
 {
+    /// The pattern is not valid; the message says what is wrong and where.
     InvalidPattern = 1
 }
 
-// A match: where it is, its text and the text of its groups.
+/// A match of a [Regex]: where it is, its text and the text of its groups.
 struct RegexMatch
 {
-    int Index;        // the position of the match in the text (bytes)
-    int Length;       // its length (bytes)
-    string Value;     // the matched text
-    string Text;          // the text that was searched
-    int[] Captures;       // the start and end of every group (-1: it did not take part), group 0 first
-    string[] GroupNames;  // the names of the groups ("" for unnamed ones), group 0 first
+    /// The position of the match in the text (bytes).
+    int Index;
+    /// The length of the match (bytes).
+    int Length;
+    /// The matched text.
+    string Value;
+    /// The text that was searched.
+    string Text;
+    /// The start and end of every group (-1: it did not take part), group 0 (the whole match) first.
+    int[] Captures;
+    /// The names of the groups (`""` for unnamed ones), group 0 first.
+    string[] GroupNames;
 
-    // the number of groups of the pattern (without group 0, the whole match)
+    /// The number of groups of the pattern (without group 0, the whole match).
     int GroupCount()
     {
         return Captures.Length / 2 - 1;
     }
 
-    // the text of group n (0: the whole match); "" if the group did not take part in the match
+    /// The text of group `n` (0: the whole match).
+    /// @returns `""` if the group did not take part in the match.
+    /// @panics when the pattern has no group `n`.
     string Group(int n)
     {
         if (n < 0 || n * 2 >= Captures.Length)
@@ -56,13 +41,16 @@ struct RegexMatch
         return Text.Substring(Captures[n * 2], Captures[n * 2 + 1] - Captures[n * 2]).ToString();
     }
 
-    // the text of the group (?<name>...)
+    /// The text of the group `(?<name>...)`.
+    /// @returns `""` if the group did not take part in the match.
+    /// @panics when the pattern has no group of that name.
     string Group(string name)
     {
         return Group(GroupNumber(name));
     }
 
-    // the number of the group (?<name>...)
+    /// The number of the group `(?<name>...)`.
+    /// @panics when the pattern has no group of that name.
     int GroupNumber(string name)
     {
         for (var i = 0; i < GroupNames.Length; i += 1)
@@ -74,13 +62,14 @@ struct RegexMatch
         return -1;
     }
 
-    // false if group n did not take part in the match (an alternative that was not taken, x? without x)
+    /// Whether group `n` took part in the match (not: an alternative that was not taken, `x?` without `x`).
     bool GroupMatched(int n)
     {
         return n >= 0 && n * 2 < Captures.Length && Captures[n * 2] >= 0;
     }
 
-    // the position of group n in the text (-1 if it did not take part)
+    /// The position of group `n` in the text (bytes).
+    /// @returns -1 if the group did not take part in the match.
     int GroupIndex(int n)
     {
         if (n < 0 || n * 2 >= Captures.Length)
@@ -120,8 +109,39 @@ struct _RClass
     bool Negated;
 }
 
+/// Regular expressions: matching, searching, replacing and splitting text.
+///
+/// ```
+/// var re = try Regex.Create("(?<year>\\d{4})-(\\d{2})-(\\d{2})");
+/// if (re.Match("due 2026-10-01!") is RegexMatch m)
+///     Console.WriteLine(m.Value + " " + m.Group("year") + " " + m.Group(2));   // 2026-10-01 2026 10
+/// string s = re.Replace("2026-10-01", "$3.$2.${year}");                        // 01.10.2026
+/// foreach (var word in (try Regex.Create("\\s*,\\s*")).Split("a , b,c"))         // a b c
+///     Console.WriteLine(word);
+/// ```
+///
+/// The syntax (a subset of .NET's and Perl's):
+///
+/// | Pattern | Matches |
+/// |---|---|
+/// | `x` | the character; `\.` `\*` `\\` ... a character that is special otherwise; `\n` `\r` `\t` `\f` `\v` `\0` `\xHH` `\uHHHH` |
+/// | `.` | any character but `\n` |
+/// | `[abc]` `[a-z]` `[^0-9]` | a character of the set, or not of it (`[\d_]`, `[\w-]` work too) |
+/// | `\d` `\w` `\s` | a digit, a word character `[A-Za-z0-9_]`, white space; `\D` `\W` `\S` the opposite |
+/// | `^` `$` | the start and end of the text (of each line with `(?m)`); `\A` `\z` always of the text |
+/// | `\b` `\B` | a word boundary, not a word boundary |
+/// | `(x)` | a group (numbered from 1); `(?<name>x)` a named group; `(?:x)` a group that captures nothing |
+/// | `x\|y` | `x` or `y` |
+/// | `x*` `x+` `x?` `x{n}` `x{n,}` `x{n,m}` | repetition; with a `?` after it (`x*?`, `x+?`, ...) as few times as possible |
+/// | `(?i)` `(?m)` `(?im)` | at the start of the pattern: ignore case (ASCII letters), `^` and `$` match at line breaks |
+///
+/// Backreferences (`\1`) and lookaround are not supported. The text is UTF-8: `.`, a set and `\w` etc. match one
+/// character (code point), positions and lengths are in bytes. The matcher is a backtracking one that remembers which
+/// states it has tried, so a search takes at most (pattern size) x (text length) steps, also for patterns like
+/// `(a*)*`.
 struct Regex
 {
+    /// The pattern the regex was created from.
     string Pattern;
     _RInst[] _prog;
     _RClass[] _classes;
@@ -129,7 +149,8 @@ struct Regex
     bool _ignoreCase;
     bool _multiline;
 
-    // The pattern compiled; an error says what is wrong with it.
+    /// The pattern compiled.
+    /// @error RegexError.InvalidPattern the pattern is not valid; the message says what is wrong and where.
     static RegexError<Regex> Create(string pattern)
     {
         var p = _RegexParser.Create(pattern);
@@ -148,20 +169,22 @@ struct Regex
                        _ignoreCase = p.IgnoreCase, _multiline = p.Multiline };
     }
 
-    // true if the pattern occurs somewhere in the text
+    /// Whether the pattern occurs somewhere in `text`.
     bool IsMatch(string text)
     {
         var caps = _NewCaps();
         return _Search(text, 0, caps, _NewVisited(text));
     }
 
-    // the first match in the text, or null
+    /// The first match in `text`.
+    /// @returns nothing (`null`) if there is none.
     Optional<RegexMatch> Match(string text)
     {
         return Match(text, 0);
     }
 
-    // the first match at 'start' (a byte position) or after it, or null
+    /// The first match in `text` at the byte position `start` or after it.
+    /// @returns nothing (`null`) if there is none.
     Optional<RegexMatch> Match(string text, int start)
     {
         if (start < 0 || start > text.Length)
@@ -172,7 +195,7 @@ struct Regex
         return _MakeMatch(text, caps);
     }
 
-    // every match, from left to right, without overlaps
+    /// Every match in `text`, from left to right, without overlaps.
     RegexMatch[] Matches(string text)
     {
         var result = List<RegexMatch>.Create();
@@ -190,8 +213,8 @@ struct Regex
         return result.ToArray();
     }
 
-    // The text with every match replaced: in the replacement $0 is the match, $1 ... $9 and ${n} its groups,
-    // ${name} a named group, $$ a '$'.
+    /// `text` with every match replaced by `replacement`. In the replacement `$0` is the match, `$1` ... `$9` and
+    /// `${n}` its groups, `${name}` a named group, `$$` a `$`.
     string Replace(string text, string replacement)
     {
         var sb = StringBuilder.Create();
@@ -206,7 +229,7 @@ struct Regex
         return sb.ToString();
     }
 
-    // The parts of the text between the matches (empty matches do not split).
+    /// The parts of the text between the matches (empty matches do not split).
     string[] Split(string text)
     {
         var parts = List<string>.Create();

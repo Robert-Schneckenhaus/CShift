@@ -1,35 +1,40 @@
-// StringBuilder: builds a string without copying it for every '+'.
-//
-//     using System;
-//
-//     var sb = StringBuilder.Create();
-//     sb.Append("x = ");
-//     sb.Append(42.ToString());
-//     sb.Append('\n');
-//     string text = sb.ToString();
-//
-// Like List<T>, a StringBuilder is a small handle to shared storage: copies see the same text. Start it with
-// StringBuilder.Create() before you hand it out.
-
 namespace System;
 
 extern "C" void* memcpy(void* dest, void* source, nuint count);
 
+/// The storage behind a [StringBuilder]; use [StringBuilder] instead.
+/// @internal
 struct StringBuilderState
 {
     uint8[] Data;
     int Length;
 }
 
+/// Builds a string without copying it for every '+'.
+///
+/// ```
+/// using System;
+///
+/// var sb = StringBuilder.Create();
+/// sb.Append("x = ");
+/// sb.Append(42.ToString());
+/// sb.Append('\n');
+/// string text = sb.ToString();
+/// ```
+///
+/// Like List<T>, a StringBuilder is a small handle to shared storage: copies see the same text. Start it with
+/// StringBuilder.Create() before you hand it out.
 struct StringBuilder
 {
     StringBuilderState[] _state;
 
+    /// A new, empty builder.
     static StringBuilder Create()
     {
         return StringBuilder { _state = new StringBuilderState[1] };
     }
 
+    /// A new, empty builder with room for `capacity` bytes before it has to grow.
     static StringBuilder Create(int capacity)
     {
         var sb = Create();
@@ -37,6 +42,7 @@ struct StringBuilder
         return sb;
     }
 
+    /// The length of the text so far, in bytes.
     int Length()
     {
         if (_state == null)
@@ -44,7 +50,7 @@ struct StringBuilder
         return _state[0].Length;
     }
 
-    // A string or a part of one (StringSlice: a string converts to it for free).
+    /// Appends `text`: a string or a part of one (a `StringSlice`; a string converts to it for free).
     void Append(StringSlice text)
     {
         int n = text.Length;
@@ -59,6 +65,7 @@ struct StringBuilder
         _state[0].Length += n;
     }
 
+    /// Appends the character `c` (a byte).
     void Append(char c)
     {
         _Reserve(Length() + 1);
@@ -66,18 +73,21 @@ struct StringBuilder
         _state[0].Length += 1;
     }
 
+    /// Appends `text` and a line break (`\n`).
     void AppendLine(StringSlice text)
     {
         Append(text);
         Append('\n');
     }
 
+    /// Appends a line break (`\n`).
     void AppendLine()
     {
         Append('\n');
     }
 
-    // The character at index (bytes; the text is UTF-8).
+    /// The character (byte) at `index`; the text is UTF-8.
+    /// @panics when `index` is not in 0 to `Length() - 1`.
     char Get(int index)
     {
         if (index < 0 || index >= Length())
@@ -85,6 +95,7 @@ struct StringBuilder
         return (char)_state[0].Data[index];
     }
 
+    /// Removes all text.
     void Clear()
     {
         if (_state != null)
@@ -92,7 +103,8 @@ struct StringBuilder
     }
 
 
-    // The text from 'start' to the end.
+    /// The text from `start` to the end, as a new string.
+    /// @panics when `start` is not in 0 to `Length()`.
     string Substring(int start)
     {
         if (_state == null || start >= _state[0].Length)
@@ -102,7 +114,8 @@ struct StringBuilder
         return string.FromBytes(_state[0].Data, start, _state[0].Length - start);
     }
 
-    // Cuts the text to 'length' characters (bytes).
+    /// Cuts the text to its first `length` bytes.
+    /// @panics when `length` is not in 0 to `Length()`.
     void Truncate(int length)
     {
         if (length < 0 || length > Length())
@@ -111,6 +124,7 @@ struct StringBuilder
             _state[0].Length = length;
     }
 
+    /// The text as a string.
     string ToString()
     {
         if (_state == null || _state[0].Length == 0)

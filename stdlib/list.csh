@@ -1,35 +1,43 @@
-// List<T>: a growable array.
-//
-//     using System;
-//
-//     var names = List<string>.Create();
-//     names.Add("Ann");
-//     names.Add("Bob");
-//     foreach (var name in names)
-//         Console.WriteLine(name);
-//
-// A List is a small handle to shared storage: copies of a List (assignments, arguments) see the same
-// elements, like a reference. The storage is created by Create() or by the first Add(); a list that is
-// still empty and was created with 'new List<T>()' is not yet connected to its copies, so start lists with
-// List<T>.Create() when you hand them out before adding elements.
-
 namespace System;
 
+/// The storage behind a [List]; use [List] instead.
+/// @internal
 struct ListState<T>
 {
     T[] Items;
     int Count;
 }
 
+/// A growable array.
+///
+/// ```
+/// using System;
+///
+/// var names = List<string>.Create();
+/// names.Add("Ann");
+/// names.Add("Bob");
+/// foreach (var name in names)
+///     Console.WriteLine(name);
+/// ```
+///
+/// A List is a small handle to shared storage: copies of a List (assignments, arguments) see the same
+/// elements, like a reference. The storage is created by Create() or by the first Add(); a list that is
+/// still empty and was created with 'new List<T>()' is not yet connected to its copies, so start lists with
+/// List<T>.Create() when you hand them out before adding elements.
+///
+/// `list[i]` reads an element ([List<T>.Get]), `list[i] = x` writes one ([List<T>.Set]); `foreach` goes through the
+/// elements in order.
 struct List<T>
 {
     ListState<T>[] _state;
 
+    /// A new, empty list.
     static List<T> Create()
     {
         return List<T> { _state = new ListState<T>[1] };
     }
 
+    /// A new, empty list with room for `capacity` elements before it has to grow.
     static List<T> Create(int capacity)
     {
         var list = Create();
@@ -37,6 +45,7 @@ struct List<T>
         return list;
     }
 
+    /// The number of elements.
     int Count()
     {
         if (_state == null)
@@ -44,7 +53,7 @@ struct List<T>
         return _state[0].Count;
     }
 
-    // Number of elements that fit without reallocating.
+    /// Number of elements that fit without reallocating.
     int Capacity()
     {
         if (_state == null || _state[0].Items == null)
@@ -52,6 +61,8 @@ struct List<T>
         return _state[0].Items.Length;
     }
 
+    /// The element at `index` (also `list[index]`).
+    /// @panics when `index` is not in 0 to `Count() - 1`.
     T Get(int index)
     {
         if (index < 0 || index >= Count())
@@ -59,6 +70,8 @@ struct List<T>
         return _state[0].Items[index];
     }
 
+    /// Replaces the element at `index` (also `list[index] = value`).
+    /// @panics when `index` is not in 0 to `Count() - 1`.
     void Set(int index, T value)
     {
         if (index < 0 || index >= Count())
@@ -66,6 +79,7 @@ struct List<T>
         _state[0].Items[index] = value;
     }
 
+    /// Adds `value` at the end.
     void Add(T value)
     {
         _Grow(Count() + 1);
@@ -73,13 +87,15 @@ struct List<T>
         _state[0].Count += 1;
     }
 
+    /// Adds all elements of `values` at the end, in order.
     void AddRange(T[] values)
     {
         for (var i = 0; i < values.Length; i += 1)
             Add(values[i]);
     }
 
-    // Inserts before the element at index (index == Count() appends).
+    /// Inserts `value` before the element at `index`; `index == Count()` appends.
+    /// @panics when `index` is not in 0 to `Count()`.
     void Insert(int index, T value)
     {
         if (index < 0 || index > Count())
@@ -91,6 +107,8 @@ struct List<T>
         _state[0].Count += 1;
     }
 
+    /// Removes the element at `index`; the elements after it move down by one.
+    /// @panics when `index` is not in 0 to `Count() - 1`.
     void RemoveAt(int index)
     {
         if (index < 0 || index >= Count())
@@ -101,6 +119,7 @@ struct List<T>
         _state[0].Count -= 1;
     }
 
+    /// Removes all elements.
     void Clear()
     {
         if (_state == null)
@@ -109,6 +128,8 @@ struct List<T>
         _state[0].Count = 0;
     }
 
+    /// The index of the first element that equals `value` ([IEquatable]).
+    /// @returns -1 if no element equals it.
     int IndexOf(T value)
         where T : IEquatable<T>
     {
@@ -121,13 +142,15 @@ struct List<T>
         return -1;
     }
 
+    /// Whether an element equals `value` ([IEquatable]).
     bool Contains(T value)
         where T : IEquatable<T>
     {
         return IndexOf(value) >= 0;
     }
 
-    // Removes the first element that equals value.
+    /// Removes the first element that equals `value` ([IEquatable]).
+    /// @returns whether an element was removed.
     bool Remove(T value)
         where T : IEquatable<T>
     {
@@ -138,6 +161,7 @@ struct List<T>
         return true;
     }
 
+    /// Reverses the order of the elements.
     void Reverse()
     {
         int count = Count();
@@ -149,7 +173,7 @@ struct List<T>
         }
     }
 
-    // Stable merge sort.
+    /// Sorts the elements in ascending order ([IComparable]). The sort is stable: equal elements keep their order.
     void Sort()
         where T : IComparable<T>
     {
@@ -204,6 +228,7 @@ struct List<T>
         }
     }
 
+    /// A new array with the elements, in order.
     T[] ToArray()
     {
         int count = Count();
@@ -215,13 +240,14 @@ struct List<T>
 
     // ---- with functions (lambdas): list.ForEach(x => Console.WriteLine(x)), list.Where(x => x > 0) ----
 
+    /// Calls `action` for every element, in order: `list.ForEach(x => Console.WriteLine(x))`.
     void ForEach(Action<T> action)
     {
         for (var i = 0; i < Count(); i += 1)
             action(Get(i));
     }
 
-    // A new list with the elements for which 'keep' is true.
+    /// A new list with the elements for which `keep` returns `true`: `list.Where(x => x > 0)`.
     List<T> Where(Func<T, bool> keep)
     {
         var result = List<T>.Create();
@@ -234,7 +260,7 @@ struct List<T>
         return result;
     }
 
-    // A new list with 'convert' applied to every element: list.Select<string>(x => x.ToString()).
+    /// A new list with `convert` applied to every element: `list.Select<string>(x => x.ToString())`.
     List<U> Select<U>(Func<T, U> convert)
     {
         var result = List<U>.Create();
@@ -243,11 +269,13 @@ struct List<T>
         return result;
     }
 
+    /// Whether `test` returns `true` for at least one element.
     bool Any(Func<T, bool> test)
     {
         return FindIndex(test) >= 0;
     }
 
+    /// Whether `test` returns `true` for every element (`true` for an empty list).
     bool All(Func<T, bool> test)
     {
         for (var i = 0; i < Count(); i += 1)
@@ -258,7 +286,7 @@ struct List<T>
         return true;
     }
 
-    // The index of the first element for which 'test' is true, or -1.
+    /// The index of the first element for which 'test' is true, or -1.
     int FindIndex(Func<T, bool> test)
     {
         for (var i = 0; i < Count(); i += 1)

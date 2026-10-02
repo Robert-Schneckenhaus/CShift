@@ -1,13 +1,3 @@
-// Directories and file names.
-//
-//     if (!Directory.Exists("out"))
-//         Directory.Create("out");
-//     var sources = Directory.FindFiles("src", ".csh");
-//     string file = Path.Combine("src", "main.csh");
-//
-// Directory operations use the C library (opendir/readdir/mkdir, which MinGW-w64 provides on Windows as well). Paths
-// may use '/' or '\'.
-
 namespace System;
 
 using System.Native;
@@ -18,9 +8,14 @@ extern "C" int closedir(void* dir);
 extern "C" int mkdir(char* path, int mode);
 extern "C" char* getcwd(char* buffer, nuint size);
 
+/// File names and paths, as strings: `Path.Combine("src", "main.csh")`, `Path.GetExtension(file)`, ...
+///
+/// Paths may use `/` or `\`; the functions return `/` separators unless they say otherwise
+/// ([Path.ToNative]). Nothing here touches the file system except [Path.GetFullPath] and [Path.GetRelativePath],
+/// which read the current directory.
 struct Path
 {
-    // Joins two path parts with '/' (an empty part is ignored, an absolute second part is returned as it is).
+    /// Joins two path parts with '/' (an empty part is ignored, an absolute second part is returned as it is).
     static string Combine(string a, string b)
     {
         if (a.Length == 0)
@@ -35,13 +30,13 @@ struct Path
         return a + "/" + b;
     }
 
-    // All separators as '/'.
+    /// All separators of `path` as `/`.
     static string Normalize(string path)
     {
         return path.Replace("\\", "/");
     }
 
-    // The path with the separators of the operating system (for commands that are run by the shell).
+    /// The path with the separators of the operating system (for commands that are run by the shell).
     static string ToNative(string path)
     {
         if (Process.IsWindows())
@@ -62,7 +57,7 @@ struct Path
         return -1;
     }
 
-    // The directory part: "a/b/c.txt" -> "a/b", "c.txt" -> "".
+    /// The directory part: "a/b/c.txt" -> "a/b", "c.txt" -> "".
     static string GetDirectory(string path)
     {
         int i = _LastSeparator(path);
@@ -73,14 +68,14 @@ struct Path
         return path.Substring(0, i);
     }
 
-    // The file name: "a/b/c.txt" -> "c.txt".
+    /// The file name: "a/b/c.txt" -> "c.txt".
     static string GetFileName(string path)
     {
         int i = _LastSeparator(path);
         return path.Substring(i + 1);
     }
 
-    // The extension including the dot: "c.txt" -> ".txt", "c" -> "".
+    /// The extension including the dot: "c.txt" -> ".txt", "c" -> "".
     static string GetExtension(string path)
     {
         string name = GetFileName(path);
@@ -90,7 +85,7 @@ struct Path
         return name.Substring(dot);
     }
 
-    // The file name without directory and extension: "a/b/c.txt" -> "c".
+    /// The file name without directory and extension: "a/b/c.txt" -> "c".
     static string GetStem(string path)
     {
         string name = GetFileName(path);
@@ -100,7 +95,7 @@ struct Path
         return name.Substring(0, dot);
     }
 
-    // The same path with another extension (".o" or "o").
+    /// The same path with another extension: `ChangeExtension("a/b.c", ".o")` (or `"o"`) is `"a/b.o"`.
     static string ChangeExtension(string path, string extension)
     {
         string ext = GetExtension(path);
@@ -110,14 +105,14 @@ struct Path
         return baseName + extension;
     }
 
-    // True for "/x", "\\x" and "C:/x".
+    /// Whether `path` is absolute: `"/x"`, `"\\x"` and `"C:/x"` are.
     static bool IsRooted(string path)
     {
         return path.Length > 0 && (path[0] == '/' || path[0] == '\\' || (path.Length > 1 && path[1] == ':'));
     }
 
-    // The absolute path, with '/' separators and without "." and ".." parts (relative paths start at the current
-    // directory).
+    /// The absolute path, with '/' separators and without "." and ".." parts (relative paths start at the current
+    /// directory).
     static string GetFullPath(string path)
     {
         string full = Normalize(IsRooted(path) ? path : Combine(Directory.GetCurrentDirectory(), path));
@@ -143,8 +138,8 @@ struct Path
         return prefix + "/" + string.Join("/", parts.ToArray());
     }
 
-    // The path of 'path' relative to the directory 'relativeTo' ("../lib/a.txt"); both are made absolute first. On
-    // another drive the absolute path is returned.
+    /// The path of 'path' relative to the directory 'relativeTo' ("../lib/a.txt"); both are made absolute first. On
+    /// another drive the absolute path is returned.
     static string GetRelativePath(string relativeTo, string path)
     {
         string from = GetFullPath(relativeTo);
@@ -172,9 +167,20 @@ struct Path
     }
 }
 
+/// Directories and file names.
+///
+/// ```
+/// if (!Directory.Exists("out"))
+///     Directory.Create("out");
+/// var sources = Directory.FindFiles("src", ".csh");
+/// string file = Path.Combine("src", "main.csh");
+/// ```
+///
+/// Directory operations use the C library (opendir/readdir/mkdir, which MinGW-w64 provides on Windows as well). Paths
+/// may use '/' or '\'.
 struct Directory
 {
-    // The current working directory, with '/' separators.
+    /// The current working directory, with '/' separators.
     static string GetCurrentDirectory()
     {
         unsafe
@@ -188,6 +194,7 @@ struct Directory
         }
     }
 
+    /// Whether a directory exists at `path`.
     static bool Exists(string path)
     {
         unsafe
@@ -200,7 +207,8 @@ struct Directory
         }
     }
 
-    // Creates a directory including missing parents. Returns true if it exists afterwards.
+    /// Creates a directory, including missing parents.
+    /// @returns whether the directory exists afterwards.
     static bool Create(string path)
     {
         if (path.Length == 0 || Exists(path))
@@ -215,7 +223,9 @@ struct Directory
         return Exists(path);
     }
 
-    // Deletes an empty directory, or with 'recursive' a directory with everything in it.
+    /// Deletes an empty directory, or with `recursive` a directory with everything in it.
+    /// @error IoError.CannotOpen the directory does not exist.
+    /// @error IoError.CannotDelete it cannot be deleted (without `recursive`: it is not empty).
     static IoError<void> Delete(string path, bool recursive)
     {
         if (!Exists(path))
@@ -236,12 +246,18 @@ struct Directory
         return;
     }
 
+    /// Deletes an empty directory.
+    /// @error IoError.CannotOpen the directory does not exist.
+    /// @error IoError.CannotDelete it cannot be deleted (it is not empty, no permission).
     static IoError<void> Delete(string path)
     {
         return Delete(path, false);
     }
 
-    // Moves (renames) a directory; the target must not exist.
+    /// Moves (renames) a directory; the target must not exist.
+    /// @error IoError.CannotOpen `source` does not exist.
+    /// @error IoError.AlreadyExists `target` exists.
+    /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
     static IoError<void> Move(string source, string target)
     {
         if (!Exists(source))
@@ -264,7 +280,8 @@ struct Directory
         return sizeof(nint) == 8 ? 19 : 11;
     }
 
-    // The names of the files and directories in a directory (not the paths, without "." and ".."), sorted.
+    /// The names of the files and directories in a directory (not the paths, without `.` and `..`), sorted.
+    /// @returns an empty list if the directory does not exist.
     static List<string> GetEntries(string path)
     {
         var names = List<string>.Create();
@@ -289,8 +306,8 @@ struct Directory
         return names;
     }
 
-    // All files below a directory (recursively) whose name ends with the extension (".csh"; empty = all files).
-    // The paths start with the given directory and use '/'. The result is sorted.
+    /// All files below a directory (recursively) whose name ends with the extension (".csh"; empty = all files).
+    /// The paths start with the given directory and use '/'. The result is sorted.
     static List<string> FindFiles(string path, string extension)
     {
         var result = List<string>.Create();

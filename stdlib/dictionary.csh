@@ -1,30 +1,16 @@
-// Dictionary<TKey, TValue>: a hash table (separate chaining). Keys keep their insertion order in Keys(),
-// Values() and Entries() as long as no entry was removed.
-//
-//     using System;
-//
-//     var ages = Dictionary<string, int>.Create();
-//     ages.Set("Ann", 31);
-//     if (ages.TryGet("Ann") is int age)
-//         Console.WriteLine(age);
-//     foreach (var key in ages.Keys())
-//         Console.WriteLine(key);
-//
-// TKey must be IEquatable and IHashable: numbers, bool, char, enums and string are, and your own structs
-// are as soon as they define 'bool Equals(T other)' and 'int GetHashCode()'.
-//
-// Like List<T>, a Dictionary is a handle to shared storage (see list.csh): use Dictionary<K, V>.Create()
-// when the dictionary is handed out before its first entry is added.
-
 namespace System;
 
+/// A key and its value, from [Dictionary<TKey, TValue>.Entries].
 struct KeyValuePair<TKey, TValue>
 {
+    /// The key.
     TKey Key;
+    /// The value of the key.
     TValue Value;
 }
 
-// Internal: one slot of the entry table. Chain and free-list links are stored as index + 1 (0 = none).
+/// One slot of the entry table of a [Dictionary]. Chain and free-list links are stored as index + 1 (0 = none).
+/// @internal
 struct DictionaryEntry<TKey, TValue>
 {
     int Hash; // -1 = unused slot
@@ -33,6 +19,8 @@ struct DictionaryEntry<TKey, TValue>
     TValue Value;
 }
 
+/// The storage behind a [Dictionary]; use [Dictionary] instead.
+/// @internal
 struct DictionaryState<TKey, TValue>
 {
     int[] Buckets; // first entry of each chain (index + 1)
@@ -42,16 +30,40 @@ struct DictionaryState<TKey, TValue>
     int FreeCount;
 }
 
+/// A hash table (separate chaining). Keys keep their insertion order in Keys(),
+/// Values() and Entries() as long as no entry was removed.
+///
+/// ```
+/// using System;
+///
+/// var ages = Dictionary<string, int>.Create();
+/// ages.Set("Ann", 31);
+/// if (ages.TryGet("Ann") is int age)
+///     Console.WriteLine(age);
+/// foreach (var key in ages.Keys())
+///     Console.WriteLine(key);
+/// ```
+///
+/// TKey must be IEquatable and IHashable: numbers, bool, char, enums and string are, and your own structs
+/// are as soon as they define 'bool Equals(T other)' and 'int GetHashCode()'.
+///
+/// Like List<T>, a Dictionary is a handle to shared storage (see [List]): use Dictionary<K, V>.Create()
+/// when the dictionary is handed out before its first entry is added.
+///
+/// `dict[key]` reads a value ([Dictionary<TKey, TValue>.Get]), `dict[key] = value` sets one
+/// ([Dictionary<TKey, TValue>.Set]).
 struct Dictionary<TKey, TValue>
     where TKey : IEquatable<TKey>, IHashable
 {
     DictionaryState<TKey, TValue>[] _state;
 
+    /// A new, empty dictionary.
     static Dictionary<TKey, TValue> Create()
     {
         return Dictionary<TKey, TValue> { _state = new DictionaryState<TKey, TValue>[1] };
     }
 
+    /// The number of entries.
     int Count()
     {
         if (_state == null)
@@ -59,12 +71,14 @@ struct Dictionary<TKey, TValue>
         return _state[0].Count - _state[0].FreeCount;
     }
 
+    /// Whether the dictionary has an entry for `key`.
     bool ContainsKey(TKey key)
     {
         return _Find(key) >= 0;
     }
 
-    // The value of key, or no value if the key is not present.
+    /// The value of `key`, if there is one: `if (ages.TryGet("Ann") is int age) ...`.
+    /// @returns nothing (`null`) if the key is not present.
     Optional<TValue> TryGet(TKey key)
     {
         int index = _Find(key);
@@ -73,7 +87,8 @@ struct Dictionary<TKey, TValue>
         return _state[0].Entries[index].Value;
     }
 
-    // The value of key; panics if the key is not present (dict[key] calls it). TryGet asks without panicking.
+    /// The value of `key` (also `dict[key]`). [Dictionary<TKey, TValue>.TryGet] asks without panicking.
+    /// @panics when the key is not present.
     TValue Get(TKey key)
     {
         int index = _Find(key);
@@ -82,6 +97,7 @@ struct Dictionary<TKey, TValue>
         return _state[0].Entries[index].Value;
     }
 
+    /// The value of `key`, or `fallback` if the key is not present.
     TValue GetOrDefault(TKey key, TValue fallback)
     {
         int index = _Find(key);
@@ -90,7 +106,7 @@ struct Dictionary<TKey, TValue>
         return _state[0].Entries[index].Value;
     }
 
-    // Adds the entry or replaces the value of an existing key.
+    /// Adds an entry, or replaces the value of an existing key (also `dict[key] = value`).
     void Set(TKey key, TValue value)
     {
         int index = _Find(key);
@@ -102,7 +118,8 @@ struct Dictionary<TKey, TValue>
         _Insert(key, value);
     }
 
-    // Adds an entry; fails if the key already exists.
+    /// Adds an entry for a new key.
+    /// @returns an error if the key exists already (the dictionary is not changed).
     Error<void> Add(TKey key, TValue value)
     {
         if (_Find(key) >= 0)
@@ -111,6 +128,8 @@ struct Dictionary<TKey, TValue>
         return;
     }
 
+    /// Removes the entry of `key`.
+    /// @returns whether there was an entry.
     bool Remove(TKey key)
     {
         if (_state == null || _state[0].Buckets == null)
@@ -144,6 +163,7 @@ struct Dictionary<TKey, TValue>
         return false;
     }
 
+    /// Removes all entries.
     void Clear()
     {
         if (_state == null)
@@ -151,6 +171,7 @@ struct Dictionary<TKey, TValue>
         _state[0] = new DictionaryState<TKey, TValue>();
     }
 
+    /// A new array with the keys, in insertion order as long as no entry was removed.
     TKey[] Keys()
     {
         var result = new TKey[Count()];
@@ -168,6 +189,7 @@ struct Dictionary<TKey, TValue>
         return result;
     }
 
+    /// A new array with the values, in the order of [Dictionary<TKey, TValue>.Keys].
     TValue[] Values()
     {
         var result = new TValue[Count()];
@@ -185,6 +207,8 @@ struct Dictionary<TKey, TValue>
         return result;
     }
 
+    /// A new array with the entries (key and value), in the order of [Dictionary<TKey, TValue>.Keys]:
+    /// `foreach (var e in ages.Entries()) Console.WriteLine(e.Key + " " + e.Value.ToString());`.
     KeyValuePair<TKey, TValue>[] Entries()
     {
         var result = new KeyValuePair<TKey, TValue>[Count()];

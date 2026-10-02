@@ -1,18 +1,7 @@
-// Queue<T>: first in, first out.
-//
-//     var jobs = Queue<string>.Create();
-//     jobs.Enqueue("load");
-//     jobs.Enqueue("draw");
-//     string next = jobs.Dequeue();         // "load"
-//     if (jobs.TryDequeue() is string s)    // no panic when the queue is empty
-//         ...
-//
-// Like List<T>, a Queue is a small handle to shared storage: copies see the same elements. foreach and Get(i)
-// go from the front (the next Dequeue) to the back. The elements are kept in a ring buffer, so Enqueue and
-// Dequeue do not move the other elements.
-
 namespace System;
 
+/// The storage behind a [Queue]; use [Queue] instead.
+/// @internal
 struct QueueState<T>
 {
     T[] Items;
@@ -20,15 +9,31 @@ struct QueueState<T>
     int Count;
 }
 
+/// A queue of values: first in, first out.
+///
+/// ```
+/// var jobs = Queue<string>.Create();
+/// jobs.Enqueue("load");
+/// jobs.Enqueue("draw");
+/// string next = jobs.Dequeue();         // "load"
+/// if (jobs.TryDequeue() is string s)    // no panic when the queue is empty
+///     ...
+/// ```
+///
+/// Like List<T>, a Queue is a small handle to shared storage: copies see the same elements. foreach and Get(i)
+/// go from the front (the next Dequeue) to the back. The elements are kept in a ring buffer, so Enqueue and
+/// Dequeue do not move the other elements.
 struct Queue<T>
 {
     QueueState<T>[] _state;
 
+    /// A new, empty queue.
     static Queue<T> Create()
     {
         return Queue<T> { _state = new QueueState<T>[1] };
     }
 
+    /// A new, empty queue with room for `capacity` elements before it has to grow.
     static Queue<T> Create(int capacity)
     {
         var queue = Create();
@@ -36,6 +41,7 @@ struct Queue<T>
         return queue;
     }
 
+    /// The number of elements.
     int Count()
     {
         if (_state == null)
@@ -43,6 +49,7 @@ struct Queue<T>
         return _state[0].Count;
     }
 
+    /// Adds `value` at the back of the queue.
     void Enqueue(T value)
     {
         _Grow(Count() + 1);
@@ -50,7 +57,8 @@ struct Queue<T>
         _state[0].Count += 1;
     }
 
-    // Removes and returns the front element; panics if the queue is empty (TryDequeue does not).
+    /// Removes and returns the front element.
+    /// @panics when the queue is empty ([Queue<T>.TryDequeue] does not).
     T Dequeue()
     {
         if (Count() == 0)
@@ -58,6 +66,8 @@ struct Queue<T>
         return _Take();
     }
 
+    /// Removes and returns the front element, if there is one.
+    /// @returns nothing (`null`) when the queue is empty.
     Optional<T> TryDequeue()
     {
         if (Count() == 0)
@@ -65,7 +75,8 @@ struct Queue<T>
         return _Take();
     }
 
-    // The front element without removing it; panics if the queue is empty (TryPeek does not).
+    /// The front element, without removing it.
+    /// @panics when the queue is empty ([Queue<T>.TryPeek] does not).
     T Peek()
     {
         if (Count() == 0)
@@ -73,6 +84,8 @@ struct Queue<T>
         return _state[0].Items[_state[0].Head];
     }
 
+    /// The front element without removing it, if there is one.
+    /// @returns nothing (`null`) when the queue is empty.
     Optional<T> TryPeek()
     {
         if (Count() == 0)
@@ -80,7 +93,8 @@ struct Queue<T>
         return _state[0].Items[_state[0].Head];
     }
 
-    // The element 'index' places behind the front (0 = the front).
+    /// The element `index` places behind the front (0 is the front).
+    /// @panics when `index` is not in 0 to `Count() - 1`.
     T Get(int index)
     {
         int count = Count();
@@ -89,6 +103,7 @@ struct Queue<T>
         return _state[0].Items[_Slot(index)];
     }
 
+    /// Whether an element equals `value` ([IEquatable]).
     bool Contains(T value)
         where T : IEquatable<T>
     {
@@ -101,6 +116,7 @@ struct Queue<T>
         return false;
     }
 
+    /// Removes all elements.
     void Clear()
     {
         if (_state == null)
@@ -110,7 +126,7 @@ struct Queue<T>
         _state[0].Count = 0;
     }
 
-    // The elements from the front to the back (the order Dequeue would return them).
+    /// The elements from the front to the back (the order Dequeue would return them).
     T[] ToArray()
     {
         int count = Count();

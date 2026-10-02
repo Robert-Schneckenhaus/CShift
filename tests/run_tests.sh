@@ -318,7 +318,7 @@ else
     report_ok "cshiftc check"
 fi
 # "cshiftc doc": the doc comments of a program as JSON, the errors in doc comments, and the doc comments of the
-# standard library are correct.
+# standard library are correct and complete.
 problem=""
 if ! "$COMPILER" doc "$DIR/query/doc_comments.csh" > "$TMP/doc.json" 2> "$TMP/doc.err"; then
     problem="failed: $(head -n 3 "$TMP/doc.err" | tr '\n' ' ')"
@@ -346,9 +346,12 @@ fi
 if [ -z "$problem" ] && ! "$COMPILER" doc --require-docs "$TMP/doc_bad.csh" 2>&1 | grep -qF "doc_bad.csh:7:12: error: field S.A has no doc comment"; then
     problem="--require-docs does not report the field S.A"
 fi
-if [ -z "$problem" ] && ! "$COMPILER" doc --stdlib "$DIR/../stdlib" > /dev/null 2> "$TMP/doc.err"; then
-    problem="the doc comments of the standard library: $(head -n 5 "$TMP/doc.err" | tr '\n' ' ')"
-fi
+# every public declaration of the standard library is documented (also the AmigaOS part)
+for target in "" "m68k-amigaos"; do
+    if [ -z "$problem" ] && ! "$COMPILER" doc --require-docs --stdlib "$DIR/../stdlib" ${target:+--target "$target"} > /dev/null 2> "$TMP/doc.err"; then
+        problem="the doc comments of the standard library${target:+ for $target}: $(head -n 5 "$TMP/doc.err" | tr '\n' ' ')"
+    fi
+done
 if [ -n "$problem" ]; then report_fail "cshiftc doc" "$problem"; else report_ok "cshiftc doc"; fi
 # The VS Code extension (vscode-extension/test): its logic and its connection to the editor, with this cshiftc.
 # Under MSYS2/Git Bash node is a Windows program: it may not be in PATH, and it needs Windows paths.
