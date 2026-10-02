@@ -306,6 +306,68 @@ string DocAt(Compiler cg, SourceLoc def)
     return "";
 }
 
+// The doc comment of a built-in name, found by the text of its hover ("void Console.WriteLine(string value)",
+// "int32 string.Length", "namespace Console (built-in)"): the member of the declaration in stdlib/builtin.
+string BuiltinDocOf(List<CompilationUnit> builtins, string hover)
+{
+    string text = hover;
+    if (text.StartsWith("namespace "))
+        text = text.Substring(10).ToString();
+    // the name: the last word at depth 0 before the parameters or a value
+    int end = text.Length;
+    int depth = 0;
+    int start = 0;
+    for (var i = 0; i < text.Length; i += 1)
+    {
+        char c = text[i];
+        if (c == '<')
+            depth += 1;
+        else if (c == '>')
+            depth -= 1;
+        else if (depth == 0 && (c == '(' || (c == ' ' && i + 1 < text.Length && text[i + 1] == '=')))
+        {
+            end = i;
+            break;
+        }
+        else if (depth == 0 && c == ' ')
+            start = i + 1;
+    }
+    if (start >= end)
+        return "";
+    string name = DocLinkKey(text.Substring(start, end - start).ToString());
+    string owner = name;
+    string member = "";
+    int dot = name.LastIndexOf('.');
+    if (dot > 0)
+    {
+        owner = name.Substring(0, dot).ToString();
+        member = name.Substring(dot + 1).ToString();
+    }
+    if (owner.EndsWith("[]"))
+        owner = "Array";
+    foreach (var unit in builtins.ToArray())
+    {
+        foreach (var d in unit.Structs.ToArray())
+        {
+            if (d.Name != owner && !(member.Length == 0 && d.Name == name))
+                continue;
+            if (member.Length == 0 || d.Name == name)
+                return DocText(d.Doc);
+            foreach (var f in d.Fields)
+            {
+                if (f.Name == member && DocText(f.Doc).Length > 0)
+                    return DocText(f.Doc);
+            }
+            foreach (var m in d.Methods)
+            {
+                if (m.Name == member && DocText(m.Doc).Length > 0)
+                    return DocText(m.Doc);
+            }
+        }
+    }
+    return "";
+}
+
 // ---- cshiftc doc ----
 
 // Every name a link can refer to: declarations with and without their namespace, members as Type.Member.
@@ -454,6 +516,45 @@ struct DocWriter
         Out.Append(", \"see\": [" + see.ToString() + "]}");
     }
 
+    // A struct and its public members.
+    void Struct(StructDecl d, string ns, bool builtin)
+    {
+        var none = new FuncDecl[0];
+        Begin("struct", d.Name, "struct " + d.Name + TypeParamsText(d.TypeParams) + TypeListText(Cg, d.Bases, " : ") +
+              ConstraintsText(Cg, d.Constraints), d.Loc);
+        Namespace(ns);
+        if (builtin)
+            Out.Append(", \"builtin\": true");
+        Out.Append(", \"doc\": ");
+        Doc(d.Doc, d.Loc, "struct " + d.Name, none);
+        Out.Append(", \"members\": [");
+        bool firstMember = true;
+        foreach (var f in d.Fields)
+        {
+            if (!DocPublic(f.Name, f.Doc))
+                continue;
+            Out.Append(firstMember ? "\n  " : ",\n  ");
+            firstMember = false;
+            Begin("field", f.Name, (f.IsStatic ? "static " : "") + Cg.Tree.TypeToString(f.Type) + " " + f.Name, f.Loc);
+            Out.Append(", \"static\": " + (f.IsStatic ? "true" : "false") + ", \"doc\": ");
+            Doc(f.Doc, f.Loc, "field " + d.Name + "." + f.Name, none);
+            Out.Append("}");
+        }
+        foreach (var m in d.Methods)
+        {
+            if (!DocPublic(m.Name, m.Doc))
+                continue;
+            Out.Append(firstMember ? "\n  " : ",\n  ");
+            firstMember = false;
+            Begin("method", m.Name, FuncSignature(Cg, m), FuncDocLoc(m));
+            Out.Append(", \"static\": " + (m.IsStatic ? "true" : "false") + ", \"doc\": ");
+            var one = new FuncDecl[] { m };
+            Doc(m.Doc, FuncDocLoc(m), "method " + d.Name + "." + m.Name, one);
+            Out.Append("}");
+        }
+        Out.Append("]}");
+    }
+
     void Begin(string kind, string name, string signature, SourceLoc loc)
     {
         Out.Append("{\"kind\": \"" + kind + "\", \"name\": " + JsonString(name) + ", \"signature\": " + JsonString(signature));
@@ -568,9 +669,22 @@ string DocConstValue(Compiler cg, int index)
 }
 
 // The documentation of the standard library (stdlib) or of the other sources, as JSON.
-string DocJson(Compiler cg, bool stdlib, bool requireDocs)
+string DocJson(Compiler cg, bool stdlib, bool requireDocs, List<CompilationUnit> builtins)
 {
-    var w = DocWriter { Cg = cg, Names = DocNames(cg), RequireDocs = requireDocs, Out = StringBuilder.Create(), Used = HashSet<string>.Create() };
+    var names = DocNames(cg);
+    foreach (var unit in builtins.ToArray())
+    {
+        foreach (var d in unit.Structs.ToArray())
+        {
+            var members = List<string>.Create();
+            foreach (var f in d.Fields)
+                members.Add(f.Name);
+            foreach (var m in d.Methods)
+                members.Add(m.Name);
+            AddDocNames(names, unit.File.Ns, d.Name, members);
+        }
+    }
+    var w = DocWriter { Cg = cg, Names = names, RequireDocs = requireDocs, Out = StringBuilder.Create(), Used = HashSet<string>.Create() };
     var o = w.Out;
     var none = new FuncDecl[0];
     bool first = true;
@@ -579,41 +693,23 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
     {
         var s = cg.Structs.Get(si);
         var file = cg.Files.Get(s.File);
-        var d = s.Decl;
-        if (file.IsPrelude != stdlib || !DocPublic(d.Name, d.Doc))
+        if (file.IsPrelude != stdlib || !DocPublic(s.Decl.Name, s.Decl.Doc))
             continue;
         o.Append(first ? "\n" : ",\n");
         first = false;
-        w.Begin("struct", d.Name, "struct " + d.Name + TypeParamsText(d.TypeParams) + TypeListText(cg, d.Bases, " : ") + ConstraintsText(cg, d.Constraints), d.Loc);
-        w.Namespace(file.Ns);
-        o.Append(", \"doc\": ");
-        w.Doc(d.Doc, d.Loc, "struct " + d.Name, none);
-        o.Append(", \"members\": [");
-        bool firstMember = true;
-        foreach (var f in d.Fields)
+        w.Struct(s.Decl, file.Ns, false);
+    }
+    // the built-in types (stdlib/builtin: declarations only)
+    foreach (var unit in builtins.ToArray())
+    {
+        foreach (var d in unit.Structs.ToArray())
         {
-            if (!DocPublic(f.Name, f.Doc))
+            if (!DocPublic(d.Name, d.Doc))
                 continue;
-            o.Append(firstMember ? "\n  " : ",\n  ");
-            firstMember = false;
-            w.Begin("field", f.Name, cg.Tree.TypeToString(f.Type) + " " + f.Name, f.Loc);
-            o.Append(", \"doc\": ");
-            w.Doc(f.Doc, f.Loc, "field " + d.Name + "." + f.Name, none);
-            o.Append("}");
+            o.Append(first ? "\n" : ",\n");
+            first = false;
+            w.Struct(d, unit.File.Ns, true);
         }
-        foreach (var m in d.Methods)
-        {
-            if (!DocPublic(m.Name, m.Doc))
-                continue;
-            o.Append(firstMember ? "\n  " : ",\n  ");
-            firstMember = false;
-            w.Begin("method", m.Name, FuncSignature(cg, m), FuncDocLoc(m));
-            o.Append(", \"static\": " + (m.IsStatic ? "true" : "false") + ", \"doc\": ");
-            var one = new FuncDecl[] { m };
-            w.Doc(m.Doc, FuncDocLoc(m), "method " + d.Name + "." + m.Name, one);
-            o.Append("}");
-        }
-        o.Append("]}");
     }
 
     for (var ii = 0; ii < cg.Interfaces.Count(); ii += 1)
@@ -751,7 +847,12 @@ string DocJson(Compiler cg, bool stdlib, bool requireDocs)
     // the namespaces (their //! comments) that have documented declarations or a comment of their own
     var nsDocs = Dictionary<string, string>.Create();
     var nsOrder = List<string>.Create();
+    var files = List<FileContext>.Create();
     foreach (var f in cg.Files.ToArray())
+        files.Add(f);
+    foreach (var unit in builtins.ToArray())
+        files.Add(unit.File);
+    foreach (var f in files.ToArray())
     {
         if (f.IsPrelude != stdlib)
             continue;

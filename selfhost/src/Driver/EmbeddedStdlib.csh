@@ -27,3 +27,7 @@ const ReadOnlySlice<string> EmbeddedOsPosixM68kTexts = embed("../../../stdlib/os
 // The C library of AmigaOS programs (stdlib/amiga/*.csh), only added for an amigaos target.
 const ReadOnlySlice<string> EmbeddedAmigaNames = embed_filenames("../../../stdlib/amiga/*.csh");
 const ReadOnlySlice<string> EmbeddedAmigaTexts = embed("../../../stdlib/amiga/*.csh");
+
+// The declarations of the built-in types, only for their doc comments (LoadBuiltinDocs).
+const ReadOnlySlice<string> EmbeddedBuiltinNames = embed_filenames("../../../stdlib/builtin/*.csh");
+const ReadOnlySlice<string> EmbeddedBuiltinTexts = embed("../../../stdlib/builtin/*.csh");

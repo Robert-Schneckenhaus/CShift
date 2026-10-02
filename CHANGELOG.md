@@ -18,6 +18,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - VS Code: the hover shows the doc comment of a declaration.
 
 ### Standard library
+- The built-in types and functions (`string`, the numbers, arrays, slices, `Optional`, `Error`, `Console`,
+  `Environment`, `Memory`, `Thread`, `SharedPtr`, `Enum<T>`, `Action`, `Func`) are declared with doc comments in
+  `stdlib/builtin`: `cshiftc doc` documents them, and the hover shows their comments too.
 - Every public declaration has a doc comment (also the AmigaOS graphics and hardware), so the hover in VS Code
   explains the functions, their parameters, results, errors and panics; `cshiftc doc` writes the reference.
 

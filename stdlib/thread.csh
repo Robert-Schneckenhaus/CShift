@@ -4,15 +4,15 @@
 //
 //     void Main()
 //     {
-//         Thread<int> t = Square(6);
+//         Thread<int> t = start Square(6);
 //         Console.WriteLine(t.Join());   // 36
 //     }
 //
 // A 'thread' function may only see its own parameters and return a value: the compiler rejects any read or
 // write of a global variable, transitively through every function it calls. Its parameters must be plain value
 // types or SharedPtr<T> - no 'ref'/'const ref', no raw pointers, no Action/Func (see docs/language/threading.md).
-// Calling it does not run it - it starts a new OS thread and immediately returns a handle: Thread for a 'void'
-// result, Thread<T> otherwise.
+// It is only called with 'start': 'start F(...)' runs it on a new OS thread and immediately returns a handle:
+// Thread for a 'void' result, Thread<T> otherwise.
 //
 // This file has two parts:
 //  - _ThreadCore / _ThreadControl<T> (the leading underscore marks a struct as private by this codebase's
@@ -188,13 +188,13 @@ struct _ThreadVoid
     }
 }
 
-/// The handle of a running `thread` function that returns a `T`: calling `thread int Square(int x)` starts it on its
-/// own OS thread and returns a `Thread<int>` right away.
+/// The handle of a running `thread` function that returns a `T`: `start Square(6)` runs `thread int Square(int x)` on
+/// its own OS thread and returns a `Thread<int>` right away.
 ///
 /// ```
 /// thread int Square(int x) { return x * x; }
 ///
-/// Thread<int> t = Square(6);
+/// Thread<int> t = start Square(6);
 /// Console.WriteLine(t.Join());   // 36
 /// ```
 ///
