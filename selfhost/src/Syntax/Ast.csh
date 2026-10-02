@@ -396,6 +396,7 @@ struct FileContext
     string Ns;              // file-scoped namespace, empty = global
     List<string> Usings;
     bool IsPrelude;
+    string Doc;             // the //! comments: documentation of the namespace
 }
 
 struct Param
@@ -436,6 +437,7 @@ struct FuncDecl
     bool RetCString;
     bool RetOut;
     int Owner;            // struct methods: index of the struct in CompilationUnit.Structs, otherwise -1
+    string Doc;           // the doc comment (///), "" for none
 }
 
 struct FieldDecl
@@ -444,6 +446,7 @@ struct FieldDecl
     TypeRef Type;
     string Name;
     int64 Offset;         // byte offset for structs with an explicit (C) layout, otherwise -1
+    string Doc;
 }
 
 struct StructDecl
@@ -459,6 +462,7 @@ struct StructDecl
     uint64 LayoutSize;
     uint64 LayoutAlign;
     bool Opaque;
+    string Doc;
 }
 
 struct InterfaceDecl
@@ -467,6 +471,7 @@ struct InterfaceDecl
     string Name;
     string[] TypeParams;
     FuncDecl[] Methods;
+    string Doc;
 }
 
 struct EnumMember
@@ -474,6 +479,7 @@ struct EnumMember
     SourceLoc Loc;
     string Name;
     Expr Value;           // optional
+    string Doc;
 }
 
 struct EnumDecl
@@ -483,6 +489,7 @@ struct EnumDecl
     TypeRef Base;       // null for an error enum (always int32)
     EnumMember[] Members;
     bool IsError;       // 'error Name { ... }': the codes of Error<T, Name>
+    string Doc;
 }
 
 // const double PI = 3.14159;
@@ -492,6 +499,7 @@ struct ConstDecl
     TypeRef Type;
     string Name;
     Expr Init;
+    string Doc;
 }
 
 // A global variable:   int Counter = 0;   string Name;   List<string> Names = List<string>.Create();
@@ -501,6 +509,7 @@ struct GlobalDecl
     TypeRef Type;
     string Name;
     Expr Init;      // none: the variable starts zeroed
+    string Doc;
 }
 
 // using Name from "header.h";
@@ -519,6 +528,7 @@ struct UnionDecl
     string Name;
     TypeRef[] Members;
     TypeRef[] Interfaces;
+    string Doc;
 }
 
 struct CompilationUnit

@@ -20,7 +20,8 @@ precise list of what's implemented, and the decisions the design leaves open). T
 11. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
 12. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
 13. [Projects](projects.md) — `cshift.json`, building programs with more than one file
-14. [Language status](status.md) — the complete list of what's implemented
+14. [Doc comments](doc-comments.md) — `///` and `//!`, tags, links, `cshiftc doc`
+15. [Language status](status.md) — the complete list of what's implemented
 
 ## A first program
 

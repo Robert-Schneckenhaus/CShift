@@ -6,6 +6,7 @@
 //     cshc new   <directory>                      create a new project
 //     cshc check [project | files] [options]      report the errors, generate nothing
 //     cshc query --at <file> <line> <col> [...]   the name at a position, as JSON (for the VS Code extension)
+//     cshc doc [project | files]                  the documentation of the doc comments, as JSON (Doc.csh)
 //
 // The code generator writes LLVM IR as text; clang optimizes it, generates the object code and links.
 
@@ -54,6 +55,7 @@ struct BuildOptions
     int AtCol;
     bool References;            // query: also every place where the name is written
     bool Members;               // query: what can follow 'name.' (completion)
+    bool RequireDocs;           // doc: every public declaration needs a doc comment
     string OutlineFile;         // query: the declarations of this file instead of a position
     Dictionary<string, string> Overlays; // the full path of a source -> a file with its current (unsaved) text
 
@@ -127,6 +129,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.References = true;
         else if (a == "--members")
             o.Members = true;
+        else if (a == "--require-docs")
+            o.RequireDocs = true;
         else if (a == "--outline" && i + 1 < args.Length)
         {
             o.OutlineFile = args[i + 1];
@@ -222,7 +226,8 @@ int Cshc(string[] args)
     var o = BuildOptions.Create();
     string command = "compile";
     int first = 0;
-    if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query")
+    if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query" ||
+        args[0] == "doc")
     {
         command = args[0];
         first = 1;
@@ -246,6 +251,32 @@ int Cshc(string[] args)
         }
         Console.WriteLine("Created project '" + dir + "'\n  cd " + dir + "\n  " + CompilerName() + " run");
         return 0;
+    }
+
+    if (command == "doc")
+    {
+        // the standard library, or files or a project like 'check'
+        o.Mode = command;
+        if (o.Inputs.Count() > 0 && !o.Inputs.Get(0).EndsWith(".csh"))
+        {
+            var found = LoadProject(o.Inputs.Get(0), o.Target);
+            if (found is Project p)
+            {
+                o.FromProject = true;
+                o.ProjectDir = p.Dir;
+                o.Inputs = p.Sources;
+                if (o.Target.Length == 0)
+                    o.Target = p.Target;
+                if (o.Backend.Length == 0)
+                    o.Backend = p.Backend;
+            }
+            else
+            {
+                Console.WriteErrorLine("error: " + found.Message);
+                return 1;
+            }
+        }
+        return Build(o);
     }
 
     if (command == "check" || command == "query")
@@ -655,6 +686,17 @@ int Build(BuildOptions o)
         return 1;
     }
 
+    if (o.Mode == "doc")
+    {
+        string json = DocJson(cg, o.Inputs.Count() == 0, o.RequireDocs);
+        if (diag.HasErrors())
+            return 1;
+        if (o.Output.Length > 0)
+            return WriteOutput(o.Output, json);
+        Console.Write(json);
+        return 0;
+    }
+
     // ---- FFI: C headers imported with "using Name from "header.h";" ----
     var shimSources = List<string>.Create();
     var importedNames = Dictionary<string, string>.Create();
@@ -861,6 +903,7 @@ void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string 
     int before = diag.ErrorCount();
     var parser = Parser.Create(lexer.Tokenize(), diag, tree);
     var unit = parser.ParseUnit(prelude);
+    unit.File.Doc = lexer.FileDoc();
     cg.St[0].SyntaxErrors += diag.ErrorCount() - before;
     foreach (var imp in unit.Imports)
         imports.Add(FfiImport { Name = imp.Name, Header = imp.Header, SourcePath = path, Loc = imp.Loc });
@@ -930,6 +973,9 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         return "{}";
     var e = cg.Index.Get(found);
     string answer = "{\"hover\": " + JsonString(e.Hover);
+    string doc = DocAt(cg, e.Def);
+    if (doc.Length > 0)
+        answer += ", \"doc\": " + JsonString(DocMarkdown(doc));
     if (e.Def.Line > 0 && e.Def.File >= 0 && e.Def.File < diag.Files.Count() && !diag.Files.Get(e.Def.File).StartsWith("<"))
         answer += ", \"definition\": {\"file\": " + JsonString(Path.GetFullPath(diag.Files.Get(e.Def.File))) + ", \"line\": " +
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";

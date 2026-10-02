@@ -186,6 +186,7 @@ struct Parser
 
     Error<void> ParseTopLevel()
     {
+        string doc = Cur().Doc;
         if (Check(TokenKind.KwNamespace))
         {
             SourceLoc loc = Advance().Loc;
@@ -227,21 +228,25 @@ struct Parser
             try Expect(TokenKind.Assign, "'=' (a constant must be initialized, e.g. const int X = 5;)");
             c.Init = try ParseExpr();
             try Expect(TokenKind.Semi, "';' after constant");
+            c.Doc = doc;
             Unit.Consts.Add(c);
         }
         else if (Check(TokenKind.KwStruct))
         {
             StructDecl s = try ParseStruct();
+            s.Doc = doc;
             Unit.Structs.Add(s);
         }
         else if (Check(TokenKind.KwInterface))
         {
             InterfaceDecl i = try ParseInterface();
+            i.Doc = doc;
             Unit.Interfaces.Add(i);
         }
         else if (Check(TokenKind.KwEnum))
         {
             EnumDecl e = try ParseEnum();
+            e.Doc = doc;
             Unit.Enums.Add(e);
         }
         else if (Check(TokenKind.KwExtern))
@@ -251,18 +256,21 @@ struct Parser
             if (abi.Text != "C")
                 return error("only extern \"C\" is supported", abi.Loc.Pack());
             FuncDecl f = try ParseFunction(true, false);
+            f.Doc = doc;
             Unit.Funcs.Add(f);
         }
         else if (CheckIdent("error") && PeekKind(1) == TokenKind.Ident && PeekKind(2) == TokenKind.LBrace)
         {
             // 'error' is contextual here: error Name { A, B = 101 } declares an error enum
             EnumDecl e = try ParseEnumBody(Advance().Loc, true);
+            e.Doc = doc;
             Unit.Enums.Add(e);
         }
         else if (CheckIdent("union") && PeekKind(1) == TokenKind.Ident && (PeekKind(2) == TokenKind.LBrace || PeekKind(2) == TokenKind.Colon))
         {
             // 'union' is a contextual keyword
             UnionDecl u = try ParseUnion();
+            u.Doc = doc;
             Unit.Unions.Add(u);
         }
         else if (IsThreadModifier())
@@ -273,6 +281,7 @@ struct Parser
             f.IsThread = true;
             if (threadUnsafe)
                 MarkUnsafe(f.Body);
+            f.Doc = doc;
             Unit.Funcs.Add(f);
         }
         else if (Check(TokenKind.KwUnsafe))
@@ -285,6 +294,7 @@ struct Parser
             FuncDecl f = try ParseFunction(false, false);
             f.IsThread = isThread;
             MarkUnsafe(f.Body);
+            f.Doc = doc;
             Unit.Funcs.Add(f);
         }
         else if (Check(TokenKind.Ident))
@@ -305,11 +315,13 @@ struct Parser
                 if (Match(TokenKind.Assign))
                     g.Init = try ParseExpr();
                 try Expect(TokenKind.Semi, "';' after variable declaration");
+                g.Doc = doc;
                 Unit.Globals.Add(g);
             }
             else
             {
                 FuncDecl f = try ParseFunction(false, false);
+                f.Doc = doc;
                 Unit.Funcs.Add(f);
             }
         }
@@ -424,6 +436,7 @@ struct Parser
         var methods = List<FuncDecl>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
+            string doc = Cur().Doc;
             bool isStatic = false;
             bool isThread = false;
             bool isUnsafe = false;
@@ -448,7 +461,7 @@ struct Parser
 
             if (Check(TokenKind.LParen) || Check(TokenKind.Lt))
             {
-                var fn = FuncDecl { Loc = memberLoc, NameLoc = nameLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count() };
+                var fn = FuncDecl { Loc = memberLoc, NameLoc = nameLoc, Name = name, Ret = type, IsStatic = isStatic, IsThread = isThread, Owner = Unit.Structs.Count(), Doc = doc };
                 try ParseFunctionRest(ref fn);
                 if (isUnsafe)
                     MarkUnsafe(fn.Body);
@@ -462,7 +475,7 @@ struct Parser
                     return error("'thread' can only be used on a method", memberLoc.Pack());
                 if (isUnsafe)
                     return error("'unsafe' can only be used on a method, a function or a statement", memberLoc.Pack());
-                fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1 });
+                fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1, Doc = doc });
                 try Expect(TokenKind.Semi, "';' after field");
             }
         }
@@ -485,7 +498,7 @@ struct Parser
         var methods = List<FuncDecl>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
-            var fn = FuncDecl { Loc = Cur().Loc, Owner = -1 };
+            var fn = FuncDecl { Loc = Cur().Loc, Owner = -1, Doc = Cur().Doc };
             fn.Ret = try ParseType();
             fn.NameLoc = Cur().Loc;
             fn.Name = try ExpectIdent("method name");
@@ -521,7 +534,7 @@ struct Parser
         var members = List<EnumMember>.Create();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
-            var m = EnumMember { Loc = Cur().Loc };
+            var m = EnumMember { Loc = Cur().Loc, Doc = Cur().Doc };
             m.Name = try ExpectIdent("enum member name");
             if (Match(TokenKind.Assign))
                 m.Value = try ParseExpr();

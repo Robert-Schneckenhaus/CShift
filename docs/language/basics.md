@@ -38,6 +38,7 @@ same order as C#.
 ```csharp
 // a line comment
 /* a block comment */
+/// a doc comment: documents the declaration after it ([doc comments](doc-comments.md))
 ```
 
 ## Variables

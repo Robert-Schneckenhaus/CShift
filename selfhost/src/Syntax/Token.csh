@@ -47,6 +47,7 @@ struct Token
     bool IsUnsigned;
     bool IsLong;
     bool IsFloat32;
+    string Doc;          // the doc comment (/// lines) right before the token, without the slashes
 }
 
 // Name of a token kind for the debug dump and for error messages.

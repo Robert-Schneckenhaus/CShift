@@ -317,6 +317,39 @@ elif ! "$COMPILER" check "$DIR/query/names.csh" > /dev/null 2> "$TMP/check.err" 
 else
     report_ok "cshiftc check"
 fi
+# "cshiftc doc": the doc comments of a program as JSON, the errors in doc comments, and the doc comments of the
+# standard library are correct.
+problem=""
+if ! "$COMPILER" doc "$DIR/query/doc_comments.csh" > "$TMP/doc.json" 2> "$TMP/doc.err"; then
+    problem="failed: $(head -n 3 "$TMP/doc.err" | tr '\n' ' ')"
+else
+    for want in '{"name": "", "doc": {"summary": "Points and colors."' '"name": "Add", "signature": "Point Add(Point other)"' \
+                '"params": [{"name": "other", "text": "the point to add, in the same units."}], "returns": "the sum, see [Point.X]."' \
+                '"signature": "Color.Green = 2"' '"errors": [{"name": "ParseError.Invalid", "text": "the text is not a number."}]' \
+                '"since": "0.22"' '"name": "Y", "signature": "int Y"'; do
+        grep -qF "$want" "$TMP/doc.json" || { problem="the JSON does not contain: $want"; break; }
+    done
+    if [ -z "$problem" ] && grep -qF '"name": "Main"' "$TMP/doc.json"; then problem="the JSON documents Main"; fi
+fi
+printf '%s\n' '/// Bad.' '/// @param y not there' '/// @bogus' '/// See [Nowhere].' '/// @error IoError.Missing never' \
+    'void F(int x) { }' 'struct S { int A; }' > "$TMP/doc_bad.csh"
+if [ -z "$problem" ]; then
+    if "$COMPILER" doc "$TMP/doc_bad.csh" > /dev/null 2> "$TMP/doc.err"; then
+        problem="wrong doc comments passed"
+    else
+        for want in "doc_bad.csh:6:6: error: '@param y': function F has no parameter 'y'" "unknown tag '@bogus' in the doc comment of function F" \
+                    "cannot find 'Nowhere' (a link in the doc comment of function F)" "'@error IoError.Missing' in the doc comment of function F: no such error"; do
+            grep -qF "$want" "$TMP/doc.err" || { problem="missing error: $want"; break; }
+        done
+    fi
+fi
+if [ -z "$problem" ] && ! "$COMPILER" doc --require-docs "$TMP/doc_bad.csh" 2>&1 | grep -qF "doc_bad.csh:7:12: error: field S.A has no doc comment"; then
+    problem="--require-docs does not report the field S.A"
+fi
+if [ -z "$problem" ] && ! "$COMPILER" doc --stdlib "$DIR/../stdlib" > /dev/null 2> "$TMP/doc.err"; then
+    problem="the doc comments of the standard library: $(head -n 5 "$TMP/doc.err" | tr '\n' ' ')"
+fi
+if [ -n "$problem" ]; then report_fail "cshiftc doc" "$problem"; else report_ok "cshiftc doc"; fi
 # The VS Code extension (vscode-extension/test): its logic and its connection to the editor, with this cshiftc.
 # Under MSYS2/Git Bash node is a Windows program: it may not be in PATH, and it needs Windows paths.
 NODE=""

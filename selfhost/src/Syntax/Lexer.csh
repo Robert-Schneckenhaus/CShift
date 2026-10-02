@@ -13,11 +13,21 @@ struct Lexer
     int Line;
     int Col;
     Dictionary<string, TokenKind> Keywords;
+    StringBuilder PendingDoc;   // the /// lines since the last token
+    StringBuilder FileDocText;  // the //! lines of the file
+
+    // The //! lines of the file (after Tokenize): the documentation of its namespace.
+    string FileDoc()
+    {
+        return FileDocText.ToString();
+    }
 
     static Lexer Create(string source, int fileId, Diagnostics diag)
     {
         var lexer = Lexer { Src = source, FileId = fileId, Diag = diag, Pos = 0, Line = 1, Col = 1 };
         lexer.Keywords = Dictionary<string, TokenKind>.Create();
+        lexer.PendingDoc = StringBuilder.Create();
+        lexer.FileDocText = StringBuilder.Create();
         lexer.Keywords.Set("namespace", TokenKind.KwNamespace);
         lexer.Keywords.Set("using", TokenKind.KwUsing);
         lexer.Keywords.Set("struct", TokenKind.KwStruct);
@@ -120,8 +130,23 @@ struct Lexer
             }
             else if (c == '/' && Peek(1) == '/')
             {
+                // '///' (but not '////') is a doc comment of the next declaration, '//!' one of the file's namespace
+                bool doc = Peek(2) == '/' && Peek(3) != '/';
+                bool fileDoc = Peek(2) == '!';
+                int start = Pos + (doc || fileDoc ? 3 : 2);
                 while (!AtEnd() && Peek(0) != '\n')
                     Advance();
+                if (doc || fileDoc)
+                {
+                    int end = Pos;
+                    if (end > start && Src[end - 1] == '\r')
+                        end -= 1;
+                    if (start < end && Src[start] == ' ')
+                        start += 1;
+                    var target = doc ? PendingDoc : FileDocText;
+                    target.Append(Src.Substring(start, end > start ? end - start : 0).ToString());
+                    target.Append('\n');
+                }
             }
             else if (c == '/' && Peek(1) == '*')
             {
@@ -191,7 +216,14 @@ struct Lexer
                 result = LexPunct();
 
             if (result is Token t)
+            {
+                if (PendingDoc.Length() > 0)
+                {
+                    t.Doc = PendingDoc.ToString().TrimEnd().ToString();
+                    PendingDoc = StringBuilder.Create();
+                }
                 tokens.Add(t);
+            }
             else
                 Diag.Report(FileId, result.Message, result.Code);
         }

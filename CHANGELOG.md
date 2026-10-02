@@ -6,6 +6,17 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- Doc comments: `///` documents the declaration after it, `//!` the namespace of the file. The text is Markdown with
+  links to declarations (`[List<T>.Add]`) and tags (`@param`, `@returns`, `@error`, `@panics`, `@since`,
+  `@deprecated`, `@see`, `@internal`) ([docs/language/doc-comments.md](docs/language/doc-comments.md)).
+
+### Tools
+- `cshiftc doc` writes the documentation of the standard library (or of a program) as JSON and checks the doc
+  comments: unknown tags, `@param` names, links and `@error` values; `--require-docs` also wants a comment on every
+  public declaration.
+- VS Code: the hover shows the doc comment of a declaration.
+
 ## [0.21] - 2026-10-02
 
 ### Tools

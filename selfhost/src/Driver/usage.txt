@@ -9,6 +9,9 @@ usage: cshiftc [options] file.csh [file2.csh ...]     compile single files
                                                       the name at a position (hover, definition; the places where it
                                                       is written; what can follow 'name.') as JSON
        cshiftc query --outline <file> [project | files]  the declarations of a file as JSON
+       cshiftc doc [project | files] [--require-docs] [-o <file>]
+                                                      the documentation (doc comments) as JSON; without project or
+                                                      files: the standard library
 
 'project' is a directory containing cshift.json or the path of a project file;
 without it cshift.json is searched in the current directory and its parents.

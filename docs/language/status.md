@@ -14,6 +14,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Global variables (zero value or an initializer, running before `Main`) | ✔ |
 | Structs (value semantics), initializers, `new T()`, methods, `static` methods, nested structs | ✔ |
 | Visibility via a `_` prefix (private) for fields and methods | ✔ |
+| Doc comments (`///`, `//!`) with Markdown, links and tags; `cshiftc doc` | ✔ |
 | Struct inheritance (one base, the base comes first in the layout), upcasting, hiding methods | ✔ |
 | Interfaces (methods), several per struct, checking the implementation | ✔ |
 | Sum types: `union Shape : IShape { Circle, Rect }` (inline with a tag, `is`/`switch`, interface methods dispatched on the tag) | ✔ (self-hosted, [sum types](interfaces-and-generics.md#sum-types)) |
