@@ -22,11 +22,13 @@ clang compiles and links the program, so it needs the target's C library and lin
 
 | Part | Ubuntu / Debian | Elsewhere |
 |---|---|---|
-| the C library of WASI (wasi-libc) | `wasi-libc` | [wasi-sdk](https://github.com/WebAssembly/wasi-sdk): `CSHIFT_WASI_SYSROOT=<wasi-sdk>/share/wasi-sysroot` |
+| the C library of WASI (wasi-libc) | `wasi-libc` (Ubuntu 24.04 and later) | [wasi-sdk](https://github.com/WebAssembly/wasi-sdk): `CSHIFT_WASI_SYSROOT=<wasi-sdk>/share/wasi-sysroot`, or only its `wasi-sysroot-<version>.tar.gz` |
 | compiler-rt for wasm32 | `libclang-rt-<version>-dev-wasm32` | part of wasi-sdk |
 | the linker `wasm-ld` | `lld-<version>` (or `lld`) | part of wasi-sdk |
 
-`CSHIFT_WASI_SYSROOT` gives clang a sysroot of WASI when it does not find one by itself (`--sysroot`).
+`CSHIFT_WASI_SYSROOT` gives clang a sysroot of WASI when it does not find one by itself (`--sysroot`). The wasi-libc of
+Ubuntu 22.04 (from 2020) is too old: its `rename` fails when it is called a second time. The CI uses the sysroot of
+wasi-sdk 25.
 
 ## The language on WebAssembly
 

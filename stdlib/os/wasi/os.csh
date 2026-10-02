@@ -5,7 +5,7 @@
 
 namespace System;
 
-extern "C" int clock_gettime(int clock, void* time);
+extern "C" int clock_gettime(void* clock, void* time); // clockid_t is a pointer to { uint32 id } (the WASI clock)
 extern "C" int stat(char* path, void* buffer);
 extern "C" int rename(char* from, char* to);
 extern "C" int rmdir(char* path);
@@ -28,13 +28,17 @@ struct _Os
         return _Clock(1); // CLOCK_MONOTONIC
     }
 
-    // a struct timespec: the seconds (int64), then the nanoseconds (int32, in the low half of the second int64)
+    // a struct timespec: the seconds (int64), then the nanoseconds (int32, in the low half of the second int64). The
+    // clock is not a number in wasi-libc but a pointer to a struct that holds the WASI clock id (0 realtime,
+    // 1 monotonic).
     static int64 _Clock(int clock)
     {
         unsafe
         {
+            var id = new int32[1];
+            id[0] = clock;
             var ts = new int64[2];
-            if (clock_gettime(clock, &ts[0]) != 0)
+            if (clock_gettime(&id[0], &ts[0]) != 0)
                 return 0;
             return ts[0] * 10000000 + (ts[1] & 0xFFFFFFFF) / 100;
         }
