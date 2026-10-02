@@ -66,6 +66,14 @@ Declarations whose name starts with `_` are private and are not documented, nor 
 out unless they have a doc comment, and so is `Main`. A namespace is listed when it has documented declarations or a
 `//!` comment.
 
+## The built-in types
+
+The types and functions that the compiler provides itself (`string`, the numbers, arrays, slices, `Optional`,
+`Error`, `Console`, `Environment`, `Memory`, `Thread`, `SharedPtr`, `Enum<T>`, `Action`, `Func`) have no source code.
+They are declared with their doc comments in `stdlib/builtin/*.csh`, which are never compiled: `cshiftc doc`
+documents them with the standard library (marked `"builtin": true`), and the hover shows their comments (also for
+`int.MaxValue`, `string.Length`, `Console.WriteLine`, ...). Only these files may declare static fields.
+
 ## cshiftc doc
 
 ```

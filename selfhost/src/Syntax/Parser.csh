@@ -40,6 +40,7 @@ struct Parser
     CompilationUnit Unit;
     int FileId;
     int PanicCalls;      // calls of Environment.Panic in the function body that is being parsed
+    bool DeclarationsOnly; // the declarations of the built-in types (stdlib/builtin, only for documentation): static fields
 
     static Parser Create(List<Token> tokens, Diagnostics diag, Ast tree)
     {
@@ -469,13 +470,13 @@ struct Parser
             }
             else
             {
-                if (isStatic)
+                if (isStatic && !DeclarationsOnly)
                     return error("static fields are not supported", memberLoc.Pack());
                 if (isThread)
                     return error("'thread' can only be used on a method", memberLoc.Pack());
                 if (isUnsafe)
                     return error("'unsafe' can only be used on a method, a function or a statement", memberLoc.Pack());
-                fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1, Doc = doc });
+                fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1, Doc = doc, IsStatic = isStatic });
                 try Expect(TokenKind.Semi, "';' after field");
             }
         }

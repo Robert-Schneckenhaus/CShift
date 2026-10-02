@@ -447,6 +447,7 @@ struct FieldDecl
     string Name;
     int64 Offset;         // byte offset for structs with an explicit (C) layout, otherwise -1
     string Doc;
+    bool IsStatic;        // only in the declarations of the built-in types (int.MaxValue, ...)
 }
 
 struct StructDecl

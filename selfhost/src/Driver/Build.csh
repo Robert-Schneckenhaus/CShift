@@ -646,6 +646,9 @@ int Build(BuildOptions o)
         foreach (var libFile in libFiles)
         {
             // the runtime of a backend (stdlib/m68k/) only belongs to programs for that backend
+            // the declarations of the built-in types are only for the documentation (LoadBuiltinDocs)
+            if (libFile.Contains("/builtin/"))
+                continue;
             if (libFile.Contains("/m68k/") && o.Backend != "m68k")
                 continue;
             if (libFile.Contains("/amiga/") && !(o.Backend == "m68k" && o.Target.Contains("amigaos")))
@@ -688,7 +691,9 @@ int Build(BuildOptions o)
 
     if (o.Mode == "doc")
     {
-        string json = DocJson(cg, o.Inputs.Count() == 0, o.RequireDocs);
+        bool stdlibDoc = o.Inputs.Count() == 0;
+        var builtins = stdlibDoc ? LoadBuiltinDocs(o, diag, tree) : List<CompilationUnit>.Create();
+        string json = DocJson(cg, stdlibDoc, o.RequireDocs, builtins);
         if (diag.HasErrors())
             return 1;
         if (o.Output.Length > 0)
@@ -746,7 +751,7 @@ int Build(BuildOptions o)
         return diag.HasErrors() ? 1 : 0;
     if (o.Mode == "query")
     {
-        Console.WriteLine(QueryAnswer(cg, diag, o));
+        Console.WriteLine(QueryAnswer(cg, diag, o, tree));
         return 0;
     }
 
@@ -954,7 +959,7 @@ int64 ParseNumber(string text)
 // The JSON answer of 'cshiftc query': {"hover": "...", "definition": {"file": "...", "line": n, "col": n}} for the name
 // at the position, {} if there is none. The definition is left out when it is not in a file (the embedded standard
 // library, a builtin).
-string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
+string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o, Ast tree)
 {
     string target = SamePath(o.AtFile);
     int file = -1;
@@ -973,7 +978,7 @@ string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o)
         return "{}";
     var e = cg.Index.Get(found);
     string answer = "{\"hover\": " + JsonString(e.Hover);
-    string doc = DocAt(cg, e.Def);
+    string doc = e.Def.Line > 0 ? DocAt(cg, e.Def) : BuiltinDocOf(LoadBuiltinDocs(o, diag, tree), e.Hover);
     if (doc.Length > 0)
         answer += ", \"doc\": " + JsonString(DocMarkdown(doc));
     if (e.Def.Line > 0 && e.Def.File >= 0 && e.Def.File < diag.Files.Count() && !diag.Files.Get(e.Def.File).StartsWith("<"))
@@ -1011,6 +1016,45 @@ List<string> OsLayers(string target, string backend, bool windows)
     else
         layers.Add("posix-64");
     return layers;
+}
+
+// The declarations of the built-in types (stdlib/builtin/*.csh: string, the numbers, arrays, Console, ...), parsed
+// for their doc comments only (cshiftc doc, the hover); from --stdlib or the copy embedded in cshc.
+List<CompilationUnit> LoadBuiltinDocs(BuildOptions o, Diagnostics diag, Ast tree)
+{
+    var units = List<CompilationUnit>.Create();
+    var names = List<string>.Create();
+    var texts = List<string>.Create();
+    if (o.Stdlib.Length == 0)
+    {
+        for (var i = 0; i < EmbeddedBuiltinNames.Length; i += 1)
+        {
+            names.Add("<stdlib>/builtin/" + EmbeddedBuiltinNames[i]);
+            texts.Add(EmbeddedBuiltinTexts[i]);
+        }
+    }
+    else if (o.Stdlib != "-")
+    {
+        foreach (var path in Directory.FindFiles(Path.Combine(o.Stdlib, "builtin"), ".csh").ToArray())
+        {
+            if (ReadSource(path) is string text)
+            {
+                names.Add(path);
+                texts.Add(text);
+            }
+        }
+    }
+    for (var i = 0; i < names.Count(); i += 1)
+    {
+        int file = diag.AddFile(names.Get(i));
+        var lexer = Lexer.Create(texts.Get(i), file, diag);
+        var parser = Parser.Create(lexer.Tokenize(), diag, tree);
+        parser.DeclarationsOnly = true;
+        var unit = parser.ParseUnit(true);
+        unit.File.Doc = lexer.FileDoc();
+        units.Add(unit);
+    }
+    return units;
 }
 
 // The name the compiler was started with (for hints like "cshiftc run"): the file name of the executable without .exe.
