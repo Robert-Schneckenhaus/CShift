@@ -8,8 +8,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ### Website
 - The documentation as a website with search (https://robert-schneckenhaus.github.io/CShift/): the language guide,
-  the topics, and the reference of the standard library and the built-in types, made from their doc comments. Every
-  release publishes it (site/, .github/workflows/pages.yml).
+  the topics, and the reference of the standard library and the built-in types, made from their doc comments, with
+  the release that added each declaration ("since", computed from the libraries of all earlier releases). Every
+  release publishes it; there is one version per major release (/CShift/v0/, ...) with a switch between them
+  (site/, .github/workflows/pages.yml).
 
 ### Language
 - Doc comments: `///` documents the declaration after it, `//!` the namespace of the file. The text is Markdown with

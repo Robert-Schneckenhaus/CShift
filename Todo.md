@@ -19,8 +19,7 @@ the git log.
       `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)).
 
 - [ ] Website (site/): a complete language reference (grammar, types, conversions, operators), separate from the
-      tour; "since" for every declaration, computed by comparing with the `cshiftc doc` JSON of earlier releases;
-      from 1.0 one version per major release (see site/README.md).
+      tour.
 
 ## Standard library
 

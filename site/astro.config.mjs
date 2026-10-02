@@ -11,7 +11,7 @@ const groups = fs.existsSync(new URL("./src/reference-groups.json", import.meta.
 
 export default defineConfig({
     site: process.env.SITE_URL ?? "https://robert-schneckenhaus.github.io",
-    base: process.env.SITE_BASE ?? "/CShift",
+    base: process.env.SITE_BASE ?? "/CShift/v0",
     trailingSlash: "always",
     integrations: [
         starlight({
@@ -19,6 +19,7 @@ export default defineConfig({
             description: "A C#-like language that compiles to native code: the guide and the reference.",
             social: [{ icon: "github", label: "GitHub", href: "https://github.com/Robert-Schneckenhaus/CShift" }],
             customCss: ["./src/styles/cshift.css"],
+            components: { SiteTitle: "./src/components/SiteTitle.astro" },
             expressiveCode: {
                 shiki: { langs: [{ ...grammar, name: "cshift", aliases: ["csh"] }] },
             },
