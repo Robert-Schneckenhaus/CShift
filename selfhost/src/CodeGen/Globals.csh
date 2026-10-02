@@ -59,7 +59,9 @@ Value GlobalValue(Compiler cg, int index)
         g.Var = "@\"global." + g.Name + "\"";
         cg.Globals.Set(index, g);
         cg.CreatedGlobals.Add(index);
-        cg.Ir.Globals.Append(g.Var + " = internal global " + LlvmType(cg, t) + " zeroinitializer\n");
+        string dbg = cg.Ir.Debug ? ", !dbg " + cg.Ir.DebugGlobal(g.Name, DebugUnitOf(cg), DebugFileOf(cg, g.File), g.Decl.Loc.Line,
+                                                                 DebugTypeOrNull(cg, t)) : "";
+        cg.Ir.Globals.Append(g.Var + " = internal global " + LlvmType(cg, t) + " zeroinitializer" + dbg + "\n");
     }
     return Lvalue(g.Type, g.Var, false);
 }

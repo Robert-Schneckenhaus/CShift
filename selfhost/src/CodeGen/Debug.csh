@@ -32,14 +32,22 @@ void SetLoc(Compiler cg, SourceLoc loc)
 {
     cg.St[0].Loc = loc;
     // a location in another file (an expression from a declaration elsewhere) would get the wrong file
-    if (cg.Ir.Debug && loc.File == cg.Fn[0].File)
+    if (cg.Ir.Debug && loc.File == SourceFileId(cg, cg.Fn[0].File))
         cg.Ir.SetDebugLoc(loc.Line, loc.Col);
 }
 
-// The file node of a source file: the full path for files on disk, the name for the embedded standard library.
-string DebugFileOf(Compiler cg, int file)
+// The number of a source file in the locations (SourceLoc.File) for its index in cg.Files (the File of functions,
+// structs and globals). They differ once C headers have been imported (their files are numbered too).
+int SourceFileId(Compiler cg, int fileIndex)
 {
-    string path = cg.Diag.Files.Get(file);
+    return fileIndex >= 0 && fileIndex < cg.Files.Count() ? cg.Files.Get(fileIndex).FileId : -1;
+}
+
+// The file node of a source file (its index in cg.Files): the full path for files on disk, the name for the embedded
+// standard library.
+string DebugFileOf(Compiler cg, int fileIndex)
+{
+    string path = cg.Diag.Files.Get(SourceFileId(cg, fileIndex));
     if (path.StartsWith("<"))
         return cg.Ir.DebugFile("", path);
     string full = Path.GetFullPath(path);
@@ -50,11 +58,11 @@ string DebugFileOf(Compiler cg, int file)
 string DebugUnitOf(Compiler cg)
 {
     int file = 0;
-    foreach (var f in cg.Files.ToArray())
+    for (var i = 0; i < cg.Files.Count(); i += 1)
     {
-        if (!f.IsPrelude)
+        if (!cg.Files.Get(i).IsPrelude)
         {
-            file = f.FileId;
+            file = i;
             break;
         }
     }
@@ -75,7 +83,7 @@ void DebugDeclare(Compiler cg, string name, int type, string slot, bool byRef, i
     if (byRef)
         t = DebugPointer(cg, t);
     var loc = cg.St[0].Loc;
-    int line = loc.File == cg.Fn[0].File ? loc.Line : 0;
+    int line = loc.File == SourceFileId(cg, cg.Fn[0].File) ? loc.Line : 0;
     cg.Ir.DebugVariable(name, arg, t, slot, line);
 }
 
