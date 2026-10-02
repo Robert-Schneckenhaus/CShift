@@ -106,4 +106,10 @@ struct _Os
         if (milliseconds > 0)
             __dos_Delay(milliseconds < 20 ? 1 : milliseconds / 20);
     }
+
+    // where readdir puts the name in a struct dirent (stdlib/amiga/libc.csh: like 32-bit Linux)
+    static int DirentNameOffset()
+    {
+        return 11;
+    }
 }

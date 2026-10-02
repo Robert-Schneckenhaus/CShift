@@ -7,7 +7,9 @@
 # released, see selfhost/build-release.sh) or selfhost/bin/cshc[.exe].
 # clang (or the program given with $CSHIFT_CC) must be available for linking.
 # CSHIFT_TARGET=<triple> builds the programs for another target that runs on this machine (i686-linux-gnu: the
-# 32-bit code; needs the 32-bit C library, e.g. gcc-multilib).
+# 32-bit code; needs the 32-bit C library, e.g. gcc-multilib). wasm32-wasi: WebAssembly, run with node
+# (tests/wasi-run.mjs); needs wasi-libc for clang (Ubuntu: wasi-libc, libclang-rt-*-dev-wasm32). Cases that need a
+# feature the target does not have say so with "// skip-target: <target prefix>".
 #
 # What is tested:
 #   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
@@ -50,6 +52,11 @@ CC_ARGS=()
 if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
 C_TARGET=()
 if [ -n "${CSHIFT_TARGET:-}" ]; then CC_ARGS+=(--target "$CSHIFT_TARGET"); C_TARGET=(--target="$CSHIFT_TARGET"); fi
+# How a compiled program runs: directly, or through node for WebAssembly
+RUNNER=()
+case "${CSHIFT_TARGET:-}" in
+    wasm32-*) RUNNER=(node --no-warnings "$DIR/wasi-run.mjs") ;;
+esac
 POINTER_BITS=64
 case "${CSHIFT_TARGET:-}" in
     i[3-6]86-*|x86-*|arm-*|armv*|thumb*|m68k-*|mips-*|mipsel-*|powerpc-*|riscv32-*|wasm32-*) POINTER_BITS=32 ;;
@@ -81,7 +88,7 @@ if ! "$COMPILER" $OPT "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.
     report_fail "test.csh" "compilation failed:"
     cat "$TMP/compile.err"
 else
-    "$TMP/test.exe" > "$TMP/test.out" 2> "$TMP/test.err"
+    "${RUNNER[@]}" "$TMP/test.exe" > "$TMP/test.out" 2> "$TMP/test.err"
     code=$?
     tr -d '\r' < "$TMP/test.out" > "$TMP/test.out.n"
     tr -d '\r' < "$DIR/test.expected" > "$TMP/test.expected.n"
@@ -109,6 +116,12 @@ for file in "$DIR"/cases/*.csh; do
     name="$(basename "$file")"
     expected_error="$(directives "$file" expect-error | head -n 1)"
     options="$(directives "$file" options | head -n 1)"
+    skip=""
+    while IFS= read -r prefix; do
+        prefix="${prefix%% *}" # the target prefix, then the reason
+        [ -n "$prefix" ] && [ -n "${CSHIFT_TARGET:-}" ] && [ "${CSHIFT_TARGET#"$prefix"}" != "$CSHIFT_TARGET" ] && skip=1
+    done < <(directives "$file" skip-target)
+    [ -n "$skip" ] && continue
 
     if [ -n "$expected_error" ]; then
         if "$COMPILER" $OPT $options "${CC_ARGS[@]}" "$file" -o "$TMP/case.exe" 2> "$TMP/case.err" > /dev/null; then
@@ -133,7 +146,7 @@ for file in "$DIR"/cases/*.csh; do
         continue
     fi
     # Run in the temp directory: some tests create files.
-    ( cd "$TMP" && "$TMP/case.exe" > "$TMP/case.out" 2> "$TMP/case.run.err" )
+    ( cd "$TMP" && "${RUNNER[@]}" "$TMP/case.exe" > "$TMP/case.out" 2> "$TMP/case.run.err" )
     code=$?
     want_exit="$(directives "$file" expect-exit | head -n 1)"
     want_exit="${want_exit:-0}"
@@ -162,106 +175,111 @@ done
 #     expected-error.txt   build must fail and print the first line of the file
 #     expected.txt         "cshiftc run" must print exactly this
 #     (neither)            "cshiftc build" must succeed
-echo "== projects/"
-for dir in "$DIR"/projects/*/; do
-    name="project $(basename "$dir")"
-    work="$TMP/proj_$(basename "$dir")"
-    cp -r "$dir" "$work"
+# Programs for WebAssembly do not run on their own: the projects (cshiftc run) and the debugger need a native target.
+if [ ${#RUNNER[@]} -gt 0 ]; then
+    echo "== projects/ (skipped for ${CSHIFT_TARGET})"
+else
+    echo "== projects/"
+    for dir in "$DIR"/projects/*/; do
+        name="project $(basename "$dir")"
+        work="$TMP/proj_$(basename "$dir")"
+        cp -r "$dir" "$work"
 
-    # Native sources of a project (native/*.c) are compiled to objects the project links.
-    for c_file in "$work"/native/*.c; do
-        [ -f "$c_file" ] || continue
-        "${CSHIFT_CC:-clang}" "${C_TARGET[@]}" -c "$c_file" -o "${c_file%.c}.o" || report_fail "$name" "cannot compile $c_file"
+        # Native sources of a project (native/*.c) are compiled to objects the project links.
+        for c_file in "$work"/native/*.c; do
+            [ -f "$c_file" ] || continue
+            "${CSHIFT_CC:-clang}" "${C_TARGET[@]}" -c "$c_file" -o "${c_file%.c}.o" || report_fail "$name" "cannot compile $c_file"
+        done
+
+        if [ -f "$work/expected-error.txt" ]; then
+            want="$(head -n 1 "$work/expected-error.txt" | tr -d '\r')"
+            if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > /dev/null 2> "$TMP/proj.err"; then
+                report_fail "$name" "the build succeeded but an error was expected"
+            elif ! grep -qF -- "$want" "$TMP/proj.err"; then
+                report_fail "$name" "expected error '$want', got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+            else
+                report_ok "$name"
+            fi
+        elif [ -f "$work/expected.txt" ]; then
+            problem=""
+            "$COMPILER" run "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" || problem="run failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+            tr -d '\r' < "$TMP/proj.out" > "$TMP/proj.out.n"
+            tr -d '\r' < "$work/expected.txt" > "$TMP/proj.expected.n"
+            [ -z "$problem" ] && [ "$(cat "$TMP/proj.out.n")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs: $(cat "$TMP/proj.out.n" | tr '\n' '|')"
+            # The project file is also found from a subdirectory (searched upwards).
+            if [ -z "$problem" ]; then
+                ( cd "$work/src" && "$COMPILER" run $OPT "${CC_ARGS[@]}" > "$TMP/proj.out2" 2> "$TMP/proj.err" ) || problem="run from a subdirectory failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+                [ -z "$problem" ] && [ "$(tr -d '\r' < "$TMP/proj.out2")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs when run from a subdirectory"
+            fi
+            if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
+        else
+            if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" && grep -q "Built" "$TMP/proj.out"; then
+                report_ok "$name"
+            else
+                report_fail "$name" "build failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
+            fi
+        fi
     done
 
-    if [ -f "$work/expected-error.txt" ]; then
-        want="$(head -n 1 "$work/expected-error.txt" | tr -d '\r')"
-        if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > /dev/null 2> "$TMP/proj.err"; then
-            report_fail "$name" "the build succeeded but an error was expected"
-        elif ! grep -qF -- "$want" "$TMP/proj.err"; then
-            report_fail "$name" "expected error '$want', got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
-        else
-            report_ok "$name"
-        fi
-    elif [ -f "$work/expected.txt" ]; then
-        problem=""
-        "$COMPILER" run "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" || problem="run failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
-        tr -d '\r' < "$TMP/proj.out" > "$TMP/proj.out.n"
-        tr -d '\r' < "$work/expected.txt" > "$TMP/proj.expected.n"
-        [ -z "$problem" ] && [ "$(cat "$TMP/proj.out.n")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs: $(cat "$TMP/proj.out.n" | tr '\n' '|')"
-        # The project file is also found from a subdirectory (searched upwards).
-        if [ -z "$problem" ]; then
-            ( cd "$work/src" && "$COMPILER" run $OPT "${CC_ARGS[@]}" > "$TMP/proj.out2" 2> "$TMP/proj.err" ) || problem="run from a subdirectory failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
-            [ -z "$problem" ] && [ "$(tr -d '\r' < "$TMP/proj.out2")" != "$(cat "$TMP/proj.expected.n")" ] && problem="output differs when run from a subdirectory"
-        fi
-        if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
+    # --checked overrides "unchecked": true of a project
+    if "$COMPILER" run --checked "$DIR/projects/unchecked" $OPT "${CC_ARGS[@]}" -o "$TMP/checked_override" > /dev/null 2> "$TMP/proj.err"; then
+        report_fail "cshiftc --checked" "the overflow did not panic"
+    elif ! grep -q "panic: integer overflow" "$TMP/proj.err"; then
+        report_fail "cshiftc --checked" "expected an overflow panic, got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
     else
-        if "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/proj.out" 2> "$TMP/proj.err" && grep -q "Built" "$TMP/proj.out"; then
-            report_ok "$name"
-        else
-            report_fail "$name" "build failed: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
-        fi
+        report_ok "cshiftc --checked"
     fi
-done
 
-# --checked overrides "unchecked": true of a project
-if "$COMPILER" run --checked "$DIR/projects/unchecked" $OPT "${CC_ARGS[@]}" -o "$TMP/checked_override" > /dev/null 2> "$TMP/proj.err"; then
-    report_fail "cshiftc --checked" "the overflow did not panic"
-elif ! grep -q "panic: integer overflow" "$TMP/proj.err"; then
-    report_fail "cshiftc --checked" "expected an overflow panic, got: $(head -n 3 "$TMP/proj.err" | tr '\n' ' ')"
-else
-    report_ok "cshiftc --checked"
-fi
-
-# cshiftc new creates a working project
-if "$COMPILER" new "$TMP/fresh" > /dev/null 2> "$TMP/proj.err" &&
-   "$COMPILER" run "$TMP/fresh" $OPT "${CC_ARGS[@]}" 2> "$TMP/proj.err" | tr -d '\r' | grep -qx "Hello, World!"; then
-    report_ok "cshiftc new"
-else
-    report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
-fi
-
-# An AmigaOS executable contains only what it uses (needs no clang): hello world without printf's formatting code
-printf 'using System;\nint Main()\n{\n    Console.WriteLine("Hello " + 42.ToString());\n    return 0;\n}\n' > "$TMP/amiga_hello.csh"
-if "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" --emit-asm -o "$TMP/amiga_hello.s" 2> "$TMP/amiga.err" &&
-   "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" -o "$TMP/amiga_hello" 2>> "$TMP/amiga.err"; then
-    size=$(wc -c < "$TMP/amiga_hello" | tr -d ' ')
-    if grep -q "__cs_vformat\|^printf:" "$TMP/amiga_hello.s"; then
-        report_fail "amiga trimming" "hello world contains printf"
-    elif [ "$size" -gt 12000 ]; then
-        report_fail "amiga trimming" "hello world has $size bytes (more than 12000)"
+    # cshiftc new creates a working project
+    if "$COMPILER" new "$TMP/fresh" > /dev/null 2> "$TMP/proj.err" &&
+       "$COMPILER" run "$TMP/fresh" $OPT "${CC_ARGS[@]}" 2> "$TMP/proj.err" | tr -d '\r' | grep -qx "Hello, World!"; then
+        report_ok "cshiftc new"
     else
-        report_ok "amiga trimming"
+        report_fail "cshiftc new" "the generated project does not print Hello, World! ($(head -n 3 "$TMP/proj.err" | tr '\n' ' '))"
     fi
-else
-    report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
-fi
 
-# Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
-# gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
-# and a global variable and, with the pretty printers that the program carries, a string as its text.
-printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3 + Hits - 7;\n}\n\nint Hits = 7;\n' > "$TMP/debug_info.csh"
-if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
-    report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
-elif ! "$TMP/debug_info.exe"; then
-    report_fail "debug information" "the program built with -g does not run correctly"
-elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.csh" -o "$TMP/debug_info.ll" 2>> "$TMP/debug.err" ||
-     ! grep -q 'DISubprogram(name: "Square"' "$TMP/debug_info.ll"; then
-    report_fail "debug information" "no subprogram for Square in the IR"
-elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:13"; then
-    report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 13 in the backtrace"
-elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
-    report_fail "debug information" "gdb does not show the parameter x = 3"
-elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'print Hits' "$TMP/debug_info.exe" 2>&1 | grep -q "= 7"; then
-    report_fail "debug information" "gdb does not show the global variable Hits = 7"
-elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 && gdb -batch -ex 'python print(1)' > /dev/null 2>&1 &&
-     ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.csh:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
-    report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
-else
-    report_ok "debug information"
+    # An AmigaOS executable contains only what it uses (needs no clang): hello world without printf's formatting code
+    printf 'using System;\nint Main()\n{\n    Console.WriteLine("Hello " + 42.ToString());\n    return 0;\n}\n' > "$TMP/amiga_hello.csh"
+    if "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" --emit-asm -o "$TMP/amiga_hello.s" 2> "$TMP/amiga.err" &&
+       "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" -o "$TMP/amiga_hello" 2>> "$TMP/amiga.err"; then
+        size=$(wc -c < "$TMP/amiga_hello" | tr -d ' ')
+        if grep -q "__cs_vformat\|^printf:" "$TMP/amiga_hello.s"; then
+            report_fail "amiga trimming" "hello world contains printf"
+        elif [ "$size" -gt 12000 ]; then
+            report_fail "amiga trimming" "hello world has $size bytes (more than 12000)"
+        else
+            report_ok "amiga trimming"
+        fi
+    else
+        report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
+    fi
+
+    # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
+    # gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
+    # and a global variable and, with the pretty printers that the program carries, a string as its text.
+    printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3 + Hits - 7;\n}\n\nint Hits = 7;\n' > "$TMP/debug_info.csh"
+    if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
+        report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
+    elif ! "$TMP/debug_info.exe"; then
+        report_fail "debug information" "the program built with -g does not run correctly"
+    elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.csh" -o "$TMP/debug_info.ll" 2>> "$TMP/debug.err" ||
+         ! grep -q 'DISubprogram(name: "Square"' "$TMP/debug_info.ll"; then
+        report_fail "debug information" "no subprogram for Square in the IR"
+    elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:13"; then
+        report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 13 in the backtrace"
+    elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
+        report_fail "debug information" "gdb does not show the parameter x = 3"
+    elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'print Hits' "$TMP/debug_info.exe" 2>&1 | grep -q "= 7"; then
+        report_fail "debug information" "gdb does not show the global variable Hits = 7"
+    elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 && gdb -batch -ex 'python print(1)' > /dev/null 2>&1 &&
+         ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.csh:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
+        report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
+    else
+        report_ok "debug information"
+    fi
 fi
 
 # --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------

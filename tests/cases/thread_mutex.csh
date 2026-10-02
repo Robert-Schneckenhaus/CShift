@@ -1,4 +1,5 @@
 // Mutex<T>: a counter and a string shared by several threads; guards (using) and Mutex.Get/Set. The result must be exact
+// skip-target: wasm32 (WebAssembly has no threads)
 // and nothing may leak.
 // expect-exit: 0
 // expect-stdout: 80000

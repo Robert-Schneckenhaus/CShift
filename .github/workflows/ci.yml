@@ -12,6 +12,7 @@ on:
 
 env:
   LLVM_VERSION: "22" # keep in sync with release.yml
+  WASI_SDK: "25" # the sysroot of WebAssembly (wasi-sdk), keep in sync with pages.yml
 
 permissions:
   contents: read # also: downloading the stage 0 release
@@ -83,6 +84,16 @@ jobs:
 
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc
+
+      # WebAssembly (wasm32-wasi): the same programs, run with node; needs the C library of WASI (the sysroot of
+      # wasi-sdk: the wasi-libc package of Ubuntu 22.04 is from 2020 and fails a second rename), the builtins of
+      # compiler-rt for wasm32, and wasm-ld (lld)
+      - name: Run tests for WebAssembly
+        run: |
+          sudo apt-get install -y --no-install-recommends "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION"
+          curl -sSfL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$WASI_SDK/wasi-sysroot-$WASI_SDK.0.tar.gz" | tar xz -C "$RUNNER_TEMP"
+          PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_WASI_SYSROOT="$RUNNER_TEMP/wasi-sysroot-$WASI_SDK.0" CSHIFT_TARGET=wasm32-wasi \
+            CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
   vscode:
     name: VS Code extension (package)

@@ -19,6 +19,7 @@ struct TargetInfo
     int F64Align;     // ... of float64
     int F32Align;     // ... of float32
     string SizeIr;    // the LLVM type of sizes, lengths and indexes: "i64" or "i32"
+    bool Wasm;        // WebAssembly (wasm32-wasi): the C entry point has another name, there are no threads
 
     // backend: "llvm", or "m68k" (CShift's own 68000 code generator, selfhost/src/M68k), which lays out structs like the
     // AmigaOS compilers and GCC on m68k: everything of two bytes or more is aligned to two bytes.
@@ -34,6 +35,9 @@ struct TargetInfo
             return TargetInfo { PtrBytes = 8, PtrAlign = 8, I32Align = 4, I64Align = 8, F64Align = 8, F32Align = 4, SizeIr = "i64" };
         if (arch == "m68k")
             return TargetInfo { PtrBytes = 4, PtrAlign = 2, I32Align = 2, I64Align = 4, F64Align = 8, F32Align = 4, SizeIr = "i32" };
+        if (arch == "wasm32")
+            return TargetInfo { PtrBytes = 4, PtrAlign = 4, I32Align = 4, I64Align = 8, F64Align = 8, F32Align = 4, SizeIr = "i32",
+                                Wasm = true };
         bool x86 = arch == "x86" || (arch.Length == 4 && arch.StartsWith("i") && arch.EndsWith("86"));
         bool windows = triple.ToLower().Contains("windows") || triple.ToLower().Contains("mingw");
         if (x86 && !windows)

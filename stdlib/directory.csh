@@ -269,15 +269,10 @@ struct Directory
         return;
     }
 
-    // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system.
+    // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system (the OS layer).
     static int _NameOffset()
     {
-        if (Process.IsWindows())
-            return 8;  // MinGW-w64: long d_ino, unsigned short d_reclen, unsigned short d_namlen, char d_name[]
-        if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
-            return 21; // macOS: d_ino, d_seekoff, d_reclen, d_namlen, d_type, d_name
-        // Linux (glibc, musl): long d_ino, long d_off, unsigned short d_reclen, unsigned char d_type, char d_name[]
-        return sizeof(nint) == 8 ? 19 : 11;
+        return _Os.DirentNameOffset();
     }
 
     /// The names of the files and directories in a directory (not the paths, without `.` and `..`), sorted.

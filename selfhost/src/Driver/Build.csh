@@ -632,9 +632,11 @@ int Build(BuildOptions o)
         foreach (var layer in OsLayers(o.Target, o.Backend, windows).ToArray())
         {
             var names = layer == "windows" ? EmbeddedOsWindowsNames : layer == "posix" ? EmbeddedOsPosixNames :
-                        layer == "posix-64" ? EmbeddedOsPosix64Names : layer == "posix-32" ? EmbeddedOsPosix32Names : EmbeddedOsPosixM68kNames;
+                        layer == "posix-64" ? EmbeddedOsPosix64Names : layer == "posix-32" ? EmbeddedOsPosix32Names :
+                        layer == "wasi" ? EmbeddedOsWasiNames : EmbeddedOsPosixM68kNames;
             var texts = layer == "windows" ? EmbeddedOsWindowsTexts : layer == "posix" ? EmbeddedOsPosixTexts :
-                        layer == "posix-64" ? EmbeddedOsPosix64Texts : layer == "posix-32" ? EmbeddedOsPosix32Texts : EmbeddedOsPosixM68kTexts;
+                        layer == "posix-64" ? EmbeddedOsPosix64Texts : layer == "posix-32" ? EmbeddedOsPosix32Texts :
+                        layer == "wasi" ? EmbeddedOsWasiTexts : EmbeddedOsPosixM68kTexts;
             for (var i = 0; i < names.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/os/" + layer + "/" + names[i], texts[i], true, o.Imports);
         }
@@ -785,6 +787,9 @@ int Build(BuildOptions o)
     string ccPath = windows ? clang.Replace("/", "\\") : clang;
     string optimize = "-O" + o.Optimize.ToString();
     string targetFlag = o.Target.Length > 0 ? " -target " + o.Target : "";
+    // WebAssembly: the C library of WASI where clang does not look for it (wasi-sdk: <wasi-sdk>/share/wasi-sysroot)
+    if (o.Target.ToLower().StartsWith("wasm") && Process.GetEnv("CSHIFT_WASI_SYSROOT") is string wasiSysroot)
+        targetFlag += " --sysroot \"" + wasiSysroot + "\"";
 
     string objPath = "";
     string exePath = "";
@@ -851,6 +856,10 @@ int Build(BuildOptions o)
         // 'thread' functions (stdlib/thread.csh). On Windows the static archive: the import library would make every
         // program depend on libwinpthread-1.dll, which is not part of the toolchain.
         command.Append(windows ? " -Wl,-Bstatic -lpthread -Wl,-Bdynamic" : " -lpthread");
+        // WebAssembly: wasm-ld gives a program 64 KB of stack, which recursive code overflows into the heap; 8 MB like
+        // the main thread of Linux
+        if (o.Target.ToLower().StartsWith("wasm"))
+            command.Append(" -Wl,-z,stack-size=8388608");
         foreach (var lib in o.Libs)
             command.Append(" -l" + lib);
     }
@@ -1002,6 +1011,11 @@ List<string> OsLayers(string target, string backend, bool windows)
     if (windows)
     {
         layers.Add("windows");
+        return layers;
+    }
+    if (lower.StartsWith("wasm"))
+    {
+        layers.Add("wasi"); // WebAssembly: a POSIX-like C library with a 64-bit time_t
         return layers;
     }
     layers.Add("posix");

@@ -1,4 +1,5 @@
 // Standard library: Process.Run returns the exit code of the command.
+// skip-target: wasm32 (WebAssembly cannot start programs)
 // expect-exit: 0
 
 using System;

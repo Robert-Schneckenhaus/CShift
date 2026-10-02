@@ -185,7 +185,15 @@ int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] ex
         }
         else if (score == bestCost && instance != best)
         {
-            ambiguous = true;
+            // a declaration of a C function and its definition (extern "C" with a body) are the same function: the
+            // definition is called
+            if (SameCFunction(cg, instance, best))
+            {
+                if (!cg.Funcs.Get(fi.Entry).Decl.Body.IsNull())
+                    best = instance;
+            }
+            else
+                ambiguous = true;
         }
     }
 
@@ -213,6 +221,15 @@ int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] ex
         return -1;
     }
     return best;
+}
+
+// True if both instances are extern "C" functions with the same C name (declarations of one C function, or a declaration
+// and its definition).
+bool SameCFunction(Compiler cg, int a, int b)
+{
+    var fa = cg.Instances.Get(a);
+    var fb = cg.Instances.Get(b);
+    return cg.Funcs.Get(fa.Entry).Decl.IsExtern && cg.Funcs.Get(fb.Entry).Decl.IsExtern && fa.LlvmName == fb.LlvmName;
 }
 
 // Emits the call of a function instance with the given (already evaluated) arguments.
