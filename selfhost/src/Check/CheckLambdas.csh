@@ -58,6 +58,7 @@ int LambdaResultType(Compiler cg, Expr e, int[] paramTypes)
     for (var i = 0; i < l.Params.Length; i += 1)
     {
         var p = l.Params[i];
+        CheckNotDeclared(cg, p.Loc, p.Name);
         DeclareVar(cg, p.Name, p.Type.IsNull() ? paramTypes[i] : DeclTypeOf(cg, p.Type), "%p");
     }
     int result;

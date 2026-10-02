@@ -754,6 +754,7 @@ Value CheckIs(Compiler cg, Expr e)
     }
     if (n.BindName.Length > 0)
     {
+        CheckNotDeclared(cg, e.Loc, n.BindName);
         DeclareVar(cg, n.BindName, bound, "%v");
         NoteVar(cg, e.Loc, false);
     }
@@ -781,6 +782,7 @@ void CheckLambdaBody(Compiler cg, Expr e, int[] paramTypes)
     {
         var p = l.Params[i];
         int pt = !p.Type.IsNull() ? DeclTypeOf(cg, p.Type) : i < paramTypes.Length ? paramTypes[i] : cg.Types.Unknown;
+        CheckNotDeclared(cg, p.NameLoc.Line > 0 ? p.NameLoc : p.Loc, p.Name);
         DeclareVar(cg, p.Name, pt, "%p");
         NoteDeclared(cg, p.NameLoc, p.Loc, true, p.Type, p.Ref);
         NoteTypeParamVar(cg, p.Name, p.Type);

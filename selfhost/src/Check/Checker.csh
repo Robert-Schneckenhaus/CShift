@@ -144,6 +144,7 @@ void CheckFunction(Compiler cg, int instance)
     {
         int pt = fi.ParamTypes[i];
         string name = d.Params[i].Name;
+        CheckNotDeclared(cg, d.Params[i].NameLoc.Line > 0 ? d.Params[i].NameLoc : d.Params[i].Loc, name);
         if (IsInterfaceType(cg, pt))
             cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = pt, Slot = "%p", IsConst = true });
         else if (fi.ParamRefs[i] != 0)

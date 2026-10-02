@@ -784,7 +784,7 @@ void TestErrorAndOptional(ref Tester t)
             break;
     }
     t.Check("switch error pattern", message.Length > 0 && message != "value");
-    t.Check("is error pattern", failure is error bad && bad.Message == message && !(Parse("77") is error));
+    t.Check("is error pattern", failure is error failed && failed.Message == message && !(Parse("77") is error));
 
     // Optional<T>
     var data = new int[] { 5, 6, 7 };

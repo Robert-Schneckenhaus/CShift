@@ -6,16 +6,21 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- A name can be declared only once in a block: a second local variable, local constant or pattern variable with the
+  same name in the same block, and two parameters with the same name, are compile errors (the second declaration
+  used to hide the first). An inner block may still reuse the name of an outer one.
+- `...` (a variable argument list) is only allowed in the declaration of a C function (`extern "C"` without a body);
+  a CShift function with `...` used to produce invalid code instead of an error.
+
 ### Documentation
 - The language reference ([docs/spec](docs/spec/README.md), on the website under "Language reference") gives the
   precise rules of the language - lexical structure, programs and names, types and conversions, declarations,
   expressions, statements, memory, run time - and the complete grammar in EBNF.
+- The language guide shows `//!` (the doc comment of a namespace) next to the other comments, with an example in the
+  chapter on doc comments.
 - Doc comments: `Environment.Panic` exits with code 101 (not 1); `char` and `uint8` are separate types that convert
   implicitly to each other.
-
-### Language
-- `...` (a variable argument list) is only allowed in the declaration of a C function (`extern "C"` without a body);
-  a CShift function with `...` used to produce invalid code instead of an error.
 
 ## [0.22] - 2026-10-02
 
