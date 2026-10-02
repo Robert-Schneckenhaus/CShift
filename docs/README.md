@@ -4,6 +4,7 @@
 |---|---|
 | [Installation](install.md) | what `cshiftc` needs on Windows and Linux, the packages per distribution |
 | [Language guide](language/README.md) | learning the language: a tour with examples, chapter by chapter |
+| [Language reference](spec/README.md) | the precise rules of the language: syntax, types, conversions, semantics, the grammar |
 | [Language status](language/status.md) | what is implemented, and the decisions the design leaves open |
 | [Standard library](stdlib.md) | `List`, `Dictionary`, `File`, `Path`, `Math`, `Random`, threads, `Mutex`, ... |
 | [C interop: importing headers](ffi.md) | `using X from "header.h"`, type mapping, callbacks, structs by value |

@@ -26,6 +26,7 @@ export default defineConfig({
             sidebar: [
                 { label: "Start", items: [{ label: "Overview", link: "/docs/" }, { label: "Installation", link: "/docs/install/" }] },
                 { label: "Language guide", items: [{ autogenerate: { directory: "language" } }] },
+                { label: "Language reference", items: [{ autogenerate: { directory: "spec" } }] },
                 { label: "Topics", items: [{ autogenerate: { directory: "docs" } }] },
                 {
                     label: "Reference",

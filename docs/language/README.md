@@ -2,7 +2,8 @@
 
 A tour of CShift's language features, each explained briefly with common code examples. It is the friendlier
 companion to the [design document](../language-design.md) (the rationale) and the [language status](status.md) (the
-precise list of what's implemented, and the decisions the design leaves open). The library is described in
+precise list of what's implemented, and the decisions the design leaves open). The exact rules are in the
+[language reference](../spec/README.md). The library is described in
 [../stdlib.md](../stdlib.md).
 
 ## Contents

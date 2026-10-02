@@ -27,19 +27,25 @@ const versions = process.env.SITE_VERSIONS ? JSON.parse(process.env.SITE_VERSION
 // Guides
 // ---------------------------------------------------------------------------------------------------------------------
 
+// The folders of docs/ that are sections of their own on the site (the language guide, the language reference); the
+// other files are the topics under /docs/.
+const sections = ["language", "spec"];
+
 // docs/<file> -> the page's path on the site (without base), e.g. language/basics.md -> /language/basics/
 function guideUrl(rel) {
     let p = rel.replace(/\\/g, "/").replace(/\.md$/, "");
     if (p === "README") return "/docs/";
-    if (p === "language/README") return "/language/";
-    if (p.startsWith("language/")) return "/" + p + "/";
+    for (const s of sections) {
+        if (p === s + "/README") return "/" + s + "/";
+        if (p.startsWith(s + "/")) return "/" + p + "/";
+    }
     return "/docs/" + p + "/";
 }
 
 function guideFile(rel) {
     const url = guideUrl(rel);
     // a flat file per page (a directory per page would become a group in the sidebar)
-    return url.endsWith("/docs/") || url === "/language/"
+    return url.endsWith("/docs/") || sections.some((s) => url === "/" + s + "/")
         ? path.join(content, url.slice(1), "index.md")
         : path.join(content, url.slice(1, -1) + ".md");
 }
@@ -53,9 +59,10 @@ function chapterOrder() {
     return order;
 }
 
-// The order of the other guides: the order of the links in the table of docs/README.md.
-function topicOrder() {
-    const text = fs.readFileSync(path.join(root, "docs/README.md"), "utf8");
+// The order of the other guides: the order of the links in the table of docs/README.md (of docs/spec/README.md for the
+// language reference).
+function topicOrder(readme = "docs/README.md") {
+    const text = fs.readFileSync(path.join(root, readme), "utf8");
     const order = new Map();
     let n = 1;
     for (const m of text.matchAll(/^\| \[[^\]]*\]\(([^)#]+\.md)\)/gm)) order.set(m[1], n++);
@@ -94,6 +101,7 @@ function yamlString(s) {
 function writeGuides() {
     const order = chapterOrder();
     const topics = topicOrder();
+    const specChapters = topicOrder("docs/spec/README.md");
     const files = [];
     (function walk(dir) {
         for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -113,6 +121,9 @@ function writeGuides() {
             const chapter = order.get(relPosix.slice(9));
             if (relPosix === "language/README.md") front.push("sidebar:", "  label: Overview", "  order: 0");
             else if (chapter) front.push("sidebar:", "  order: " + chapter);
+        } else if (relPosix.startsWith("spec/")) {
+            if (relPosix === "spec/README.md") front.push("sidebar:", "  label: Overview", "  order: 0");
+            else front.push("sidebar:", "  order: " + (specChapters.get(relPosix.slice(5)) ?? 100));
         } else if (relPosix === "README.md") {
             front.push("sidebar:", "  label: Overview", "  order: 0");
         } else {

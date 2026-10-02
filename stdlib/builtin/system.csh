@@ -39,7 +39,7 @@ struct Environment
 
     /// Ends the program because of a bug: writes `message` and where the panic happened (file, line, column and
     /// function; for a function of the standard library also where the program called it) to stderr and exits with
-    /// code 1.
+    /// code 101.
     static void Panic(string message);
 }
 

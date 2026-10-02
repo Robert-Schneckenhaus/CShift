@@ -611,6 +611,10 @@ struct Parser
         }
         else
             try Expect(TokenKind.Semi, "';' or function body");
+        // '...' passes the arguments the way C does: only a declaration of a C function can have it
+        if (fn.IsVariadic && (!fn.IsExtern || !fn.Body.IsNull()) && !DeclarationsOnly)
+            return error("'...' is only allowed in the declaration of a C function (extern \"C\" without a body)",
+                         (fn.NameLoc.Line > 0 ? fn.NameLoc : fn.Loc).Pack());
     }
 
     // ---- types ----
