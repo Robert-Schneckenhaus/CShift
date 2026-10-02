@@ -63,6 +63,8 @@ const hoverProvider = {
             return null;
         const text = new vscode.MarkdownString();
         text.appendCodeblock(answer.hover, "cshift");
+        if (answer.doc)
+            text.appendMarkdown(answer.doc);
         return new vscode.Hover(text);
     },
 };

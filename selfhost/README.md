@@ -13,7 +13,7 @@ selfhost/
 │   ├── Driver/              command line: Build.csh (options, build/run/new, finding clang and the toolchain),
 │   │                        Project.csh (cshift.json), Json.csh, Ffi.csh (loading and caching .ffi files),
 │   │                        FfiGenerator.csh (C header -> .ffi with libclang), Sfd.csh (AmigaOS SFD file -> .ffi),
-│   │                        EmbeddedStdlib.csh (the stdlib, via embed)
+│   │                        EmbeddedStdlib.csh (the stdlib, via embed), Doc.csh (doc comments, cshiftc doc)
 │   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
