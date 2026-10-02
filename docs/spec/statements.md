@@ -15,9 +15,11 @@ Statement = Block | ';' | LocalDecl | ConstDecl | ExpressionStatement
 Block = '{' { Statement } '}' ;
 ```
 
-A block is a scope: a variable declared in it is visible from its declaration to the end of the block. A declaration
-may reuse the name of a variable of an enclosing scope (or an earlier one of the same block); from there on, the name
-means the new variable. The bodies of `if`, the loops, `switch` sections and `using (...)` are scopes of their own, also
+A block is a scope: a variable declared in it is visible from its declaration to the end of the block. A name can be
+declared only once in a block: a second local variable, local constant or pattern variable with the same name in the
+same block is a compile error, and so are two parameters with the same name. A declaration in an inner block may
+reuse the name of a variable of an enclosing block (or a parameter); the inner variable hides the outer one until the
+inner block ends. The bodies of `if`, the loops, `switch` sections and `using (...)` are scopes of their own, also
 when they are a single statement.
 
 `;` alone is the empty statement.

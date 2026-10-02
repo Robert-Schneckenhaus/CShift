@@ -30,8 +30,16 @@ Everything that has a name can have a doc comment: structs, interfaces, unions, 
 values, fields, methods, functions, constants and global variables. A comment with four slashes (`////`) is an
 ordinary comment again.
 
-`//!` documents the namespace of the file (in the standard library: the introduction of the namespace's page). The
-`//!` comments of all files of a namespace are put together.
+`//!` documents the **namespace** of the file: it is the introduction of the namespace in the documentation (in the
+standard library, the text at the top of the namespace's reference page). The `//!` lines can stand anywhere in the
+file, usually at the top; the `//!` comments of all files of a namespace are put together.
+
+```csharp
+//! Reading and writing the game's save files.
+//!
+//! A save file is a [SaveGame] written with [Save.Write]; [Save.Read] checks its version.
+namespace Game.Save;
+```
 
 ## The text
 

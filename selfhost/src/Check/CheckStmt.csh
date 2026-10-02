@@ -195,10 +195,30 @@ void CheckBranch(Compiler cg, Stmt s)
     PopScope(cg, false);
 }
 
+// A name can be declared only once in a scope: a local variable, constant or pattern variable that a block (or a
+// parameter list) already has is an error. An inner block may reuse the name of an outer one. A declaration at the
+// same place is the same one, checked again.
+void CheckNotDeclared(Compiler cg, SourceLoc loc, string name)
+{
+    var f = cg.Fn[0];
+    if (f.ScopeStarts.Count() == 0 || name.Length == 0)
+        return;
+    for (var i = f.ScopeStarts.Get(f.ScopeStarts.Count() - 1); i < f.Vars.Count(); i += 1)
+    {
+        var v = f.Vars.Get(i);
+        if (v.Name == name && !(v.Loc.Line == loc.Line && v.Loc.Col == loc.Col))
+        {
+            CheckError(cg, loc, "'" + name + "' is already declared in this block");
+            return;
+        }
+    }
+}
+
 void CheckVarDecl(Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var d = cg.Tree.GetVarDecl(s);
+    SourceLoc nameLoc = d.NameLoc.Line > 0 ? d.NameLoc : s.Loc;
     int t = 0;
     if (!d.Type.IsNull())
         t = DeclTypeOf(cg, d.Type);
@@ -209,6 +229,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
             t = RecoverConstantType(cg, s.Loc, t);
         var sc = ConstScope { File = cg.Fn[0].File, Locals = true, What = "constant '" + d.Name + "'", DeclLoc = s.Loc, Env = cg.Fn[0].Env };
         ConstVal cv = IsEmbedExpr(d.Init) ? ConstEmbed(cg, d.Init, t) : ConstConvert(cg, ConstEvalAs(cg, d.Init, sc, t), t, d.Init.Loc, false);
+        CheckNotDeclared(cg, nameLoc, d.Name);
         DeclareVar(cg, d.Name, t, "");
         var vars = cg.Fn[0].Vars;
         var constVar = vars.Get(vars.Count() - 1);
@@ -252,6 +273,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
     }
     else if (!d.Init.IsNull())
         CheckConversion(cg, init, t, d.Init.Loc);
+    CheckNotDeclared(cg, nameLoc, d.Name);
     DeclareVar(cg, d.Name, t, "%v");
     NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
     NoteTypeParamVar(cg, d.Name, d.Type);
@@ -455,6 +477,7 @@ void CheckSwitch(Compiler cg, Stmt s)
                 if (pt != 0)
                     bound = pt;
             }
+            CheckNotDeclared(cg, label.Loc, label.PatName);
             DeclareVar(cg, label.PatName, bound, "%v");
             NoteVar(cg, label.Loc, false);
         }

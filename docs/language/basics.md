@@ -39,6 +39,7 @@ same order as C#.
 // a line comment
 /* a block comment */
 /// a doc comment: documents the declaration after it ([doc comments](doc-comments.md))
+//! a doc comment of the file's namespace: the introduction of the namespace in the documentation
 ```
 
 ## Variables
@@ -51,7 +52,9 @@ double ratio = 2.5;
 bool ready = true;
 ```
 
-`var` needs an initializer; without one, write out the type. See [constants and globals](constants-and-globals.md)
+`var` needs an initializer; without one, write out the type. A name can be declared only once in a block (a second
+`int count` in the same block is a compile error); an inner block may declare it again, and the inner variable hides
+the outer one until the block ends. See [constants and globals](constants-and-globals.md)
 for `const` and top-level variables.
 
 ## Primitive types
