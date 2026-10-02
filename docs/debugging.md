@@ -3,8 +3,9 @@
 `cshiftc -g` (or `"debug": true` in `cshift.json`) adds debug information to the program:
 
 * every function with its name and source file, every instruction with its line and column;
-* parameters and local variables with their types: numbers, `bool`, `char`, enums (shown by name), structs with
-  their fields, `Optional<T>`, `Error<T>`, unions, `Fixed<T, N>`, strings, arrays, slices and the collections.
+* parameters, local variables and global variables with their types: numbers, `bool`, `char`, enums (shown by
+  name), structs with their fields, `Optional<T>`, `Error<T>`, unions, `Fixed<T, N>`, strings, arrays, slices and the
+  collections.
 
 gdb and lldb can then stop on a line or a function, step through the code, show the call stack with files and lines,
 and print variables. The information is in DWARF, the format of every Linux and MinGW debugger.
@@ -92,4 +93,6 @@ elements.
   Studio debugger (which reads PDB files). The release contains no debugger: use VS Code with CodeLLDB, or install lldb
   (part of LLVM, `winget install LLVM.LLVM`) or gdb (MSYS2: `pacman -S mingw-w64-ucrt-x86_64-gdb`). The gdb printers
   are not in Windows programs (that needs an ELF section); load them with `source`.
-* **Not yet:** global variables. The m68k backend (AmigaOS) ignores `-g`.
+* **Global variables** are found by their name (`print Counter`, `info variables Counter`); constants are not
+  variables and have no debug information.
+* The m68k backend (AmigaOS) ignores `-g`.

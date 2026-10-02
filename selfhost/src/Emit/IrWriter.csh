@@ -43,6 +43,7 @@ struct IrWriter
     Dictionary<string, string> MetaIds;
     string[] Dbg;
     List<string> DbgScopes;
+    List<string> DbgGlobals;   // the global variables (shared with the writers of lambdas)
 
     static IrWriter Create(TargetInfo target)
     {
@@ -61,6 +62,7 @@ struct IrWriter
         w.MetaIds = Dictionary<string, string>.Create();
         w.Dbg = new string[] { "", "", "", "", "" };
         w.DbgScopes = List<string>.Create();
+        w.DbgGlobals = List<string>.Create();
         return w;
     }
 
@@ -506,16 +508,27 @@ struct IrWriter
         return MetaNode("!DIFile(filename: " + MetaString(name) + ", directory: " + MetaString(directory) + ")");
     }
 
-    // The compile unit; it is created once, with the main file of the program.
+    // The compile unit; it is created once, with the main file of the program, and written at the end of the module
+    // (DebugModuleText), when its global variables are known.
     string DebugUnit(string file)
     {
         var found = MetaIds.TryGet("unit");
         if (found is string existing)
             return existing;
-        string id = MetaNode("distinct !DICompileUnit(language: DW_LANG_C, file: " + file + ", producer: \"cshiftc\", " +
-                             "isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug)");
+        string id = MetaReserve();
         MetaIds.Set("unit", id);
+        MetaIds.Set("unit file", file);
         return id;
+    }
+
+    // A global variable of the program: the node to attach to its definition (", !dbg !N").
+    string DebugGlobal(string name, string unit, string file, int line, string type)
+    {
+        string v = MetaNode("distinct !DIGlobalVariable(name: " + MetaString(name) + ", scope: " + unit + ", file: " + file +
+                            ", line: " + line.ToString() + ", type: " + type + ", isLocal: true, isDefinition: true)");
+        string e = MetaNode("!DIGlobalVariableExpression(var: " + v + ", expr: !DIExpression())");
+        DbgGlobals.Add(e);
+        return e;
     }
 
     // Prepares the subprogram of the function that the next BeginFunction starts.
@@ -598,6 +611,10 @@ struct IrWriter
         string cu = unit is string found ? found : "";
         if (cu.Length == 0)
             return "";
+        var unitFile = MetaIds.TryGet("unit file");
+        string globals = DbgGlobals.Count() > 0 ? ", globals: " + MetaNode("!{" + string.Join(", ", DbgGlobals.ToArray()) + "}") : "";
+        MetaDefine(cu, "distinct !DICompileUnit(language: DW_LANG_C, file: " + (unitFile is string f ? f : "null") +
+                       ", producer: \"cshiftc\", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug" + globals + ")");
         string version = MetaNode("!{i32 7, !\"Dwarf Version\", i32 4}");
         string info = MetaNode("!{i32 2, !\"Debug Info Version\", i32 3}");
         return "\n!llvm.dbg.cu = !{" + cu + "}\n!llvm.module.flags = !{" + version + ", " + info + "}\n" + Meta.ToString();

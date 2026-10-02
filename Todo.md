@@ -10,9 +10,6 @@ the git log.
 - [ ] Sharing a container between threads: `Mutex<T>` and `SharedPtr<T>` need a `T` that can be copied between threads
       (values, strings, `ReadOnlySlice<T>` of them; no `List<T>`, arrays, `Dictionary`). A way to share a container
       safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
-- [ ] Debug information for global variables. Lines, call stacks, local variables with their types, pretty printers
-      for gdb and lldb and debugging with F5 in VS Code are done (`-g`, [docs/debugging.md](docs/debugging.md)). The
-      Visual Studio debugger (PDB) is not a goal: CShift programs are MinGW programs with DWARF.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
 

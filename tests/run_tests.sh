@@ -239,8 +239,8 @@ fi
 
 # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
 # gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
-# and, with the pretty printers that the program carries, a string as its text.
-printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3;\n}\n' > "$TMP/debug_info.csh"
+# and a global variable and, with the pretty printers that the program carries, a string as its text.
+printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3 + Hits - 7;\n}\n\nint Hits = 7;\n' > "$TMP/debug_info.csh"
 if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
     report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
 elif ! "$TMP/debug_info.exe"; then
@@ -254,6 +254,9 @@ elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
 elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
      ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
     report_fail "debug information" "gdb does not show the parameter x = 3"
+elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
+     ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'print Hits' "$TMP/debug_info.exe" 2>&1 | grep -q "= 7"; then
+    report_fail "debug information" "gdb does not show the global variable Hits = 7"
 elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 && gdb -batch -ex 'python print(1)' > /dev/null 2>&1 &&
      ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.csh:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
     report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
