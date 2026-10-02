@@ -117,7 +117,7 @@ struct int64 : IComparable<int64>, IEquatable<int64>, IHashable
     int GetHashCode();
 }
 
-/// An unsigned 8-bit integer (a byte); `char` is the same type.
+/// An unsigned 8-bit integer (a byte); it converts implicitly to and from `char`.
 ///
 /// Arithmetic is checked: an overflow, a division by zero or a conversion that loses the value ends the program
 /// with a panic, unless the code is `unchecked` (then it wraps around). See the language guide (basics).
@@ -358,7 +358,8 @@ struct bool : IEquatable<bool>, IHashable
     int GetHashCode();
 }
 
-/// A byte of text: `char` is the same type as [uint8]. A character literal like `'a'` is its ASCII code.
+/// A byte of text, a type of its own that converts implicitly to and from [uint8] (and to the larger integer
+/// types). A character literal like `'a'` is its ASCII code; arithmetic on it gives an `int` (`'a' + 1` is 98).
 ///
 /// A `char` is one byte of UTF-8, so a character beyond ASCII is several `char`s. The namespace [Char] classifies
 /// and converts them (`Char.IsDigit(c)`).
