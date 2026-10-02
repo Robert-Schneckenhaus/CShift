@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.23] - 2026-10-02
+
 ### Language
 - A name can be declared only once in a block: a second local variable, local constant or pattern variable with the
   same name in the same block, and two parameters with the same name, are compile errors (the second declaration
