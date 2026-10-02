@@ -13,6 +13,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   cannot start programs, the local time is UTC. `CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` runs the tests
   with node; the CI does it on Linux.
 - `CSHIFT_WASI_SYSROOT` names the sysroot of WASI (e.g. of wasi-sdk) when clang does not find it.
+- WebAssembly programs get 8 MB of stack (like the main thread on Linux) instead of wasm-ld's 64 KB, which deep
+  recursion overflowed into the heap.
 
 ### Language
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function

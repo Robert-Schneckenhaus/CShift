@@ -856,6 +856,10 @@ int Build(BuildOptions o)
         // 'thread' functions (stdlib/thread.csh). On Windows the static archive: the import library would make every
         // program depend on libwinpthread-1.dll, which is not part of the toolchain.
         command.Append(windows ? " -Wl,-Bstatic -lpthread -Wl,-Bdynamic" : " -lpthread");
+        // WebAssembly: wasm-ld gives a program 64 KB of stack, which recursive code overflows into the heap; 8 MB like
+        // the main thread of Linux
+        if (o.Target.ToLower().StartsWith("wasm"))
+            command.Append(" -Wl,-z,stack-size=8388608");
         foreach (var lib in o.Libs)
             command.Append(" -l" + lib);
     }
