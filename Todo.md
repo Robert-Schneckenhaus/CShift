@@ -18,9 +18,9 @@ the git log.
 - [ ] VS Code: renaming, and completion of names (not only of members after `.`), on top of the symbol index of
       `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)).
 
-- [ ] Reference website (Astro Starlight on GitHub Pages, one version per major release): doc comments for the whole
-      standard library (`cshiftc doc --require-docs` in the tests), declaration files with doc comments for the
-      built-in types (`string`, slices, `Enum<T>`, ...), the site with search, then a complete language reference.
+- [ ] Website (site/): a complete language reference (grammar, types, conversions, operators), separate from the
+      tour; "since" for every declaration, computed by comparing with the `cshiftc doc` JSON of earlier releases;
+      from 1.0 one version per major release (see site/README.md).
 
 ## Standard library
 

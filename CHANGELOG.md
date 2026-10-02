@@ -6,6 +6,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Website
+- The documentation as a website with search (https://robert-schneckenhaus.github.io/CShift/): the language guide,
+  the topics, and the reference of the standard library and the built-in types, made from their doc comments. Every
+  release publishes it (site/, .github/workflows/pages.yml).
+
 ### Language
 - Doc comments: `///` documents the declaration after it, `//!` the namespace of the file. The text is Markdown with
   links to declarations (`[List<T>.Add]`) and tags (`@param`, `@returns`, `@error`, `@panics`, `@since`,

@@ -1,0 +1,14 @@
+/* The kind of a declaration above its signature, and the version that added it. */
+.cs-kind {
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+    text-transform: none;
+}
+.cs-since {
+    display: inline-block;
+    padding: 0 0.5em;
+    border-radius: 0.5em;
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-xs);
+}
