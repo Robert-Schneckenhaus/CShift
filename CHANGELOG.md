@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.22] - 2026-10-02
+
 ### Website
 - The documentation as a website with search (https://robert-schneckenhaus.github.io/CShift/): the language guide,
   the topics, and the reference of the standard library and the built-in types, made from their doc comments, with
