@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.21] - 2026-10-02
+
 ### Tools
 - Debug information: `-g` (or `"debug": true` in `cshift.json`) lets gdb and lldb stop on lines and functions, step
   through the program, show the call stack with files and lines and print parameters, local and global variables
