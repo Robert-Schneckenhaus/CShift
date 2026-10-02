@@ -16,9 +16,12 @@ import { fileURLToPath } from "node:url";
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.resolve(site, "..");
 const content = path.join(site, "src/content/docs");
-const base = process.env.SITE_BASE ?? "/CShift";
+const base = process.env.SITE_BASE ?? "/CShift/v0";
 const repo = "https://github.com/Robert-Schneckenhaus/CShift";
 const branch = process.env.SITE_BRANCH ?? "master";
+// the version that is built ("dev" outside of a release) and the versions of the site (one per major release)
+const version = process.env.SITE_VERSION ?? "dev";
+const versions = process.env.SITE_VERSIONS ? JSON.parse(process.env.SITE_VERSIONS) : [];
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Guides
@@ -287,11 +290,12 @@ function typeTitle(item) {
 function renderTypePage(item, targets) {
     const nsLabel = item.builtin ? "built-in type" : item.namespace ? `namespace ${item.namespace}` : "global namespace";
     const parts = [frontMatter(typeTitle(item), item.doc ? item.doc.summary : "")];
-    parts.push(`<p class="cs-kind">${kindName[item.kind]} · ${nsLabel}${item.amiga ? " · AmigaOS only" : ""}</p>`);
+    const since = item.doc && item.doc.since ? ` · <span class="cs-since">Since ${item.doc.since}</span>` : "";
+    parts.push(`<p class="cs-kind">${kindName[item.kind]} · ${nsLabel}${item.amiga ? " · AmigaOS only" : ""}${since}</p>`);
     parts.push(code(item.signature));
     if (item.doc) {
         parts.push(renderMarkdown(item.doc.description, targets));
-        const tags = renderTags(item.doc, targets);
+        const tags = renderTags({ ...item.doc, since: "" }, targets);
         if (tags) parts.push(tags);
     }
     const members = item.members ?? [];
@@ -371,12 +375,92 @@ function writeReference(api) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// "Since": the first release whose standard library has a declaration
+// ---------------------------------------------------------------------------------------------------------------------
+
+// The number of parameters in a signature ("void Add(T value)": 1), -1 without parentheses: overloads are told apart
+// by it (not by the types, which changed over time, e.g. from string to StringSlice).
+function arity(signature) {
+    const open = signature.indexOf("(");
+    if (open < 0) return -1;
+    let depth = 0;
+    let count = 0;
+    let any = false;
+    for (const c of signature.slice(open + 1)) {
+        if (c === "<" || c === "(") depth++;
+        else if ((c === ">" || c === ")") && depth > 0) depth--;
+        else if (c === ")") break;
+        else if (c === "," && depth === 0) count++;
+        else if (c !== " ") any = true;
+    }
+    return any ? count + 1 : 0;
+}
+
+const itemKey = (i) => `${i.namespace}|${i.name}|${["function", "const", "global"].includes(i.kind) ? arity(i.signature) : ""}`;
+const memberKey = (i, m) => `${itemKey(i)}|${m.name}|${arity(m.signature)}`;
+
+// Sets doc.since of the declarations that have none, from the documentation of the earlier releases in
+// $SITE_HISTORY (X.XX.json, X.XX-amiga.json; scripts/history.sh). What the oldest release has gets none; what no
+// release has is new in this version. The built-in types are left out (older releases have no declarations of them).
+function addSince(api) {
+    const dir = process.env.SITE_HISTORY;
+    if (!dir || !fs.existsSync(dir)) return;
+    const cmp = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+    const releases = [...new Set(fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/(-amiga)?\.json$/, "")))].sort(cmp);
+    if (!releases.length) return;
+    const first = new Map();
+    for (const r of releases) {
+        for (const file of [r + ".json", r + "-amiga.json"]) {
+            if (!fs.existsSync(path.join(dir, file))) continue;
+            for (const i of JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")).items) {
+                if (!first.has(itemKey(i))) first.set(itemKey(i), r);
+                for (const m of i.members ?? []) if (!first.has(memberKey(i, m))) first.set(memberKey(i, m), r);
+            }
+        }
+    }
+    const oldest = releases[0];
+    const sinceOf = (key) => {
+        const r = first.get(key);
+        if (r) return r === oldest ? "" : r;
+        return /^\d/.test(version) ? version : "";
+    };
+    let count = 0;
+    for (const i of api.items) {
+        if (i.builtin) continue;
+        const own = sinceOf(itemKey(i));
+        if (i.doc && !i.doc.since && own) {
+            i.doc.since = own;
+            count++;
+        }
+        for (const m of i.members ?? []) {
+            const s = sinceOf(memberKey(i, m));
+            // a member that came with its type needs no "since" of its own
+            if (m.doc && !m.doc.since && s && s !== own) {
+                m.doc.since = s;
+                count++;
+            }
+        }
+    }
+    console.log(`since: ${releases.length} releases (${oldest} .. ${releases[releases.length - 1]}), ${count} declarations marked`);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+// the version switch in the header (src/components/SiteTitle.astro)
+{
+    const major = /^\d/.test(version) ? version.split(".")[0] : "dev";
+    const list = versions.map((v) => ({ major: String(v.major), label: `${v.version}`, url: `${v.url}` }));
+    fs.writeFileSync(path.join(site, "src/versions.json"), JSON.stringify({ major, label: version === "dev" ? "dev" : version, versions: list }));
+}
 
 for (const d of ["docs", "language", "reference"]) fs.rmSync(path.join(content, d), { recursive: true, force: true });
 const guides = writeGuides();
 const api = loadApi();
 let reference = 0;
-if (api) reference = writeReference(api);
+if (api) {
+    addSince(api);
+    reference = writeReference(api);
+}
 else {
     fs.writeFileSync(path.join(site, "src/reference-groups.json"), "[]");
     console.warn("no reference: set CSHIFTC to a cshiftc with 'doc', or put host.json/amiga.json into site/api");

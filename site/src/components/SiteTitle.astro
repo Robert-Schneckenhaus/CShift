@@ -1,0 +1,39 @@
+---
+// The title of the site with the version that is shown and a switch to the other major versions
+// (src/versions.json, written by scripts/prepare.mjs from $SITE_VERSION and $SITE_VERSIONS).
+import Default from "@astrojs/starlight/components/SiteTitle.astro";
+import info from "../versions.json";
+---
+
+<div class="cs-title">
+    <Default />
+    {
+        info.versions.length > 1 ? (
+            <select class="cs-version" aria-label="Version" onchange="location.href = this.value">
+                {info.versions.map((v) => (
+                    <option value={v.url} selected={v.major === info.major}>
+                        {v.label}
+                    </option>
+                ))}
+            </select>
+        ) : (
+            <span class="cs-version">{info.label}</span>
+        )
+    }
+</div>
+
+<style>
+    .cs-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .cs-version {
+        font-size: var(--sl-text-sm);
+        color: var(--sl-color-gray-2);
+        background: var(--sl-color-gray-6);
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.4rem;
+        padding: 0.1rem 0.4rem;
+    }
+</style>
