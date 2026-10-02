@@ -84,6 +84,13 @@ jobs:
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc
 
+      # WebAssembly (wasm32-wasi): the same programs, run with node; needs the C library of WASI and the builtins of
+      # compiler-rt for wasm32, and wasm-ld (lld)
+      - name: Run tests for WebAssembly
+        run: |
+          sudo apt-get install -y --no-install-recommends wasi-libc "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION"
+          PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_TARGET=wasm32-wasi CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
+
   vscode:
     name: VS Code extension (package)
     runs-on: ubuntu-latest

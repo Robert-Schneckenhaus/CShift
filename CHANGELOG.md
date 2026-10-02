@@ -6,6 +6,18 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Targets
+- WebAssembly: `--target wasm32-wasi` (or `"target": "wasm32-wasi"`) compiles a program to a `.wasm` file for node,
+  wasmtime and other WASI runtimes, with clang, wasi-libc and wasm-ld ([docs/wasm.md](docs/wasm.md)). The standard
+  library runs unchanged except where the platform has nothing: `start` (threads) is a compile error, `Process.Run`
+  cannot start programs, the local time is UTC. `CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` runs the tests
+  with node; the CI does it on Linux.
+- `CSHIFT_WASI_SYSROOT` names the sysroot of WASI (e.g. of wasi-sdk) when clang does not find it.
+
+### Language
+- An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
+  (a call is no longer ambiguous): the definition is called.
+
 ## [0.23] - 2026-10-02
 
 ### Language

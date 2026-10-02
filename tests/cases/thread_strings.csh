@@ -1,4 +1,5 @@
 // Strings as thread parameters: each thread gets its own copy (also inside structs, Optional<T> and Error<T>), which
+// skip-target: wasm32 (WebAssembly has no threads)
 // it releases itself. Many threads with the same strings at the same time must not corrupt reference counts.
 // A Thread<int> handle may be passed on to another thread; a thread may return a string.
 // expect-exit: 0

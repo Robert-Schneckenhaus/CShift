@@ -41,6 +41,8 @@ Value CheckExpr(Compiler cg, Expr e)
             CheckExpr(cg, s.Operand);
             return UnknownValue(cg);
         }
+        if (cg.Ir.Target.Wasm)
+            CheckError(cg, e.Loc, "'start' is not available on WebAssembly: a WebAssembly program has only one thread");
         return CheckCall(cg, s.Operand, true);
     }
     case ExprKind.Index: return CheckIndex(cg, e);

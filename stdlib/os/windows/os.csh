@@ -126,4 +126,11 @@ struct _Os
                 Sleep((uint32)milliseconds);
         }
     }
+
+    // where readdir puts the name in a struct dirent (MinGW-w64: long d_ino, unsigned short d_reclen,
+    // unsigned short d_namlen, char d_name[])
+    static int DirentNameOffset()
+    {
+        return 8;
+    }
 }

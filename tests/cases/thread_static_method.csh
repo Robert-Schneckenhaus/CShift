@@ -1,4 +1,5 @@
 // 'thread' on a static struct method.
+// skip-target: wasm32 (WebAssembly has no threads)
 // expect-exit: 0
 // expect-stdout: 99
 

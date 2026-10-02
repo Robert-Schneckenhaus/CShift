@@ -146,6 +146,9 @@ void EmitEntryPoint(Compiler cg)
 
     // Main(string[] args) gets the arguments without the program name; it only borrows the array.
     string prepare = cg.St[0].HasGlobalsInit ? "  call void @__cs_init_globals()\n" : "";
+    // WebAssembly: the current directory of the host (stdlib/os/wasi/stubs.csh)
+    if (ir.Target.Wasm)
+        prepare = "  call void @__cs_wasi_start()\n" + prepare;
     string argument = "";
     string cleanup = "";
     // the values of the globals are released when Main has returned (before the balance of heap blocks is printed)
@@ -182,7 +185,9 @@ void EmitEntryPoint(Compiler cg)
                "  call void @__cs_report(ptr @.cs.error, ptr %text)\n" +
                stats + "  ret i32 1\n";
     }
-    ir.AppendFunctionText("define i32 @main(i32 %argc, ptr %argv) {\nentry:\n" + body + "}\n");
+    // WebAssembly's C library calls a main with arguments by the name clang gives it
+    string entry = ir.Target.Wasm ? "@__main_argc_argv" : "@main";
+    ir.AppendFunctionText("define i32 " + entry + "(i32 %argc, ptr %argv) {\nentry:\n" + body + "}\n");
 }
 
 // Converts the result of Main (in the register 'value') to the int the C entry point returns.

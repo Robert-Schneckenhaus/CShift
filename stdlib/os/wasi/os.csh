@@ -1,17 +1,16 @@
-// The operating system layer of the standard library on POSIX systems (Linux, ...): the clock, the local time zone,
-// file times, renaming, seeking and sleeping, for DateTime, Stopwatch, FileStream, File and Directory. The same struct
-// exists for Windows (stdlib/os/windows) and AmigaOS (stdlib/amiga/os.csh); the compiler adds the one of the target.
-// The layouts of struct stat differ between architectures: _PosixLayout (stdlib/os/posix-64, -32, -m68k).
+// The operating system layer of the standard library on WebAssembly (wasm32-wasi, see stdlib/os/posix/os.csh for the
+// same struct on POSIX systems). The C library of WASI (wasi-libc) is POSIX-like, but its time_t has 64 bits while
+// pointers have 32: a struct timespec is { int64 tv_sec; int32 tv_nsec; } (16 bytes), and st_mtim lies at offset 88 of
+// a struct stat. There is no local time zone: the local time is UTC.
 
 namespace System;
 
 extern "C" int clock_gettime(int clock, void* time);
-extern "C" void* localtime_r(nint* time, void* tm);
 extern "C" int stat(char* path, void* buffer);
 extern "C" int rename(char* from, char* to);
 extern "C" int rmdir(char* path);
-extern "C" int fseeko64(void* file, int64 offset, int origin);
-extern "C" int64 ftello64(void* file);
+extern "C" int fseeko(void* file, int64 offset, int origin);
+extern "C" int64 ftello(void* file);
 extern "C" int fflush(void* file);
 extern "C" int usleep(uint32 microseconds);
 
@@ -29,30 +28,22 @@ struct _Os
         return _Clock(1); // CLOCK_MONOTONIC
     }
 
-    // a struct timespec is { time_t, long }: two nint
+    // a struct timespec: the seconds (int64), then the nanoseconds (int32, in the low half of the second int64)
     static int64 _Clock(int clock)
     {
         unsafe
         {
-            var ts = new nint[2];
+            var ts = new int64[2];
             if (clock_gettime(clock, &ts[0]) != 0)
                 return 0;
-            return (int64)ts[0] * 10000000 + (int64)ts[1] / 100;
+            return ts[0] * 10000000 + (ts[1] & 0xFFFFFFFF) / 100;
         }
     }
 
-    // local time minus UTC at this moment, in seconds
+    // WASI has no time zones: local time is UTC
     static int LocalOffsetSeconds(int64 unixSeconds)
     {
-        unsafe
-        {
-            nint t = (nint)unixSeconds;
-            var tm = new int[16]; // struct tm: sec, min, hour, mday, mon, year, ... (and more on some systems)
-            if (localtime_r(&t, &tm[0]) == null)
-                return 0;
-            int64 local = _Calendar.DaysFromCivil(tm[5] + 1900, tm[4] + 1, tm[3]) * 86400 + tm[2] * 3600 + tm[1] * 60 + tm[0];
-            return (int)(local - unixSeconds);
-        }
+        return 0;
     }
 
     // the time a file was last written (100 ns units since 1970 UTC)
@@ -60,11 +51,10 @@ struct _Os
     {
         unsafe
         {
-            var buffer = new uint8[256];
+            var buffer = new int64[18]; // struct stat: 144 bytes
             if (stat(path.CStr(), &buffer[0]) != 0)
                 return null;
-            nint* mtime = (nint*)&buffer[_PosixLayout.StatMtime()]; // struct timespec st_mtim
-            return (int64)mtime[0] * 10000000 + (int64)mtime[1] / 100;
+            return buffer[11] * 10000000 + (buffer[12] & 0xFFFFFFFF) / 100; // st_mtim at offset 88
         }
     }
 
@@ -91,7 +81,7 @@ struct _Os
     {
         unsafe
         {
-            return fseeko64(file, offset, origin) == 0;
+            return fseeko(file, offset, origin) == 0;
         }
     }
 
@@ -99,7 +89,7 @@ struct _Os
     {
         unsafe
         {
-            return ftello64(file);
+            return ftello(file);
         }
     }
 
@@ -121,12 +111,9 @@ struct _Os
         }
     }
 
-    // where readdir puts the name in a struct dirent
+    // where readdir puts the name in a struct dirent (wasi-libc: uint64 d_ino, unsigned char d_type, char d_name[])
     static int DirentNameOffset()
     {
-        if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
-            return 21; // macOS: d_ino, d_seekoff, d_reclen, d_namlen, d_type, d_name
-        // Linux (glibc, musl): long d_ino, long d_off, unsigned short d_reclen, unsigned char d_type, char d_name[]
-        return sizeof(nint) == 8 ? 19 : 11;
+        return 9;
     }
 }

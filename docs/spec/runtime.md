@@ -80,6 +80,7 @@ The compiler generates native code for:
 | Linux x64 | 8 | via LLVM / clang |
 | Windows x64 | 8 | via LLVM / clang, MinGW-w64 |
 | AmigaOS, `--target m68k-amigaos` | 4 | CShift's own 68000 backend; AmigaOS libraries from NDK SFD files |
+| WebAssembly, `--target wasm32-wasi` | 4 | via LLVM / clang with wasi-libc; no threads, no other programs ([WebAssembly](../wasm.md)) |
 
 The sizes of the other types (`int` is always `int32`, `long` always `int64`, ...) do not depend on the target, and
 integers are stored in the target's byte order (little-endian on x64, big-endian on the 68000). The `Amiga` namespace of the
