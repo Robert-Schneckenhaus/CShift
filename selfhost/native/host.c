@@ -16,6 +16,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__wasi__)
+#include <unistd.h> /* WebAssembly: no shared libraries, so no libclang */
 #else
 #include <dlfcn.h>
 #include <unistd.h>
@@ -155,6 +157,12 @@ int host_clang_open(const char *path)
     }
     lib = (void *)LoadLibraryA(path);
 #define SYMBOL(name) (void *)GetProcAddress((HMODULE)lib, name)
+#elif defined(__wasi__)
+    (void)path;
+    free(last_error);
+    last_error = copy("libclang cannot be loaded on WebAssembly");
+    return 0;
+#define SYMBOL(name) NULL
 #else
     lib = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
 #define SYMBOL(name) dlsym(lib, name)
@@ -162,7 +170,7 @@ int host_clang_open(const char *path)
     if (!lib)
     {
         free(last_error);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__wasi__)
         last_error = copy("cannot load the library");
 #else
         last_error = copy(dlerror());
@@ -454,6 +462,8 @@ const char *host_executable_path(void)
         else if (realpath(buffer, resolved))
             strcpy(buffer, resolved);
     }
+#elif defined(__wasi__)
+    /* a WebAssembly module has no path of its own */
 #else
     {
         ssize_t n = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
