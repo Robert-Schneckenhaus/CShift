@@ -80,6 +80,8 @@ libclang (only for `using X from "header.h"`) is looked for in `CSHIFT_LIBCLANG`
 | `using X from "header.h"` with a C library | the library's development package (headers and `.so`) | e.g. `libglfw3-dev`, `libgl-dev` |
 | `--target i686-linux-gnu` (32-bit programs) | the 32-bit C library and gcc files | `gcc-multilib` |
 | `--target m68k-amigaos` (Amiga programs) | nothing: the m68k backend has its own assembler and linker | |
+| `--backend wasm` (WebAssembly, [wasm.md](wasm.md)) | nothing to build; node or wasmtime to run the programs | `nodejs` |
+| `--target wasm32-wasi` (WebAssembly through clang) | the C library of WASI, compiler-rt for wasm32, wasm-ld | `wasi-libc libclang-rt-<v>-dev-wasm32 lld-<v>` |
 | AmigaOS libraries from SFD files | the NDK 3.2 (`--ndk`, see [amiga.md](amiga.md)) | download from Hyperion |
 | running Amiga programs on the PC | vamos, FS-UAE or WinUAE | `pip install amitools`, `fs-uae` |
 | the tests of the m68k backend under Linux | qemu and the m68k cross C library | `qemu-user gcc-m68k-linux-gnu` |

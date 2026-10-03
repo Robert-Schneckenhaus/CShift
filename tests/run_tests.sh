@@ -10,6 +10,8 @@
 # 32-bit code; needs the 32-bit C library, e.g. gcc-multilib). wasm32-wasi: WebAssembly, run with node
 # (tests/wasi-run.mjs); needs wasi-libc for clang (Ubuntu: wasi-libc, libclang-rt-*-dev-wasm32). Cases that need a
 # feature the target does not have say so with "// skip-target: <target prefix>".
+# CSHIFT_BACKEND=<backend> compiles with another backend (wasm: CShift's own WebAssembly backend, together with
+# CSHIFT_TARGET=wasm32-wasi; it needs neither clang nor wasi-libc).
 #
 # What is tested:
 #   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
@@ -52,6 +54,7 @@ CC_ARGS=()
 if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
 C_TARGET=()
 if [ -n "${CSHIFT_TARGET:-}" ]; then CC_ARGS+=(--target "$CSHIFT_TARGET"); C_TARGET=(--target="$CSHIFT_TARGET"); fi
+if [ -n "${CSHIFT_BACKEND:-}" ]; then CC_ARGS+=(--backend "$CSHIFT_BACKEND"); fi
 # How a compiled program runs: directly, or through node for WebAssembly
 RUNNER=()
 case "${CSHIFT_TARGET:-}" in
@@ -451,6 +454,21 @@ else
             report_fail "selfhost bootstrap" "cshc cannot rebuild itself:"
             head -n 10 "$TMP/selfhost.boot"
         fi
+    fi
+fi
+
+# --- 5. the wasm backend compiles the compiler: as WebAssembly (under node) it must build itself again, byte for byte -
+if [ "${CSHIFT_BACKEND:-}" = "wasm" ]; then
+    echo "== wasm backend: cshc.wasm builds itself"
+    lib=(--stdlib "$DIR/../stdlib")
+    if ! (cd "$DIR/.." && "$COMPILER" build selfhost --backend wasm "${lib[@]}" -o "$TMP/cshc-a.wasm") > /dev/null 2> "$TMP/wasm-a.err"; then
+        report_fail "wasm bootstrap" "cshc does not build: $(grep -v 'imported from' "$TMP/wasm-a.err" | head -n 3 | tr '\n' ' ')"
+    elif ! (cd "$DIR/.." && "${RUNNER[@]}" "$TMP/cshc-a.wasm" build selfhost --backend wasm "${lib[@]}" -o "$TMP/cshc-b.wasm") > /dev/null 2> "$TMP/wasm-b.err"; then
+        report_fail "wasm bootstrap" "cshc.wasm cannot build itself: $(grep -v 'imported from' "$TMP/wasm-b.err" | head -n 3 | tr '\n' ' ')"
+    elif ! cmp -s "$TMP/cshc-a.wasm" "$TMP/cshc-b.wasm"; then
+        report_fail "wasm bootstrap" "cshc.wasm builds a different cshc.wasm"
+    else
+        report_ok "wasm bootstrap"
     fi
 fi
 

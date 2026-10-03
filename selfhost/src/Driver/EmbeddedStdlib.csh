@@ -6,6 +6,14 @@ namespace CShift.Driver;
 const ReadOnlySlice<string> EmbeddedStdlibNames = embed_filenames("../../../stdlib/*.csh");
 const ReadOnlySlice<string> EmbeddedStdlibTexts = embed("../../../stdlib/*.csh");
 
+// The C library of the backends that bring their own (AmigaOS, WebAssembly): printf's formatting.
+const ReadOnlySlice<string> EmbeddedLibcNames = embed_filenames("../../../stdlib/libc/*.csh");
+const ReadOnlySlice<string> EmbeddedLibcTexts = embed("../../../stdlib/libc/*.csh");
+
+// The C library of the wasm backend (stdlib/wasm/*.csh: memory, files and the rest on WASI), only with --backend wasm.
+const ReadOnlySlice<string> EmbeddedWasmNames = embed_filenames("../../../stdlib/wasm/*.csh");
+const ReadOnlySlice<string> EmbeddedWasmTexts = embed("../../../stdlib/wasm/*.csh");
+
 // The runtime of the 68000 backend (stdlib/m68k/*.csh: software floating point, ...), only added with --backend m68k.
 const ReadOnlySlice<string> EmbeddedM68kNames = embed_filenames("../../../stdlib/m68k/*.csh");
 const ReadOnlySlice<string> EmbeddedM68kTexts = embed("../../../stdlib/m68k/*.csh");

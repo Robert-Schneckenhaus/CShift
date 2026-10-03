@@ -95,6 +95,11 @@ jobs:
           PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_WASI_SYSROOT="$RUNNER_TEMP/wasi-sysroot-$WASI_SDK.0" CSHIFT_TARGET=wasm32-wasi \
             CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
+      # CShift's own WebAssembly backend (--backend wasm: no clang, no wasi-libc): the same programs, and the compiler
+      # as WebAssembly must build itself
+      - name: Run tests with the wasm backend
+        run: CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
+
   vscode:
     name: VS Code extension (package)
     runs-on: ubuntu-latest

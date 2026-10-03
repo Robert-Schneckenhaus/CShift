@@ -54,3 +54,35 @@ export function parseDiagnostics(text) {
     }
     return result;
 }
+
+/**
+ * Runs a program (the bytes of its .wasm) in a worker; its output goes to onOutput(text, isError) as it comes.
+ * @returns {{ done: Promise<number>, stop: () => void }} the exit code when it ends, and a way to end it early.
+ */
+export function runProgram(bytes, args, onOutput) {
+    const worker = new Worker(new URL("./runner.js", import.meta.url), { type: "module" });
+    let finish;
+    const done = new Promise((resolve) => (finish = resolve));
+    worker.onmessage = (event) => {
+        const message = event.data;
+        if (message.out !== undefined) onOutput(message.out, false);
+        else if (message.err !== undefined) onOutput(message.err, true);
+        else if (message.exit !== undefined) {
+            worker.terminate();
+            finish(message.exit);
+        }
+    };
+    worker.onerror = (event) => {
+        onOutput(`\n${event.message}\n`, true);
+        worker.terminate();
+        finish(70);
+    };
+    worker.postMessage({ bytes, args });
+    return {
+        done,
+        stop() {
+            worker.terminate();
+            finish(null);
+        },
+    };
+}

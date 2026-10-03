@@ -30,7 +30,7 @@ struct Project
     string Target;               // target triple, "" = host
     bool Unchecked;              // integer overflow wraps instead of a panic
     bool Debug;                  // debug information (-g)
-    string Backend;              // "llvm", "m68k" or "" (the target's default)
+    string Backend;              // "llvm", "m68k", "wasm" or "" (the target's default)
     string Ndk;                  // the AmigaOS NDK (a path relative to the project)
 }
 
@@ -240,8 +240,8 @@ Error<Project> LoadProject(string location, string target)
     p.Ndk = try ReadString(json, root, "ndk", file, "");
     if (p.Ndk.Length > 0 && !IsAbsolutePath(p.Ndk))
         p.Ndk = Path.Combine(p.Dir, p.Ndk);
-    if (p.Backend.Length > 0 && p.Backend != "llvm" && p.Backend != "m68k")
-        return error(file + ": 'backend' must be \"llvm\" or \"m68k\", not \"" + p.Backend + "\"");
+    if (p.Backend.Length > 0 && p.Backend != "llvm" && p.Backend != "m68k" && p.Backend != "wasm")
+        return error(file + ": 'backend' must be \"llvm\", \"m68k\" or \"wasm\", not \"" + p.Backend + "\"");
     if (p.Type != "executable" && p.Type != "object")
         return error(file + ": 'type' must be \"executable\" or \"object\", not \"" + p.Type + "\"");
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the compiler of the playground (src/components/Playground.astro): cshc as WebAssembly, into public/playground/,
-# with the compiler given (a cshiftc of this version). Its examples (src/playground/examples.js) must compile.
+# with the compiler given (a cshiftc of this version). Its examples (src/playground/examples.js) must compile and run.
 #
 #   site/scripts/playground.sh <cshiftc>
 #
@@ -21,6 +21,11 @@ examples.forEach((e, i) => writeFileSync('$WORK/example' + i + '.csh', e.code));
 for example in "$WORK"/example*.csh; do
     if ! "$CSHIFTC" check "$example"; then
         echo "error: an example of the playground does not compile: $example" >&2
+        exit 1
+    fi
+    # ... and runs (Run: the wasm backend, like in the page)
+    if ! "$CSHIFTC" --backend wasm "$example" -o "$WORK/example.wasm" || ! node --no-warnings "$ROOT/tests/wasi-run.mjs" "$WORK/example.wasm" > /dev/null; then
+        echo "error: an example of the playground does not run: $example" >&2
         exit 1
     fi
 done

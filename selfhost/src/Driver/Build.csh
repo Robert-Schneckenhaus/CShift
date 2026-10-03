@@ -17,6 +17,7 @@ using CShift.Syntax;
 using CShift.CodeGen;
 using CShift.Check;
 using CShift.M68k;
+using CShift.Wasm;
 using CShift.Emit;
 
 struct BuildOptions
@@ -33,7 +34,7 @@ struct BuildOptions
     bool ObjectOnly;
     bool EmitLlvm;
     bool EmitAsm;               // --emit-asm: the assembly of the m68k backend
-    string Backend;             // --backend: "llvm" or "m68k" ("" = the project's, else the target's default)
+    string Backend;             // --backend: "llvm", "m68k" or "wasm" ("" = the project's, else the target's default)
     string Ndk;                 // --ndk: the AmigaOS NDK (SFD files for "using X from "lib.sfd";")
     bool Run;
     bool Verbose;
@@ -151,9 +152,9 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         {
             i += 1;
             o.Backend = args[i];
-            if (o.Backend != "llvm" && o.Backend != "m68k")
+            if (o.Backend != "llvm" && o.Backend != "m68k" && o.Backend != "wasm")
             {
-                Console.WriteErrorLine("error: unknown backend '" + o.Backend + "' (llvm or m68k)");
+                Console.WriteErrorLine("error: unknown backend '" + o.Backend + "' (llvm, m68k or wasm)");
                 return false;
             }
         }
@@ -603,12 +604,20 @@ int Build(BuildOptions o)
         Console.WriteErrorLine("error: the m68k backend generates code for m68k targets, not '" + o.Target + "'");
         return 1;
     }
+    if (o.Backend == "wasm" && o.Target.Length == 0)
+        o.Target = "wasm32-wasi";
+    if (o.Backend == "wasm" && !o.Target.ToLower().StartsWith("wasm32"))
+    {
+        Console.WriteErrorLine("error: the wasm backend generates code for wasm32 targets, not '" + o.Target + "'");
+        return 1;
+    }
+    // the backends of CShift read the IR themselves and have no use for debug information
+    bool ownBackend = o.Backend == "m68k" || o.Backend == "wasm";
     var cg = Compiler.Create(tree, diag, windows, o.Target, o.Backend);
     cg.St[0].ArcStats = o.ArcStats;
-    // the m68k backend reads the IR itself and has no use for debug information
-    cg.Ir.Debug = o.Debug && o.Backend != "m68k";
-    if (o.Debug && o.Backend == "m68k")
-        Console.WriteErrorLine("warning: -g has no effect with the m68k backend");
+    cg.Ir.Debug = o.Debug && !ownBackend;
+    if (o.Debug && ownBackend)
+        Console.WriteErrorLine("warning: -g has no effect with the " + o.Backend + " backend");
     cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
@@ -619,15 +628,25 @@ int Build(BuildOptions o)
     {
         for (var i = 0; i < EmbeddedStdlibNames.Length; i += 1)
             AddSourceText(cg, diag, tree, "<stdlib>/" + EmbeddedStdlibNames[i], EmbeddedStdlibTexts[i], true, o.Imports);
-        if (o.Backend == "m68k")
+        if (ownBackend)
         {
             for (var i = 0; i < EmbeddedM68kNames.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/m68k/" + EmbeddedM68kNames[i], EmbeddedM68kTexts[i], true, o.Imports);
+        }
+        if (HasOwnLibc(o))
+        {
+            for (var i = 0; i < EmbeddedLibcNames.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/libc/" + EmbeddedLibcNames[i], EmbeddedLibcTexts[i], true, o.Imports);
         }
         if (o.Backend == "m68k" && o.Target.Contains("amigaos"))
         {
             for (var i = 0; i < EmbeddedAmigaNames.Length; i += 1)
                 AddSourceText(cg, diag, tree, "<stdlib>/amiga/" + EmbeddedAmigaNames[i], EmbeddedAmigaTexts[i], true, o.Imports);
+        }
+        if (o.Backend == "wasm")
+        {
+            for (var i = 0; i < EmbeddedWasmNames.Length; i += 1)
+                AddSourceText(cg, diag, tree, "<stdlib>/wasm/" + EmbeddedWasmNames[i], EmbeddedWasmTexts[i], true, o.Imports);
         }
         foreach (var layer in OsLayers(o.Target, o.Backend, windows).ToArray())
         {
@@ -651,9 +670,13 @@ int Build(BuildOptions o)
             // the declarations of the built-in types are only for the documentation (LoadBuiltinDocs)
             if (libFile.Contains("/builtin/"))
                 continue;
-            if (libFile.Contains("/m68k/") && o.Backend != "m68k")
+            if (libFile.Contains("/m68k/") && !ownBackend)
+                continue;
+            if (libFile.Contains("/libc/") && !HasOwnLibc(o))
                 continue;
             if (libFile.Contains("/amiga/") && !(o.Backend == "m68k" && o.Target.Contains("amigaos")))
+                continue;
+            if (libFile.Contains("/wasm/") && o.Backend != "wasm")
                 continue;
             int osAt = Path.Normalize(libFile).IndexOf("/os/");
             if (osAt >= 0 && !OsLayers(o.Target, o.Backend, windows).Contains(Path.GetDirectory(libFile.Substring(osAt + 4).ToString())))
@@ -777,6 +800,8 @@ int Build(BuildOptions o)
 
     if (o.Backend == "m68k")
         return BuildM68k(o, ir, baseName);
+    if (o.Backend == "wasm")
+        return BuildWasm(o, ir, baseName);
 
     string clang = LocateClang(o.Cc, windows);
     if (clang.Length == 0)
@@ -1126,6 +1151,44 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
         return 1;
     }
     return 1;
+}
+
+// The wasm backend (selfhost/src/Wasm): the IR becomes a WebAssembly module, without clang.
+int BuildWasm(BuildOptions o, string ir, string baseName)
+{
+    if (o.ObjectOnly)
+    {
+        Console.WriteErrorLine("error: the wasm backend writes whole programs only (no -c)");
+        return 1;
+    }
+    var module = ReadModule(ir);
+    if (module is error readError)
+    {
+        Console.WriteErrorLine("error: wasm backend: " + readError.Message);
+        return 1;
+    }
+    if (module is IrModule m)
+    {
+        var warnings = List<string>.Create();
+        var bytes = GenerateWasm(m, warnings);
+        foreach (var warning in warnings.ToArray())
+            Console.WriteErrorLine("warning: " + warning);
+        if (bytes is error genError)
+        {
+            Console.WriteErrorLine("error: wasm backend: " + genError.Message);
+            return 1;
+        }
+        if (bytes is uint8[] wasm)
+            return WriteBytesOutput(o.Output.Length > 0 ? o.Output : baseName, wasm);
+    }
+    return 1;
+}
+
+// The C library of CShift (stdlib/libc: printf's formatting) is a part of the programs of the backends that bring
+// their own C library: AmigaOS and WebAssembly.
+bool HasOwnLibc(BuildOptions o)
+{
+    return (o.Backend == "m68k" && o.Target.Contains("amigaos")) || o.Backend == "wasm";
 }
 
 int WriteOutput(string path, string text)
