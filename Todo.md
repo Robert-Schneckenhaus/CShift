@@ -43,3 +43,4 @@ the git log.
 - Wrong part is marked as error sometimes. E.g. if `Bar` has return type `int` and `foo` is a `char[]`, then `foo[i] = Bar(foo[i]);` should mark `Bar` as an error as a cast to `int` is missing. Or mark the spot in front of `Bar`. Currently the VSCode extension highlights the parameter `foo[i]` but says
   "cannot implicitly convert 'int32' to 'uint8' (an explicit cast is required)"
   I saw similar things in other places as well.
+- Add things like `bool Equals(StringSlice a, StringSlice b)`, so all the good stuff available for `string` should also be available for `StringSlice`. Also prefer `StringSlice` in the stdlib, as `string` can be converted to it for free. For example `File.Exists` or `File.Delete` should use string slices to allow modified strings as input.
