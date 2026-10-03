@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.5",
+    "@bjorn3/browser_wasi_shim": "^0.4.2",
     "astro": "^7.3.5"
   }
 }

@@ -5,7 +5,8 @@
 #
 #   .github/scripts/build-sites.sh <out-dir>
 #
-# Needs git (the release branches are fetched here), gh (stage 0, selfhost/fetch-stage0.sh), clang in PATH and node.
+# Needs git (the release branches are fetched here), gh (stage 0, selfhost/fetch-stage0.sh), clang in PATH (with the C
+# library of WASI for the playground) and node.
 set -euo pipefail
 OUT="$(mkdir -p "${1:?output directory}" && cd "$1" && pwd)"
 ROOT="$(git rev-parse --show-toplevel)"
@@ -51,6 +52,10 @@ for e in "${entries[@]}"; do
         printf '%s\n' "$version" > selfhost/version/version.txt
         "$stage0" build selfhost -O0 -o build/cshc
         bash site/scripts/history.sh "$tree/build/cshc" "$tree/build/history" "$version"
+        # the compiler of the playground (releases that have one)
+        if [ -f site/scripts/playground.sh ]; then
+            bash site/scripts/playground.sh "$tree/build/cshc"
+        fi
         cd site
         npm ci --no-audit --no-fund
         SITE_BASE="$BASE/v$major" SITE_VERSION="$version" SITE_VERSIONS="$json" SITE_BRANCH="release/v$version" \

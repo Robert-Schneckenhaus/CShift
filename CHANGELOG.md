@@ -6,6 +6,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Website
+- A playground (/playground/): the compiler runs as WebAssembly in the browser and checks the program as you type,
+  shows what the name at the cursor is (the hover of the VS Code extension) and the LLVM IR it generates; examples, and
+  a link that carries the program. The website build compiles it (site/scripts/playground.sh).
+
 ### Targets
 - WebAssembly: `--target wasm32-wasi` (or `"target": "wasm32-wasi"`) compiles a program to a `.wasm` file for node,
   wasmtime and other WASI runtimes, with clang, wasi-libc and wasm-ld ([docs/wasm.md](docs/wasm.md)). The standard

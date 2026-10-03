@@ -1,0 +1,391 @@
+---
+// The playground: an editor whose program is checked by the CShift compiler running as WebAssembly in the browser
+// (public/playground/cshc.wasm, built by scripts/playground.sh). It shows the errors, what the name at the cursor is
+// (the hover of the VS Code extension) and the generated LLVM IR. The program can be shared as a link (#code=...).
+import { examples } from "../playground/examples.js";
+---
+
+<div class="pg not-content" data-wasm={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/playground/cshc.wasm`}>
+    <div class="pg-bar">
+        <select class="pg-examples" aria-label="Example">
+            {examples.map((e, i) => <option value={i}>{e.name}</option>)}
+        </select>
+        <button type="button" class="pg-ir">LLVM IR</button>
+        <button type="button" class="pg-share">Copy link</button>
+        <span class="pg-status" role="status">Loading the compiler…</span>
+    </div>
+    <div class="pg-main">
+        <div class="pg-editor">
+            <pre class="pg-lines" aria-hidden="true"></pre>
+            <textarea class="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Program"
+            >{examples[0].code}</textarea>
+        </div>
+        <div class="pg-side">
+            <section>
+                <h2>Problems</h2>
+                <ul class="pg-problems"></ul>
+            </section>
+            <section>
+                <h2>At the cursor</h2>
+                <div class="pg-info"><p class="pg-muted">Move the cursor onto a name.</p></div>
+            </section>
+        </div>
+    </div>
+    <pre class="pg-output" hidden></pre>
+</div>
+
+<script>
+    import { loadCompiler, runCompiler, parseDiagnostics } from "../playground/compiler.js";
+    import { examples } from "../playground/examples.js";
+
+    const root = document.querySelector<HTMLElement>(".pg")!;
+    const code = root.querySelector<HTMLTextAreaElement>(".pg-code")!;
+    const lines = root.querySelector<HTMLElement>(".pg-lines")!;
+    const status = root.querySelector<HTMLElement>(".pg-status")!;
+    const problems = root.querySelector<HTMLUListElement>(".pg-problems")!;
+    const info = root.querySelector<HTMLElement>(".pg-info")!;
+    const output = root.querySelector<HTMLElement>(".pg-output")!;
+    const select = root.querySelector<HTMLSelectElement>(".pg-examples")!;
+    const FILE = "main.csh";
+
+    let compiler: WebAssembly.Module | null = null;
+    let errorLines = new Set<number>();
+
+    // ---- the program in the link ----
+    function fromHash(): string | null {
+        const m = location.hash.match(/^#code=(.*)$/);
+        if (!m) return null;
+        try {
+            const bytes = Uint8Array.from(atob(decodeURIComponent(m[1])), (c) => c.charCodeAt(0));
+            return new TextDecoder().decode(bytes);
+        } catch {
+            return null;
+        }
+    }
+    function toHash(text: string): string {
+        const bytes = new TextEncoder().encode(text);
+        let binary = "";
+        for (const b of bytes) binary += String.fromCharCode(b);
+        return "#code=" + encodeURIComponent(btoa(binary));
+    }
+
+    // ---- the editor ----
+    function renderLines() {
+        const count = code.value.split("\n").length;
+        let text = "";
+        for (let i = 1; i <= count; i++) text += (errorLines.has(i) ? "● " : "") + i + "\n";
+        lines.textContent = text;
+    }
+    code.addEventListener("scroll", () => (lines.scrollTop = code.scrollTop));
+    code.addEventListener("keydown", (e) => {
+        if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            const start = code.selectionStart;
+            code.setRangeText("    ", start, code.selectionEnd, "end");
+            changed();
+        }
+    });
+
+    function cursor(): { line: number; column: number } {
+        const before = code.value.slice(0, code.selectionStart);
+        const parts = before.split("\n");
+        // columns count characters, like the compiler (UTF-8 sequences are one column)
+        return { line: parts.length, column: [...parts[parts.length - 1]].length + 1 };
+    }
+    function goTo(line: number, column: number) {
+        const all = code.value.split("\n");
+        let offset = 0;
+        for (let i = 0; i < line - 1 && i < all.length; i++) offset += all[i].length + 1;
+        const chars = [...(all[line - 1] ?? "")].slice(0, column - 1).join("");
+        offset += chars.length;
+        code.focus();
+        code.setSelectionRange(offset, offset);
+        const lineHeight = parseFloat(getComputedStyle(code).lineHeight) || 20;
+        code.scrollTop = Math.max(0, (line - 5) * lineHeight);
+        showInfo();
+    }
+
+    // ---- the compiler ----
+    let checkTimer = 0;
+    let checking = Promise.resolve();
+    function changed() {
+        renderLines();
+        clearTimeout(checkTimer);
+        checkTimer = window.setTimeout(check, 300);
+    }
+    code.addEventListener("input", changed);
+
+    async function check() {
+        if (!compiler) return;
+        const text = code.value;
+        checking = checking.then(async () => {
+            const started = performance.now();
+            const result = await runCompiler(compiler!, ["check", FILE], { [FILE]: text });
+            const diagnostics = parseDiagnostics(result.stderr + result.stdout);
+            errorLines = new Set(diagnostics.filter((d) => d.line).map((d) => d.line!));
+            problems.replaceChildren();
+            for (const d of diagnostics) {
+                const item = document.createElement("li");
+                if (d.line) {
+                    const link = document.createElement("button");
+                    link.type = "button";
+                    link.className = "pg-link";
+                    link.textContent = `${d.line}:${d.column}`;
+                    link.addEventListener("click", () => goTo(d.line!, d.column!));
+                    item.append(link, " " + d.message);
+                } else item.textContent = d.message;
+                item.className = d.severity === "warning" ? "pg-warning" : "pg-error";
+                problems.append(item);
+            }
+            if (diagnostics.length === 0) {
+                const item = document.createElement("li");
+                item.className = "pg-ok";
+                item.textContent = "No problems.";
+                problems.append(item);
+            }
+            status.textContent = `Checked in ${Math.round(performance.now() - started)} ms`;
+            renderLines();
+        });
+        return checking;
+    }
+
+    // what the name at the cursor is: "cshiftc query --at" (the hover of the VS Code extension)
+    let infoTimer = 0;
+    function showInfo() {
+        clearTimeout(infoTimer);
+        infoTimer = window.setTimeout(async () => {
+            if (!compiler) return;
+            const { line, column } = cursor();
+            const result = await runCompiler(compiler, ["query", "--at", FILE, String(line), String(column)], { [FILE]: code.value });
+            let answer: { hover?: string; doc?: string } = {};
+            try {
+                answer = JSON.parse(result.stdout || "{}");
+            } catch {
+                answer = {};
+            }
+            info.replaceChildren();
+            if (!answer.hover) {
+                const p = document.createElement("p");
+                p.className = "pg-muted";
+                p.textContent = "Nothing known here.";
+                info.append(p);
+                return;
+            }
+            const sig = document.createElement("code");
+            sig.className = "pg-hover";
+            sig.textContent = answer.hover;
+            info.append(sig);
+            if (answer.doc) {
+                const doc = document.createElement("pre");
+                doc.className = "pg-doc";
+                doc.textContent = answer.doc;
+                info.append(doc);
+            }
+        }, 150);
+    }
+    code.addEventListener("click", showInfo);
+    code.addEventListener("keyup", (e) => {
+        if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") showInfo();
+    });
+
+    // ---- the buttons ----
+    root.querySelector(".pg-ir")!.addEventListener("click", async () => {
+        if (!compiler) return;
+        if (!output.hidden) {
+            output.hidden = true;
+            return;
+        }
+        const result = await runCompiler(compiler, ["--emit-llvm", FILE, "-o", "main.ll"], { [FILE]: code.value });
+        const ir = result.files["main.ll"];
+        output.textContent = ir ? new TextDecoder().decode(ir) : result.stderr || "no IR";
+        output.hidden = false;
+    });
+    root.querySelector(".pg-share")!.addEventListener("click", async () => {
+        history.replaceState(null, "", toHash(code.value));
+        try {
+            await navigator.clipboard.writeText(location.href);
+            status.textContent = "Link copied";
+        } catch {
+            status.textContent = "Link in the address bar";
+        }
+    });
+    select.addEventListener("change", () => {
+        code.value = examples[+select.value].code;
+        history.replaceState(null, "", location.pathname);
+        output.hidden = true;
+        info.innerHTML = '<p class="pg-muted">Move the cursor onto a name.</p>';
+        changed();
+    });
+
+    // ---- start ----
+    const shared = fromHash();
+    if (shared !== null) code.value = shared;
+    renderLines();
+    loadCompiler(root.dataset.wasm!)
+        .then((module) => {
+            compiler = module;
+            status.textContent = "Compiler loaded";
+            return check();
+        })
+        .catch((e) => {
+            status.textContent = "The compiler could not be loaded: " + e.message;
+        });
+</script>
+
+<style>
+    .pg {
+        --pg-font: var(--__sl-font-mono, ui-monospace, monospace);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .pg-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .pg-bar select,
+    .pg-bar button {
+        font: inherit;
+        font-size: var(--sl-text-sm);
+        line-height: 1.5;
+        height: 2rem;
+        padding: 0 0.6rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.375rem;
+        background: var(--sl-color-bg-nav);
+        color: var(--sl-color-text);
+        cursor: pointer;
+    }
+    .pg-status {
+        margin-left: auto;
+        font-size: var(--sl-text-xs);
+        color: var(--sl-color-gray-3);
+    }
+    .pg-main {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        gap: 0.75rem;
+    }
+    @media (max-width: 50rem) {
+        .pg-main {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+    .pg-editor {
+        display: flex;
+        height: 32rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.5rem;
+        overflow: hidden;
+        background: var(--sl-color-bg-inline-code, var(--sl-color-gray-6));
+    }
+    .pg-lines,
+    .pg-code {
+        margin: 0;
+        padding: 0.75rem 0.5rem;
+        font-family: var(--pg-font);
+        font-size: 0.875rem;
+        line-height: 1.5;
+        white-space: pre;
+    }
+    .pg-lines {
+        min-width: 3.5rem;
+        overflow: hidden;
+        text-align: right;
+        color: var(--sl-color-gray-3);
+        background: transparent;
+        border: 0;
+        border-right: 1px solid var(--sl-color-gray-5);
+        user-select: none;
+    }
+    .pg-code {
+        flex: 1;
+        resize: none;
+        border: 0;
+        outline: none;
+        overflow: auto;
+        tab-size: 4;
+        color: var(--sl-color-text);
+        background: transparent;
+    }
+    .pg-side {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+    .pg-side section {
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        overflow: auto;
+    }
+    .pg-side section:first-child {
+        max-height: 12rem;
+    }
+    .pg-side section:last-child {
+        flex: 1;
+        max-height: 19rem;
+    }
+    .pg-side h2 {
+        margin: 0 0 0.25rem;
+        font-size: var(--sl-text-sm);
+    }
+    .pg-problems {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: var(--sl-text-sm);
+    }
+    .pg-problems li {
+        margin: 0.15rem 0;
+    }
+    .pg-error {
+        color: var(--sl-color-red-high, #f87171);
+    }
+    .pg-ok {
+        color: var(--sl-color-green-high, #4ade80);
+    }
+    .pg-link {
+        font-family: var(--pg-font);
+        font-size: var(--sl-text-xs);
+        border: 0;
+        padding: 0 0.3rem;
+        border-radius: 0.25rem;
+        background: var(--sl-color-gray-6);
+        color: var(--sl-color-text);
+        cursor: pointer;
+    }
+    .pg-hover {
+        display: block;
+        white-space: pre-wrap;
+        font-size: var(--sl-text-sm);
+    }
+    .pg-doc {
+        margin: 0.5rem 0 0;
+        padding: 0;
+        white-space: pre-wrap;
+        font-family: inherit;
+        font-size: var(--sl-text-sm);
+        background: transparent;
+        border: 0;
+    }
+    .pg-muted {
+        margin: 0;
+        color: var(--sl-color-gray-3);
+        font-size: var(--sl-text-sm);
+    }
+    .pg-output {
+        margin: 0;
+        max-height: 30rem;
+        overflow: auto;
+        padding: 0.75rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.5rem;
+        background: var(--sl-color-bg-inline-code, var(--sl-color-gray-6));
+        font-family: var(--pg-font);
+        font-size: 0.75rem;
+    }
+</style>

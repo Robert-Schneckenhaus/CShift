@@ -11,6 +11,7 @@ published on GitHub Pages by [.github/workflows/pages.yml](../.github/workflows/
 | Reference | the JSON of `cshiftc doc` for the standard library and the built-in types (`stdlib/builtin`), host and `m68k-amigaos`, turned into pages by `scripts/prepare.mjs` |
 | Search | Pagefind (built into Starlight), indexed when the site is built |
 | Syntax highlighting | the TextMate grammar of the VS Code extension (`vscode-extension/syntaxes`) |
+| Playground | `src/components/Playground.astro`: the compiler as WebAssembly (`public/playground/cshc.wasm`, built by `scripts/playground.sh`), run in the browser with an in-memory file system ([@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim)) |
 
 ## Building it locally
 
@@ -19,13 +20,22 @@ cd site
 npm ci
 git fetch origin 'refs/heads/release/*:refs/remotes/origin/release/*'
 bash scripts/history.sh <cshiftc> /tmp/history      # optional: "since"
+bash scripts/playground.sh <cshiftc>                 # optional: the playground (needs wasi-libc, see docs/wasm.md)
 CSHIFTC=<a cshiftc that knows 'doc'> SITE_HISTORY=/tmp/history npm run build     # or: npm run dev
 npx astro preview
 ```
 
 Without `CSHIFTC`, `scripts/prepare.mjs` takes the JSON from `site/api/host.json` and `site/api/amiga.json` if they are
-there, otherwise the site has no reference. The generated pages (`src/content/docs/docs`, `language`, `reference`) are
-not committed.
+there, otherwise the site has no reference. The generated pages (`src/content/docs/docs`, `language`, `spec`,
+`reference`) and the compiler of the playground (`public/playground`) are not committed.
+
+## The playground
+
+`scripts/playground.sh <cshiftc>` builds the compiler for WebAssembly (`cshiftc build selfhost --target wasm32-wasi`)
+into `public/playground/cshc.wasm`, after checking that the examples (`src/playground/examples.js`) compile. The page
+runs it for every check: `cshiftc check` for the problems, `cshiftc query --at` for the name at the cursor,
+`--emit-llvm` for the IR (`src/playground/compiler.js`). Without the file the page says that the compiler could not be
+loaded.
 
 ## Versions and "since"
 
