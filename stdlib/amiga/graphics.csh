@@ -215,6 +215,17 @@ struct Bitmap
         }
     }
 
+    /// Draws a given color pattern. Each byte in the pattern gives
+    /// a color index (0..31). Higher values are ignored (not drawn).
+    ///
+    /// If the number of given color indices is not a multiple of
+    /// `width`, the last row is still partially drawn.
+    ///
+    /// @param x          x coordinate.
+    /// @param y          y coordinate.
+    /// @param width      (row) width.
+    /// @param pattern    the given color indices.
+    /// @since 0.25
     void DrawPattern(int x, int y, int width, ReadOnlySlice<uint8> pattern)
     {
         Blitter.Wait();
