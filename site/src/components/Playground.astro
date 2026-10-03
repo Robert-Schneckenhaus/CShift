@@ -1,12 +1,14 @@
 ---
 // The playground: an editor whose program is checked by the CShift compiler running as WebAssembly in the browser
 // (public/playground/cshc.wasm, built by scripts/playground.sh). It shows the errors, what the name at the cursor is
-// (the hover of the VS Code extension) and the generated LLVM IR. The program can be shared as a link (#code=...).
+// (the hover of the VS Code extension) and the generated LLVM IR, and runs the program: the compiler's own wasm backend
+// (--backend wasm) turns it into WebAssembly, which runs in a worker. The program can be shared as a link (#code=...).
 import { examples } from "../playground/examples.js";
 ---
 
 <div class="pg not-content" data-wasm={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/playground/cshc.wasm`}>
     <div class="pg-bar">
+        <button type="button" class="pg-run" title="Run (Ctrl+Enter)">▶︎ Run</button>
         <select class="pg-examples" aria-label="Example">
             {examples.map((e, i) => <option value={i}>{e.name}</option>)}
         </select>
@@ -31,11 +33,12 @@ import { examples } from "../playground/examples.js";
             </section>
         </div>
     </div>
+    <pre class="pg-console" hidden aria-live="polite"></pre>
     <pre class="pg-output" hidden></pre>
 </div>
 
 <script>
-    import { loadCompiler, runCompiler, parseDiagnostics } from "../playground/compiler.js";
+    import { loadCompiler, runCompiler, runProgram, parseDiagnostics } from "../playground/compiler.js";
     import { examples } from "../playground/examples.js";
 
     const root = document.querySelector<HTMLElement>(".pg")!;
@@ -45,6 +48,8 @@ import { examples } from "../playground/examples.js";
     const problems = root.querySelector<HTMLUListElement>(".pg-problems")!;
     const info = root.querySelector<HTMLElement>(".pg-info")!;
     const output = root.querySelector<HTMLElement>(".pg-output")!;
+    const consoleBox = root.querySelector<HTMLElement>(".pg-console")!;
+    const runButton = root.querySelector<HTMLButtonElement>(".pg-run")!;
     const select = root.querySelector<HTMLSelectElement>(".pg-examples")!;
     const FILE = "main.csh";
 
@@ -78,6 +83,11 @@ import { examples } from "../playground/examples.js";
     }
     code.addEventListener("scroll", () => (lines.scrollTop = code.scrollTop));
     code.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            run();
+            return;
+        }
         if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
             e.preventDefault();
             const start = code.selectionStart;
@@ -188,6 +198,43 @@ import { examples } from "../playground/examples.js";
         if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") showInfo();
     });
 
+    // ---- running the program ----
+    let running: { stop(): void } | null = null;
+    function print(text: string, isError: boolean) {
+        const span = document.createElement("span");
+        if (isError) span.className = "pg-stderr";
+        span.textContent = text;
+        consoleBox.append(span);
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+    async function run() {
+        if (!compiler) return;
+        if (running) {
+            running.stop();
+            return;
+        }
+        consoleBox.replaceChildren();
+        consoleBox.hidden = false;
+        status.textContent = "Compiling…";
+        const started = performance.now();
+        const result = await runCompiler(compiler, ["--backend", "wasm", FILE, "-o", "main.wasm"], { [FILE]: code.value });
+        const program = result.files["main.wasm"];
+        if (result.code !== 0 || !program) {
+            print(result.stderr || result.stdout || "The program could not be compiled.", true);
+            status.textContent = "Compilation failed";
+            return;
+        }
+        status.textContent = `Compiled in ${Math.round(performance.now() - started)} ms, running…`;
+        runButton.textContent = "■︎ Stop";
+        const current = runProgram(program, [], print);
+        running = current;
+        const exit = await current.done;
+        running = null;
+        runButton.textContent = "▶︎ Run";
+        status.textContent = exit === null ? "Stopped" : `Exit code ${exit}`;
+    }
+    runButton.addEventListener("click", run);
+
     // ---- the buttons ----
     root.querySelector(".pg-ir")!.addEventListener("click", async () => {
         if (!compiler) return;
@@ -213,6 +260,7 @@ import { examples } from "../playground/examples.js";
         code.value = examples[+select.value].code;
         history.replaceState(null, "", location.pathname);
         output.hidden = true;
+        consoleBox.hidden = true;
         info.innerHTML = '<p class="pg-muted">Move the cursor onto a name.</p>';
         changed();
     });
@@ -376,6 +424,28 @@ import { examples } from "../playground/examples.js";
         margin: 0;
         color: var(--sl-color-gray-3);
         font-size: var(--sl-text-sm);
+    }
+    .pg-bar .pg-run {
+        background: var(--sl-color-accent);
+        border-color: var(--sl-color-accent);
+        color: var(--sl-color-black);
+        font-weight: 600;
+    }
+    .pg-console {
+        margin: 0;
+        min-height: 4rem;
+        max-height: 24rem;
+        overflow: auto;
+        padding: 0.75rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.5rem;
+        background: var(--sl-color-gray-7, var(--sl-color-black));
+        font-family: var(--pg-font);
+        font-size: var(--sl-text-sm);
+        white-space: pre-wrap;
+    }
+    .pg-stderr {
+        color: var(--sl-color-red, #e5484d);
     }
     .pg-output {
         margin: 0;

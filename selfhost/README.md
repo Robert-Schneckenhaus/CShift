@@ -52,7 +52,13 @@ selfhost/
 │   │   ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
 │   │   ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
 │   │   └── Module.csh       compiling the whole program, the entry point
-│   └── M68k/                namespace CShift.M68k: the 68000 backend (--backend m68k, docs/amiga.md)
+│   ├── Wasm/                namespace CShift.Wasm: the WebAssembly backend (--backend wasm, docs/wasm.md)
+│   │   ├── Encoder.csh      the binary format: bytes, LEB128 numbers, sections
+│   │   ├── Layout.csh       sizes and offsets of the IR types on wasm32
+│   │   └── Gen.csh          the module: what is used, memory and globals, functions (values in locals, blocks as
+│   │                        nested wasm blocks), calls, intrinsics; WASI and "env" imports
+│   └── M68k/                namespace CShift.M68k: the 68000 backend (--backend m68k, docs/amiga.md); its IR reader
+│                            is used by the wasm backend too
 │       ├── IrReader.csh     reads the IR text back (types, constants, functions, instructions)
 │       ├── Layout.csh       sizes and offsets of the IR types on the 68000
 │       ├── Prepare.csh      constant folding, dead code, variables written once, address folding

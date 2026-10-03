@@ -2,11 +2,20 @@
 
 CShift programs can be compiled to WebAssembly. A `.wasm` file runs in any WebAssembly runtime with WASI (the system
 interface: files, the clock, arguments, the console): node, wasmtime, wasmer, and in the browser with a WASI shim.
+There are two ways to get one:
 
 ```
-cshiftc --target wasm32-wasi hello.csh -o hello.wasm
-wasmtime --dir . hello.wasm                     # or: node tests/wasi-run.mjs hello.wasm
+cshiftc --backend wasm hello.csh -o hello.wasm          # CShift's own backend: nothing else needed
+cshiftc --target wasm32-wasi hello.csh -o hello.wasm    # LLVM: clang, wasi-libc and wasm-ld
+wasmtime --dir . hello.wasm                             # or: node tests/wasi-run.mjs hello.wasm
 ```
+
+| | `--backend wasm` | `--target wasm32-wasi` (LLVM) |
+|---|---|---|
+| needs | nothing (the compiler writes the module itself) | clang, wasi-libc, compiler-rt for wasm32, wasm-ld |
+| compiles | fast (the compiler builds itself in seconds), also inside the browser (the playground) | with LLVM's optimizations: faster code |
+| C headers, C code (`using X from "h.h"`) | no | yes, compiled for WebAssembly |
+| C library | its own, in CShift ([stdlib/wasm](../stdlib/wasm/libc.csh)), on WASI | wasi-libc |
 
 ```json
 {
@@ -16,7 +25,27 @@ wasmtime --dir . hello.wasm                     # or: node tests/wasi-run.mjs he
 }
 ```
 
-## What is needed
+## The wasm backend
+
+`--backend wasm` (or `"backend": "wasm"` in `cshift.json`; the target is then `wasm32-wasi`) translates the LLVM IR of
+the program itself into a WebAssembly module ([selfhost/src/Wasm](../selfhost/src/Wasm)): no clang, no linker, no C
+library of the system. What the program needs of a C library (memory, files, directories, the clock, printf's
+formatting, strtod, the math functions) is written in CShift and becomes a part of the program; only what is used is
+in the module. The module imports WASI (`wasi_snapshot_preview1`), exports `_start` and `memory`, and gives the
+program 8 MB of stack, like the LLVM target.
+
+A function that is declared but not defined (`extern "C" void draw(int x);` without a body) is imported from the
+module `env`: the host (JavaScript) provides it. The compiler warns about each one, so a missing function does not go
+unnoticed. [tests/wasi-run.mjs](../tests/wasi-run.mjs) makes them fail when they are called.
+
+The code is simple and correct first: values live in WebAssembly locals, structs in a frame on the shadow stack,
+blocks become nested WebAssembly blocks. WebAssembly runtimes compile it further, so it is not slow, but LLVM's
+optimizations make the code of `--target wasm32-wasi` faster.
+
+The tests run with `CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm bash tests/run_tests.sh`. They also build the
+compiler as WebAssembly with the backend, and that compiler (under node) must build itself again, byte for byte.
+
+## What the LLVM target needs
 
 clang compiles and links the program, so it needs the target's C library and linker:
 
@@ -46,7 +75,7 @@ indexes inside the runtime. The differences are those of the platform:
 
 ## Running the tests
 
-`CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` compiles the test programs for WebAssembly and runs them with node
+`CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` (add `CSHIFT_BACKEND=wasm` for the wasm backend) compiles the test programs for WebAssembly and runs them with node
 ([tests/wasi-run.mjs](../tests/wasi-run.mjs): the whole file system, the current directory in `PWD`). Cases that need
 threads or other programs are skipped (`// skip-target: wasm32`), and so are the projects and the debugger tests,
 which run programs directly. The CI does this on Linux after the native tests.

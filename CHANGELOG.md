@@ -10,8 +10,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - A playground (/playground/): the compiler runs as WebAssembly in the browser and checks the program as you type,
   shows what the name at the cursor is (the hover of the VS Code extension) and the LLVM IR it generates; examples, and
   a link that carries the program. The website build compiles it (site/scripts/playground.sh).
+- The playground runs programs: **Run** (Ctrl+Enter) compiles with the wasm backend and runs the program in the
+  browser, with its output below the editor.
 
 ### Targets
+- A WebAssembly backend of its own: `--backend wasm` (or `"backend": "wasm"`) writes a `.wasm` module for WASI without
+  clang, wasi-libc or a linker, with a C library written in CShift (stdlib/wasm); functions without a body are imported
+  from the module `env` (with a warning). The compiler builds itself with it in seconds, and that compiler (as
+  WebAssembly) builds itself again byte for byte; the CI runs all tests with it ([docs/wasm.md](docs/wasm.md)).
 - WebAssembly: `--target wasm32-wasi` (or `"target": "wasm32-wasi"`) compiles a program to a `.wasm` file for node,
   wasmtime and other WASI runtimes, with clang, wasi-libc and wasm-ld ([docs/wasm.md](docs/wasm.md)). The standard
   library runs unchanged except where the platform has nothing: `start` (threads) is a compile error, `Process.Run`
