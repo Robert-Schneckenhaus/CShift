@@ -200,18 +200,46 @@ struct Bitmap
 
     /// Pixels from text, one string per row: '0'..'9' and 'A'..'V' are the colors 0..31, every other character ('.',
     /// ' ') leaves the pixel as it is.
-    void DrawPattern(int x, int y, ReadOnlySlice<string> rows)
+    void DrawPattern(int x, int y, ReadOnlySlice<StringSlice> rows)
     {
         Blitter.Wait();
         for (var r = 0; r < rows.Length; r += 1)
         {
-            string row = rows[r];
+            StringSlice row = rows[r];
             for (var i = 0; i < row.Length; i += 1)
             {
                 int color = _PatternColor(row[i]);
                 if (color >= 0)
                     _Plot(x + i, y + r, color);
             }
+        }
+    }
+
+    void DrawPattern(int x, int y, int width, ReadOnlySlice<uint8> pattern)
+    {
+        Blitter.Wait();
+        int rows = (pattern.Length + width - 1) / width;
+        int lastRowWidth = pattern.Length % width;
+        int row = 0;
+        int index = 0;
+
+        if (lastRowWidth == 0)
+            lastRowWidth = width;
+        
+        while (row < rows)
+        {
+            for (var i = 0; i < width; i += 1)
+            {
+                int color = pattern[index + i];
+                if (color < 32)
+                    _Plot(x + i, y + row, color);
+            }
+
+            row += 1;
+            index += width;
+
+            if (row == rows - 1)
+                width = lastRowWidth;
         }
     }
 
@@ -768,7 +796,7 @@ struct Sprite
 
     /// One string per row (up to 16 characters): '1'..'3' are the sprite's colors, every other character ('.', ' ')
     /// is transparent. Null if there is not enough chip memory.
-    static Optional<Sprite> Create(ReadOnlySlice<string> rows)
+    static Optional<Sprite> Create(ReadOnlySlice<StringSlice> rows)
     {
         unsafe
         {
@@ -778,7 +806,7 @@ struct Sprite
                 return null;
             for (var r = 0; r < height; r += 1)
             {
-                string row = rows[r];
+                StringSlice row = rows[r];
                 int plane0 = 0;
                 int plane1 = 0;
                 for (var i = 0; i < row.Length && i < 16; i += 1)

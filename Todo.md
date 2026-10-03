@@ -34,3 +34,12 @@ the git log.
   layouts; a real C front end is a project of its own (Zig's Aro).
 - **A build written in CShift** (`build.csh`, like Zig), see [docs/build.md](docs/build.md).
 - **lld instead of the clang driver** on Windows (smaller toolchain).
+
+
+## New ideas
+
+- ReadOnlySlice<string[]> embed_lines("file.txt")
+- Implicit conversion from StringSlice to ReadOnlySlice<char>?
+- Wrong part is marked as error sometimes. E.g. if `Bar` has return type `int` and `foo` is a `char[]`, then `foo[i] = Bar(foo[i]);` should mark `Bar` as an error as a cast to `int` is missing. Or mark the spot in front of `Bar`. Currently the VSCode extension highlights the parameter `foo[i]` but says
+  "cannot implicitly convert 'int32' to 'uint8' (an explicit cast is required)"
+  I saw similar things in other places as well.

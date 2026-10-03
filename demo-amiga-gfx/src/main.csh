@@ -17,38 +17,10 @@ const int BallSize = 16;
 const int Ground = 200;              // the first line of the floor
 
 // a ball in the colors 8..11 (dark .. bright)
-const ReadOnlySlice<string> BallPattern = [
-    ".....888888.....",
-    "...8899999988...",
-    "..899999999998..",
-    ".89999AAAA99998.",
-    ".8999ABBBAA9998.",
-    "8999ABBBBAA99998",
-    "8999ABBBAAA99998",
-    "8999AAAAAA999998",
-    "89999AAAA9999998",
-    "8999999999999998",
-    "8999999999999988",
-    ".899999999999988",
-    ".889999999999888",
-    "..8889999998888.",
-    "...8888888888...",
-    ".....888888....."
-];
+const string BallPattern = embed("ball.txt");
 
 // a small ship for the sprite (colors 1..3 of the sprite: 17..19)
-const ReadOnlySlice<string> ShipPattern = [
-    ".......11.......",
-    "......1331......",
-    "......1331......",
-    ".....133331.....",
-    "....13322331....",
-    "...1332222331...",
-    "..133222222331..",
-    ".13333333333331.",
-    "1111..1111..1111",
-    "......2..2......"
-];
+const string ShipPattern = embed("ship.txt");
 
 // the background: a sky (color 0, colored by the copper), a floor of tiles, a frame and the title
 void DrawBackground(Bitmap b)
@@ -134,10 +106,12 @@ void Run(Screen screen, Bitmap background, Bitmap ball, int frames)
     DrawBackground(background);
     screen.Front.Copy(background, 0, 0, 0, 0, Width, Height);
     screen.Back.Copy(background, 0, 0, 0, 0, Width, Height);
-    ball.DrawPattern(0, 0, BallPattern);
+    
+    ball.DrawPattern(0, 0, BallPattern.Split('\n'));   
+
     if (ball.MakeMask() is Bitmap mask)
     {
-        if (Sprite.Create(ShipPattern) is Sprite ship)
+        if (Sprite.Create(ShipPattern.Split('\n')) is Sprite ship)
         {
             screen.ShowSprite(0, ship);
             screen.Show();
