@@ -44,3 +44,5 @@ the git log.
   "cannot implicitly convert 'int32' to 'uint8' (an explicit cast is required)"
   I saw similar things in other places as well.
 - Add things like `bool Equals(StringSlice a, StringSlice b)`, so all the good stuff available for `string` should also be available for `StringSlice`. Also prefer `StringSlice` in the stdlib, as `string` can be converted to it for free. For example `File.Exists` or `File.Delete` should use string slices to allow modified strings as input.
+- Jump Tower support for Amiga
+- Something similar to nuget packages. For the start maybe only local packages. Library projects can be published as packages. They can contain the library files for specific or all targets.
