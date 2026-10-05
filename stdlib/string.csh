@@ -63,6 +63,46 @@ int CompareTo(string a, string b)
     return 0;
 }
 
+// ---- The same for StringSlice: slices can be keys of a Dictionary or sorted in a List ----
+
+/// Whether `a` and `b` have the same bytes (`a == b`).
+bool Equals(StringSlice a, StringSlice b)
+{
+    return a == b;
+}
+
+/// A hash code of `s` (FNV-1a): the same as for a string with the same text.
+int GetHashCode(StringSlice s)
+{
+    uint hash = 2166136261;
+    for (var i = 0; i < s.Length; i += 1)
+        hash = unchecked((hash ^ (uint)s[i]) * 16777619);
+    return (int)hash;
+}
+
+/// Compares `a` and `b` by their UTF-8 bytes (ordinal, no locale), like strings.
+/// @returns -1 if `a` comes first, 0 if they are equal, 1 if `b` comes first.
+int CompareTo(StringSlice a, StringSlice b)
+{
+    int la = a.Length;
+    int lb = b.Length;
+    int n = la < lb ? la : lb;
+    for (var i = 0; i < n; i += 1)
+    {
+        if (a[i] != b[i])
+        {
+            if (a[i] < b[i])
+                return -1;
+            return 1;
+        }
+    }
+    if (la < lb)
+        return -1;
+    if (la > lb)
+        return 1;
+    return 0;
+}
+
 // ---- Searching ----
 
 /// The position of the first occurrence of `value` in `s` at or after `start`.

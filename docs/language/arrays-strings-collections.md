@@ -159,7 +159,8 @@ bool same = word == "world";     // slices and strings compare by their bytes
 
 * An array gives a `Slice<T>`, a string a `StringSlice` (byte offsets, like `s[i]`). Slices have `Length`, `[i]`
   (also `[^i]`), `foreach`, slicing again, and `==` for string slices; they go into text like strings (`"x" + word`,
-  `$"{word}"`).
+  `word + other`, `$"{word}"`). A `StringSlice` has the methods of strings (`Trim`, `Split`, `IndexOf`, ...) and can be
+  a key of a `Dictionary` or sorted in a `List` like a string.
 * A slice is a small value (the array or string it belongs to, the first element and the length). It holds a
   reference to that block, so it can be stored, returned and put into lists like any value; it also keeps the
   **whole** block alive (`bigText[0..10]` keeps all of `bigText`). Copy out with `word.ToString()` or
@@ -174,7 +175,8 @@ bool same = word == "world";     // slices and strings compare by their bytes
 * Ranges are checked: `0 <= start <= end <= Length`, otherwise the program panics like with an index out of range.
 * A `ReadOnlySlice<T>` can be passed to a `thread` function: the thread gets its own copy of the elements
   ([threading.md](threading.md#isolation)). `Slice<T>` and `StringSlice` cannot (the block's reference count is
-  not atomic, and a `Slice<T>` could be written); pass `word.ToString()` for a `StringSlice`. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL).
+  not atomic, and a `Slice<T>` could be written); pass `word.ToString()` for a `StringSlice`. In `unsafe` code, `.Ptr()` gives a pointer to the first element (no terminating NUL);
+  `word.CStr()` gives the text followed by a 0 byte for C (a copy only if the slice does not reach the end of its string).
 
 ## `List<T>`
 

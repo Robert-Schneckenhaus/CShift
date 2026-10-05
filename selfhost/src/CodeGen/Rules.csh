@@ -68,6 +68,13 @@ string ConditionError(Compiler cg, int t)
     return "a condition must be of type 'bool', not '" + types.Name(t) + "' (there is no implicit conversion to bool)";
 }
 
+// Whether l + r joins text: one operand is a string or a string slice (the other may be anything that has a text).
+bool IsTextJoin(Compiler cg, BinOp op, int l, int r)
+{
+    var types = cg.Types;
+    return op == BinOp.Add && (types.IsString(l) || types.IsString(r) || types.IsStringSlice(l) || types.IsStringSlice(r));
+}
+
 // The result type of l op r for + - * / % & | ^ << >> (see EmitArithmetic), 0 with the message, or unknown.
 int ArithmeticType(Compiler cg, BinOp op, Value l, Value r, ref string why)
 {
@@ -75,7 +82,7 @@ int ArithmeticType(Compiler cg, BinOp op, Value l, Value r, ref string why)
     if (AnyUnknown(cg, l, r))
         return types.Unknown;
     // string concatenation: the other operand may be anything that has a text
-    if (op == BinOp.Add && (types.IsString(l.Type) || types.IsString(r.Type)))
+    if (IsTextJoin(cg, op, l.Type, r.Type))
     {
         why = TextConversionError(cg, l.Type);
         if (why.Length == 0)

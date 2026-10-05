@@ -160,6 +160,20 @@ string StringSliceText(Compiler cg, Value v)
     return ir.Call("ptr", "@__cs_substring", "ptr " + p.Owner + ", i32 " + offset + ", i32 " + count);
 }
 
+// StringSlice.CStr(): a pointer to the text followed by a 0 byte, for C functions. A slice up to the end of its string
+// is passed as it is; any other slice is copied into a string that lives until the end of the statement.
+string StringSliceCStr(Compiler cg, Value v)
+{
+    var ir = cg.Ir;
+    Value s = ToRValue(cg, v);
+    HoldTemp(cg, s);
+    var p = PartsOf(cg, s);
+    string keep = ir.Alloca("ptr", "cstr");
+    string data = ir.Call("ptr", "@__cs_slice_cstr", "ptr " + p.Data + ", " + SizeIr(cg) + " " + p.Length + ", ptr " + keep);
+    HoldTemp(cg, Rvalue(cg.Types.String, ir.Load("ptr", keep), true));
+    return data;
+}
+
 // Slice<T>.ToArray(): a new array with the elements of the view (references are counted).
 Value SliceToArray(Compiler cg, Value v)
 {

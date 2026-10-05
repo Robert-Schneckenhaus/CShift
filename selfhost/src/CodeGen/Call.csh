@@ -1103,6 +1103,12 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             ExpectArgs(cg, args, 0, tname, method, loc);
             return SliceToArray(cg, obj);
         }
+        if (method == "CStr" && types.IsStringSlice(t))
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            RequireUnsafe(cg, loc, "StringSlice.CStr()");
+            return Rvalue(types.PointerTo(types.Char), StringSliceCStr(cg, obj), false);
+        }
         if (method == "Ptr")
         {
             ExpectArgs(cg, args, 0, tname, method, loc);

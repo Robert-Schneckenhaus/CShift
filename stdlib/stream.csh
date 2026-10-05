@@ -37,33 +37,33 @@ struct FileStream : IDisposable
 
     /// Opens an existing file for reading.
     /// @error IoError.CannotOpen the file does not exist or cannot be read.
-    static IoError<FileStream> OpenRead(string path)
+    static IoError<FileStream> OpenRead(StringSlice path)
     {
         return _Open(path, "rb", IoError.CannotOpen, "cannot open file '");
     }
 
     /// Opens an existing file for reading and writing, from the start, without truncating it.
     /// @error IoError.CannotOpen the file does not exist or cannot be opened.
-    static IoError<FileStream> OpenReadWrite(string path)
+    static IoError<FileStream> OpenReadWrite(StringSlice path)
     {
         return _Open(path, "r+b", IoError.CannotOpen, "cannot open file '");
     }
 
     /// Creates a new, empty file for writing (an existing one is truncated).
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
-    static IoError<FileStream> Create(string path)
+    static IoError<FileStream> Create(StringSlice path)
     {
         return _Open(path, "wb", IoError.CannotCreate, "cannot create file '");
     }
 
     /// Opens a file for writing at its end; it is created if it does not exist.
     /// @error IoError.CannotCreate the file cannot be opened or created.
-    static IoError<FileStream> Append(string path)
+    static IoError<FileStream> Append(StringSlice path)
     {
         return _Open(path, "ab", IoError.CannotCreate, "cannot open file '");
     }
 
-    static IoError<FileStream> _Open(string path, string mode, IoError code, string message)
+    static IoError<FileStream> _Open(StringSlice path, string mode, IoError code, string message)
     {
         unsafe
         {
@@ -231,7 +231,7 @@ struct StreamReader : IDisposable
 
     /// Opens a UTF-8 text file for reading; a byte order mark at its start is skipped.
     /// @error IoError.CannotOpen the file does not exist or cannot be read.
-    static IoError<StreamReader> Open(string path)
+    static IoError<StreamReader> Open(StringSlice path)
     {
         var stream = try FileStream.OpenRead(path);
         var reader = StreamReader { _stream = stream, _buffer = new uint8[4096] };
@@ -338,7 +338,7 @@ struct StreamWriter : IDisposable
 
     /// Creates a new, empty text file (an existing one is truncated).
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
-    static IoError<StreamWriter> Create(string path)
+    static IoError<StreamWriter> Create(StringSlice path)
     {
         var stream = try FileStream.Create(path);
         return StreamWriter { _stream = stream };
@@ -346,7 +346,7 @@ struct StreamWriter : IDisposable
 
     /// Opens a text file for writing at its end; it is created if it does not exist.
     /// @error IoError.CannotCreate the file cannot be opened or created.
-    static IoError<StreamWriter> Append(string path)
+    static IoError<StreamWriter> Append(StringSlice path)
     {
         var stream = try FileStream.Append(path);
         return StreamWriter { _stream = stream };

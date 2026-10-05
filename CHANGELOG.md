@@ -31,6 +31,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
 
+### Standard library
+- `StringSlice` can do what `string` can: `Equals`, `GetHashCode` (the same hash as a string with the same text) and
+  `CompareTo`, so slices are keys of a `Dictionary`, elements of a `HashSet` and sorted in a `List`; `+` joins two
+  slices; `slice.CStr()` (`unsafe`) passes one to C, copied only if it does not reach the end of its string.
+- Paths, names and commands are `StringSlice` parameters: `File`, `Directory`, `Path`, `FileStream`/`StreamReader`/
+  `StreamWriter`, `Process.Run`/`RunCapture`/`GetEnv`, and the text of `File.WriteAllText` and `Encoding.GetBytes`.
+  `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
+
 ### Tools
 - Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
   at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing

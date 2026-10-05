@@ -17,15 +17,15 @@ struct Process
 {
     /// Runs a command line through the system shell (`sh` or `cmd.exe`) and waits for it.
     /// @returns the exit code of the program, or -1 if it could not be started.
-    static int Run(string command)
+    static int Run(StringSlice command)
     {
         int result = 0;
         unsafe
         {
-            string line = command;
             if (IsWindows())
-                line = "\"" + command + "\""; // cmd.exe strips the outer quotes
-            result = system(line.CStr());
+                result = system(("\"" + command + "\"").CStr()); // cmd.exe strips the outer quotes
+            else
+                result = system(command.CStr());
         }
         // POSIX systems return the wait status (exit code in the second byte)
         if (!IsWindows() && result > 255)
@@ -48,15 +48,16 @@ struct Process
 
     /// Runs a command line through the system shell and returns everything the program writes to stdout.
     /// @returns nothing (`null`) if the program could not be started.
-    static Optional<string> RunCapture(string command)
+    static Optional<string> RunCapture(StringSlice command)
     {
         var sb = StringBuilder.Create();
         unsafe
         {
-            string line = command;
+            void* pipe = null;
             if (IsWindows())
-                line = "\"" + command + "\""; // cmd.exe strips the outer quotes
-            void* pipe = popen(line.CStr(), "r".CStr());
+                pipe = popen(("\"" + command + "\"").CStr(), "r".CStr()); // cmd.exe strips the outer quotes
+            else
+                pipe = popen(command.CStr(), "r".CStr());
             if (pipe == null)
                 return null;
             uint8* buffer = (uint8*)Memory.Allocate(4096);
@@ -76,7 +77,7 @@ struct Process
 
     /// The value of the environment variable `name`.
     /// @returns nothing (`null`) if it is not set.
-    static Optional<string> GetEnv(string name)
+    static Optional<string> GetEnv(StringSlice name)
     {
         unsafe
         {

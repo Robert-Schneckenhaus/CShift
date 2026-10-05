@@ -622,6 +622,12 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
             return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.String, "", false);
         if (method == "ToArray" && !types.IsStringSlice(t))
             return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ArrayOf(SliceElemType(cg, t)), "", false);
+        if (method == "CStr" && types.IsStringSlice(t))
+        {
+            if (ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) || ReportIf(cg, loc, UnsafeError(cg, "StringSlice.CStr()")))
+                return UnknownValue(cg);
+            return Rvalue(types.PointerTo(types.Char), "", false);
+        }
         if (method == "Ptr")
         {
             if (ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) || ReportIf(cg, loc, UnsafeError(cg, tname + ".Ptr()")))

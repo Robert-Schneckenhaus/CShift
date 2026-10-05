@@ -51,7 +51,7 @@ struct _Os
     }
 
     // the time a file was last written (100 ns units since 1970 UTC)
-    static Optional<int64> FileWriteTime(string path)
+    static Optional<int64> FileWriteTime(StringSlice path)
     {
         unsafe
         {
@@ -63,7 +63,7 @@ struct _Os
     }
 
     // replaces 'to' if it exists
-    static bool Rename(string from, string to)
+    static bool Rename(StringSlice from, StringSlice to)
     {
         unsafe
         {
@@ -72,7 +72,7 @@ struct _Os
     }
 
     // an empty directory
-    static bool RemoveDirectory(string path)
+    static bool RemoveDirectory(StringSlice path)
     {
         unsafe
         {
