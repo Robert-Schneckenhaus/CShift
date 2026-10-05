@@ -30,6 +30,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Language
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
+- A `string` or `StringSlice` converts to `ReadOnlySlice<char>` without a copy, so code for slices of characters
+  takes text (a `string` argument still prefers a `StringSlice` parameter); never back, the characters need not be
+  UTF-8. `text.AsBytes()` is the same view as `ReadOnlySlice<uint8>`, for functions that take bytes.
 - `embed_lines("file")`: the lines of a file as a `const ReadOnlySlice<string>`, read when the program is compiled -
   without their line ends (`\n` or `\r\n`), without an empty line after the last line end
   ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
@@ -45,6 +48,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - Paths, names and commands are `StringSlice` parameters: `File`, `Directory`, `Path`, `FileStream`/`StreamReader`/
   `StreamWriter`, `Process.Run`/`RunCapture`/`GetEnv`, and the text of `File.WriteAllText` and `Encoding.GetBytes`.
   `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
+- `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
+  `text.AsBytes()`.
 
 ### Tools
 - Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not

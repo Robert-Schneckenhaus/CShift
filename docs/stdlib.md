@@ -176,7 +176,8 @@ pauses the calling thread.
 
 **`FileStream`** — a file read or written piece by piece: `OpenRead(path)`, `OpenReadWrite(path)`, `Create(path)`,
 `Append(path)` (all `IoError<FileStream>`); `Read(buffer, offset, count)` (the number of bytes read, 0 at the end),
-`ReadByte()` (-1 at the end), `Write(bytes [, offset, count])`, `WriteByte(b)`, `WriteText(slice)` (UTF-8),
+`ReadByte()` (-1 at the end), `Write(bytes)` (a `ReadOnlySlice<uint8>`: an array, a part of one, `text.AsBytes()`),
+`Write(array, offset, count)`, `WriteByte(b)`, `WriteText(slice)` (UTF-8),
 `Position()`, `Seek(offset, SeekOrigin.Begin/Current/End)`, `Length()`, `Flush()`, `Close()` / `Dispose()`.
 **`StreamReader`** — `Open(path)`, `ReadLine()` (`Optional<string>`, without `\n` or `\r\n`; null at the end),
 `ReadToEnd()`, `EndOfStream()`; a UTF-8 BOM is skipped, invalid bytes become `?`. **`StreamWriter`** — `Create(path)`,

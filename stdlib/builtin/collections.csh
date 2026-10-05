@@ -100,4 +100,8 @@ struct StringSlice
     /// The text as a C string (`unsafe`): followed by a 0 byte, for C functions. A slice that reaches the end of its
     /// string is passed as it is; any other slice is copied into a string that lives until the end of the statement.
     char* CStr();
+
+    /// The bytes of the text (UTF-8) as a view, for functions that take bytes; nothing is copied. (A `StringSlice`
+    /// converts to `ReadOnlySlice<char>` by itself.)
+    ReadOnlySlice<uint8> AsBytes();
 }

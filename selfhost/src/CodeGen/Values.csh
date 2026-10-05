@@ -289,6 +289,15 @@ int ConversionCost(Compiler cg, Value v, int to)
     // a Slice<T> as a ReadOnlySlice<T> (same layout; never the other way)
     if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to) && types.Elem(from) == types.Elem(to))
         return 1;
+    // text as its characters: a StringSlice as a ReadOnlySlice<char> (same layout), a whole string as a view (after
+    // StringSlice, which is preferred for a string); never the other way (the chars need not be UTF-8)
+    if (types.IsReadOnlySlice(to) && types.Elem(to) == types.Char)
+    {
+        if (types.IsStringSlice(from))
+            return 1;
+        if (types.IsString(from))
+            return 3;
+    }
     // Error<T, E> -> Error<T>: the code widens to int (same layout)
     if (types.IsError(from) && types.IsError(to) && types.Elem(from) == types.Elem(to) && types.Code(to) == 0)
         return 1;
@@ -436,8 +445,9 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
     }
     if ((types.IsString(from) || types.IsArray(from)) && types.IsSlice(to))
         return ToSlice(cg, v, to);
-    if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to))
+    if ((types.Kind(from) == TypeKind.Slice || types.IsStringSlice(from)) && types.IsReadOnlySlice(to))
     {
+        // Slice<T> -> ReadOnlySlice<T>, StringSlice -> ReadOnlySlice<char>: the same view
         Value view = ToRValue(cg, v);
         view.Type = to;
         return view;

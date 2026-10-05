@@ -586,6 +586,8 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
                 return UnknownValue(cg);
             return Rvalue(types.PointerTo(types.Char), "", false);
         }
+        if (method == "AsBytes")
+            return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ReadOnlySliceOf(types.U8), "", false);
         if (method == "Substring")
         {
             if (args.Length == 0 || args.Length > 2)
@@ -628,6 +630,8 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
                 return UnknownValue(cg);
             return Rvalue(types.PointerTo(types.Char), "", false);
         }
+        if (method == "AsBytes" && types.IsStringSlice(t))
+            return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ReadOnlySliceOf(types.U8), "", false);
         if (method == "Ptr")
         {
             if (ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) || ReportIf(cg, loc, UnsafeError(cg, tname + ".Ptr()")))

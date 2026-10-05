@@ -121,11 +121,20 @@ struct FileStream : IDisposable
         return;
     }
 
-    /// Writes all of `buffer`.
+    /// Writes all of `bytes`: an array, a part of one, or the bytes of a text (`text.AsBytes()`).
     /// @error IoError.CannotWrite the stream is closed or writing failed.
-    IoError<void> Write(uint8[] buffer)
+    IoError<void> Write(ReadOnlySlice<uint8> bytes)
     {
-        return Write(buffer, 0, buffer.Length);
+        if (bytes.Length == 0)
+            return;
+        if (_file == null)
+            return error("the stream is closed", IoError.CannotWrite);
+        unsafe
+        {
+            if (fwrite(bytes.Ptr(), 1, (nuint)bytes.Length, _file) != (nuint)bytes.Length)
+                return error("cannot write to the file", IoError.CannotWrite);
+        }
+        return;
     }
 
     /// Writes one byte.

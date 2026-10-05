@@ -95,7 +95,7 @@ struct File
     /// Creates the file or replaces its contents with `bytes`.
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     /// @error IoError.CannotWrite writing failed (the disk is full, ...).
-    static IoError<void> WriteAllBytes(StringSlice path, uint8[] bytes)
+    static IoError<void> WriteAllBytes(StringSlice path, ReadOnlySlice<uint8> bytes)
     {
         unsafe
         {
@@ -106,7 +106,7 @@ struct File
             int length = bytes.Length;
             nuint written = 0;
             if (length > 0)
-                written = fwrite(&bytes[0], 1, (nuint)length, f);
+                written = fwrite(bytes.Ptr(), 1, (nuint)length, f);
             int closed = fclose(f);
             if (written != (nuint)length || closed != 0)
                 return error("cannot write file '" + path + "'", IoError.CannotWrite);
