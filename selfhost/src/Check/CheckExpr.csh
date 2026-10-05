@@ -86,6 +86,7 @@ Value CheckExpr(Compiler cg, Expr e)
         return UnknownValue(cg); // its type comes from the Action/Func it is converted to (code generation for now)
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
+    case ExprKind.EmbedLines:
         CheckError(cg, e.Loc, EmbedPlaceError());
         return UnknownValue(cg);
     default:

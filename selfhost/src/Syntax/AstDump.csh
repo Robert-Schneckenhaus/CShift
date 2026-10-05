@@ -110,6 +110,7 @@ struct AstDumper
         }
         case ExprKind.Embed:
         case ExprKind.EmbedFilenames:
+        case ExprKind.EmbedLines:
         case ExprKind.StringLit:
         {
             var n = Tree.GetStringLit(e);
@@ -325,6 +326,7 @@ struct AstDumper
         case ExprKind.StringLit: return "StringLit";
         case ExprKind.Embed: return "Embed";
         case ExprKind.EmbedFilenames: return "EmbedFilenames";
+        case ExprKind.EmbedLines: return "EmbedLines";
         case ExprKind.BoolLit: return "BoolLit";
         case ExprKind.NullLit: return "NullLit";
         case ExprKind.Name: return "Name";

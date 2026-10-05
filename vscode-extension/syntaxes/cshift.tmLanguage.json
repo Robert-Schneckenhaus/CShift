@@ -167,7 +167,7 @@
 				},
 				{
 					"name": "keyword.operator.expression.cshift",
-					"match": "\\bsizeof\\b"
+					"match": "\\b(sizeof|embed|embed_filenames|embed_lines)\\b"
 				},
 				{
 					"comment": "'start' (start Foo(...)) is a contextual keyword, not reserved: only highlighted when it looks like the start of a call, so a variable/parameter actually named 'start' (e.g. Substring(int start, ...)) is unaffected",

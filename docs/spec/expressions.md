@@ -40,7 +40,7 @@ of a call. There is no `++`, `--`, `??`, `?.`, `as`, `typeof` or `checked`.
 | `sizeof(T)` | the size of `T` in bytes, an `int` constant |
 | `default(T)` | the [default value](types.md#default-values) of `T` |
 | `unchecked(e)` | `e` with [unchecked arithmetic](#integer-arithmetic) |
-| `embed(...)`, `embed_filenames(...)` | [files as constants](#embed) |
+| `embed(...)`, `embed_filenames(...)`, `embed_lines(...)` | [files as constants](#embed) |
 
 ## Member access and calls
 
@@ -234,8 +234,9 @@ without format and alignment is a constant expression if its holes are.
 
 `embed("file")` is the content of a file as a `string` constant, read when the program is compiled;
 `embed("*.txt")` (with `*` or `?` in the file name) the contents of the matching files as a `ReadOnlySlice<string>`,
-sorted by name, and `embed_filenames(...)` their names. It is only allowed as the whole initializer of a constant, with
-a string literal; the rules for finding the file are in [constants](../language/constants-and-globals.md#embedded-files-embed-and-embed_filenames).
+sorted by name, and `embed_filenames(...)` their names; `embed_lines("file")` the lines of one file as a
+`ReadOnlySlice<string>`, without their line ends. It is only allowed as the whole initializer of a constant, with
+a string literal; the rules for finding the file are in [constants](../language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines).
 
 ## Constant expressions
 

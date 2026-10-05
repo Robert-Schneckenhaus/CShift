@@ -57,7 +57,7 @@ const int Letters = "hello".Length;            // (also for constant strings)
   slice is copied like any `ReadOnlySlice<T>`.
 * [`Enum<T>.Values` and `Enum<T>.Names`](enums.md#enumt-facts-about-an-enum) are constant slices as well.
 
-### Embedded files: `embed` and `embed_filenames`
+### Embedded files: `embed`, `embed_filenames` and `embed_lines`
 
 `embed("file")` reads a file when the program is compiled and makes its content a string constant - for shaders,
 translations, version files and the like:
@@ -79,12 +79,26 @@ for (var i = 0; i < Levels.Length; i += 1)
     Console.WriteLine(LevelNames[i] + ": " + Levels[i].Length.ToString() + " characters");
 ```
 
+`embed_lines` reads one file and gives its lines as a constant `ReadOnlySlice<string>` - word lists, maps of a level,
+the rows of a sprite:
+
+```csharp
+const ReadOnlySlice<string> Words = embed_lines("words.txt");
+const ReadOnlySlice<string> Ship = embed_lines("ship.txt");    // "..11..", ".1221.", ...
+
+Console.WriteLine(Words.Length.ToString() + " words, the first is " + Words[0]);
+```
+
+The lines are without their line ends (`\n` or `\r\n`, so a file checked out with Windows line ends gives the same
+lines); a line end at the end of the file does not start another, empty line, and an empty file has no lines. A
+wildcard is an error: for several files use `embed("*.txt")`.
+
 * **Result type:** with a wildcard it is always `const ReadOnlySlice<string>` (empty if no file matches); without one
-  it is `const string` (`embed_filenames("x.txt")` gives `"x.txt"` and checks that the file exists). The constant must
-  be declared with exactly this type.
+  it is `const string` (`embed_filenames("x.txt")` gives `"x.txt"` and checks that the file exists). `embed_lines` is
+  always `const ReadOnlySlice<string>`. The constant must be declared with exactly this type.
 * **Wildcards only in the file name:** `embed("data/*.json")` is fine, `embed("*/a.json")` is an error. Folders never
   match, and subfolders are not searched.
-* **Only like this:** `embed(...)`/`embed_filenames(...)` is the whole initializer of a constant (top level or local).
+* **Only like this:** `embed(...)`/`embed_filenames(...)`/`embed_lines(...)` is the whole initializer of a constant (top level or local).
   It does not exist at run time, cannot be part of a larger expression, and its argument must be a string literal.
   The constants are ordinary constants afterwards: `[..LevelNames, "extra.txt"]` is a constant slice too.
 * **Exact content:** the constant holds the file's text unchanged - quotes, backslashes, `\r\n` and `\n` stay as they
@@ -95,7 +109,7 @@ for (var i = 0; i < Levels.Length; i += 1)
   A missing file is a compile error that lists where it was looked for. For a wildcard the folder is searched the same
   way: the first folder that has a matching file is used.
 * The file is read on every build, so a change to it is picked up the next time the program is compiled.
-* `embed` and `embed_filenames` are keywords, so they cannot be used as names.
+* `embed`, `embed_filenames` and `embed_lines` are keywords, so they cannot be used as names.
 
 ## Global variables
 

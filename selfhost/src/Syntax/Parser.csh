@@ -1685,6 +1685,7 @@ struct Parser
         case TokenKind.KwSizeof:
         case TokenKind.KwEmbed:
         case TokenKind.KwEmbedFilenames:
+        case TokenKind.KwEmbedLines:
         case TokenKind.KwNull:
         case TokenKind.KwTrue:
         case TokenKind.KwFalse:
@@ -1860,18 +1861,29 @@ struct Parser
         }
         case TokenKind.KwEmbed:
         case TokenKind.KwEmbedFilenames:
+        case TokenKind.KwEmbedLines:
         {
-            // embed("file") / embed_filenames("*.txt"): only a string literal, the files are read when the program
-            // is compiled
-            bool names = Cur().Kind == TokenKind.KwEmbedFilenames;
-            string word = names ? "embed_filenames" : "embed";
+            // embed("file") / embed_filenames("*.txt") / embed_lines("file"): only a string literal, the files are
+            // read when the program is compiled
+            var kind = ExprKind.Embed;
+            string word = "embed";
+            if (Cur().Kind == TokenKind.KwEmbedFilenames)
+            {
+                kind = ExprKind.EmbedFilenames;
+                word = "embed_filenames";
+            }
+            else if (Cur().Kind == TokenKind.KwEmbedLines)
+            {
+                kind = ExprKind.EmbedLines;
+                word = "embed_lines";
+            }
             Advance();
             try Expect(TokenKind.LParen, "'(' after '" + word + "'");
             if (!Check(TokenKind.StringLit))
                 return error(word + " needs a file name or pattern as a string literal: " + word + "(\"file.txt\")", Cur().Loc.Pack());
             Token path = Advance();
             try Expect(TokenKind.RParen, "')' after the file name of '" + word + "'");
-            return Tree.AddEmbed(loc, StringLitExpr { Value = path.Text }, names);
+            return Tree.AddEmbed(loc, StringLitExpr { Value = path.Text }, kind);
         }
         case TokenKind.KwDefault:
         {

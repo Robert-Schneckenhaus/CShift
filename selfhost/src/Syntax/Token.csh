@@ -15,7 +15,7 @@ enum TokenKind : int32
     KwNamespace, KwUsing, KwStruct, KwInterface, KwEnum, KwExtern, KwUnsafe, KwUnchecked,
     KwIf, KwElse, KwWhile, KwDo, KwFor, KwForeach, KwIn, KwSwitch, KwCase, KwDefault,
     KwBreak, KwContinue, KwReturn, KwNew, KwTry, KwIs, KwWhere, KwConst, KwRef, KwStatic,
-    KwTrue, KwFalse, KwNull, KwThis, KwSizeof, KwEmbed, KwEmbedFilenames,
+    KwTrue, KwFalse, KwNull, KwThis, KwSizeof, KwEmbed, KwEmbedFilenames, KwEmbedLines,
 
     // Punctuation
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,

@@ -30,6 +30,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Language
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
+- `embed_lines("file")`: the lines of a file as a `const ReadOnlySlice<string>`, read when the program is compiled -
+  without their line ends (`\n` or `\r\n`), without an empty line after the last line end
+  ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
+
+### Amiga
+- `Bitmap.DrawPattern` and `Sprite.Create` also take the rows as a `ReadOnlySlice<string>`, such as the lines of a
+  file from `embed_lines`; demo-amiga-gfx uses that instead of splitting the text at run time.
 
 ### Standard library
 - `StringSlice` can do what `string` can: `Equals`, `GetHashCode` (the same hash as a string with the same text) and

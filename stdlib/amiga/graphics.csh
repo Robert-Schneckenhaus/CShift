@@ -204,14 +204,25 @@ struct Bitmap
     {
         Blitter.Wait();
         for (var r = 0; r < rows.Length; r += 1)
+            _PatternRow(x, y + r, rows[r]);
+    }
+
+    /// The same with the rows as strings, e.g. the lines of a file:
+    /// `const ReadOnlySlice<string> Ball = embed_lines("ball.txt");` ... `bitmap.DrawPattern(0, 0, Ball);`
+    void DrawPattern(int x, int y, ReadOnlySlice<string> rows)
+    {
+        Blitter.Wait();
+        for (var r = 0; r < rows.Length; r += 1)
+            _PatternRow(x, y + r, rows[r]);
+    }
+
+    void _PatternRow(int x, int y, StringSlice row)
+    {
+        for (var i = 0; i < row.Length; i += 1)
         {
-            StringSlice row = rows[r];
-            for (var i = 0; i < row.Length; i += 1)
-            {
-                int color = _PatternColor(row[i]);
-                if (color >= 0)
-                    _Plot(x + i, y + r, color);
-            }
+            int color = _PatternColor(row[i]);
+            if (color >= 0)
+                _Plot(x + i, y, color);
         }
     }
 
@@ -809,34 +820,57 @@ struct Sprite
     /// is transparent. Null if there is not enough chip memory.
     static Optional<Sprite> Create(ReadOnlySlice<StringSlice> rows)
     {
+        if (_Allocate(rows.Length) is not Sprite sprite)
+            return null;
+        for (var r = 0; r < rows.Length; r += 1)
+            sprite._SetRow(r, rows[r]);
+        return sprite;
+    }
+
+    /// The same with the rows as strings, e.g. the lines of a file:
+    /// `const ReadOnlySlice<string> Ship = embed_lines("ship.txt");` ... `Sprite.Create(Ship)`.
+    static Optional<Sprite> Create(ReadOnlySlice<string> rows)
+    {
+        if (_Allocate(rows.Length) is not Sprite sprite)
+            return null;
+        for (var r = 0; r < rows.Length; r += 1)
+            sprite._SetRow(r, rows[r]);
+        return sprite;
+    }
+
+    // A sprite of 'height' rows in chip memory, at (0, 0), all transparent.
+    static Optional<Sprite> _Allocate(int height)
+    {
         unsafe
         {
-            int height = rows.Length;
             var data = (uint16*)Hardware.AllocChip((height + 2) * 4);
             if (data == null)
                 return null;
-            for (var r = 0; r < height; r += 1)
-            {
-                StringSlice row = rows[r];
-                int plane0 = 0;
-                int plane1 = 0;
-                for (var i = 0; i < row.Length && i < 16; i += 1)
-                {
-                    int c = (int)row[i] - '0';
-                    if (c >= 1 && c <= 3)
-                    {
-                        if ((c & 1) != 0)
-                            plane0 |= 0x8000 >> i;
-                        if ((c & 2) != 0)
-                            plane1 |= 0x8000 >> i;
-                    }
-                }
-                data[2 + r * 2] = (uint16)plane0;
-                data[3 + r * 2] = (uint16)plane1;
-            }
             var sprite = Sprite { _data = data, Height = height };
             sprite.MoveTo(0, 0);
             return sprite;
+        }
+    }
+
+    void _SetRow(int r, StringSlice row)
+    {
+        int plane0 = 0;
+        int plane1 = 0;
+        for (var i = 0; i < row.Length && i < 16; i += 1)
+        {
+            int c = (int)row[i] - '0';
+            if (c >= 1 && c <= 3)
+            {
+                if ((c & 1) != 0)
+                    plane0 |= 0x8000 >> i;
+                if ((c & 2) != 0)
+                    plane1 |= 0x8000 >> i;
+            }
+        }
+        unsafe
+        {
+            _data[2 + r * 2] = (uint16)plane0;
+            _data[3 + r * 2] = (uint16)plane1;
         }
     }
 

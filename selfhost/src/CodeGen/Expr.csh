@@ -40,6 +40,7 @@ Value EmitExprKind(Compiler cg, Expr e)
     case ExprKind.Slice: return EmitSlice(cg, e);
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
+    case ExprKind.EmbedLines:
         FailEmbedPlace(cg, e.Loc);
         return Value { };
     case ExprKind.NewArray: return EmitNewArray(cg, e);
