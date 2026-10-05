@@ -267,8 +267,16 @@ Value EmitUnionCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc l
         {
             if (InterfaceMethod(cg, iface, k).Name != name)
                 continue;
-            // a variable is changed in place by the method; a temporary value is called on a copy
-            string slot = obj.IsLValue && !obj.IsConst ? obj.V : UnionSlot(cg, ToRValue(cg, obj));
+            // a variable is changed in place by the method; a temporary value or a 'const ref' is called on a copy,
+            // released at the end of the statement with what it holds then
+            string slot = obj.V;
+            if (!obj.IsLValue || obj.IsConst)
+            {
+                string ty = LlvmType(cg, union);
+                slot = cg.Ir.Alloca(ty, "union");
+                cg.Ir.Store(ty, Consume(cg, obj), slot);
+                HoldTempSlot(cg, union, slot);
+            }
             return EmitInterfaceCall(cg, Rvalue(iface, UnionAsInterface(cg, union, slot, iface), false), name, args, loc);
         }
     }

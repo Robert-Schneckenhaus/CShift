@@ -160,6 +160,7 @@ struct TempRelease
 {
     int Type;
     string Value;
+    bool InSlot;         // Value is a slot: what it holds when the temporary is released (a method may change it)
 }
 
 struct LoopCtx

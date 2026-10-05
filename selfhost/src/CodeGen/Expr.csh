@@ -1265,10 +1265,7 @@ List<TempRelease> TakeTemps(Compiler cg, int baseCount)
 void ReleaseTemps(Compiler cg, List<TempRelease> list)
 {
     for (var i = list.Count(); i > 0; i -= 1)
-    {
-        var t = list.Get(i - 1);
-        EmitRelease(cg, t.Type, t.Value);
-    }
+        ReleaseTemp(cg, list.Get(i - 1));
 }
 
 Value EmitCast(Compiler cg, Expr e)

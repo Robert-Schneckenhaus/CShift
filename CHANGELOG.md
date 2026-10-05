@@ -48,6 +48,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   loops that reach it again, not when the variable's address is taken). In the compiler's own code 9 % of the retains
   go away; on the 68000 a loop that builds and returns structs of a string and a list takes 13 % fewer cycles (on x86
   LLVM had removed most of these pairs already).
+- A method that replaces a field of the copy it works on - called on a `const ref` parameter or on a temporary such
+  as `Make().Rename()`, of a struct or a union - no longer frees the old value twice (the caller still held it) and no
+  longer leaks the new one: the copy is released with what it holds after the call.
 - A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
   after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 

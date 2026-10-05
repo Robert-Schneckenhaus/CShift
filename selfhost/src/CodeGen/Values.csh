@@ -80,6 +80,20 @@ void HoldTemp(Compiler cg, Value v)
         cg.Fn[0].Temps.Add(TempRelease { Type = v.Type, Value = v.V });
 }
 
+// A temporary struct in a slot (the copy that a method works on): what the slot holds at the end of the statement is
+// released, because the method may have replaced fields of it.
+void HoldTempSlot(Compiler cg, int type, string slot)
+{
+    if (NeedsArc(cg, type))
+        cg.Fn[0].Temps.Add(TempRelease { Type = type, Value = slot, InSlot = true });
+}
+
+void ReleaseTemp(Compiler cg, TempRelease t)
+{
+    string value = t.InSlot ? cg.Ir.Load(LlvmType(cg, t.Type), t.Value) : t.Value;
+    EmitRelease(cg, t.Type, value);
+}
+
 // Releases the temporaries above 'mark'; with 'pop' they are also forgotten.
 void FlushTemps(Compiler cg, int mark, bool pop)
 {
@@ -88,8 +102,7 @@ void FlushTemps(Compiler cg, int mark, bool pop)
     {
         for (var i = temps.Count(); i > mark; i -= 1)
         {
-            var t = temps.Get(i - 1);
-            EmitRelease(cg, t.Type, t.Value);
+            ReleaseTemp(cg, temps.Get(i - 1));
         }
     }
     if (pop)

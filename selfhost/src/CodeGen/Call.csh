@@ -685,19 +685,14 @@ Value EmitMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, int[] me
     {
         thisPtr = obj.V;
     }
-    else if (obj.IsLValue)
-    {
-        // A read-only alias ('const ref'): the method could modify the object, so it works on a copy.
-        Value copy = Rvalue(obj.Type, Consume(cg, obj), true);
-        HoldTemp(cg, copy);
-        thisPtr = cg.Ir.Alloca(LlvmType(cg, obj.Type), "tmp");
-        cg.Ir.Store(LlvmType(cg, obj.Type), copy.V, thisPtr);
-    }
     else
     {
-        HoldTemp(cg, obj);
-        thisPtr = cg.Ir.Alloca(LlvmType(cg, obj.Type), "tmp");
-        cg.Ir.Store(LlvmType(cg, obj.Type), obj.V, thisPtr);
+        // A read-only alias ('const ref') or a temporary: the method works on a copy in a slot (it could modify the
+        // object). The slot is released at the end of the statement with what it holds then.
+        string ty = LlvmType(cg, obj.Type);
+        thisPtr = cg.Ir.Alloca(ty, "tmp");
+        cg.Ir.Store(ty, Consume(cg, obj), thisPtr);
+        HoldTempSlot(cg, obj.Type, thisPtr);
     }
     return EmitDirectCall(cg, instance, thisPtr, args, loc);
 }
