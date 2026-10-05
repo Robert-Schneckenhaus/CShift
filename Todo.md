@@ -12,21 +12,44 @@ the git log.
       safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
+- [ ] m68k backend: faster counted loops, ending in jump towers. The runtime's `memcpy`/`memmove`/`memset` use towers
+      already (a body unrolled 16 times, entered in the middle so that the first pass does the remainder, see
+      [docs/amiga.md](docs/amiga.md#how-the-backend-works)). For the loops of a program they only pay off after the
+      steps before them: today `for (var i = 0; i < row.Length; i += 1) row[i] = color;` runs about 20 instructions
+      per element - the length is loaded twice (loop condition and bounds check), the index is shifted, `i + 1` is
+      checked for overflow. In this order:
+      1. keep loop-invariant values (`row.Length`, the array's data pointer) in registers,
+      2. drop the bounds check when the loop condition already proves it (`0 <= i < a.Length`, `i` grows by 1, `a`
+         is not assigned in the loop), and the overflow check of such an `i`,
+      3. walk a pointer instead of indexing (`move.w %d4,(%a0)+`), with `dbra` for the count,
+      4. then a tower for an innermost loop whose body is a few instructions without calls, at `-O2`/`-O3` only
+         (`-O1` keeps the size small for floppy disks; on a 68020 the body must stay within its 256-byte cache).
+         Bodies whose copies differ in size need a jump table instead of a computed offset.
 
 ## Tooling
 
 - [ ] VS Code: renaming, and completion of names (not only of members after `.`), on top of the symbol index of
       `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)).
-
+- [ ] Errors with an end: cshiftc reports where an error starts, and the VS Code extension guesses how far the
+      expression goes (`errorRangeEnd` in [vscode-extension/lib.js](vscode-extension/lib.js)). The parser would have
+      to keep the end of every expression, and `cshiftc check` print it.
 - [ ] Website (site/): a complete language reference (grammar, types, conversions, operators), separate from the
       tour.
 
 ## Standard library
 
 - [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
+- [ ] The rest of the byte functions on slices: `Encoding.GetString`, `string.FromBytes` and `FileStream.Read`
+      (`Slice<uint8>`) still take arrays. `Regex` takes `string` (its matches refer to the text; a `StringSlice`
+      needs matches with offsets into the slice).
 
 ## Ideas (not started)
 
+- **Packages beyond local folders.** `"dependencies"` names the folders of library projects
+  ([docs/language/projects.md](docs/language/projects.md#libraries)); missing are versions, a place to publish and
+  fetch packages (a registry, or git URLs with a tag), a lock file and a cache folder. A package stays source code,
+  with prebuilt C libraries per platform where it needs them: the whole program is compiled at once and generics are
+  instantiated per use, so there is no binary library format for CShift code.
 - **A libclang-free `cshiftc` with a repository of pre-generated `.ffi` files** (keyed by header, content hash and
   target), falling back to an error for headers nobody has published. Open: who curates and signs the files (a
   wrong `.ffi` file silently produces a wrong ABI), offline builds, where the cache lives. Alternatives to libclang
@@ -34,15 +57,3 @@ the git log.
   layouts; a real C front end is a project of its own (Zig's Aro).
 - **A build written in CShift** (`build.csh`, like Zig), see [docs/build.md](docs/build.md).
 - **lld instead of the clang driver** on Windows (smaller toolchain).
-
-
-## New ideas
-
-- ReadOnlySlice<string[]> embed_lines("file.txt")
-- Implicit conversion from StringSlice to ReadOnlySlice<char>?
-- Wrong part is marked as error sometimes. E.g. if `Bar` has return type `int` and `foo` is a `char[]`, then `foo[i] = Bar(foo[i]);` should mark `Bar` as an error as a cast to `int` is missing. Or mark the spot in front of `Bar`. Currently the VSCode extension highlights the parameter `foo[i]` but says
-  "cannot implicitly convert 'int32' to 'uint8' (an explicit cast is required)"
-  I saw similar things in other places as well.
-- Add things like `bool Equals(StringSlice a, StringSlice b)`, so all the good stuff available for `string` should also be available for `StringSlice`. Also prefer `StringSlice` in the stdlib, as `string` can be converted to it for free. For example `File.Exists` or `File.Delete` should use string slices to allow modified strings as input.
-- Jump Tower support for Amiga
-- Something similar to nuget packages. For the start maybe only local packages. Library projects can be published as packages. They can contain the library files for specific or all targets.
