@@ -52,6 +52,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `text.AsBytes()`.
 
 ### Tools
+- Libraries: a project with `"type": "library"` is source code that other projects use; `"dependencies":
+  ["../geometry"]` in `cshift.json` makes its sources, `links`, include paths, defines and `ffiApi` (with its
+  `platforms` entries, e.g. prebuilt C libraries per platform) a part of the project. Libraries may depend on
+  libraries; one that is reached twice is used once, a cycle is an error. `cshiftc build` of a library checks it
+  ([projects](docs/language/projects.md#libraries)).
 - Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
   at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing
   method) at the name of the function, a missing member at its name instead of the `.` before it.

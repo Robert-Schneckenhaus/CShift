@@ -1,0 +1,4 @@
+{
+	"name": "packages",
+	"dependencies": ["libs/shapes", "libs/text"]
+}

@@ -1,0 +1,4 @@
+{
+	"name": "uses-tool",
+	"dependencies": ["tool"]
+}

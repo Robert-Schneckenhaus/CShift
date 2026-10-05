@@ -32,12 +32,13 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 |---|---|---|
 | `name` | the project name (letters, digits, `_ - .`); required | – |
 | `version` | version (informational only) | – |
-| `type` | `"executable"` (link a program) or `"object"` (object file only) | `"executable"` |
+| `type` | `"executable"` (link a program), `"object"` (object file only) or `"library"` (source code for other projects, see `dependencies`; `build` only checks it) | `"executable"` |
 | `sources` | a list of files and folders; folders are searched recursively for `*.csh`, paths are relative to `cshift.json` | `["src"]` |
 | `output` | the output path without an extension (`.exe`/`.obj`/`.o` is added depending on the platform) | `"bin/<name>"` |
 | `optimize` | 0–3 (like `-O0` … `-O3`) | `2` |
 | `links` | libraries for the linker: a name (`-l<name>`) or a file (`libs/libminifb.a`, `x.o`, `x.lib`; has a path or extension); in addition to `link "name"` in source code | `[]` |
 | `includePaths` | search paths for C headers (`using X from "h.h"`), relative to `cshift.json` | `[]` |
+| `dependencies` | libraries the project uses: folders (or `cshift.json` files) of projects with `"type": "library"`, relative to `cshift.json`. Their `sources`, `links`, `includePaths`, `libraryPaths`, `defines` and `ffiApi` (with their `platforms` entries for the platform that is built) become a part of the project; libraries may have dependencies themselves, one that is reached twice is used once, a cycle is an error ([projects](language/projects.md#libraries)) | `[]` |
 | `defines` | macros used when parsing C headers (`NAME`, `NAME=value`) | `[]` |
 | `libraryPaths` | linker search paths (`-L`) | `[]` |
 | `ffiApi` | path fragments of C headers that belong to the imported API even when they live in system paths (`--ffi-api=`, see [ffi.md](ffi.md)) | `[]` |
@@ -114,6 +115,8 @@ doesn't replace it, it complements it for special cases.
 ## Open items
 
 * Multiple targets in one `cshift.json` (e.g. a program plus tests), `cshiftc test`.
-* Dependencies between projects and packages (pulling in the source folder of another project).
+* Packages beyond local folders (`dependencies` names folders): versions, a place to publish and fetch them, a lock
+  file. A package stays source code (with prebuilt C libraries per platform where it needs them): the whole program is
+  compiled at once and generics are instantiated per use, so there is no binary CShift library format.
 * An intermediate `obj/` directory, incremental builds (only useful once translation units are separated).
 * Variables/conditions in the project file (`"sources"` per platform) — or handle that directly via `build.csh`.

@@ -1,0 +1,5 @@
+{
+	"name": "shapes",
+	"type": "library",
+	"dependencies": ["../text"]
+}

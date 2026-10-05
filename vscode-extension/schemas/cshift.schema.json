@@ -19,9 +19,14 @@
 			"description": "Version of the project (informational)."
 		},
 		"type": {
-			"enum": ["executable", "object"],
+			"enum": ["executable", "object", "library"],
 			"default": "executable",
-			"description": "\"executable\" links a program, \"object\" only produces an object file."
+			"description": "\"executable\" links a program, \"object\" only produces an object file, \"library\" is source code that other projects use through \"dependencies\" (building it alone only checks it)."
+		},
+		"dependencies": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Libraries this project uses: folders (or cshift.json files) of projects with \"type\": \"library\", relative to this file. Their sources, links, include paths, defines and ffiApi entries become a part of this project; a library may have dependencies itself."
 		},
 		"sources": {
 			"type": "array",

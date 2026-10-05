@@ -1,0 +1,1 @@
+the dependency 'tool' is not a library (its cshift.json needs "type": "library")

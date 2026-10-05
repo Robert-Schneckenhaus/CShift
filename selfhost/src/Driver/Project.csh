@@ -2,9 +2,10 @@
 //
 //   { "name": "demo", "version": "0.1.0", "type": "executable", "sources": ["src"], "output": "bin/demo",
 //     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "",
-//     "unchecked": false, "debug": false }
+//     "unchecked": false, "debug": false, "dependencies": ["../mylib"] }
 //
-// Only "name" is required. Paths are relative to the project file.
+// Only "name" is required. Paths are relative to the project file. A dependency is a project with "type": "library";
+// its sources, libraries, include paths, defines and ffiApi entries become a part of the project that uses it.
 
 namespace CShift.Driver;
 
@@ -16,7 +17,7 @@ struct Project
     string Dir;                  // directory of cshift.json ("" = current directory)
     string Name;
     string Version;
-    string Type;                 // "executable" or "object"
+    string Type;                 // "executable", "object" or "library"
     List<string> Sources;        // .csh files, sorted
     string Output;               // output path (without the extension of the platform)
     int Optimize;
@@ -187,6 +188,14 @@ Error<void> ReadPlatformLists(Json json, int root, string file, string platform,
 // 'target' is the target given on the command line ("" if none): it decides which "platforms" entries apply.
 Error<Project> LoadProject(string location, string target)
 {
+    return LoadProjectIn(location, target, List<string>.Create(), List<string>.Create());
+}
+
+// A project and its dependencies. 'chain' holds the project files (full paths) whose dependencies lead to this one (a
+// project that depends on itself is an error); 'merged' the dependencies that are already a part of the program (a
+// library that two projects use is merged once).
+Error<Project> LoadProjectIn(string location, string target, List<string> chain, List<string> merged)
+{
     string file = try FindProjectFile(location);
     string text = "";
     var read = File.ReadAllText(file);
@@ -215,7 +224,8 @@ Error<Project> LoadProject(string location, string target)
     p.LibraryPaths = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk", "debug" };
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk", "debug",
+                                    "dependencies" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -242,8 +252,8 @@ Error<Project> LoadProject(string location, string target)
         p.Ndk = Path.Combine(p.Dir, p.Ndk);
     if (p.Backend.Length > 0 && p.Backend != "llvm" && p.Backend != "m68k" && p.Backend != "wasm")
         return error(file + ": 'backend' must be \"llvm\", \"m68k\" or \"wasm\", not \"" + p.Backend + "\"");
-    if (p.Type != "executable" && p.Type != "object")
-        return error(file + ": 'type' must be \"executable\" or \"object\", not \"" + p.Type + "\"");
+    if (p.Type != "executable" && p.Type != "object" && p.Type != "library")
+        return error(file + ": 'type' must be \"executable\", \"object\" or \"library\", not \"" + p.Type + "\"");
 
     int opt = json.Get(root, "optimize");
     if (opt >= 0)
@@ -314,10 +324,69 @@ Error<Project> LoadProject(string location, string target)
             p.Links.Add(l);
     }
 
+    present = false;
+    var dependencyEntries = try ReadStringList(json, root, "dependencies", file, ref present);
+    if (dependencyEntries.Count() > 0)
+    {
+        string self = Path.GetFullPath(file);
+        chain.Add(self);
+        foreach (var entry in dependencyEntries)
+        {
+            string where = Path.GetFullPath(InProject(p.Dir, entry));
+            string depFile = Directory.Exists(where) ? Path.Combine(where, "cshift.json") : where;
+            if (!File.Exists(depFile))
+                return error(file + ": the dependency '" + entry + "' does not exist (there is no " + depFile + ")");
+            if (chain.Contains(depFile))
+            {
+                // the projects of the cycle, by their folders
+                string cwd = Directory.GetCurrentDirectory();
+                var cycle = List<string>.Create();
+                bool inCycle = false;
+                foreach (var f in chain)
+                {
+                    inCycle = inCycle || f == depFile;
+                    if (inCycle)
+                        cycle.Add(Path.GetRelativePath(cwd, Path.GetDirectory(f)));
+                }
+                cycle.Add(Path.GetRelativePath(cwd, Path.GetDirectory(depFile)));
+                return error(file + ": the dependencies form a cycle: " + string.Join(" -> ", cycle.ToArray()));
+            }
+            if (merged.Contains(depFile))
+                continue;
+            merged.Add(depFile);
+            var loaded = LoadProjectIn(depFile, target.Length > 0 ? target : p.Target, chain, merged);
+            if (loaded is Project dep)
+            {
+                if (dep.Type != "library")
+                    return error(file + ": the dependency '" + entry + "' is not a library (its cshift.json needs \"type\": \"library\")");
+                foreach (var s in dep.Sources)
+                {
+                    if (!p.Sources.Contains(s))
+                        p.Sources.Add(s);
+                }
+                AppendAll(p.Links, dep.Links);
+                AppendAll(p.LinkFiles, dep.LinkFiles);
+                AppendAll(p.IncludePaths, dep.IncludePaths);
+                AppendAll(p.LibraryPaths, dep.LibraryPaths);
+                AppendAll(p.Defines, dep.Defines);
+                AppendAll(p.ApiPaths, dep.ApiPaths);
+            }
+            else
+                return error(loaded.Message);
+        }
+        chain.RemoveAt(chain.Count() - 1);
+    }
+
     if (p.Output.Length == 0)
         p.Output = "bin/" + p.Name;
     p.Output = Path.Combine(p.Dir, p.Output);
     return p;
+}
+
+void AppendAll(List<string> to, List<string> values)
+{
+    foreach (var v in values)
+        to.Add(v);
 }
 
 bool IsAbsolutePath(string p)
