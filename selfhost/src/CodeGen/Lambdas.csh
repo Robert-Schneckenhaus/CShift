@@ -171,6 +171,8 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
     f.Outer = outer;
     f.Captures = List<LambdaCapture>.Create();
     f.ThisSlot = thisAvailable ? "%this.cap" : "";
+    f.Moves = n.Block.Kind != StmtKind.None ? FindMoves(cg, n.Params, n.Block) : FindLambdaBodyMoves(cg, n.Params, n.Body);
+    f.HasMoves = true;
     cg.Fn[0] = f;
 
     var header = StringBuilder.Create();
@@ -224,10 +226,13 @@ Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
     }
     else
     {
+        cg.Fn[0].InReturn = true; // x => x: the parameter is moved (Moves.csh)
+        cg.Fn[0].ReturnMoves = List<string>.Create();
         Value v = ConvertValue(lcg, EmitExpr(lcg, n.Body), ret, n.Body.Loc);
         string rv = Consume(lcg, v);
         FlushTemps(lcg, 0, true);
         EmitCleanupsDownTo(lcg, 0);
+        cg.Fn[0].InReturn = false;
         sub.Ret(LlvmType(lcg, ret), rv);
     }
     sub.EndFunction();

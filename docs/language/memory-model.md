@@ -41,6 +41,12 @@ var b = a.Clone();
 `--arc-stats` (a `cshiftc`/`cshc` flag) prints the number of heap allocations and frees when the program exits, so
 you can check that everything balances.
 
+The compiler counts only where it has to. At the last use of a local variable - `return list;`, `var b = a;` when
+`a` is not read again, the fields of `return Point { Name = name }` - the reference is handed on instead of being
+counted up and, at the end of the scope, down again. And `text += ...` on a local variable writes in place when no
+other variable, slice or parameter refers to the string ([strings](arrays-strings-collections.md#strings)). Neither
+changes what a program does: a value that is still used elsewhere is never given away or changed.
+
 ## 3. Manual memory management needs `unsafe`
 
 ```csharp

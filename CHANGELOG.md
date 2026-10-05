@@ -42,6 +42,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   variable, and the pieces of `a + b + c`. The block grows with `realloc`, with room to spare, so a loop of appends
   takes linear time instead of quadratic (80,000 lines: 0.016 s instead of 8.1 s). A shared string - a copy, a slice,
   a parameter the caller holds - is copied first, as before.
+- The last use of a local variable hands its reference on instead of counting it up now and down at the end of the
+  scope: `return list;`, `var b = a;` and `b = a;` when `a` is not read again, and the fields and items of
+  `return Foo { Items = items }` and `return [a, b]`. Which use is the last one is decided from the code (not inside
+  loops that reach it again, not when the variable's address is taken). In the compiler's own code 9 % of the retains
+  go away; on the 68000 a loop that builds and returns structs of a string and a list takes 13 % fewer cycles (on x86
+  LLVM had removed most of these pairs already).
 
 ### Amiga
 - `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the

@@ -35,7 +35,7 @@ void EmitScopeCleanup(Compiler cg, int scope)
         var v = f.Vars.Get(i - 1);
         if (v.Disposable)
             CallDispose(cg, v);
-        if (v.OwnsArc && !v.IsRef)
+        if (v.OwnsArc && !v.IsRef && !(f.InReturn && f.ReturnMoves.Contains(v.Slot)))
         {
             string value = cg.Ir.Load(LlvmType(cg, v.Type), v.Slot);
             EmitRelease(cg, v.Type, value);
@@ -117,6 +117,8 @@ void EmitFunctionBody(Compiler cg, int instance)
     f.Temps = List<TempRelease>.Create();
     f.Loops = List<LoopCtx>.Create();
     f.IsIntMain = cg.St[0].MainFunc == instance + 1 && types.IsInt(fi.Ret);
+    f.Moves = FindMoves(cg, d.Params, d.Body);
+    f.HasMoves = true;
     cg.Fn[0] = f;
 
     var sb = StringBuilder.Create();
@@ -550,11 +552,15 @@ void EmitReturn(Compiler cg, Stmt s)
     {
         if (types.IsVoid(rt))
             Fail(cg, s.Loc, "a void function cannot return a value");
+        // variables moved into the value (Moves.csh) keep their slots, which the cleanup below leaves alone
+        cg.Fn[0].InReturn = true;
+        cg.Fn[0].ReturnMoves = List<string>.Create();
         Value v = EmitExprAs(cg, n.Value, rt);
         Value cv = ConvertValue(cg, v, rt, n.Value.Loc);
         string rv = Consume(cg, cv);
         FlushTemps(cg, 0, true);
         EmitCleanupsDownTo(cg, 0);
+        cg.Fn[0].InReturn = false;
         ir.Ret(LlvmType(cg, rt), rv);
         return;
     }

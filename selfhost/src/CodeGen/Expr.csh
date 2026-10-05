@@ -218,6 +218,9 @@ bool IsLocalName(Compiler cg, string name)
 Value EmitName(Compiler cg, Expr e)
 {
     var n = cg.Tree.GetName(e);
+    Value moved = MoveLocal(cg, e); // the last use of a local variable: its reference is given away (Moves.csh)
+    if (!moved.IsNone())
+        return moved;
     Value v = LookupVariable(cg, n.Name);
     if (!v.IsNone())
         return v;

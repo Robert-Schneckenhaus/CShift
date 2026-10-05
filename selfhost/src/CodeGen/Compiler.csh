@@ -190,6 +190,10 @@ struct FnState
     List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
     string EnvType;                    // the LLVM type of the environment
     string CallerArg;                  // a library function that reports its caller: the parameter with the call site
+    HashSet<int> Moves;                // the Name nodes that are the last use of a variable (Moves.csh)
+    bool HasMoves;                     // ... Moves is set (code generation of a function or lambda body)
+    bool InReturn;                     // the value of a 'return' is being computed
+    List<string> ReturnMoves;          // ... the slots of the variables moved into it: the cleanup leaves them alone
     bool Live;                         // the checker: the current statement can be reached (structurally)
     bool CollectReturns;               // the checker: the body of a lambda whose result type is inferred (LambdaResultType)
     int LambdaReturn;                  // ... the type of its first 'return x' (0: none yet)

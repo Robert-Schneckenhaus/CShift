@@ -45,6 +45,14 @@ the git log.
 
 ## Ideas (not started)
 
+- **`move` at the thread boundary.** `start Worker(move data)` hands a `List<T>`, an array or a `Dictionary` to a
+  thread without copying it: `data` cannot be used after it (the same kind of check as for pattern variables that
+  are not assigned), and at run time its block must have no other reference (a panic otherwise). For elements without
+  references (numbers, structs of them) the outer block is enough; elements with references (`List<string>`) need
+  every block checked, or a copy. The same model fits `Mutex<T>` with containers: the guard owns the value while the
+  mutex is locked (as in Rust), see *Sharing a container between threads* above. One contextual keyword (like
+  `start`), one rule and one check at run time; inside a thread the compiler's own moves (last uses, in-place appends)
+  already need no syntax.
 - **Packages beyond local folders.** `"dependencies"` names the folders of library projects
   ([docs/language/projects.md](docs/language/projects.md#libraries)); missing are versions, a place to publish and
   fetch packages (a registry, or git URLs with a tag), a lock file and a cache folder. A package stays source code,
