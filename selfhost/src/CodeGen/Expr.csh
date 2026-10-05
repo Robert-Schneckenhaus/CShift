@@ -1321,7 +1321,7 @@ string EmitToString(Compiler cg, Value value, SourceLoc loc)
     }
     if (types.IsChar(t))
     {
-        string r = ir.Call("ptr", "@__cs_alloc", SizeIr(cg) + " 2, " + SizeIr(cg) + " 1");
+        string r = ir.Call("ptr", "@__cs_alloc_text", SizeIr(cg) + " 2, " + SizeIr(cg) + " 1");
         string data = ir.ByteGep(r, HeaderSize(cg));
         ir.Store("i8", v.V, data);
         return r;

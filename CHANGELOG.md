@@ -48,6 +48,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   loops that reach it again, not when the variable's address is taken). In the compiler's own code 9 % of the retains
   go away; on the 68000 a loop that builds and returns structs of a string and a list takes 13 % fewer cycles (on x86
   LLVM had removed most of these pairs already).
+- A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
+  after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 
 ### Amiga
 - `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
@@ -67,6 +69,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
 - `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
   `text.AsBytes()`.
+- `StringBuilder` copies its text with `Array.Copy` when it grows instead of byte by byte, and
+  `Encoding.UTF8().GetBytes` copies with `memcpy`. A loop that builds text with a `StringBuilder` runs 37 % fewer
+  instructions; the compiler, which writes its output that way, 5.6 % (with the change above).
 
 ### Tools
 - Libraries: a project with `"type": "library"` is source code that other projects use; `"dependencies":

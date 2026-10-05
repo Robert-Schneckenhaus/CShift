@@ -144,8 +144,8 @@ struct StringBuilder
         while (size < needed)
             size = size * 2;
         var grown = new uint8[size];
-        for (var i = 0; i < _state[0].Length; i += 1)
-            grown[i] = data[i];
+        if (data != null)
+            Array.Copy(data, 0, grown, 0, _state[0].Length);
         _state[0].Data = grown;
     }
 }

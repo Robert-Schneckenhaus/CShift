@@ -46,8 +46,8 @@ struct Encoding
         if (_kind == EncodingKind.UTF8)
         {
             var bytes = new uint8[s.Length];
-            for (var i = 0; i < s.Length; i += 1)
-                bytes[i] = s[i];
+            if (s.Length > 0)
+                unsafe { memcpy((void*)&bytes[0], (void*)s.Ptr(), (nuint)s.Length); }
             return bytes;
         }
 
