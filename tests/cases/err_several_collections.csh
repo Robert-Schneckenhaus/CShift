@@ -9,7 +9,7 @@
 // expect-error: err_several_collections.csh:35:15: error: cannot implicitly convert 'float64' to 'int32' (an explicit cast is required)
 // expect-error: err_several_collections.csh:36:28: error: no matching function for call 'Add(int32)': argument 1: cannot convert 'int32' to 'string'
 // expect-error: err_several_collections.csh:37:29: error: cannot implicitly convert 'string' to 'int32'
-// expect-error: err_several_collections.csh:38:19: error: type 'int32[]' has no member 'Lenght'
+// expect-error: err_several_collections.csh:38:20: error: type 'int32[]' has no member 'Lenght'
 // expect-error: err_several_collections.csh:39:23: error: undefined name 'missing'
 
 using System;

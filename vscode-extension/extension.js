@@ -195,7 +195,9 @@ async function checkDocument(document) {
         const key = lib.samePath(d.file);
         if (!byFile.has(key))
             byFile.set(key, { file: d.file, items: [] });
-        const range = new vscode.Range(d.line - 1, Math.max(0, lib.characterOf(lineOf(d.file, d.line), d.col)), d.line - 1, Number.MAX_SAFE_INTEGER);
+        const text = lineOf(d.file, d.line);
+        const start = Math.max(0, lib.characterOf(text, d.col));
+        const range = new vscode.Range(d.line - 1, start, d.line - 1, text.length === 0 ? Number.MAX_SAFE_INTEGER : lib.errorRangeEnd(text, start));
         const item = new vscode.Diagnostic(range, d.message, d.severity === "warning" ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Error);
         item.source = "cshiftc";
         byFile.get(key).items.push(item);

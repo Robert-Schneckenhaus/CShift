@@ -926,6 +926,40 @@ struct Ast
     StartExpr GetStart(Expr e) { return Starts.Get(e.Index); }
     LambdaExpr GetLambda(Expr e) { return Lambdas.Get(e.Index); }
 
+    // Where the text of an expression begins. The nodes of operators that follow their first operand (a.b, f(x), a[i],
+    // a[i..j], a + b, x is T, x = y, c ? a : b) have the place of the operator; an error about the whole value (e.g. a
+    // conversion) points at its start instead.
+    SourceLoc StartOf(Expr e)
+    {
+        Expr cur = e;
+        while (true)
+        {
+            Expr first = Expr { };
+            if (cur.Kind == ExprKind.Member)
+                first = GetMember(cur).Object;
+            else if (cur.Kind == ExprKind.Call)
+                first = GetCall(cur).Callee;
+            else if (cur.Kind == ExprKind.Index)
+                first = GetIndex(cur).Object;
+            else if (cur.Kind == ExprKind.Slice)
+                first = GetSlice(cur).Object;
+            else if (cur.Kind == ExprKind.Binary)
+                first = GetBinary(cur).Lhs;
+            else if (cur.Kind == ExprKind.Is)
+                first = GetIs(cur).Operand;
+            else if (cur.Kind == ExprKind.Assign)
+                first = GetAssign(cur).Target;
+            else if (cur.Kind == ExprKind.Conditional)
+                first = GetCond(cur).Cond;
+            // generated nodes (string interpolation) may have no place, or one after the operator's
+            if (first.IsNull() || first.Loc.Line <= 0 || first.Loc.File != cur.Loc.File || first.Loc.Line > cur.Loc.Line ||
+                (first.Loc.Line == cur.Loc.Line && first.Loc.Col > cur.Loc.Col))
+                return cur.Loc;
+            cur = first;
+        }
+        return e.Loc;
+    }
+
     // ---- statements ----
 
     Stmt AddBlock(SourceLoc loc, BlockStmt n)

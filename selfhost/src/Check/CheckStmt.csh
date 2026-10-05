@@ -272,7 +272,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
         }
     }
     else if (!d.Init.IsNull())
-        CheckConversion(cg, init, t, d.Init.Loc);
+        CheckConversion(cg, init, t, cg.Tree.StartOf(d.Init));
     CheckNotDeclared(cg, nameLoc, d.Name);
     DeclareVar(cg, d.Name, t, "%v");
     NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
@@ -330,7 +330,7 @@ void CheckReturn(Compiler cg, Stmt s)
             CheckExpr(cg, n.Value);
             return;
         }
-        CheckConversion(cg, CheckExprAs(cg, n.Value, rt), rt, n.Value.Loc);
+        CheckConversion(cg, CheckExprAs(cg, n.Value, rt), rt, cg.Tree.StartOf(n.Value));
         return;
     }
     if (!types.IsVoid(rt) && !IsVoidResult(cg, rt))

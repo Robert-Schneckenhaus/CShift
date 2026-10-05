@@ -31,6 +31,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
 
+### Tools
+- Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
+  at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing
+  method) at the name of the function, a missing member at its name instead of the `.` before it.
+- VS Code: an error underlines the expression it is about (`Bar(foo[i])`), not everything from there to the end of the
+  line; at a keyword or a declaration it is still the rest of the line.
+
 ## [0.23] - 2026-10-02
 
 ### Language

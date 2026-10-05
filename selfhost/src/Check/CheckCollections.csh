@@ -65,7 +65,7 @@ Value CheckCollectionAs(Compiler cg, Expr e, int to, SourceLoc loc)
         else
         {
             for (var i = 0; i < n.Items.Length; i += 1)
-                CheckConversion(cg, items[i], elem, n.Items[i].Loc);
+                CheckConversion(cg, items[i], elem, cg.Tree.StartOf(n.Items[i]));
         }
         return Rvalue(to, "", false);
     }
@@ -110,7 +110,7 @@ Value CheckCollectionAs(Compiler cg, Expr e, int to, SourceLoc loc)
             }
             elemType = v.Type;
         }
-        CheckConversion(cg, v, elemType, item.Loc);
+        CheckConversion(cg, v, elemType, cg.Tree.StartOf(item));
     }
     if (elemType == 0)
     {
