@@ -51,6 +51,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - A method that replaces a field of the copy it works on - called on a `const ref` parameter or on a temporary such
   as `Make().Rename()`, of a struct or a union - no longer frees the old value twice (the caller still held it) and no
   longer leaks the new one: the copy is released with what it holds after the call.
+- A method called on a `const ref` parameter (or on a field of one) no longer works on a copy when it does not change
+  `this`: the compiler decides from the method's body whether it assigns to a field, passes one with `ref` or takes
+  its address, or calls such a method on one. `Count()`, `Get()`, `Contains()` and the indexer of `List`, for example,
+  run on the caller's value without counting its references up and down; `Add` still works on a copy (it creates the
+  storage of a list that has none).
 - A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
   after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 

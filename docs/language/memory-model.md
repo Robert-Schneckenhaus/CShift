@@ -98,6 +98,10 @@ float Length(const ref Vec2 value)
 }
 ```
 
+Methods can be called on a `const ref` parameter. One that does not change the struct (the compiler finds out from its
+body) runs on the caller's value directly; one that may change it runs on a copy, so the caller's value stays as it
+was.
+
 So a parameter is one of exactly three things:
 
 ```text

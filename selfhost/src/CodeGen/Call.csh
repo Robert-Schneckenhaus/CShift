@@ -681,14 +681,14 @@ Value EmitMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, int[] me
         Fail(cg, loc, "method '" + name + "' is private to '" + types.Name(fi.Owner) + "'");
 
     string thisPtr;
-    if (obj.IsLValue && !obj.IsConst)
+    if (obj.IsLValue && (!obj.IsConst || MethodKeepsThis(cg, fi.Entry, fi.Owner)))
     {
-        thisPtr = obj.V;
+        thisPtr = obj.V; // a variable, or a read-only alias ('const ref') and a method that does not change it
     }
     else
     {
-        // A read-only alias ('const ref') or a temporary: the method works on a copy in a slot (it could modify the
-        // object). The slot is released at the end of the statement with what it holds then.
+        // A read-only alias and a method that may change it, or a temporary: the method works on a copy in a slot. The
+        // slot is released at the end of the statement with what it holds then.
         string ty = LlvmType(cg, obj.Type);
         thisPtr = cg.Ir.Alloca(ty, "tmp");
         cg.Ir.Store(ty, Consume(cg, obj), thisPtr);
