@@ -237,8 +237,9 @@ foreach (var entry in ages.Entries())
 ```
 
 > `List` and `Dictionary` are small structs pointing at shared storage (there are no classes), so a copy sees the
-> same elements as the original. Start one with `.Create()` if you're going to hand out copies of it before adding
-> anything — an empty `new List<T>()` isn't connected to its copies yet.
+> same elements as the original. The storage is made by `.Create()` (or `[]`); the zero value — `new List<T>()`,
+> `new()`, a field without a value — is an empty container that can be read but not changed: `Add` and `Set` panic
+> (`IsCreated()` tells). The same holds for the containers below.
 
 ## `HashSet<T>`, `Stack<T>`, `Queue<T>` and `StringBuilder`
 

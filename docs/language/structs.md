@@ -44,7 +44,7 @@ arguments (when all overloads agree on the parameter's type), fields of an initi
 ```csharp
 Player player = new { Health = 100 };  // like Player { Health = 100 }
 Player other = new();                  // like new Player()
-List<int> scores = new();              // any struct, also the standard library's
+List<int> scores = new();              // any struct; for a List the empty one that cannot change (use [] or Create())
 player = new { Health = 50 };
 Heal(new { Health = 10 });             // void Heal(Player p)
 Player Spawn() { return new { Health = 100 }; }

@@ -26,7 +26,8 @@ struct Named : IRenamed
 
     void Track(int i)
     {
-        Items.Add(i);                              // creates the list on first use
+        Items = List<int>.Create();                // replaces the list (in the copy)
+        Items.Add(i);
     }
 
     string Text()
@@ -77,7 +78,7 @@ int Main()
 
     var b = Named { Name = "b " + 2.ToString(), Items = List<int>.Create() };
     Change(b);
-    f += Check("shared list", b.Items.Count() == 1 && b.Name == "b 2");
+    f += Check("own list", b.Items.Count() == 0 && b.Name == "b 2");
 
     Item item = Make(5);
     ChangeItem(item);

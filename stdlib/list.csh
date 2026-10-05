@@ -21,9 +21,8 @@ struct ListState<T>
 /// ```
 ///
 /// A List is a small handle to shared storage: copies of a List (assignments, arguments) see the same
-/// elements, like a reference. The storage is created by Create() or by the first Add(); a list that is
-/// still empty and was created with 'new List<T>()' is not yet connected to its copies, so start lists with
-/// List<T>.Create() when you hand them out before adding elements.
+/// elements, like a reference. The storage is made by Create() or a collection expression (`[]`); the zero value
+/// (`new()`, a field without a value) is an empty list that can be read but not changed: Add panics.
 ///
 /// `list[i]` reads an element ([List<T>.Get]), `list[i] = x` writes one ([List<T>.Set]); `foreach` goes through the
 /// elements in order.
@@ -43,6 +42,12 @@ struct List<T>
         var list = Create();
         list._Grow(capacity);
         return list;
+    }
+
+    /// Whether the list has storage: made by Create() or `[]`, not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _state != null;
     }
 
     /// The number of elements.
@@ -80,8 +85,11 @@ struct List<T>
     }
 
     /// Adds `value` at the end.
+    /// @panics when the list was not created ([List<T>.IsCreated]).
     void Add(T value)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         _Grow(Count() + 1);
         _state[0].Items[_state[0].Count] = value;
         _state[0].Count += 1;
@@ -90,6 +98,8 @@ struct List<T>
     /// Adds all elements of `values` at the end, in order.
     void AddRange(T[] values)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         for (var i = 0; i < values.Length; i += 1)
             Add(values[i]);
     }
@@ -98,6 +108,8 @@ struct List<T>
     /// @panics when `index` is not in 0 to `Count()`.
     void Insert(int index, T value)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         if (index < 0 || index > Count())
             Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
         _Grow(Count() + 1);
@@ -297,11 +309,14 @@ struct List<T>
         return -1;
     }
 
-    // Makes sure the storage exists and can hold at least 'needed' elements.
+    static string _NotCreated()
+    {
+        return "the list was not created (List<T>.Create() or []): the zero value (new(), a field without a value) is empty and cannot change";
+    }
+
+    // Makes sure the storage can hold at least 'needed' elements.
     void _Grow(int needed)
     {
-        if (_state == null)
-            _state = new ListState<T>[1];
         int capacity = 0;
         if (_state[0].Items != null)
             capacity = _state[0].Items.Length;

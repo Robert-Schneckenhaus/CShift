@@ -53,5 +53,12 @@ int Main()
     Console.WriteLine("queue shared " + queue.Count().ToString());
     if (queue.TryDequeue() is int)
         return 1;
+
+    // the zero values are empty and can be read (Push and Enqueue panic)
+    var zeroStack = new Stack<int>();
+    var zeroQueue = new Queue<int>();
+    if (zeroStack.Count() != 0 || zeroQueue.Count() != 0 || zeroStack.IsCreated() || zeroQueue.IsCreated() ||
+        zeroStack.TryPop() is int || zeroQueue.TryDequeue() is int || !queue.IsCreated())
+        return 2;
     return 0;
 }

@@ -17,6 +17,12 @@ struct HashSet<T>
         return HashSet<T> { _map = Dictionary<T, bool>.Create() };
     }
 
+    /// Whether the set has storage: made by Create() or `[]`, not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _map.IsCreated();
+    }
+
     /// The number of values in the set.
     int Count()
     {
@@ -31,8 +37,11 @@ struct HashSet<T>
 
     /// Adds `value` to the set.
     /// @returns `true` if the value was added, `false` if it was already in the set.
+    /// @panics when the set was not created ([HashSet<T>.IsCreated]).
     bool Add(T value)
     {
+        if (!_map.IsCreated())
+            Environment.Panic("the set was not created (HashSet<T>.Create() or []): the zero value (new(), a field without a value) is empty and cannot change");
         if (_map.ContainsKey(value))
             return false;
         _map.Set(value, true);

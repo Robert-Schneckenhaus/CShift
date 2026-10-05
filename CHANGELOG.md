@@ -53,9 +53,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   longer leaks the new one: the copy is released with what it holds after the call.
 - A method called on a `const ref` parameter (or on a field of one) no longer works on a copy when it does not change
   `this`: the compiler decides from the method's body whether it assigns to a field, passes one with `ref` or takes
-  its address, or calls such a method on one. `Count()`, `Get()`, `Contains()` and the indexer of `List`, for example,
-  run on the caller's value without counting its references up and down; `Add` still works on a copy (it creates the
-  storage of a list that has none).
+  its address, or calls such a method on one. The methods of `List`, `Dictionary`, `StringBuilder` and the other
+  containers, for example, run on the caller's value without counting its references up and down.
 - A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
   after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 
@@ -77,6 +76,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
 - `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
   `text.AsBytes()`.
+- **Changed:** `List`, `Dictionary`, `HashSet`, `Stack`, `Queue` and `StringBuilder` no longer make their storage on
+  the first `Add`. The zero value - `new List<T>()`, `new()`, a field that was not given a value - is an empty
+  container that can be read (`Count()` is 0, `foreach` runs no turn) but not changed: `Add`, `Set`, `Append`, `Push`
+  and `Enqueue` panic and say so. Create them with `Create()` or `[]`; `IsCreated()` tells the two apart. Before, such a
+  container was not connected to its copies until something was added, and an `Add` on a copy (a `const ref`
+  parameter) could get lost.
 - `StringBuilder` copies its text with `Array.Copy` when it grows instead of byte by byte, and
   `Encoding.UTF8().GetBytes` copies with `memcpy`. A loop that builds text with a `StringBuilder` runs 37 % fewer
   instructions; the compiler, which writes its output that way, 5.6 % (with the change above).

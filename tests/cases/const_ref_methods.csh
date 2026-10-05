@@ -51,6 +51,7 @@ struct Thing : Base
     string Describe() { return Name + " " + Count.ToString() + " " + Pos.Sum().ToString(); }
     int First() { return Items.Count() > 0 ? Items[0] : -1; }
     void Store(int v) { Items[0] = v; }       // List.Set writes the shared storage, not the struct
+    void Grow() { Items.Add(7); }               // so does List.Add
     int Total() { return Descend(3); }
     int Descend(int n) { return n == 0 ? Count : Descend(n - 1); }
     int Even(int n) { return n == 0 ? 1 : Odd(n - 1); }
@@ -62,7 +63,7 @@ struct Thing : Base
     void Step() { Pos.Move(5); }
     void SetPair() { Pair[1] = 9; }
     void Indirect() { Bump(); }
-    void Grow() { Items.Add(7); }               // creates the list the first time
+    void Fresh() { Items = [8]; }
     void SetSlot() { Slot[0] = 4; }
     void ByRef() { Twice(ref Count); }
     void Replace() { this = Thing { Name = "other" }; }
@@ -125,10 +126,11 @@ void Changes(const ref Thing t)
     t.Poke();
     t.Pos.Move(1);
     t.Label.Put("other");
+    t.Fresh();
     t.Replace();
 }
 
-void GrowLazy(const ref Thing t)
+void Grow(const ref Thing t)
 {
     t.Grow();
 }
@@ -143,11 +145,8 @@ int Main()
     f += Reads(t);
     Changes(t);
     f += Check("unchanged", t.Name == "thing" && t.Count == 3 && t.Pos.X == 1 && t.Pair[1] == 0 && t.Slot.Value == 1 &&
-                            t.Level == 0 && t.Label.Item == "label");
-    var lazy = Thing { Name = "lazy" };
-    GrowLazy(lazy);
-    f += Check("lazy list stays empty", lazy.Items.Count() == 0);
-    GrowLazy(t);
-    f += Check("shared list", t.Items.Count() == 2);
+                            t.Level == 0 && t.Label.Item == "label" && t.Items.Count() == 1);
+    Grow(t);
+    f += Check("shared list", t.Items.Count() == 2 && t.Items[1] == 7);
     return f;
 }

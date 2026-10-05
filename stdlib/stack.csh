@@ -39,6 +39,12 @@ struct Stack<T>
         return stack;
     }
 
+    /// Whether the stack has storage: made by Create(), not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _state != null;
+    }
+
     /// The number of elements.
     int Count()
     {
@@ -48,8 +54,11 @@ struct Stack<T>
     }
 
     /// Puts `value` on top of the stack.
+    /// @panics when the stack was not created ([Stack<T>.IsCreated]).
     void Push(T value)
     {
+        if (_state == null)
+            Environment.Panic("the stack was not created (Stack<T>.Create()): the zero value (new(), a field without a value) is empty and cannot change");
         _Grow(Count() + 1);
         _state[0].Items[_state[0].Count] = value;
         _state[0].Count += 1;
@@ -142,11 +151,9 @@ struct Stack<T>
         return value;
     }
 
-    // Makes sure the storage exists and can hold at least 'needed' elements.
+    // Makes sure the storage can hold at least 'needed' elements.
     void _Grow(int needed)
     {
-        if (_state == null)
-            _state = new StackState<T>[1];
         int capacity = 0;
         if (_state[0].Items != null)
             capacity = _state[0].Items.Length;

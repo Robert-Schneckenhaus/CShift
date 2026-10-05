@@ -3,8 +3,7 @@
 // methods on them - can be called on a 'const ref' parameter directly instead of on a copy (EmitMethodCallOn).
 //
 // What a field refers to is not part of the struct: '_state[0].Count += 1' writes the shared storage of a List, not the
-// List, and 'Items[i] = x' calls Items.Set, which does the same. A method that creates that storage on first use
-// ('_state = new ...' in List._Grow) does write it, and so does every method that calls it on a field.
+// List, and 'Items[i] = x' and 'Items.Add(x)' call methods that do the same.
 //
 // The answer is per method and struct type (generic structs per instance), from the syntax and the types of the
 // fields, conservatively: a name that is a field counts as the field even where a local variable of that name hides
@@ -30,13 +29,13 @@ struct KeepScan
 }
 
 // Whether the method 'entry' (an index in Compiler.Funcs) of the struct type 'owner' leaves 'this' unchanged.
-bool MethodKeepsThis(Compiler cg, int entry, int owner)
+bool MethodKeepsThis(const ref Compiler cg, int entry, int owner)
 {
     int lowest = 1000000;
     return KeepsThisAt(cg, entry, owner, 0, ref lowest);
 }
 
-bool KeepsThisAt(Compiler cg, int entry, int owner, int depth, ref int lowest)
+bool KeepsThisAt(const ref Compiler cg, int entry, int owner, int depth, ref int lowest)
 {
     string key = entry.ToString() + ":" + owner.ToString();
     if (cg.KeepsThis.TryGet(key) is int state)
@@ -73,7 +72,7 @@ bool KeepsThisAt(Compiler cg, int entry, int owner, int depth, ref int lowest)
 }
 
 // Whether all the methods a call may resolve to keep 'this'.
-bool CandidatesKeepThis(Compiler cg, ref KeepScan scan, Candidate[] cands)
+bool CandidatesKeepThis(const ref Compiler cg, ref KeepScan scan, Candidate[] cands)
 {
     foreach (var c in cands)
     {
@@ -88,7 +87,7 @@ bool CandidatesKeepThis(Compiler cg, ref KeepScan scan, Candidate[] cands)
 
 // The type of an expression that is a part of 'this' itself - this, a field, a field of an embedded struct, an element
 // of a Fixed field - or -1 for anything else (a local variable, what a field refers to, a value).
-int ThisPartType(Compiler cg, KeepScan scan, Expr e)
+int ThisPartType(const ref Compiler cg, KeepScan scan, Expr e)
 {
     var tree = cg.Tree;
     var types = cg.Types;
@@ -127,7 +126,7 @@ int ThisPartType(Compiler cg, KeepScan scan, Expr e)
 }
 
 // Whether calling the method 'name' on a value of type t (a part of 'this') keeps it.
-bool CallOnKeepsThis(Compiler cg, ref KeepScan scan, int t, string name)
+bool CallOnKeepsThis(const ref Compiler cg, ref KeepScan scan, int t, string name)
 {
     var types = cg.Types;
     if (types.IsStruct(t))
@@ -151,7 +150,7 @@ bool CallOnKeepsThis(Compiler cg, ref KeepScan scan, int t, string name)
     return true; // the methods of strings, arrays, numbers, ... work on a value
 }
 
-bool StmtKeepsThis(Compiler cg, ref KeepScan scan, Stmt s)
+bool StmtKeepsThis(const ref Compiler cg, ref KeepScan scan, Stmt s)
 {
     var tree = cg.Tree;
     switch (s.Kind)
@@ -230,7 +229,7 @@ bool StmtKeepsThis(Compiler cg, ref KeepScan scan, Stmt s)
     }
 }
 
-bool ExprsKeepThis(Compiler cg, ref KeepScan scan, Expr[] list)
+bool ExprsKeepThis(const ref Compiler cg, ref KeepScan scan, Expr[] list)
 {
     foreach (var e in list)
     {
@@ -240,7 +239,7 @@ bool ExprsKeepThis(Compiler cg, ref KeepScan scan, Expr[] list)
     return true;
 }
 
-bool ExprKeepsThis(Compiler cg, ref KeepScan scan, Expr e)
+bool ExprKeepsThis(const ref Compiler cg, ref KeepScan scan, Expr e)
 {
     var tree = cg.Tree;
     switch (e.Kind)
@@ -333,7 +332,7 @@ bool ExprKeepsThis(Compiler cg, ref KeepScan scan, Expr e)
     }
 }
 
-bool AssignKeepsThis(Compiler cg, ref KeepScan scan, AssignExpr a)
+bool AssignKeepsThis(const ref Compiler cg, ref KeepScan scan, AssignExpr a)
 {
     var tree = cg.Tree;
     if (!ExprKeepsThis(cg, ref scan, a.Value))
@@ -352,7 +351,7 @@ bool AssignKeepsThis(Compiler cg, ref KeepScan scan, AssignExpr a)
     return ExprKeepsThis(cg, ref scan, a.Target);
 }
 
-bool CallKeepsThis(Compiler cg, ref KeepScan scan, CallExpr c)
+bool CallKeepsThis(const ref Compiler cg, ref KeepScan scan, CallExpr c)
 {
     var tree = cg.Tree;
     if (!ExprsKeepThis(cg, ref scan, c.Args))

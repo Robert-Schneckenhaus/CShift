@@ -149,11 +149,11 @@ int Main()
     else
         f += 1;
 
-    // ---- a dictionary that was never created explicitly ----
-    var lazy = new Dictionary<string, string>();
-    f += Check("lazy empty", lazy.Count() == 0 && !lazy.ContainsKey("a") && !lazy.Remove("a") && lazy.Keys().Length == 0);
-    lazy.Set("k", "v");
-    f += Check("lazy Set", lazy.Count() == 1 && lazy.GetOrDefault("k", "") == "v");
+    // ---- the zero value is an empty dictionary that can be read (Set panics) ----
+    var zero = new Dictionary<string, string>();
+    zero.Clear();
+    f += Check("zero value", zero.Count() == 0 && !zero.ContainsKey("a") && !zero.Remove("a") && zero.Keys().Length == 0 &&
+                             zero.GetOrDefault("k", "-") == "-" && !zero.IsCreated());
 
     return f;
 }
