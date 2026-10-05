@@ -257,6 +257,18 @@ else
         report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
     fi
 
+    # With vamos (amitools: pip install amitools "machine68k<0.4") AmigaOS programs run on this machine: the copies
+    # and fills of the Amiga runtime (memcpy, memmove, memset with their jump towers) against plain loops
+    if command -v vamos > /dev/null 2>&1; then
+        if ! "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$DIR/amiga/memory.csh" -o "$TMP/amiga_memory" 2> "$TMP/amiga.err"; then
+            report_fail "amiga runtime (vamos)" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
+        elif ! (cd "$TMP" && vamos amiga_memory > "$TMP/amiga.out" 2>&1) || ! grep -q "errors 0" "$TMP/amiga.out"; then
+            report_fail "amiga runtime (vamos)" "$(tail -n 3 "$TMP/amiga.out" | tr '\n' ' ')"
+        else
+            report_ok "amiga runtime (vamos)"
+        fi
+    fi
+
     # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
     # gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
     # and a global variable and, with the pretty printers that the program carries, a string as its text.

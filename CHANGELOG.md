@@ -38,6 +38,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
 
 ### Amiga
+- `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
+  middle) and longs where the addresses allow: copying 64 KB takes about 6 cycles per byte instead of 44 (15 when only
+  one address is odd), filling 3.4 instead of 38. `Array.Copy`, list growth and string operations profit.
+  `memmove` backwards no longer copies byte by byte.
+- `tests/run_tests.sh` runs an AmigaOS test program of the runtime with vamos (amitools) when it is installed.
 - `Bitmap.DrawPattern` and `Sprite.Create` also take the rows as a `ReadOnlySlice<string>`, such as the lines of a
   file from `embed_lines`; demo-amiga-gfx uses that instead of splitting the text at run time.
 
