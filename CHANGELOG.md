@@ -37,6 +37,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   without their line ends (`\n` or `\r\n`), without an empty line after the last line end
   ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
 
+### Compiler
+- Appending to a string is in place when nothing else refers to it: `text += ...` and `text = text + a + b` on a local
+  variable, and the pieces of `a + b + c`. The block grows with `realloc`, with room to spare, so a loop of appends
+  takes linear time instead of quadratic (80,000 lines: 0.016 s instead of 8.1 s). A shared string - a copy, a slice,
+  a parameter the caller holds - is copied first, as before.
+
 ### Amiga
 - `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
   middle) and longs where the addresses allow: copying 64 KB takes about 6 cycles per byte instead of 44 (15 when only

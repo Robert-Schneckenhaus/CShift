@@ -43,7 +43,8 @@ if the key is missing), `Add(k, v)` (`Error<void>`, fails on a duplicate key), `
 > empty list from `new List<T>()` isn't yet connected to its copies before the first element is added — start with
 > `Create()` if you hand it out before adding to it.
 
-**`StringBuilder`** — builds text without copying on every `+` (`Append` takes strings and string slices): `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
+**`StringBuilder`** — builds text in a buffer (`Append` takes strings and string slices; `text += ...` on a local
+variable is in place as well, see [strings](language/arrays-strings-collections.md#strings)): `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
 sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (a handle to shared storage, like `List`).
 **`HashSet<T>`** — `Create()`, `Add(v)` (`true` if it was new), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`,
 `ToArray()`.

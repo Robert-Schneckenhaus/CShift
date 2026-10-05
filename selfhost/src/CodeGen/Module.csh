@@ -125,7 +125,7 @@ string CompileProgram(Compiler cg, string triple)
     sb.Append('\n');
     sb.Append(cg.Ir.Functions.ToString());
     sb.Append(cg.Ir.Helpers.ToString());
-    sb.Append(RuntimeFunctions(windows, cg.St[0].ArcStats, cg.Ir));
+    sb.Append(RuntimeFunctions(windows, triple, cg.St[0].ArcStats, cg.Ir));
     sb.Append(cg.Ir.Declares.ToString());
     sb.Append(cg.Ir.DebugModuleText());
     if (cg.Ir.Debug && !windows && cg.Ir.MetaIds.ContainsKey("unit"))
