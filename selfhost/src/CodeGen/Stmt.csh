@@ -11,7 +11,7 @@ using CShift.Emit;
 // Scopes and cleanup
 // ---------------------------------------------------------------------------
 
-void PushScope(Compiler cg)
+void PushScope(const ref Compiler cg)
 {
     cg.Fn[0].ScopeStarts.Add(cg.Fn[0].Vars.Count());
     if (cg.Ir.Debug)
@@ -19,13 +19,13 @@ void PushScope(Compiler cg)
 }
 
 // The number of open scopes.
-int ScopeCount(Compiler cg)
+int ScopeCount(const ref Compiler cg)
 {
     return cg.Fn[0].ScopeStarts.Count();
 }
 
 // Releases what the variables of one scope own (in reverse order of declaration).
-void EmitScopeCleanup(Compiler cg, int scope)
+void EmitScopeCleanup(const ref Compiler cg, int scope)
 {
     var f = cg.Fn[0];
     int start = f.ScopeStarts.Get(scope);
@@ -45,7 +45,7 @@ void EmitScopeCleanup(Compiler cg, int scope)
     }
 }
 
-void PopScope(Compiler cg, bool emitCleanup)
+void PopScope(const ref Compiler cg, bool emitCleanup)
 {
     var f = cg.Fn[0];
     int scope = f.ScopeStarts.Count() - 1;
@@ -60,13 +60,13 @@ void PopScope(Compiler cg, bool emitCleanup)
 }
 
 // Cleanup code for all scopes above 'depth' without popping them (used by return/break/continue).
-void EmitCleanupsDownTo(Compiler cg, int depth)
+void EmitCleanupsDownTo(const ref Compiler cg, int depth)
 {
     for (var s = ScopeCount(cg); s > depth; s -= 1)
         EmitScopeCleanup(cg, s - 1);
 }
 
-void DeclareVar(Compiler cg, string name, int type, string slot)
+void DeclareVar(const ref Compiler cg, string name, int type, string slot)
 {
     cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = type, Slot = slot, OwnsArc = NeedsArc(cg, type) });
     if (cg.Ir.Debug)
@@ -74,7 +74,7 @@ void DeclareVar(Compiler cg, string name, int type, string slot)
 }
 
 // The zero value of a type as an IR constant.
-string ZeroValue(Compiler cg, int t)
+string ZeroValue(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     switch (types.Kind(t))
@@ -104,7 +104,7 @@ string ZeroValue(Compiler cg, int t)
 // Function bodies
 // ---------------------------------------------------------------------------
 
-void EmitFunctionBody(Compiler cg, int instance)
+void EmitFunctionBody(const ref Compiler cg, int instance)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -220,7 +220,7 @@ void EmitFunctionBody(Compiler cg, int instance)
 }
 
 // The plain entry point of a function that reports its caller: calls name.at without a call site.
-void EmitCallerForwarder(Compiler cg, FuncInfo fi, string parameters)
+void EmitCallerForwarder(const ref Compiler cg, FuncInfo fi, string parameters)
 {
     string ret = AbiReturn(cg, fi.Ret);
     // the parameters are passed on as they are ("type %name"), plus no call site
@@ -232,7 +232,7 @@ void EmitCallerForwarder(Compiler cg, FuncInfo fi, string parameters)
     cg.Ir.AppendFunctionText("define internal " + ret + " " + fi.LlvmName + "(" + parameters + ") {\nentry:\n" + body + "}\n\n");
 }
 
-void EmitBlock(Compiler cg, Stmt block, bool newScope)
+void EmitBlock(const ref Compiler cg, Stmt block, bool newScope)
 {
     var b = cg.Tree.GetBlock(block);
     if (b.NoScope)
@@ -257,7 +257,7 @@ void EmitBlock(Compiler cg, Stmt block, bool newScope)
 // Statements
 // ---------------------------------------------------------------------------
 
-void EmitStmt(Compiler cg, Stmt s)
+void EmitStmt(const ref Compiler cg, Stmt s)
 {
     cg.Ir.EnsureInsertPoint();
     if (s.Loc.Line > 0)
@@ -284,7 +284,7 @@ void EmitStmt(Compiler cg, Stmt s)
     }
 }
 
-void EmitExprStmt(Compiler cg, Stmt s)
+void EmitExprStmt(const ref Compiler cg, Stmt s)
 {
     var n = cg.Tree.GetExprStmt(s);
     Value v = EmitExpr(cg, n.Expr);
@@ -293,7 +293,7 @@ void EmitExprStmt(Compiler cg, Stmt s)
     FlushTemps(cg, 0, true);
 }
 
-void EmitVarDecl(Compiler cg, Stmt s)
+void EmitVarDecl(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -360,14 +360,14 @@ void EmitVarDecl(Compiler cg, Stmt s)
     }
 }
 
-void EmitIf(Compiler cg, Stmt s)
+void EmitIf(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetIf(s);
     // 'if (x is not T v)': v belongs to the enclosing scope, visible where the pattern matched (see EmitIs)
     bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
     if (guard)
-        cg.GuardIs = n.Cond.Index;
+        cg.St[0].GuardIs = n.Cond.Index;
     else
         PushScope(cg); // scope of pattern variables declared in the condition
     Value c = EmitCondition(cg, n.Cond);
@@ -402,7 +402,7 @@ void EmitIf(Compiler cg, Stmt s)
 }
 
 // A branch of an 'if' is a scope of its own even without braces ('else if (x is not T v) return;' binds v there).
-void EmitBranch(Compiler cg, Stmt s)
+void EmitBranch(const ref Compiler cg, Stmt s)
 {
     PushScope(cg);
     EmitStmt(cg, s);
@@ -411,7 +411,7 @@ void EmitBranch(Compiler cg, Stmt s)
 
 // Hides a variable from name lookup (it stays in its scope for the cleanup): a binding of 'is not' where it is not
 // assigned.
-void SetVarVisible(Compiler cg, int index, bool visible)
+void SetVarVisible(const ref Compiler cg, int index, bool visible)
 {
     var vars = cg.Fn[0].Vars;
     var v = vars.Get(index);
@@ -424,12 +424,12 @@ void SetVarVisible(Compiler cg, int index, bool visible)
     vars.Set(index, v);
 }
 
-bool IsLiteralTrue(Compiler cg, Expr e)
+bool IsLiteralTrue(const ref Compiler cg, Expr e)
 {
     return !e.IsNull() && e.Kind == ExprKind.BoolLit && cg.Tree.GetBoolLit(e).Value;
 }
 
-void EmitWhile(Compiler cg, Stmt s)
+void EmitWhile(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetWhile(s);
@@ -461,7 +461,7 @@ void EmitWhile(Compiler cg, Stmt s)
     PopScope(cg, true);
 }
 
-void EmitDoWhile(Compiler cg, Stmt s)
+void EmitDoWhile(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetDoWhile(s);
@@ -482,7 +482,7 @@ void EmitDoWhile(Compiler cg, Stmt s)
     ir.SetBlock(endLabel);
 }
 
-void EmitFor(Compiler cg, Stmt s)
+void EmitFor(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetFor(s);
@@ -527,7 +527,7 @@ void EmitFor(Compiler cg, Stmt s)
     PopScope(cg, true);
 }
 
-void EmitBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
+void EmitBreakContinue(const ref Compiler cg, bool isBreak, SourceLoc loc)
 {
     var loops = cg.Fn[0].Loops;
     for (var i = loops.Count(); i > 0; i -= 1)
@@ -542,7 +542,7 @@ void EmitBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
     Fail(cg, loc, isBreak ? "'break' is only allowed inside a loop or switch" : "'continue' is only allowed inside a loop");
 }
 
-void EmitReturn(Compiler cg, Stmt s)
+void EmitReturn(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;

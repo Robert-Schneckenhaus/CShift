@@ -34,18 +34,18 @@ struct UnionInfo
     bool InProgress;
 }
 
-UnionInfo GetUnionInfo(Compiler cg, int t)
+UnionInfo GetUnionInfo(const ref Compiler cg, int t)
 {
     return cg.UnionInfos.Get(cg.Types.Decl(t));
 }
 
-bool IsUnionType(Compiler cg, int t)
+bool IsUnionType(const ref Compiler cg, int t)
 {
     return cg.Types.Kind(t) == TypeKind.Union;
 }
 
 // The union type of a declaration (created with its layout the first time it is used).
-int GetUnionType(Compiler cg, int index, SourceLoc loc)
+int GetUnionType(const ref Compiler cg, int index, SourceLoc loc)
 {
     var types = cg.Types;
     var ue = cg.Unions.Get(index);
@@ -133,7 +133,7 @@ int GetUnionType(Compiler cg, int index, SourceLoc loc)
 }
 
 // The position of the type among the members of the union (its tag is that + 1), -1 if it is not a member.
-int UnionMemberIndex(Compiler cg, int union, int t)
+int UnionMemberIndex(const ref Compiler cg, int union, int t)
 {
     var members = GetUnionInfo(cg, union).Members;
     for (var i = 0; i < members.Length; i += 1)
@@ -144,7 +144,7 @@ int UnionMemberIndex(Compiler cg, int union, int t)
     return -1;
 }
 
-bool UnionImplements(Compiler cg, int union, int iface)
+bool UnionImplements(const ref Compiler cg, int union, int iface)
 {
     foreach (var i in GetUnionInfo(cg, union).Interfaces)
     {
@@ -155,7 +155,7 @@ bool UnionImplements(Compiler cg, int union, int iface)
 }
 
 // Memory that holds the union value: the variable itself, or a temporary copy.
-string UnionSlot(Compiler cg, Value v)
+string UnionSlot(const ref Compiler cg, Value v)
 {
     if (v.IsLValue)
         return v.V;
@@ -166,18 +166,18 @@ string UnionSlot(Compiler cg, Value v)
     return slot;
 }
 
-string UnionTag(Compiler cg, int union, string slot)
+string UnionTag(const ref Compiler cg, int union, string slot)
 {
     return cg.Ir.Load("i32", cg.Ir.Gep(GetUnionInfo(cg, union).IrName, slot, "i32 0, i32 0"));
 }
 
-string UnionPayload(Compiler cg, int union, string slot)
+string UnionPayload(const ref Compiler cg, int union, string slot)
 {
     return cg.Ir.Gep(GetUnionInfo(cg, union).IrName, slot, "i32 0, i32 1");
 }
 
 // A member value as a union value (owned, like the member it was made from).
-Value UnionFromMember(Compiler cg, Value v, int union, int index)
+Value UnionFromMember(const ref Compiler cg, Value v, int union, int index)
 {
     var ir = cg.Ir;
     string ty = LlvmType(cg, union);
@@ -190,7 +190,7 @@ Value UnionFromMember(Compiler cg, Value v, int union, int index)
 }
 
 // 'u is M m' / 'case M m:': true if the union holds an M; m is a copy of it.
-Value EmitUnionIs(Compiler cg, Value subj, int pattern, string bindName, SourceLoc loc)
+Value EmitUnionIs(const ref Compiler cg, Value subj, int pattern, string bindName, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -205,7 +205,7 @@ Value EmitUnionIs(Compiler cg, Value subj, int pattern, string bindName, SourceL
 }
 
 // Declares 'name' and, if 'flag' is true, copies the member into it.
-void BindUnionMember(Compiler cg, int union, string slot, int member, string flag, string name)
+void BindUnionMember(const ref Compiler cg, int union, string slot, int member, string flag, string name)
 {
     var ir = cg.Ir;
     string ty = LlvmType(cg, member);
@@ -228,7 +228,7 @@ void BindUnionMember(Compiler cg, int union, string slot, int member, string fla
 }
 
 // The method tables of the members for the interface, indexed by the tag (tag 0: none).
-string UnionTables(Compiler cg, int union, int iface)
+string UnionTables(const ref Compiler cg, int union, int iface)
 {
     var types = cg.Types;
     string name = "@\"utable." + types.Name(union) + "." + types.Name(iface) + "\"";
@@ -244,7 +244,7 @@ string UnionTables(Compiler cg, int union, int iface)
 }
 
 // The { data, table } of the member in the union at 'slot', as the interface.
-string UnionAsInterface(Compiler cg, int union, string slot, int iface)
+string UnionAsInterface(const ref Compiler cg, int union, string slot, int iface)
 {
     var ir = cg.Ir;
     string tag = UnionTag(cg, union, slot);
@@ -256,7 +256,7 @@ string UnionAsInterface(Compiler cg, int union, string slot, int iface)
 }
 
 // u.Method(args): a method of one of the union's interfaces, called on the member it holds.
-Value EmitUnionCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
+Value EmitUnionCall(const ref Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     int union = obj.Type;
@@ -285,7 +285,7 @@ Value EmitUnionCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc l
 }
 
 // Retain/release of a union value: the one of the member it holds.
-string UnionHelper(Compiler cg, int union, bool isRetain)
+string UnionHelper(const ref Compiler cg, int union, bool isRetain)
 {
     var types = cg.Types;
     string name = "@\"" + (isRetain ? "__retain." : "__release.") + types.Name(union) + "\"";

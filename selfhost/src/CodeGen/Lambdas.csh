@@ -21,7 +21,7 @@ using CShift.Sema;
 using CShift.Emit;
 
 // Can the lambda be converted to the function type? (the number of parameters and the written parameter types)
-int LambdaConversionCost(Compiler cg, Value v, int to)
+int LambdaConversionCost(const ref Compiler cg, Value v, int to)
 {
     var types = cg.Types;
     int target = types.IsCFunction(to) ? types.Elem(to) : to;
@@ -40,7 +40,7 @@ int LambdaConversionCost(Compiler cg, Value v, int to)
 }
 
 // The variable of an enclosing function that the body of a lambda uses: an entry of the environment (read-only).
-Value CaptureVariable(Compiler cg, string name)
+Value CaptureVariable(const ref Compiler cg, string name)
 {
     var f = cg.Fn[0];
     for (var i = 0; i < f.Captures.Count(); i += 1)
@@ -62,7 +62,7 @@ Value CaptureVariable(Compiler cg, string name)
 }
 
 // Is the name a variable of an enclosing function (without capturing it)?
-bool IsOuterName(Compiler cg, string name)
+bool IsOuterName(const ref Compiler cg, string name)
 {
     var f = cg.Fn[0];
     if (f.LambdaId == 0)
@@ -80,14 +80,14 @@ bool IsOuterName(Compiler cg, string name)
     return false;
 }
 
-string EnvField(Compiler cg, int index)
+string EnvField(const ref Compiler cg, int index)
 {
     return cg.Ir.Gep(cg.Fn[0].EnvType, "%lambda.env", "i32 0, i32 " + index.ToString());
 }
 
 // "" if the lambda's parameters fit the function type 'ft' (their number, the written types), otherwise the error
 // (and its place in 'loc').
-string LambdaSignatureError(Compiler cg, Expr e, int ft, ref SourceLoc loc)
+string LambdaSignatureError(const ref Compiler cg, Expr e, int ft, ref SourceLoc loc)
 {
     var types = cg.Types;
     var n = cg.Tree.GetLambda(e);
@@ -111,7 +111,7 @@ string LambdaSignatureError(Compiler cg, Expr e, int ft, ref SourceLoc loc)
 }
 
 // Compiles the lambda as a value of the function type 'ft'.
-Value EmitLambda(Compiler cg, Expr e, int ft, SourceLoc loc)
+Value EmitLambda(const ref Compiler cg, Expr e, int ft, SourceLoc loc)
 {
     var types = cg.Types;
     var n = cg.Tree.GetLambda(e);

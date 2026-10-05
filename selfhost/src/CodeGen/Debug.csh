@@ -19,7 +19,7 @@ using CShift.Emit;
 const string GdbScript = embed("../../../tools/debug/cshift_gdb.py");
 
 // The section with the gdb script (ELF only), kept by @llvm.used.
-string DebugGdbScriptGlobal(Compiler cg)
+string DebugGdbScriptGlobal(const ref Compiler cg)
 {
     string text = "\u0004gdb.inlined-script.cshift\n" + GdbScript;
     string escaped = IrWriter.EscapeBytes(text);
@@ -28,7 +28,7 @@ string DebugGdbScriptGlobal(Compiler cg)
 }
 
 // The location of what is being written: for the message of a panic, and for the debug information.
-void SetLoc(Compiler cg, SourceLoc loc)
+void SetLoc(const ref Compiler cg, SourceLoc loc)
 {
     cg.St[0].Loc = loc;
     // a location in another file (an expression from a declaration elsewhere) would get the wrong file
@@ -38,14 +38,14 @@ void SetLoc(Compiler cg, SourceLoc loc)
 
 // The number of a source file in the locations (SourceLoc.File) for its index in cg.Files (the File of functions,
 // structs and globals). They differ once C headers have been imported (their files are numbered too).
-int SourceFileId(Compiler cg, int fileIndex)
+int SourceFileId(const ref Compiler cg, int fileIndex)
 {
     return fileIndex >= 0 && fileIndex < cg.Files.Count() ? cg.Files.Get(fileIndex).FileId : -1;
 }
 
 // The file node of a source file (its index in cg.Files): the full path for files on disk, the name for the embedded
 // standard library.
-string DebugFileOf(Compiler cg, int fileIndex)
+string DebugFileOf(const ref Compiler cg, int fileIndex)
 {
     string path = cg.Diag.Files.Get(SourceFileId(cg, fileIndex));
     if (path.StartsWith("<"))
@@ -55,7 +55,7 @@ string DebugFileOf(Compiler cg, int fileIndex)
 }
 
 // The compile unit, named after the first source file of the program.
-string DebugUnitOf(Compiler cg)
+string DebugUnitOf(const ref Compiler cg)
 {
     int file = 0;
     for (var i = 0; i < cg.Files.Count(); i += 1)
@@ -75,7 +75,7 @@ string DebugUnitOf(Compiler cg)
 
 // A variable (or parameter: arg > 0) for the debugger. byRef: the slot holds the address of the value ('ref'
 // parameters, 'this').
-void DebugDeclare(Compiler cg, string name, int type, string slot, bool byRef, int arg)
+void DebugDeclare(const ref Compiler cg, string name, int type, string slot, bool byRef, int arg)
 {
     if (slot.Length == 0 || name.Length == 0 || name.StartsWith("$"))
         return;
@@ -87,26 +87,26 @@ void DebugDeclare(Compiler cg, string name, int type, string slot, bool byRef, i
     cg.Ir.DebugVariable(name, arg, t, slot, line);
 }
 
-string DebugPointer(Compiler cg, string target)
+string DebugPointer(const ref Compiler cg, string target)
 {
     return cg.Ir.MetaNode("!DIDerivedType(tag: DW_TAG_pointer_type, baseType: " + (target.Length > 0 ? target : "null") +
                           ", size: " + (cg.Ir.Target.PtrBytes * 8).ToString() + ")");
 }
 
-string DebugBasic(Compiler cg, string name, int bits, string encoding)
+string DebugBasic(const ref Compiler cg, string name, int bits, string encoding)
 {
     return cg.Ir.MetaNode("!DIBasicType(name: " + IrWriter.MetaString(name) + ", size: " + bits.ToString() + ", encoding: " +
                           encoding + ")");
 }
 
 // The integer of sizes and lengths (the header of blocks, slices).
-string DebugSizeType(Compiler cg)
+string DebugSizeType(const ref Compiler cg)
 {
     return DebugBasic(cg, cg.Ir.Target.PtrBytes == 8 ? "int64" : "int32", cg.Ir.Target.PtrBytes * 8, "DW_ATE_signed");
 }
 
 // One member of a struct-like type, at its offset (in bytes).
-string DebugMember(Compiler cg, string name, string type, int64 size, int64 offset)
+string DebugMember(const ref Compiler cg, string name, string type, int64 size, int64 offset)
 {
     return cg.Ir.MetaNode("!DIDerivedType(tag: DW_TAG_member, name: " + IrWriter.MetaString(name) + ", baseType: " +
                           (type.Length > 0 ? type : "null") + ", size: " + (size * 8).ToString() + ", offset: " +
@@ -114,7 +114,7 @@ string DebugMember(Compiler cg, string name, string type, int64 size, int64 offs
 }
 
 // The members of a type that is laid out like a C struct (names[i] has the type types[i]).
-string DebugMembers(Compiler cg, string[] names, int[] memberTypes)
+string DebugMembers(const ref Compiler cg, string[] names, int[] memberTypes)
 {
     var items = List<string>.Create();
     int64 pos = 0;
@@ -128,14 +128,14 @@ string DebugMembers(Compiler cg, string[] names, int[] memberTypes)
     return cg.Ir.MetaNode("!{" + string.Join(", ", items.ToArray()) + "}");
 }
 
-string DebugStruct(Compiler cg, string name, int64 size, string elements)
+string DebugStruct(const ref Compiler cg, string name, int64 size, string elements)
 {
     return "!DICompositeType(tag: DW_TAG_structure_type, name: " + IrWriter.MetaString(name) + ", size: " + (size * 8).ToString() +
            ", elements: " + elements + ")";
 }
 
 // The debug type of a CShift type (its node, "" for void).
-string DebugType(Compiler cg, int t)
+string DebugType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -289,14 +289,14 @@ string DebugType(Compiler cg, int t)
     return result;
 }
 
-string DebugTypeOrNull(Compiler cg, int t)
+string DebugTypeOrNull(const ref Compiler cg, int t)
 {
     string d = DebugType(cg, t);
     return d.Length > 0 ? d : "null";
 }
 
 // Optional<T> and Error<T>: a struct of the given members (laid out like the LLVM struct of the type).
-string DebugValueStruct(Compiler cg, int t, string key, string[] names, int[] memberTypes)
+string DebugValueStruct(const ref Compiler cg, int t, string key, string[] names, int[] memberTypes)
 {
     var ir = cg.Ir;
     string id = ir.MetaReserve();
@@ -308,7 +308,7 @@ string DebugValueStruct(Compiler cg, int t, string key, string[] names, int[] me
 // A string, an array or a SharedPtr<T>: a pointer to a heap block { refcount, length, the bytes or elements }. The
 // variable's type is a typedef with the CShift name (string, int32[], ...), which the pretty printers of
 // tools/debug look for.
-string DebugBlockType(Compiler cg, int t, string key)
+string DebugBlockType(const ref Compiler cg, int t, string key)
 {
     var types = cg.Types;
     var ir = cg.Ir;

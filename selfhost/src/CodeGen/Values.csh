@@ -20,18 +20,18 @@ using CShift.Emit;
 // ---------------------------------------------------------------------------
 
 // An integer constant of the given (integer, char or enum) type.
-Value ConstInt(Compiler cg, int type, int64 value)
+Value ConstInt(const ref Compiler cg, int type, int64 value)
 {
     return Rvalue(type, value.ToString(), false);
 }
 
 
-Value MakeBool(Compiler cg, string v)
+Value MakeBool(const ref Compiler cg, string v)
 {
     return Rvalue(cg.Types.Bool, v, false);
 }
 
-string FloatConstant(Compiler cg, int type, double value)
+string FloatConstant(const ref Compiler cg, int type, double value)
 {
     if (cg.Types.Bits(type) == 32)
         return IrWriter.FloatConst(value);
@@ -42,7 +42,7 @@ string FloatConstant(Compiler cg, int type, double value)
 // Ownership
 // ---------------------------------------------------------------------------
 
-Value ToRValue(Compiler cg, Value v)
+Value ToRValue(const ref Compiler cg, Value v)
 {
     if (!v.IsLValue)
         return v;
@@ -50,14 +50,14 @@ Value ToRValue(Compiler cg, Value v)
     return Rvalue(v.Type, loaded, false);
 }
 
-void EmitRetain(Compiler cg, int type, string v)
+void EmitRetain(const ref Compiler cg, int type, string v)
 {
     if (!NeedsArc(cg, type))
         return;
     cg.Ir.Call("void", RetainFunction(cg, type), LlvmType(cg, type) + " " + v);
 }
 
-void EmitRelease(Compiler cg, int type, string v)
+void EmitRelease(const ref Compiler cg, int type, string v)
 {
     if (!NeedsArc(cg, type))
         return;
@@ -65,7 +65,7 @@ void EmitRelease(Compiler cg, int type, string v)
 }
 
 // The operand of the value with a +1 reference count.
-string Consume(Compiler cg, Value v)
+string Consume(const ref Compiler cg, Value v)
 {
     Value r = ToRValue(cg, v);
     if (!r.Owned && NeedsArc(cg, r.Type))
@@ -74,7 +74,7 @@ string Consume(Compiler cg, Value v)
 }
 
 // An owned temporary is released at the end of the statement.
-void HoldTemp(Compiler cg, Value v)
+void HoldTemp(const ref Compiler cg, Value v)
 {
     if (v.Owned && !v.IsLValue && NeedsArc(cg, v.Type))
         cg.Fn[0].Temps.Add(TempRelease { Type = v.Type, Value = v.V });
@@ -82,20 +82,20 @@ void HoldTemp(Compiler cg, Value v)
 
 // A temporary struct in a slot (the copy that a method works on): what the slot holds at the end of the statement is
 // released, because the method may have replaced fields of it.
-void HoldTempSlot(Compiler cg, int type, string slot)
+void HoldTempSlot(const ref Compiler cg, int type, string slot)
 {
     if (NeedsArc(cg, type))
         cg.Fn[0].Temps.Add(TempRelease { Type = type, Value = slot, InSlot = true });
 }
 
-void ReleaseTemp(Compiler cg, TempRelease t)
+void ReleaseTemp(const ref Compiler cg, TempRelease t)
 {
     string value = t.InSlot ? cg.Ir.Load(LlvmType(cg, t.Type), t.Value) : t.Value;
     EmitRelease(cg, t.Type, value);
 }
 
 // Releases the temporaries above 'mark'; with 'pop' they are also forgotten.
-void FlushTemps(Compiler cg, int mark, bool pop)
+void FlushTemps(const ref Compiler cg, int mark, bool pop)
 {
     var temps = cg.Fn[0].Temps;
     if (cg.Ir.BlockOpen())
@@ -113,7 +113,7 @@ void FlushTemps(Compiler cg, int mark, bool pop)
 }
 
 // Stores a +1 value into a slot and releases what the slot held before.
-void StoreSlot(Compiler cg, int type, string addr, string newOwned, bool releaseOld)
+void StoreSlot(const ref Compiler cg, int type, string addr, string newOwned, bool releaseOld)
 {
     string llvm = LlvmType(cg, type);
     if (releaseOld && NeedsArc(cg, type))
@@ -128,14 +128,14 @@ void StoreSlot(Compiler cg, int type, string addr, string newOwned, bool release
     }
 }
 
-void RequireUnsafe(Compiler cg, SourceLoc loc, string what)
+void RequireUnsafe(const ref Compiler cg, SourceLoc loc, string what)
 {
     if (cg.Fn[0].UnsafeDepth == 0)
         Fail(cg, loc, what + " is only allowed in an 'unsafe' context");
 }
 
 // The type of a declaration in the current function ('var' is not handled here).
-int DeclTypeOf(Compiler cg, TypeRef t)
+int DeclTypeOf(const ref Compiler cg, TypeRef t)
 {
     var f = cg.Fn[0];
     return ResolveValueType(cg, t.Id, f.File, f.Env);
@@ -145,7 +145,7 @@ int DeclTypeOf(Compiler cg, TypeRef t)
 // Numeric conversions
 // ---------------------------------------------------------------------------
 
-bool LiteralFits(Compiler cg, Value v, int to)
+bool LiteralFits(const ref Compiler cg, Value v, int to)
 {
     var types = cg.Types;
     if (v.LitIsFloat)
@@ -163,20 +163,20 @@ bool LiteralFits(Compiler cg, Value v, int to)
     return v.LitInt >= 0 && v.LitInt < (one << bits);
 }
 
-bool IsIntLike(Compiler cg, int t)
+bool IsIntLike(const ref Compiler cg, int t)
 {
     var k = cg.Types.Kind(t);
     return k == TypeKind.Int || k == TypeKind.Char || k == TypeKind.Enum;
 }
 
-bool SignedOf(Compiler cg, int t)
+bool SignedOf(const ref Compiler cg, int t)
 {
     var k = cg.Types.Kind(t);
     return (k == TypeKind.Int || k == TypeKind.Enum) && cg.Types.IsSigned(t);
 }
 
 // Converts a number (integer, char, enum, float) to another numeric type; no checks, floats saturate.
-string NumericConvert(Compiler cg, string v, int from, int to)
+string NumericConvert(const ref Compiler cg, string v, int from, int to)
 {
     var types = cg.Types;
     string src = LlvmType(cg, from);
@@ -215,7 +215,7 @@ string NumericConvert(Compiler cg, string v, int from, int to)
 // ---------------------------------------------------------------------------
 
 // Cost of an implicit conversion between integer types, or -1.
-int ImplicitIntCost(Compiler cg, int from, int to)
+int ImplicitIntCost(const ref Compiler cg, int from, int to)
 {
     var types = cg.Types;
     if (!(types.IsIntegral(from) && types.IsIntegral(to)))
@@ -241,7 +241,7 @@ int ImplicitIntCost(Compiler cg, int from, int to)
 }
 
 // The cost of converting the value to 'to' (0 = same type, -1 = not possible).
-int ConversionCost(Compiler cg, Value v, int to)
+int ConversionCost(const ref Compiler cg, Value v, int to)
 {
     var types = cg.Types;
     int from = v.Type;
@@ -347,7 +347,7 @@ int ConversionCost(Compiler cg, Value v, int to)
 }
 
 // A literal that takes the type of the operand it is combined with.
-Value AdaptLiteral(Compiler cg, Value v, int to)
+Value AdaptLiteral(const ref Compiler cg, Value v, int to)
 {
     if (!v.HasLit)
         return v;
@@ -360,7 +360,7 @@ Value AdaptLiteral(Compiler cg, Value v, int to)
 
 // "" if the value converts implicitly to 'to', otherwise the message (with a hint for the usual mistakes). The checker
 // and ConvertValue use it.
-string ConversionError(Compiler cg, Value v, int to)
+string ConversionError(const ref Compiler cg, Value v, int to)
 {
     var types = cg.Types;
     int from = v.Type;
@@ -389,7 +389,7 @@ string ConversionError(Compiler cg, Value v, int to)
     return "cannot implicitly convert '" + types.Name(from) + "' to '" + types.Name(to) + "'" + hint;
 }
 
-Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
+Value ConvertValue(const ref Compiler cg, Value v, int to, SourceLoc loc)
 {
     var types = cg.Types;
     int from = v.Type;
@@ -496,7 +496,7 @@ Value ConvertValue(Compiler cg, Value v, int to, SourceLoc loc)
 }
 
 // The type of an arithmetic result when two numeric types meet (C# rules).
-int PromoteTypes(Compiler cg, int a, int b, SourceLoc loc)
+int PromoteTypes(const ref Compiler cg, int a, int b, SourceLoc loc)
 {
     string why = "";
     int t = PromoteTypesOrError(cg, a, b, ref why);
@@ -506,7 +506,7 @@ int PromoteTypes(Compiler cg, int a, int b, SourceLoc loc)
 }
 
 // PromoteTypes for the checker: 0 and the message instead of an error.
-int PromoteTypesOrError(Compiler cg, int a, int b, ref string why)
+int PromoteTypesOrError(const ref Compiler cg, int a, int b, ref string why)
 {
     var types = cg.Types;
     if (types.IsFloat(a) || types.IsFloat(b))

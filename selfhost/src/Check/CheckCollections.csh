@@ -12,7 +12,7 @@ using CShift.CodeGen;
 
 // [a, b, ..c] where it stands: the values of its items (an inner [..] stays a collection value until the element type is
 // known), kept for the conversion.
-Value CheckCollectionExpr(Compiler cg, Expr e)
+Value CheckCollectionExpr(const ref Compiler cg, Expr e)
 {
     var n = cg.Tree.GetCollection(e);
     var items = new Value[n.Items.Length];
@@ -25,7 +25,7 @@ Value CheckCollectionExpr(Compiler cg, Expr e)
 }
 
 // A collection value used without a type to convert to is an array (see SettleCollection); other values stay.
-Value SettleChecked(Compiler cg, Value v)
+Value SettleChecked(const ref Compiler cg, Value v)
 {
     if (v.Type != cg.Types.Collection)
         return v;
@@ -34,7 +34,7 @@ Value SettleChecked(Compiler cg, Value v)
 
 // The conversion of a collection value to 'to' (see ConvertValue, EmitCollection, EmitFixedCollection and
 // EmitCollectionBuilder); 0: an array of the first element's type.
-Value CheckCollectionAs(Compiler cg, Expr e, int to, SourceLoc loc)
+Value CheckCollectionAs(const ref Compiler cg, Expr e, int to, SourceLoc loc)
 {
     var types = cg.Types;
     var n = cg.Tree.GetCollection(e);
@@ -123,7 +123,7 @@ Value CheckCollectionAs(Compiler cg, Expr e, int to, SourceLoc loc)
 }
 
 // The source of ..c: an array or a slice (a struct with ToArray() is converted first); unknown after an error.
-Value CheckSpreadSource(Compiler cg, Value src, Expr item)
+Value CheckSpreadSource(const ref Compiler cg, Value src, Expr item)
 {
     var types = cg.Types;
     src = SettleChecked(cg, src);
@@ -144,7 +144,7 @@ Value CheckSpreadSource(Compiler cg, Value src, Expr item)
 }
 
 // [a, b, ..c] as a struct with Create() and Add(T): Add is called for every element.
-Value CheckCollectionBuilder(Compiler cg, CollectionExpr n, Value[] items, int to, SourceLoc loc)
+Value CheckCollectionBuilder(const ref Compiler cg, CollectionExpr n, Value[] items, int to, SourceLoc loc)
 {
     var types = cg.Types;
     if (!IsCollectionBuilder(cg, to))
@@ -182,7 +182,7 @@ Value CheckCollectionBuilder(Compiler cg, CollectionExpr n, Value[] items, int t
 
 // Overload resolution (TryResolveOverload), then the conversion of collection arguments to the chosen parameters (see
 // EmitDirectCall).
-int CheckOverload(Compiler cg, Candidate[] cands, Arg[] args, int[] typeArgs, SourceLoc loc, string name, ref string why)
+int CheckOverload(const ref Compiler cg, Candidate[] cands, Arg[] args, int[] typeArgs, SourceLoc loc, string name, ref string why)
 {
     if (HasUnknownType(cg, typeArgs))
     {

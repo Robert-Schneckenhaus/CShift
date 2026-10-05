@@ -254,7 +254,7 @@ SourceLoc FuncDocLoc(FuncDecl d)
 }
 
 // The doc comment of the declaration at 'def' ("" for none).
-string DocAt(Compiler cg, SourceLoc def)
+string DocAt(const ref Compiler cg, SourceLoc def)
 {
     if (def.Line <= 0)
         return "";
@@ -371,7 +371,7 @@ string BuiltinDocOf(List<CompilationUnit> builtins, string hover)
 // ---- cshiftc doc ----
 
 // Every name a link can refer to: declarations with and without their namespace, members as Type.Member.
-HashSet<string> DocNames(Compiler cg)
+HashSet<string> DocNames(const ref Compiler cg)
 {
     var names = HashSet<string>.Create();
     foreach (var ns in cg.Namespaces.ToArray())
@@ -585,7 +585,7 @@ bool DocPublic(string name, string doc)
     return true;
 }
 
-string DocFileName(Compiler cg, SourceLoc loc)
+string DocFileName(const ref Compiler cg, SourceLoc loc)
 {
     if (loc.File < 0 || loc.File >= cg.Diag.Files.Count())
         return "";
@@ -600,7 +600,7 @@ string TypeParamsText(string[] typeParams)
     return "<" + String.Join(", ", typeParams) + ">";
 }
 
-string ConstraintsText(Compiler cg, Constraint[] constraints)
+string ConstraintsText(const ref Compiler cg, Constraint[] constraints)
 {
     var sb = StringBuilder.Create();
     if (constraints == null)
@@ -614,7 +614,7 @@ string ConstraintsText(Compiler cg, Constraint[] constraints)
     return sb.ToString();
 }
 
-string FuncSignature(Compiler cg, FuncDecl d)
+string FuncSignature(const ref Compiler cg, FuncDecl d)
 {
     var sb = StringBuilder.Create();
     if (d.IsStatic)
@@ -645,7 +645,7 @@ string FuncSignature(Compiler cg, FuncDecl d)
     return sb.ToString();
 }
 
-string TypeListText(Compiler cg, TypeRef[] types, string before)
+string TypeListText(const ref Compiler cg, TypeRef[] types, string before)
 {
     if (types == null || types.Length == 0)
         return "";
@@ -657,7 +657,7 @@ string TypeListText(Compiler cg, TypeRef[] types, string before)
 }
 
 // The value of a constant as JSON (null when it is not a number, a bool or a short string).
-string DocConstValue(Compiler cg, int index)
+string DocConstValue(const ref Compiler cg, int index)
 {
     ConstVal v = ConstEvalDecl(cg, index);
     if (v.Kind == ConstKind.Slice || v.Kind == ConstKind.Unknown)
@@ -669,7 +669,7 @@ string DocConstValue(Compiler cg, int index)
 }
 
 // The documentation of the standard library (stdlib) or of the other sources, as JSON.
-string DocJson(Compiler cg, bool stdlib, bool requireDocs, List<CompilationUnit> builtins)
+string DocJson(const ref Compiler cg, bool stdlib, bool requireDocs, List<CompilationUnit> builtins)
 {
     var names = DocNames(cg);
     foreach (var unit in builtins.ToArray())

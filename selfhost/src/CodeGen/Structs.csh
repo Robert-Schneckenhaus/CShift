@@ -48,12 +48,12 @@ struct FieldPath
     int Owner;
 }
 
-StructInfo GetStructInfo(Compiler cg, int structType)
+StructInfo GetStructInfo(const ref Compiler cg, int structType)
 {
     return cg.StructInfos.Get(cg.Types.Decl(structType));
 }
 
-string StructIrName(Compiler cg, int t)
+string StructIrName(const ref Compiler cg, int t)
 {
     var si = GetStructInfo(cg, t);
     if (si.LayoutInProgress && si.LayoutContext == cg.St[0].LayoutContext)
@@ -65,7 +65,7 @@ string StructIrName(Compiler cg, int t)
 // The struct type
 // ---------------------------------------------------------------------------
 
-int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
+int GetStructType(const ref Compiler cg, int entry, int[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var se = cg.Structs.Get(entry);
@@ -104,7 +104,7 @@ int GetStructType(Compiler cg, int entry, int[] args, SourceLoc loc)
 // The instance of a generic struct that the checker checks its methods with: every type parameter is the unknown type
 // (docs/semantic-pass.md). It has fields (with unknown types where they use a type parameter), but it is never verified
 // against its interfaces or constraints and its methods are never generated.
-int GetCheckingStructType(Compiler cg, int entry)
+int GetCheckingStructType(const ref Compiler cg, int entry)
 {
     var se = cg.Structs.Get(entry);
     var args = new int[se.Decl.TypeParams.Length];
@@ -118,7 +118,7 @@ int GetCheckingStructType(Compiler cg, int entry)
 }
 
 // A new struct type for the arguments: its information and layout.
-int CreateStructType(Compiler cg, int entry, int[] args, string key)
+int CreateStructType(const ref Compiler cg, int entry, int[] args, string key)
 {
     var types = cg.Types;
     var decl = cg.Structs.Get(entry).Decl;
@@ -144,7 +144,7 @@ int CreateStructType(Compiler cg, int entry, int[] args, string key)
 // Declaring a method needs the types of its parameters and result, so the methods wait until no struct layout is
 // running: while the layout of 'Session' runs (it has a field of type 'Stack', whose method takes a 'Session'), the
 // method's signature must not ask for the unfinished 'Session' - that is not a cycle, only the fields decide that.
-void InstantiateStructMethods(Compiler cg)
+void InstantiateStructMethods(const ref Compiler cg)
 {
     if (cg.St[0].LayoutDepth > 0 || cg.St[0].InstantiatingMethods)
         return;
@@ -165,7 +165,7 @@ void InstantiateStructMethods(Compiler cg)
     cg.St[0].InstantiatingMethods = false;
 }
 
-void LayoutStruct(Compiler cg, int index)
+void LayoutStruct(const ref Compiler cg, int index)
 {
     var types = cg.Types;
     var si = cg.StructInfos.Get(index);
@@ -267,7 +267,7 @@ void LayoutStruct(Compiler cg, int index)
     cg.Ir.Globals.Append(si.IrName + " = type { " + body.ToString() + " }\n");
 }
 
-bool StructNeedsArc(Compiler cg, int t)
+bool StructNeedsArc(const ref Compiler cg, int t)
 {
     var si = GetStructInfo(cg, t);
     if (si.LayoutInProgress)
@@ -283,7 +283,7 @@ bool StructNeedsArc(Compiler cg, int t)
 }
 
 // Finds a field of a struct or of its base structs; the path lists the indices for getelementptr/extractvalue.
-FieldPath FindField(Compiler cg, int structType, string name)
+FieldPath FindField(const ref Compiler cg, int structType, string name)
 {
     var si = GetStructInfo(cg, structType);
     foreach (var f in si.Fields)
@@ -308,7 +308,7 @@ FieldPath FindField(Compiler cg, int structType, string name)
 }
 
 // True if 'ancestor' is 'derived' or one of its base structs (path: the indices of the embedded base).
-bool StructIsAncestor(Compiler cg, int ancestor, int derived, ref int[] path)
+bool StructIsAncestor(const ref Compiler cg, int ancestor, int derived, ref int[] path)
 {
     var indices = List<int>.Create();
     int t = derived;
@@ -330,7 +330,7 @@ bool StructIsAncestor(Compiler cg, int ancestor, int derived, ref int[] path)
 // ---------------------------------------------------------------------------
 
 // The methods with the given name of a struct; if it has none, those of its base struct.
-Candidate[] MethodCandidates(Compiler cg, int structType, string name)
+Candidate[] MethodCandidates(const ref Compiler cg, int structType, string name)
 {
     int t = structType;
     while (t != 0 && cg.Types.IsStruct(t))
@@ -351,12 +351,12 @@ Candidate[] MethodCandidates(Compiler cg, int structType, string name)
 }
 
 // The struct the current function is a method of (0 for free functions).
-int CurrentOwner(Compiler cg)
+int CurrentOwner(const ref Compiler cg)
 {
     return cg.Instances.Get(cg.Fn[0].Func).Owner;
 }
 
-Value ThisValue(Compiler cg, SourceLoc loc)
+Value ThisValue(const ref Compiler cg, SourceLoc loc)
 {
     if (cg.Fn[0].ThisSlot == null || cg.Fn[0].ThisSlot.Length == 0)
         Fail(cg, loc, "'this' is not available in a static context");
@@ -379,7 +379,7 @@ string IndexList(int[] indices)
     return sb.ToString();
 }
 
-Value FieldAccess(Compiler cg, Value obj, string name, SourceLoc loc)
+Value FieldAccess(const ref Compiler cg, Value obj, string name, SourceLoc loc)
 {
     var ir = cg.Ir;
     var p = FindField(cg, obj.Type, name);
@@ -403,7 +403,7 @@ Value FieldAccess(Compiler cg, Value obj, string name, SourceLoc loc)
 }
 
 // Type { A = 1, B = 2 }
-Value EmitStructInit(Compiler cg, Expr e)
+Value EmitStructInit(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -417,7 +417,7 @@ Value EmitStructInit(Compiler cg, Expr e)
 }
 
 // new { ... } / new() as the struct of a target type (see IsTypelessNew).
-Value EmitTypelessNew(Compiler cg, Expr e, int target)
+Value EmitTypelessNew(const ref Compiler cg, Expr e, int target)
 {
     int t = TypelessNewType(cg, target);
     if (t == 0)
@@ -428,7 +428,7 @@ Value EmitTypelessNew(Compiler cg, Expr e, int target)
 }
 
 // The fields of an initializer in the struct t.
-Value EmitStructInitOf(Compiler cg, Expr e, int t)
+Value EmitStructInitOf(const ref Compiler cg, Expr e, int t)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -453,7 +453,7 @@ Value EmitStructInitOf(Compiler cg, Expr e, int t)
 }
 
 // new T(): the zero value of a struct.
-Value EmitNewObject(Compiler cg, Expr e)
+Value EmitNewObject(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetNewObject(e);
@@ -467,7 +467,7 @@ Value EmitNewObject(Compiler cg, Expr e)
 
 // C#'s "Color Color" rule: a local variable or field may have the name of its own type (Color Color). Then 'Color.X'
 // means the type when X is not a member of the value: enum members, static methods and constants of the type.
-bool ColorColorMeansType(Compiler cg, string name, string member, SourceLoc loc)
+bool ColorColorMeansType(const ref Compiler cg, string name, string member, SourceLoc loc)
 {
     var entry = TypeDeclEntry { };
     if (name.Contains('.') || !LookupTypeDecl(cg, cg.Fn[0].File, name, ref entry))
@@ -496,7 +496,7 @@ bool ColorColorMeansType(Compiler cg, string name, string member, SourceLoc loc)
 }
 
 // obj.Name, Type.Name
-Value EmitMember(Compiler cg, Expr e)
+Value EmitMember(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var m = cg.Tree.GetMember(e);
@@ -602,7 +602,7 @@ Value EmitMember(Compiler cg, Expr e)
 // ---------------------------------------------------------------------------
 
 // Name of the retain/release helper of a struct type; the helper is written the first time it is needed.
-string StructHelper(Compiler cg, int t, bool isRetain)
+string StructHelper(const ref Compiler cg, int t, bool isRetain)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -633,7 +633,7 @@ string StructHelper(Compiler cg, int t, bool isRetain)
 }
 
 // "%m<n> = extractvalue ...; call retain/release(%m<n>)" for one member.
-string MemberHelperCall(Compiler cg, int memberType, int index, int n, bool isRetain, string structIr)
+string MemberHelperCall(const ref Compiler cg, int memberType, int index, int n, bool isRetain, string structIr)
 {
     string reg = "%m" + n.ToString();
     string callee = isRetain ? RetainFunction(cg, memberType) : ReleaseFunction(cg, memberType);
@@ -642,7 +642,7 @@ string MemberHelperCall(Compiler cg, int memberType, int index, int n, bool isRe
 }
 
 // int.MaxValue, float.Epsilon, ...: constants of the built-in number types. Returns false if there is no such member.
-bool EmitBuiltinStaticMember(Compiler cg, int type, string member, ref Value result)
+bool EmitBuiltinStaticMember(const ref Compiler cg, int type, string member, ref Value result)
 {
     var types = cg.Types;
     if (types.IsIntegral(type))

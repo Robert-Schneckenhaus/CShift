@@ -10,7 +10,7 @@ using CShift.Emit;
 using CShift.Check;
 
 // Generates the module for everything that was added with AddUnit and returns its text.
-string CompileProgram(Compiler cg, string triple)
+string CompileProgram(const ref Compiler cg, string triple)
 {
     // 1. Check 'using' directives.
     for (var i = 0; i < cg.Files.Count(); i += 1)
@@ -134,7 +134,7 @@ string CompileProgram(Compiler cg, string triple)
 }
 
 // The C entry point 'main' calls Main and returns its result. With --arc-stats it prints the balance of heap blocks.
-void EmitEntryPoint(Compiler cg)
+void EmitEntryPoint(const ref Compiler cg)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -191,7 +191,7 @@ void EmitEntryPoint(Compiler cg)
 }
 
 // Converts the result of Main (in the register 'value') to the int the C entry point returns.
-string ExitCodeConversion(Compiler cg, int rt, string value)
+string ExitCodeConversion(const ref Compiler cg, int rt, string value)
 {
     var types = cg.Types;
     int bits = types.Bits(rt);
@@ -202,7 +202,7 @@ string ExitCodeConversion(Compiler cg, int rt, string value)
 }
 
 // The code that prints the balance of heap blocks (--arc-stats); the suffix keeps the register names unique.
-string ArcStatsCode(Compiler cg, string suffix)
+string ArcStatsCode(const ref Compiler cg, string suffix)
 {
     if (!cg.St[0].ArcStats)
         return "";

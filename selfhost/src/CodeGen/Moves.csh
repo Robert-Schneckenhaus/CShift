@@ -27,7 +27,7 @@ struct MoveScan
 }
 
 // The Name nodes of a function body (or a lambda's) that are moves.
-HashSet<int> FindMoves(Compiler cg, Param[] ps, Stmt body)
+HashSet<int> FindMoves(const ref Compiler cg, Param[] ps, Stmt body)
 {
     var names = new string[ps.Length];
     for (var i = 0; i < ps.Length; i += 1)
@@ -40,7 +40,7 @@ HashSet<int> FindMoves(Compiler cg, Param[] ps, Stmt body)
 }
 
 // x => x: the body of a lambda is its result.
-HashSet<int> FindLambdaBodyMoves(Compiler cg, Param[] ps, Expr result)
+HashSet<int> FindLambdaBodyMoves(const ref Compiler cg, Param[] ps, Expr result)
 {
     var moves = HashSet<int>.Create();
     if (result.Kind != ExprKind.Name)
@@ -54,7 +54,7 @@ HashSet<int> FindLambdaBodyMoves(Compiler cg, Param[] ps, Expr result)
     return moves;
 }
 
-void ScanMoveList(Compiler cg, MoveScan scan, Stmt[] list, bool viaLoop)
+void ScanMoveList(const ref Compiler cg, MoveScan scan, Stmt[] list, bool viaLoop)
 {
     scan.Lists.Add(list);
     scan.At.Add(-1);
@@ -71,7 +71,7 @@ void ScanMoveList(Compiler cg, MoveScan scan, Stmt[] list, bool viaLoop)
 }
 
 // A statement that is not a block, as a list of one (the body of an 'if' or a loop without braces).
-void ScanMoveNested(Compiler cg, MoveScan scan, Stmt s, bool viaLoop)
+void ScanMoveNested(const ref Compiler cg, MoveScan scan, Stmt s, bool viaLoop)
 {
     if (s.Kind == StmtKind.None)
         return;
@@ -85,7 +85,7 @@ void ScanMoveNested(Compiler cg, MoveScan scan, Stmt s, bool viaLoop)
     ScanMoveList(cg, scan, one, viaLoop);
 }
 
-void ScanMoveStmt(Compiler cg, MoveScan scan, Stmt s)
+void ScanMoveStmt(const ref Compiler cg, MoveScan scan, Stmt s)
 {
     var tree = cg.Tree;
     switch (s.Kind)
@@ -140,7 +140,7 @@ void ScanMoveStmt(Compiler cg, MoveScan scan, Stmt s)
 
 // The places in a stored value where a variable can be moved: the value itself, the field values of a struct
 // initializer and the items of a collection expression (not spread ones), nested.
-void MoveCandidates(Compiler cg, MoveScan scan, Expr v)
+void MoveCandidates(const ref Compiler cg, MoveScan scan, Expr v)
 {
     var tree = cg.Tree;
     if (v.Kind == ExprKind.Name)
@@ -161,7 +161,7 @@ void MoveCandidates(Compiler cg, MoveScan scan, Expr v)
     }
 }
 
-void TryMove(Compiler cg, MoveScan scan, Expr nameExpr)
+void TryMove(const ref Compiler cg, MoveScan scan, Expr nameExpr)
 {
     string name = cg.Tree.GetName(nameExpr).Name;
     int top = scan.Lists.Count() - 1;
@@ -213,7 +213,7 @@ void TryMove(Compiler cg, MoveScan scan, Expr nameExpr)
 // How often the name appears in a statement (declarations of the name count too). Mode 1 counts only where its address
 // is taken (&x, &x.f, &x[i]), mode 2 the 'try' expressions instead. A kind of statement or expression that is not
 // known counts as many.
-int MentionsInStmt(Compiler cg, Stmt s, string name, int mode)
+int MentionsInStmt(const ref Compiler cg, Stmt s, string name, int mode)
 {
     var tree = cg.Tree;
     int declared = mode == 0 ? 1 : 0;
@@ -285,7 +285,7 @@ int MentionsInStmt(Compiler cg, Stmt s, string name, int mode)
 }
 
 // How often the name appears in an expression (see MentionsInStmt); 'underAddress': inside the operand of '&'.
-int MentionsIn(Compiler cg, Expr e, string name, int mode, bool underAddress)
+int MentionsIn(const ref Compiler cg, Expr e, string name, int mode, bool underAddress)
 {
     var tree = cg.Tree;
     int declared = mode == 0 ? 1 : 0;
@@ -398,7 +398,7 @@ int MentionsIn(Compiler cg, Expr e, string name, int mode, bool underAddress)
 
 // A use of a local variable that FindMoves chose: its value as an owned value, and its slot cleared - if the variable
 // owns its reference. Value { } (none) otherwise.
-Value MoveLocal(Compiler cg, Expr e)
+Value MoveLocal(const ref Compiler cg, Expr e)
 {
     if (!cg.Fn[0].HasMoves || !cg.Fn[0].Moves.Contains(e.Index))
         return Value { };

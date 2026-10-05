@@ -8,7 +8,7 @@ using CShift.Syntax;
 using CShift.Sema;
 using CShift.Emit;
 
-void EmitSwitch(Compiler cg, Stmt s)
+void EmitSwitch(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -149,7 +149,7 @@ void EmitSwitch(Compiler cg, Stmt s)
 
 // A switch without 'default:' over a union, an enum or the codes of an Error<T, E> must name every case: a new member
 // then shows every switch that has to handle it. (A switch over an Error<T, E> without code labels is not checked.)
-void CheckExhaustive(Compiler cg, int st, List<int> members, List<string> values, bool failureCovered, SourceLoc loc)
+void CheckExhaustive(const ref Compiler cg, int st, List<int> members, List<string> values, bool failureCovered, SourceLoc loc)
 {
     string why = ExhaustiveError(cg, st, members, values, failureCovered);
     if (why.Length > 0)
@@ -157,7 +157,7 @@ void CheckExhaustive(Compiler cg, int st, List<int> members, List<string> values
 }
 
 // "" if the switch names every case (see CheckExhaustive), otherwise the message; shared with the checker.
-string ExhaustiveError(Compiler cg, int st, List<int> members, List<string> values, bool failureCovered)
+string ExhaustiveError(const ref Compiler cg, int st, List<int> members, List<string> values, bool failureCovered)
 {
     var types = cg.Types;
     var missing = List<string>.Create();

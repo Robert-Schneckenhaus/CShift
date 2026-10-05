@@ -55,6 +55,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `this`: the compiler decides from the method's body whether it assigns to a field, passes one with `ref` or takes
   its address, or calls such a method on one. The methods of `List`, `Dictionary`, `StringBuilder` and the other
   containers, for example, run on the caller's value without counting its references up and down.
+- The compiler is about three times as fast: its functions take the compiler's state as `const ref Compiler` instead of
+  a copy, which counted the references of its 37 fields up and down at every call. Generating the IR of the compiler
+  itself takes 0.9 s instead of 3.0 s (69 % fewer instructions); `cshiftc check` and the VS Code extension profit as
+  well.
 - A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
   after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 

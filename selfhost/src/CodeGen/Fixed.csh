@@ -14,7 +14,7 @@ using CShift.Emit;
 const int MaxFixedCount = 1048576;
 
 // Fixed<T, N> as written in the source: an element type and a number (or an integer constant).
-int ResolveFixedType(Compiler cg, TypeRefNode node, int file, Dictionary<string, int> env)
+int ResolveFixedType(const ref Compiler cg, TypeRefNode node, int file, Dictionary<string, int> env)
 {
     var types = cg.Types;
     if (node.Args.Length != 2)
@@ -31,14 +31,14 @@ int ResolveFixedType(Compiler cg, TypeRefNode node, int file, Dictionary<string,
 }
 
 // An N of Fixed<T, N> that is not valid: Recover, and 0 (the Fixed type is unknown).
-int RecoverCount(Compiler cg, SourceLoc loc, string message)
+int RecoverCount(const ref Compiler cg, SourceLoc loc, string message)
 {
     Recover(cg, loc, message);
     return 0;
 }
 
 // The N of Fixed<T, N>: a number or the name of an integer constant, between 1 and MaxFixedCount.
-int FixedCount(Compiler cg, TypeRef arg, int file)
+int FixedCount(const ref Compiler cg, TypeRef arg, int file)
 {
     var types = cg.Types;
     var node = cg.Tree.GetType(arg);
@@ -75,7 +75,7 @@ int FixedCount(Compiler cg, TypeRef arg, int file)
 }
 
 // The address of the elements of a Fixed value: its variable or field, or a copy in a new slot for a temporary.
-string FixedAddress(Compiler cg, Value v)
+string FixedAddress(const ref Compiler cg, Value v)
 {
     if (v.IsLValue)
         return v.V;
@@ -87,7 +87,7 @@ string FixedAddress(Compiler cg, Value v)
 }
 
 // A constant index into a Fixed<T, N> is checked when the program is compiled: "" or the error.
-string FixedIndexError(Compiler cg, int fixedType, Expr index, bool fromEnd)
+string FixedIndexError(const ref Compiler cg, int fixedType, Expr index, bool fromEnd)
 {
     var types = cg.Types;
     if (index.Kind != ExprKind.IntLit)
@@ -103,7 +103,7 @@ string FixedIndexError(Compiler cg, int fixedType, Expr index, bool fromEnd)
 
 // f[i] and f[^i]: bounds-checked (a constant index when the program is compiled). An element of a variable or field is
 // assignable unless the Fixed is read-only (a 'const ref' parameter).
-Value EmitFixedElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
+Value EmitFixedElement(const ref Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -130,7 +130,7 @@ struct FixedLoop
     string End;
 }
 
-FixedLoop BeginFixedLoop(Compiler cg, int n)
+FixedLoop BeginFixedLoop(const ref Compiler cg, int n)
 {
     var ir = cg.Ir;
     string slot = ir.Alloca(SizeIr(cg), "fixed.i");
@@ -146,7 +146,7 @@ FixedLoop BeginFixedLoop(Compiler cg, int n)
     return FixedLoop { Slot = slot, Index = i, Cond = cond, End = end };
 }
 
-void EndFixedLoop(Compiler cg, FixedLoop loop)
+void EndFixedLoop(const ref Compiler cg, FixedLoop loop)
 {
     var ir = cg.Ir;
     ir.Store(SizeIr(cg), ir.Bin("add", SizeIr(cg), loop.Index, "1"), loop.Slot);
@@ -155,7 +155,7 @@ void EndFixedLoop(Compiler cg, FixedLoop loop)
 }
 
 // f.ToArray(): a new heap array with copies of the elements.
-Value FixedToArray(Compiler cg, Value obj)
+Value FixedToArray(const ref Compiler cg, Value obj)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -175,7 +175,7 @@ Value FixedToArray(Compiler cg, Value obj)
 
 // [a, b, ..c] as a Fixed<T, N>: without spreads the number of elements is checked now; with spreads the elements are
 // collected in an array first and its length is checked when the program runs.
-Value EmitFixedCollection(Compiler cg, Expr e, CollectionExpr n, int to, SourceLoc loc)
+Value EmitFixedCollection(const ref Compiler cg, Expr e, CollectionExpr n, int to, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -219,7 +219,7 @@ Value EmitFixedCollection(Compiler cg, Expr e, CollectionExpr n, int to, SourceL
 }
 
 // __retain / __release of a Fixed whose elements are counted: every element.
-string FixedHelper(Compiler cg, int t, bool isRetain)
+string FixedHelper(const ref Compiler cg, int t, bool isRetain)
 {
     var ir = cg.Ir;
     var types = cg.Types;

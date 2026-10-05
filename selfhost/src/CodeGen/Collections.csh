@@ -16,7 +16,7 @@ using CShift.Sema;
 using CShift.Emit;
 
 // A struct that a collection expression can build: a static Create() without parameters and an Add with one.
-bool IsCollectionBuilder(Compiler cg, int t)
+bool IsCollectionBuilder(const ref Compiler cg, int t)
 {
     if (!cg.Types.IsStruct(t))
         return false;
@@ -37,7 +37,7 @@ bool IsCollectionBuilder(Compiler cg, int t)
     return create && add;
 }
 
-int CollectionConversionCost(Compiler cg, int to)
+int CollectionConversionCost(const ref Compiler cg, int to)
 {
     var types = cg.Types;
     // Optional<T> and Error<T> take a collection that T takes (one step more)
@@ -52,7 +52,7 @@ int CollectionConversionCost(Compiler cg, int to)
 }
 
 // A collection expression used without a type to convert to becomes an array; other values stay as they are.
-Value SettleCollection(Compiler cg, Value v)
+Value SettleCollection(const ref Compiler cg, Value v)
 {
     if (v.Type != cg.Types.Collection)
         return v;
@@ -60,7 +60,7 @@ Value SettleCollection(Compiler cg, Value v)
 }
 
 // The source of ..c: an array or a slice (a struct with ToArray() is converted first).
-Value SpreadSource(Compiler cg, Expr item)
+Value SpreadSource(const ref Compiler cg, Expr item)
 {
     var types = cg.Types;
     Value src = ToRValue(cg, SettleCollection(cg, EmitRValue(cg, item)));
@@ -73,7 +73,7 @@ Value SpreadSource(Compiler cg, Expr item)
 }
 
 // [a, b, ..c] as the type 'to' (0: an array of the first element's type).
-Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
+Value EmitCollection(const ref Compiler cg, Expr e, int to, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -164,7 +164,7 @@ Value EmitCollection(Compiler cg, Expr e, int to, SourceLoc loc)
 }
 
 // [a, b, ..c] as a struct with Create() and Add(T): Create(), then Add for every element.
-Value EmitCollectionBuilder(Compiler cg, CollectionExpr n, int to, SourceLoc loc)
+Value EmitCollectionBuilder(const ref Compiler cg, CollectionExpr n, int to, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;

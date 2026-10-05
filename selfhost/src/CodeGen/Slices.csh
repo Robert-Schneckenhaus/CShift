@@ -13,14 +13,14 @@ using CShift.Sema;
 using CShift.Emit;
 
 // The type of the block a slice refers to: T[] for Slice<T>, string for StringSlice.
-int SliceOwnerType(Compiler cg, int sliceType)
+int SliceOwnerType(const ref Compiler cg, int sliceType)
 {
     var types = cg.Types;
     return types.IsStringSlice(sliceType) ? types.String : types.ArrayOf(types.Elem(sliceType));
 }
 
 // The element type of an array, a string or a slice (char for strings).
-int SliceElemType(Compiler cg, int t)
+int SliceElemType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsString(t) || types.IsStringSlice(t))
@@ -29,7 +29,7 @@ int SliceElemType(Compiler cg, int t)
 }
 
 // The slice type that slicing a value of type t gives, or 0 if t cannot be sliced.
-int SliceTypeOf(Compiler cg, int t)
+int SliceTypeOf(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsString(t) || types.IsStringSlice(t))
@@ -49,7 +49,7 @@ struct SliceParts
     string Length;
 }
 
-SliceParts PartsOf(Compiler cg, Value v)
+SliceParts PartsOf(const ref Compiler cg, Value v)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -62,7 +62,7 @@ SliceParts PartsOf(Compiler cg, Value v)
 }
 
 // A new slice value (the owner is retained: the slice is an owned temporary).
-Value MakeSlice(Compiler cg, int sliceType, SliceParts p)
+Value MakeSlice(const ref Compiler cg, int sliceType, SliceParts p)
 {
     var ir = cg.Ir;
     EmitRetain(cg, SliceOwnerType(cg, sliceType), p.Owner);
@@ -74,7 +74,7 @@ Value MakeSlice(Compiler cg, int sliceType, SliceParts p)
 }
 
 // An array or a string as a slice of all its elements (the implicit conversion string -> StringSlice, T[] -> Slice<T>).
-Value ToSlice(Compiler cg, Value v, int sliceType)
+Value ToSlice(const ref Compiler cg, Value v, int sliceType)
 {
     Value r = ToRValue(cg, v);
     HoldTemp(cg, r);
@@ -82,7 +82,7 @@ Value ToSlice(Compiler cg, Value v, int sliceType)
 }
 
 // An index for a[i] or a range bound: a size (Layout.csh: SizeIndex), counted from the end for ^n.
-string SliceBound(Compiler cg, Expr e, bool fromEnd, string length)
+string SliceBound(const ref Compiler cg, Expr e, bool fromEnd, string length)
 {
     var types = cg.Types;
     Value v = EmitRValue(cg, e);
@@ -93,7 +93,7 @@ string SliceBound(Compiler cg, Expr e, bool fromEnd, string length)
 }
 
 // a[start..end]
-Value EmitSlice(Compiler cg, Expr e)
+Value EmitSlice(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -117,7 +117,7 @@ Value EmitSlice(Compiler cg, Expr e)
 }
 
 // s[i] on a slice: bounds-checked; an element of a Slice<T> can be assigned (it is the array's element).
-Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
+Value EmitSliceElement(const ref Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -136,7 +136,7 @@ Value EmitSliceElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceL
 }
 
 // The position of a slice's first element in its owner block (for copying out of it).
-string SliceOffset(Compiler cg, int sliceType, SliceParts p)
+string SliceOffset(const ref Compiler cg, int sliceType, SliceParts p)
 {
     var ir = cg.Ir;
     string first = ir.Cast("ptrtoint", "ptr", DataPtr(cg, p.Owner), SizeIr(cg));
@@ -149,7 +149,7 @@ string SliceOffset(Compiler cg, int sliceType, SliceParts p)
 }
 
 // StringSlice.ToString(): a new string with the bytes of the view (owned).
-string StringSliceText(Compiler cg, Value v)
+string StringSliceText(const ref Compiler cg, Value v)
 {
     var ir = cg.Ir;
     Value s = ToRValue(cg, v);
@@ -162,7 +162,7 @@ string StringSliceText(Compiler cg, Value v)
 
 // StringSlice.CStr(): a pointer to the text followed by a 0 byte, for C functions. A slice up to the end of its string
 // is passed as it is; any other slice is copied into a string that lives until the end of the statement.
-string StringSliceCStr(Compiler cg, Value v)
+string StringSliceCStr(const ref Compiler cg, Value v)
 {
     var ir = cg.Ir;
     Value s = ToRValue(cg, v);
@@ -175,7 +175,7 @@ string StringSliceCStr(Compiler cg, Value v)
 }
 
 // Slice<T>.ToArray(): a new array with the elements of the view (references are counted).
-Value SliceToArray(Compiler cg, Value v)
+Value SliceToArray(const ref Compiler cg, Value v)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -190,7 +190,7 @@ Value SliceToArray(Compiler cg, Value v)
 }
 
 // string/StringSlice == string/StringSlice: same length and same bytes.
-Value EmitTextEquals(Compiler cg, BinOp op, Value l0, Value r0)
+Value EmitTextEquals(const ref Compiler cg, BinOp op, Value l0, Value r0)
 {
     var ir = cg.Ir;
     Value l = ToRValue(cg, l0);
@@ -207,7 +207,7 @@ Value EmitTextEquals(Compiler cg, BinOp op, Value l0, Value r0)
 }
 
 // __retain / __release of a slice: the reference to its owner block.
-string SliceHelper(Compiler cg, int t, bool isRetain)
+string SliceHelper(const ref Compiler cg, int t, bool isRetain)
 {
     var ir = cg.Ir;
     string name = "@\"" + (isRetain ? "__retain." : "__release.") + cg.Types.Name(t) + "\"";

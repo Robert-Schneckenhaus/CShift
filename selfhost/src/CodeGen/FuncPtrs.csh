@@ -16,7 +16,7 @@ using CShift.Sema;
 using CShift.Emit;
 
 // A function name used as a value: the functions it can refer to.
-Value GroupValue(Compiler cg, Candidate[] cands, int[] typeArgs, string name)
+Value GroupValue(const ref Compiler cg, Candidate[] cands, int[] typeArgs, string name)
 {
     Value v = Rvalue(cg.Types.MethodGroup, "", false);
     v.Group = cands;
@@ -25,14 +25,14 @@ Value GroupValue(Compiler cg, Candidate[] cands, int[] typeArgs, string name)
     return v;
 }
 
-string FunctionSignature(Compiler cg, FuncInfo fi)
+string FunctionSignature(const ref Compiler cg, FuncInfo fi)
 {
     return cg.Types.Name(cg.Types.FunctionOf(fi.ParamTypes, fi.Ret));
 }
 
 // Finds the function that a function name refers to when it is converted to the function type 'to'. Returns the
 // instance, or -1 with the reason in 'why'.
-int ResolveGroup(Compiler cg, Value g, int to, ref string why)
+int ResolveGroup(const ref Compiler cg, Value g, int to, ref string why)
 {
     var types = cg.Types;
     string reason = "no function with this name matches";
@@ -111,7 +111,7 @@ int ResolveGroup(Compiler cg, Value g, int to, ref string why)
 }
 
 // The function type of a function name that has exactly one meaning (for 'var' and type inference); 0 if there is none.
-int GroupFunctionType(Compiler cg, Value g)
+int GroupFunctionType(const ref Compiler cg, Value g)
 {
     if (g.Group.Length != 1)
         return 0;
@@ -135,7 +135,7 @@ int GroupFunctionType(Compiler cg, Value g)
 }
 
 // The value of a function name converted to a function type: the address of the function.
-Value ConvertGroup(Compiler cg, Value v, int to, SourceLoc loc)
+Value ConvertGroup(const ref Compiler cg, Value v, int to, SourceLoc loc)
 {
     var types = cg.Types;
     string why = "";
@@ -154,7 +154,7 @@ Value ConvertGroup(Compiler cg, Value v, int to, SourceLoc loc)
 }
 
 // The plain function pointer of a function value for C; a closure (with an environment) cannot be called by C.
-string RawFunctionPointer(Compiler cg, string value)
+string RawFunctionPointer(const ref Compiler cg, string value)
 {
     var ir = cg.Ir;
     string env = ir.ExtractValue("{ ptr, ptr }", value, "1");
@@ -162,7 +162,7 @@ string RawFunctionPointer(Compiler cg, string value)
     return ir.ExtractValue("{ ptr, ptr }", value, "0");
 }
 
-string FunctionRetainHelper(Compiler cg)
+string FunctionRetainHelper(const ref Compiler cg)
 {
     string name = "@__cs_retain_fn";
     if (cg.Ir.Declared.Add(name))
@@ -173,7 +173,7 @@ string FunctionRetainHelper(Compiler cg)
 
 // Releases the environment of a function value: the last reference calls its 'drop' function (which releases the
 // captured values) and frees the block.
-string FunctionReleaseHelper(Compiler cg)
+string FunctionReleaseHelper(const ref Compiler cg)
 {
     string name = "@__cs_release_fn";
     if (cg.Ir.Declared.Add(name))
@@ -191,7 +191,7 @@ string FunctionReleaseHelper(Compiler cg)
 }
 
 // A call through a function pointer.
-Value EmitIndirectCall(Compiler cg, Value callee, Arg[] args, SourceLoc loc)
+Value EmitIndirectCall(const ref Compiler cg, Value callee, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -241,7 +241,7 @@ Value EmitIndirectCall(Compiler cg, Value callee, Arg[] args, SourceLoc loc)
 }
 
 // Values that can be called: Action/Func and the function pointer fields of C structs.
-bool IsCallableType(Compiler cg, int t)
+bool IsCallableType(const ref Compiler cg, int t)
 {
     return cg.Types.IsFunction(t) || cg.Types.IsCFunction(t);
 }

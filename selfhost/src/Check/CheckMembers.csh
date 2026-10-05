@@ -12,7 +12,7 @@ using CShift.CodeGen;
 
 // True if 'obj.Name' / 'obj.Method()' may start with a type, a namespace or a builtin name (Console, Math, ...)
 // rather than a value (see EmitMember and EmitMemberCall).
-bool IsStaticPath(Compiler cg, Expr obj, string member, SourceLoc loc)
+bool IsStaticPath(const ref Compiler cg, Expr obj, string member, SourceLoc loc)
 {
     string dotted = DottedName(cg, obj);
     if (dotted.Length == 0)
@@ -27,13 +27,13 @@ bool IsStaticPath(Compiler cg, Expr obj, string member, SourceLoc loc)
 }
 
 // "" if the current code may use an unsafe operation, otherwise the message (see RequireUnsafe).
-string UnsafeError(Compiler cg, string what)
+string UnsafeError(const ref Compiler cg, string what)
 {
     return cg.Fn[0].UnsafeDepth == 0 ? what + " is only allowed in an 'unsafe' context" : "";
 }
 
 // Reports the message if it is not empty; true if it was.
-bool ReportIf(Compiler cg, SourceLoc loc, string message)
+bool ReportIf(const ref Compiler cg, SourceLoc loc, string message)
 {
     if (message.Length == 0)
         return false;
@@ -52,7 +52,7 @@ string AlreadyReported()
 // obj.Name, Type.Name
 // ---------------------------------------------------------------------------
 
-Value CheckMember(Compiler cg, Expr e)
+Value CheckMember(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var m = cg.Tree.GetMember(e);
@@ -175,7 +175,7 @@ Value CheckMember(Compiler cg, Expr e)
 // obj.Method(args), Type.Method(args), Namespace.Function(args), Console.WriteLine(...)
 // ---------------------------------------------------------------------------
 
-Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
+Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
 {
     var types = cg.Types;
     int file = cg.Fn[0].File;
@@ -357,7 +357,7 @@ Value CheckMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool via
 }
 
 // A 'thread' function is only called with 'start', and 'start' only calls 'thread' functions (see EmitMemberCall).
-Value CheckThreadUse(Compiler cg, int instance, bool viaStart, string mustStart, string name, SourceLoc loc)
+Value CheckThreadUse(const ref Compiler cg, int instance, bool viaStart, string mustStart, string name, SourceLoc loc)
 {
     if (IsThreadInstance(cg, instance))
     {
@@ -374,13 +374,13 @@ Value CheckThreadUse(Compiler cg, int instance, bool viaStart, string mustStart,
 }
 
 // A call of a function that was found by name: the overload and its result.
-Value CheckResolvedCall(Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc)
+Value CheckResolvedCall(const ref Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc)
 {
     return CheckResolvedCallAt(cg, cands, args, known, typeArgs, name, loc, SourceLoc { });
 }
 
 // ... with the place of the function's name for the symbol index (Line 0: not indexed).
-Value CheckResolvedCallAt(Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc, SourceLoc nameLoc)
+Value CheckResolvedCallAt(const ref Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc, SourceLoc nameLoc)
 {
     if (!known)
     {
@@ -396,13 +396,13 @@ Value CheckResolvedCallAt(Compiler cg, Candidate[] cands, Arg[] args, bool known
 }
 
 // obj.Method(args) for a struct value (see EmitMethodCallOn).
-Value CheckMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc)
+Value CheckMethodCallOn(const ref Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc)
 {
     return CheckMethodCallOnAt(cg, obj, name, args, known, typeArgs, loc, SourceLoc { });
 }
 
 // ... with the place of the method's name for the symbol index (Line 0: not indexed).
-Value CheckMethodCallOnAt(Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc, SourceLoc nameLoc)
+Value CheckMethodCallOnAt(const ref Compiler cg, Value obj, string name, Arg[] args, bool known, int[] typeArgs, SourceLoc loc, SourceLoc nameLoc)
 {
     var types = cg.Types;
     var cands = MethodCandidates(cg, obj.Type, name);
@@ -439,7 +439,7 @@ Value CheckMethodCallOnAt(Compiler cg, Value obj, string name, Arg[] args, bool 
 }
 
 // Console, Environment and Memory (see EmitBuiltinStatic).
-Value CheckBuiltinStatic(Compiler cg, string type, string method, Arg[] args, SourceLoc loc)
+Value CheckBuiltinStatic(const ref Compiler cg, string type, string method, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     Value none = Rvalue(types.Void, "", false);
@@ -539,7 +539,7 @@ Value CheckBuiltinStatic(Compiler cg, string type, string method, Arg[] args, So
 }
 
 // "" if the call has n arguments, otherwise the message (see ExpectArgs).
-string ArgCountError(Compiler cg, Arg[] args, int n, string type, string method)
+string ArgCountError(const ref Compiler cg, Arg[] args, int n, string type, string method)
 {
     if (args.Length == n)
         return "";
@@ -547,7 +547,7 @@ string ArgCountError(Compiler cg, Arg[] args, int n, string type, string method)
 }
 
 // Methods of strings, arrays, slices, Fixed values, numbers, bool, enums and SharedPtr (see EmitBuiltinMethod).
-Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool known, SourceLoc loc, SourceLoc nameLoc)
+Value CheckBuiltinMethod(const ref Compiler cg, Value obj, string method, Arg[] args, bool known, SourceLoc loc, SourceLoc nameLoc)
 {
     var types = cg.Types;
     int t = obj.Type;
@@ -687,14 +687,14 @@ Arg[] WithSelf(Value self, Arg[] args)
 // ---------------------------------------------------------------------------
 
 // An index must be an integer (see EmitElement, SliceBound).
-void CheckIndexValue(Compiler cg, Expr index)
+void CheckIndexValue(const ref Compiler cg, Expr index)
 {
     Value idx = CheckRValue(cg, index);
     if (!IsUnknown(cg, idx) && !cg.Types.IsIntegral(idx.Type))
         CheckError(cg, index.Loc, "an index must be an integer, not '" + cg.Types.Name(idx.Type) + "'");
 }
 
-Value CheckIndex(Compiler cg, Expr e)
+Value CheckIndex(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetIndex(e);
@@ -769,7 +769,7 @@ Value CheckIndex(Compiler cg, Expr e)
     return UnknownValue(cg);
 }
 
-Value CheckSliceExpr(Compiler cg, Expr e)
+Value CheckSliceExpr(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetSlice(e);
@@ -795,7 +795,7 @@ Value CheckSliceExpr(Compiler cg, Expr e)
 // new T[n], new T[] { ... }, new T(), T { A = 1 }
 // ---------------------------------------------------------------------------
 
-Value CheckNewArray(Compiler cg, Expr e)
+Value CheckNewArray(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetNewArray(e);
@@ -821,7 +821,7 @@ Value CheckNewArray(Compiler cg, Expr e)
     return Rvalue(types.ArrayOf(elem), "", false);
 }
 
-Value CheckNewObject(Compiler cg, Expr e)
+Value CheckNewObject(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     if (cg.Tree.GetNewObject(e).Type.IsNull())
@@ -838,7 +838,7 @@ Value CheckNewObject(Compiler cg, Expr e)
     return Rvalue(t, "", false);
 }
 
-Value CheckStructInit(Compiler cg, Expr e)
+Value CheckStructInit(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetStructInit(e);
@@ -861,7 +861,7 @@ Value CheckStructInit(Compiler cg, Expr e)
 }
 
 // new { ... } / new() as the struct of a target type (see EmitTypelessNew).
-Value CheckTypelessNew(Compiler cg, Expr e, int target)
+Value CheckTypelessNew(const ref Compiler cg, Expr e, int target)
 {
     int t = TypelessNewType(cg, target);
     if (t == 0)
@@ -880,7 +880,7 @@ Value CheckTypelessNew(Compiler cg, Expr e, int target)
     return CheckStructInitOf(cg, e, t);
 }
 
-Value CheckStructInitOf(Compiler cg, Expr e, int t)
+Value CheckStructInitOf(const ref Compiler cg, Expr e, int t)
 {
     var types = cg.Types;
     var n = cg.Tree.GetStructInit(e);
@@ -904,7 +904,7 @@ Value CheckStructInitOf(Compiler cg, Expr e, int t)
 }
 
 // iface.Method(args) (see EmitInterfaceCall).
-Value CheckInterfaceCall(Compiler cg, int iface, string name, Arg[] args, bool known, SourceLoc loc)
+Value CheckInterfaceCall(const ref Compiler cg, int iface, string name, Arg[] args, bool known, SourceLoc loc)
 {
     if (!known)
         return UnknownValue(cg);

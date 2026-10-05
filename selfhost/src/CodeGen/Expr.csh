@@ -12,7 +12,7 @@ using CShift.Emit;
 
 // Every expression is written through here: the current location is the expression's own while it (and the checks
 // after its operands) is written.
-Value EmitExpr(Compiler cg, Expr e)
+Value EmitExpr(const ref Compiler cg, Expr e)
 {
     SourceLoc outer = cg.St[0].Loc;
     if (e.Loc.Line > 0)
@@ -22,7 +22,7 @@ Value EmitExpr(Compiler cg, Expr e)
     return v;
 }
 
-Value EmitExprKind(Compiler cg, Expr e)
+Value EmitExprKind(const ref Compiler cg, Expr e)
 {
     switch (e.Kind)
     {
@@ -108,7 +108,7 @@ Value EmitExprKind(Compiler cg, Expr e)
     }
 }
 
-Value EmitRValue(Compiler cg, Expr e)
+Value EmitRValue(const ref Compiler cg, Expr e)
 {
     return ToRValue(cg, EmitExpr(cg, e));
 }
@@ -117,7 +117,7 @@ Value EmitRValue(Compiler cg, Expr e)
 // Literals, names
 // ---------------------------------------------------------------------------
 
-Value EmitLiteral(Compiler cg, Expr e)
+Value EmitLiteral(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var tree = cg.Tree;
@@ -173,7 +173,7 @@ Value EmitLiteral(Compiler cg, Expr e)
 }
 
 // A local variable or parameter; the value has no type if there is none with that name.
-Value LookupVariable(Compiler cg, string name)
+Value LookupVariable(const ref Compiler cg, string name)
 {
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
@@ -193,7 +193,7 @@ Value LookupVariable(Compiler cg, string name)
 }
 
 // The innermost local variable or constant with the name: its index in the variables, or -1.
-int FindLocal(Compiler cg, string name)
+int FindLocal(const ref Compiler cg, string name)
 {
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
@@ -204,7 +204,7 @@ int FindLocal(Compiler cg, string name)
     return -1;
 }
 
-bool IsLocalName(Compiler cg, string name)
+bool IsLocalName(const ref Compiler cg, string name)
 {
     var vars = cg.Fn[0].Vars;
     for (var i = 0; i < vars.Count(); i += 1)
@@ -215,7 +215,7 @@ bool IsLocalName(Compiler cg, string name)
     return IsOuterName(cg, name);
 }
 
-Value EmitName(Compiler cg, Expr e)
+Value EmitName(const ref Compiler cg, Expr e)
 {
     var n = cg.Tree.GetName(e);
     Value moved = MoveLocal(cg, e); // the last use of a local variable: its reference is given away (Moves.csh)
@@ -255,7 +255,7 @@ Value EmitName(Compiler cg, Expr e)
 }
 
 // A constant is inlined at every use: its value was computed by the compile-time evaluator (ConstEval.csh).
-Value EmitConst(Compiler cg, int index, SourceLoc loc)
+Value EmitConst(const ref Compiler cg, int index, SourceLoc loc)
 {
     return ConstToValue(cg, ConstEvalDecl(cg, index));
 }
@@ -266,7 +266,7 @@ Value EmitConst(Compiler cg, int index, SourceLoc loc)
 
 // Where a panic happens, as a C string: "path:line:column in Function" (the current location, see EmitExpr). The path
 // is the one the compiler was given; in a project it is relative to the project folder.
-string PanicWhere(Compiler cg)
+string PanicWhere(const ref Compiler cg)
 {
     SourceLoc loc = cg.St[0].Loc;
     string where = "";
@@ -286,7 +286,7 @@ string PanicWhere(Compiler cg)
 }
 
 // True while a function of the standard library is written.
-bool InLibrary(Compiler cg)
+bool InLibrary(const ref Compiler cg)
 {
     if (cg.Fn.Length == 0)
         return false;
@@ -297,7 +297,7 @@ bool InLibrary(Compiler cg)
 // A function of the standard library that calls Environment.Panic reports where the program called it: it has a second
 // entry point (name.at) with the call site as a hidden last parameter. The plain entry point (for function values,
 // method tables and the library itself) passes no call site.
-bool ReportsCaller(Compiler cg, FuncInfo fi)
+bool ReportsCaller(const ref Compiler cg, FuncInfo fi)
 {
     var d = cg.Funcs.Get(fi.Entry).Decl;
     return d.CallsPanic && !d.IsExtern && !d.IsThread && !d.Body.IsNull() && cg.Files.Get(fi.File).IsPrelude;
@@ -311,7 +311,7 @@ string CallerEntryName(string llvmName)
 }
 
 // The call site this function was given (a C string), or null.
-string CallerOperand(Compiler cg)
+string CallerOperand(const ref Compiler cg)
 {
     if (cg.Fn.Length == 0 || cg.Fn[0].CallerArg == null || cg.Fn[0].CallerArg.Length == 0)
         return "null";
@@ -319,7 +319,7 @@ string CallerOperand(Compiler cg)
 }
 
 // Continues normally unless 'cond' is true: then the program panics with the message and where it happened.
-void EmitPanicIf(Compiler cg, string cond, string message)
+void EmitPanicIf(const ref Compiler cg, string cond, string message)
 {
     var ir = cg.Ir;
     string failLabel = ir.NewLabel("panic");
@@ -332,7 +332,7 @@ void EmitPanicIf(Compiler cg, string cond, string message)
 }
 
 // Like EmitPanicIf for an index check: the message also shows the index and the length (both sizes).
-void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, string length)
+void EmitIndexPanicIf(const ref Compiler cg, string cond, string message, string index, string length)
 {
     var ir = cg.Ir;
     string failLabel = ir.NewLabel("panic");
@@ -353,7 +353,7 @@ void EmitIndexPanicIf(Compiler cg, string cond, string message, string index, st
 // ---------------------------------------------------------------------------
 
 // An integer operation on two operands of the same type (checked unless in an 'unchecked' block).
-string EmitIntOp(Compiler cg, BinOp op, string l, string r, int t)
+string EmitIntOp(const ref Compiler cg, BinOp op, string l, string r, int t)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -429,7 +429,7 @@ string BinOpText(BinOp op)
 }
 
 // The value as a string for '+' (owned: a new string, or a retained one).
-Value AsStringOperand(Compiler cg, Value v, SourceLoc loc)
+Value AsStringOperand(const ref Compiler cg, Value v, SourceLoc loc)
 {
     var types = cg.Types;
     if (types.IsString(v.Type))
@@ -447,7 +447,7 @@ struct TextBytes
     string Length;
 }
 
-TextBytes TextBytesOf(Compiler cg, Value v, SourceLoc loc)
+TextBytes TextBytesOf(const ref Compiler cg, Value v, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -465,7 +465,7 @@ TextBytes TextBytesOf(Compiler cg, Value v, SourceLoc loc)
 
 // text + bytes, giving up text (owned): written in place when text is the only reference to its block (__cs_append);
 // 'grow' leaves room for more (text += ... in a loop).
-string EmitAppend(Compiler cg, string text, TextBytes bytes, bool grow)
+string EmitAppend(const ref Compiler cg, string text, TextBytes bytes, bool grow)
 {
     return cg.Ir.Call("ptr", "@__cs_append", "ptr " + text + ", ptr " + bytes.Data + ", " + SizeIr(cg) + " " + bytes.Length +
                                               ", i1 " + (grow ? "true" : "false"));
@@ -473,7 +473,7 @@ string EmitAppend(Compiler cg, string text, TextBytes bytes, bool grow)
 
 // Whether evaluating e cannot change a local variable: no assignment, 'ref' argument or address (&x) in it, only the
 // kinds of expressions listed here (anything else counts as a change).
-bool LeavesLocalsAlone(Compiler cg, Expr e)
+bool LeavesLocalsAlone(const ref Compiler cg, Expr e)
 {
     var tree = cg.Tree;
     if (e.IsNull())
@@ -534,7 +534,7 @@ bool LeavesLocalsAlone(Compiler cg, Expr e)
 
 // What 'x += e' or 'x = x + e1 + e2 ...' appends to x, if x is a local string variable (or a parameter, not a 'ref'
 // one) that none of the values can change - then x can be read after them and given to __cs_append. Empty otherwise.
-Expr[] AppendedParts(Compiler cg, AssignExpr a)
+Expr[] AppendedParts(const ref Compiler cg, AssignExpr a)
 {
     var none = new Expr[0];
     if (a.Target.Kind != ExprKind.Name)
@@ -576,7 +576,7 @@ Expr[] AppendedParts(Compiler cg, AssignExpr a)
     return parts.ToArray();
 }
 
-Value EmitArithmetic(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
+Value EmitArithmetic(const ref Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -659,7 +659,7 @@ Value EmitArithmetic(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     return Rvalue(t, EmitIntOp(cg, op, lc.V, rc.V, t), false);
 }
 
-Value EmitCompare(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
+Value EmitCompare(const ref Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -799,7 +799,7 @@ string IntPredicate(BinOp op, bool isSigned)
 }
 
 // A condition must be a bool.
-Value EmitCondition(Compiler cg, Expr e)
+Value EmitCondition(const ref Compiler cg, Expr e)
 {
     Value v = EmitRValue(cg, e);
     string why = ConditionError(cg, v.Type);
@@ -810,7 +810,7 @@ Value EmitCondition(Compiler cg, Expr e)
 
 // Error<T> and Optional<T> are not conditions ('if (x)', '!x', '&&', '?:'): what they test would be hidden. The code
 // says it: 'x is error e' / 'x is T v' for a result, 'x is T v' / 'x == null' for an optional value.
-void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
+void RejectAmbiguousCondition(const ref Compiler cg, int t, SourceLoc loc)
 {
     string why = AmbiguousConditionError(cg, t);
     if (why.Length > 0)
@@ -820,7 +820,7 @@ void RejectAmbiguousCondition(Compiler cg, int t, SourceLoc loc)
 // && and ||: the right side only runs if it can change the result.
 // a && b, a || b: the right side only runs if it can change the result. A chain of the same operator (a || b || c ...)
 // is written in a loop with one join block instead of by recursion, so that its length does not use up the stack.
-Value EmitLogical(Compiler cg, Expr e)
+Value EmitLogical(const ref Compiler cg, Expr e)
 {
     var ir = cg.Ir;
     var b = cg.Tree.GetBinary(e);
@@ -860,7 +860,7 @@ Value EmitLogical(Compiler cg, Expr e)
 
 // a op b. A left-deep chain (a + b + c + ..., as long string concatenations are) is written in a loop instead of by
 // recursion, so that its length does not use up the stack; the order and every step are the same as with recursion.
-Value EmitBinary(Compiler cg, Expr e)
+Value EmitBinary(const ref Compiler cg, Expr e)
 {
     var b = cg.Tree.GetBinary(e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
@@ -890,7 +890,7 @@ Value EmitBinary(Compiler cg, Expr e)
     return l;
 }
 
-Value EmitBinaryStep(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
+Value EmitBinaryStep(const ref Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
 {
     switch (op)
     {
@@ -906,7 +906,7 @@ Value EmitBinaryStep(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
     }
 }
 
-Value EmitUnary(Compiler cg, Expr e)
+Value EmitUnary(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -940,7 +940,7 @@ Value EmitUnary(Compiler cg, Expr e)
 }
 
 // -v, +v, ~v on a value (see EmitUnary).
-Value EmitUnaryOn(Compiler cg, UnOp op, Value v, SourceLoc loc)
+Value EmitUnaryOn(const ref Compiler cg, UnOp op, Value v, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -978,7 +978,7 @@ Value EmitUnaryOn(Compiler cg, UnOp op, Value v, SourceLoc loc)
 
 // An expression used as a value of 'target': integer arithmetic is computed in the target type where its operands
 // allow; everything else is EmitExpr.
-Value EmitExprAs(Compiler cg, Expr e, int target)
+Value EmitExprAs(const ref Compiler cg, Expr e, int target)
 {
     if (IsTypelessNew(cg, e))
         return EmitTypelessNew(cg, e, target);
@@ -989,7 +989,7 @@ Value EmitExprAs(Compiler cg, Expr e, int target)
 }
 
 // The value of an operand of a framed expression.
-Value EmitFramed(Compiler cg, Expr e, int frame)
+Value EmitFramed(const ref Compiler cg, Expr e, int frame)
 {
     if (!IsFramable(cg, e))
         return EmitRValue(cg, e);
@@ -1048,7 +1048,7 @@ Value EmitFramed(Compiler cg, Expr e, int frame)
 }
 
 // l op r in the frame if both fit, otherwise by the usual rules (EmitArithmetic).
-Value EmitFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
+Value EmitFramedStep(const ref Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
 {
     bool folded = false;
     Value lit = FoldLiterals(cg, op, l, r, ref folded);
@@ -1065,7 +1065,7 @@ Value EmitFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceL
 
 // target op= value: the result in the type of the target. A wider result (target = int16, value = int32) is narrowed;
 // in checked code a value that does not fit is an overflow.
-Value EmitCompound(Compiler cg, BinOp op, Value cur, Expr value, SourceLoc loc)
+Value EmitCompound(const ref Compiler cg, BinOp op, Value cur, Expr value, SourceLoc loc)
 {
     var types = cg.Types;
     int frame = ArithmeticFrame(cg, cur.Type);
@@ -1080,7 +1080,7 @@ Value EmitCompound(Compiler cg, BinOp op, Value cur, Expr value, SourceLoc loc)
 }
 
 // A number converted to another number type; between integer types checked (overflow panic) where the function is.
-string EmitNarrow(Compiler cg, string v, int from, int to)
+string EmitNarrow(const ref Compiler cg, string v, int from, int to)
 {
     var types = cg.Types;
     string n = NumericConvert(cg, v, from, to);
@@ -1095,7 +1095,7 @@ string EmitNarrow(Compiler cg, string v, int from, int to)
 // Assignment, conditional, casts
 // ---------------------------------------------------------------------------
 
-Value EmitAssign(Compiler cg, Expr e)
+Value EmitAssign(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var a = cg.Tree.GetAssign(e);
@@ -1195,7 +1195,7 @@ Value EmitAssign(Compiler cg, Expr e)
 }
 
 // cond ? a : b; with a frame (see EmitFramed) the branches are computed in it.
-Value EmitConditionalIn(Compiler cg, Expr e, int frame)
+Value EmitConditionalIn(const ref Compiler cg, Expr e, int frame)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -1251,7 +1251,7 @@ Value EmitConditionalIn(Compiler cg, Expr e, int frame)
 }
 
 // Removes the temporaries above 'baseCount' from the list and returns them.
-List<TempRelease> TakeTemps(Compiler cg, int baseCount)
+List<TempRelease> TakeTemps(const ref Compiler cg, int baseCount)
 {
     var temps = cg.Fn[0].Temps;
     var taken = List<TempRelease>.Create();
@@ -1262,13 +1262,13 @@ List<TempRelease> TakeTemps(Compiler cg, int baseCount)
     return taken;
 }
 
-void ReleaseTemps(Compiler cg, List<TempRelease> list)
+void ReleaseTemps(const ref Compiler cg, List<TempRelease> list)
 {
     for (var i = list.Count(); i > 0; i -= 1)
         ReleaseTemp(cg, list.Get(i - 1));
 }
 
-Value EmitCast(Compiler cg, Expr e)
+Value EmitCast(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var c = cg.Tree.GetCast(e);
@@ -1300,7 +1300,7 @@ Value EmitCast(Compiler cg, Expr e)
 // ---------------------------------------------------------------------------
 
 // The value as a string with a +1 reference count.
-string EmitToString(Compiler cg, Value value, SourceLoc loc)
+string EmitToString(const ref Compiler cg, Value value, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;

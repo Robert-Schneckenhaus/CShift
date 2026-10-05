@@ -11,24 +11,24 @@ using CShift.Sema;
 using CShift.Emit;
 
 // The size of a type in bytes as a constant operand (the "getelementptr null" trick).
-string SizeOfType(Compiler cg, int t)
+string SizeOfType(const ref Compiler cg, int t)
 {
     return "ptrtoint (ptr getelementptr (" + LlvmType(cg, t) + ", ptr null, i32 1) to " + SizeIr(cg) + ")";
 }
 
 // The address of the first element of a block.
-string DataPtr(Compiler cg, string block)
+string DataPtr(const ref Compiler cg, string block)
 {
     return cg.Ir.ByteGep(block, HeaderSize(cg));
 }
 
-string ArrayLength(Compiler cg, string block)
+string ArrayLength(const ref Compiler cg, string block)
 {
     return cg.Ir.Call(SizeIr(cg), "@__cs_len", "ptr " + block);
 }
 
 // The block of 'count' elements of the type, zeroed, with reference count 1.
-string AllocArray(Compiler cg, int elem, string count)
+string AllocArray(const ref Compiler cg, int elem, string count)
 {
     string size = SizeIr(cg);
     string bytes = cg.Ir.Bin("mul", size, count, SizeOfType(cg, elem));
@@ -39,7 +39,7 @@ string AllocArray(Compiler cg, int elem, string count)
 // new T[n], new T[] { ... }
 // ---------------------------------------------------------------------------
 
-Value EmitNewArray(Compiler cg, Expr e)
+Value EmitNewArray(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -82,7 +82,7 @@ Value EmitNewArray(Compiler cg, Expr e)
 // a[i]
 // ---------------------------------------------------------------------------
 
-Value EmitIndex(Compiler cg, Expr e)
+Value EmitIndex(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -98,7 +98,7 @@ Value EmitIndex(Compiler cg, Expr e)
 }
 
 // The element of an array, a string, a slice or a pointer (the object is already evaluated); a[^i] counts from the end.
-Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
+Value EmitElement(const ref Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -155,7 +155,7 @@ Value EmitElement(Compiler cg, Value obj, Expr index, bool fromEnd, SourceLoc lo
 
 // The indexer of a struct: x[k] is x.Get(k), x[k] = v is x.Set(k, v) (List<T>, Dictionary<K, V> and any struct with
 // such methods).
-Value EmitIndexerGet(Compiler cg, Value obj, Expr index, SourceLoc loc)
+Value EmitIndexerGet(const ref Compiler cg, Value obj, Expr index, SourceLoc loc)
 {
     if (MethodCandidates(cg, obj.Type, "Get").Length == 0)
         Fail(cg, loc, "cannot index a value of type '" + cg.Types.Name(obj.Type) + "' (it has no method 'Get')");
@@ -164,7 +164,7 @@ Value EmitIndexerGet(Compiler cg, Value obj, Expr index, SourceLoc loc)
     return EmitMethodCallOn(cg, obj, "Get", args, new int[0], loc);
 }
 
-Value EmitIndexerSet(Compiler cg, Value obj, Arg key, Value value, SourceLoc loc)
+Value EmitIndexerSet(const ref Compiler cg, Value obj, Arg key, Value value, SourceLoc loc)
 {
     if (MethodCandidates(cg, obj.Type, "Set").Length == 0)
         Fail(cg, loc, "cannot assign to an element of '" + cg.Types.Name(obj.Type) + "' (it has no method 'Set')");
@@ -178,7 +178,7 @@ Value EmitIndexerSet(Compiler cg, Value obj, Arg key, Value value, SourceLoc loc
 // foreach over an array or a string
 // ---------------------------------------------------------------------------
 
-void EmitForeach(Compiler cg, Stmt s)
+void EmitForeach(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -250,7 +250,7 @@ void EmitForeach(Compiler cg, Stmt s)
 // ---------------------------------------------------------------------------
 
 // Array.Copy(source, sourceIndex, destination, destinationIndex, count) or Array.Copy(source, destination, count).
-Value EmitArrayCopy(Compiler cg, Arg[] args, SourceLoc loc)
+Value EmitArrayCopy(const ref Compiler cg, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -277,7 +277,7 @@ Value EmitArrayCopy(Compiler cg, Arg[] args, SourceLoc loc)
     return Rvalue(types.Void, "", false);
 }
 
-Value EmitArrayClone(Compiler cg, Value obj)
+Value EmitArrayClone(const ref Compiler cg, Value obj)
 {
     Value a = ToRValue(cg, obj);
     HoldTemp(cg, a);
@@ -289,7 +289,7 @@ Value EmitArrayClone(Compiler cg, Value obj)
 // ---------------------------------------------------------------------------
 
 // The release function of a value type: strings and arrays without references inside are released flat.
-string ReleaseFunction(Compiler cg, int t)
+string ReleaseFunction(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsString(t))
@@ -314,7 +314,7 @@ string ReleaseFunction(Compiler cg, int t)
     return "";
 }
 
-string RetainFunction(Compiler cg, int t)
+string RetainFunction(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsString(t) || types.IsArray(t))
@@ -339,7 +339,7 @@ string RetainFunction(Compiler cg, int t)
 
 // SharedPtr<T>: an atomically reference-counted box {size count, size unused, T value}, safe to share between OS threads.
 // Retaining is the same for every T, so one helper serves all of them.
-string SharedRetainHelper(Compiler cg)
+string SharedRetainHelper(const ref Compiler cg)
 {
     string name = "@__cs_retain_shared";
     if (!cg.Ir.Declared.Add(name))
@@ -353,7 +353,7 @@ string SharedRetainHelper(Compiler cg)
 
 // Atomic decrement; the last owner releases the value (if it needs ARC) and frees the block. acq_rel so that the freeing
 // thread sees every write the other owners made to the value before they let go of it.
-string SharedReleaseHelper(Compiler cg, int t)
+string SharedReleaseHelper(const ref Compiler cg, int t)
 {
     string name = "@\"__release." + cg.Types.Name(t) + "\"";
     if (!cg.Ir.Declared.Add(name))
@@ -379,7 +379,7 @@ string SharedReleaseHelper(Compiler cg, int t)
 }
 
 // "@"__release.T[]"", "@"__clone.T[]"", "@"__copy.T[]"": written the first time they are needed.
-string ArrayHelper(Compiler cg, int arrayType, string kind)
+string ArrayHelper(const ref Compiler cg, int arrayType, string kind)
 {
     var ir = cg.Ir;
     string name = "@\"__" + kind + "." + cg.Types.Name(arrayType) + "\"";
@@ -397,7 +397,7 @@ string ArrayHelper(Compiler cg, int arrayType, string kind)
     return name;
 }
 
-string ArrayReleaseText(Compiler cg, string name, int elem)
+string ArrayReleaseText(const ref Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string counter = cg.St[0].ArcStats
@@ -418,7 +418,7 @@ string ArrayReleaseText(Compiler cg, string name, int elem)
            "done:\n  ret void\n}\n\n";
 }
 
-string ArrayCloneText(Compiler cg, string name, int elem)
+string ArrayCloneText(const ref Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string text = "define internal ptr " + name + "(ptr %p) {\nentry:\n" +
@@ -445,7 +445,7 @@ string ArrayCloneText(Compiler cg, string name, int elem)
 
 // copy(src, srcIndex, dst, dstIndex, count): bounds-checked, also for overlapping ranges of one array. Arrays with
 // references inside copy element by element (retain the new value, release the old one).
-string ArrayCopyText(Compiler cg, string name, int elem)
+string ArrayCopyText(const ref Compiler cg, string name, int elem)
 {
     string ty = LlvmType(cg, elem);
     string text = "define internal void " + name + "(ptr %src, $S %si, ptr %dst, $S %di, $S %count) {\nentry:\n" +
@@ -471,7 +471,7 @@ string ArrayCopyText(Compiler cg, string name, int elem)
 }
 
 // One direction of the element-wise copy loop.
-string CopyLoop(Compiler cg, string ty, int elem, string prefix, bool backward)
+string CopyLoop(const ref Compiler cg, string ty, int elem, string prefix, bool backward)
 {
     string index = backward ? "%" + prefix + ".rev" : "%" + prefix + ".i";
     string text = prefix + ".head:\n  %" + prefix + ".i = phi $S [ 0, %ok ], [ %" + prefix + ".next, %" + prefix + ".body ]\n" +
@@ -495,7 +495,7 @@ string CopyLoop(Compiler cg, string ty, int elem, string prefix, bool backward)
 // foreach over a struct: it must provide "int Count()" and "T Get(int index)" (e.g. List<T>)
 // ---------------------------------------------------------------------------
 
-int FindForeachMethod(Compiler cg, int collType, string name, Arg[] probe, SourceLoc loc)
+int FindForeachMethod(const ref Compiler cg, int collType, string name, Arg[] probe, SourceLoc loc)
 {
     var cands = MethodCandidates(cg, collType, name);
     if (cands.Length == 0)
@@ -503,7 +503,7 @@ int FindForeachMethod(Compiler cg, int collType, string name, Arg[] probe, Sourc
     return ResolveOverload(cg, cands, probe, new int[0], loc, name);
 }
 
-void EmitForeachStruct(Compiler cg, Stmt s, Value it)
+void EmitForeachStruct(const ref Compiler cg, Stmt s, Value it)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -573,7 +573,7 @@ void EmitForeachStruct(Compiler cg, Stmt s, Value it)
 }
 
 // string.FromBytes(uint8[] bytes [, start, count]): a string from raw (UTF-8) bytes.
-Value EmitStringFromBytes(Compiler cg, Arg[] args, SourceLoc loc)
+Value EmitStringFromBytes(const ref Compiler cg, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;

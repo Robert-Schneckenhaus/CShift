@@ -24,7 +24,7 @@ int64 AlignUp(int64 value, int64 align)
 }
 
 // The size and alignment of members placed one after the other (like the fields of a C struct).
-SizeAlign AggregateLayout(Compiler cg, int[] members)
+SizeAlign AggregateLayout(const ref Compiler cg, int[] members)
 {
     int64 pos = 0;
     int64 maxAlign = 1;
@@ -43,38 +43,38 @@ SizeAlign AggregateLayout(Compiler cg, int[] members)
 // ---------------------------------------------------------------------------
 
 // The LLVM type of sizes, lengths and indexes (the length in a block header and in a slice, array indexes).
-string SizeIr(Compiler cg)
+string SizeIr(const ref Compiler cg)
 {
     return cg.Ir.Target.SizeIr;
 }
 
 // The offset of the elements in a string or array block (after the refcount and the length).
-string HeaderSize(Compiler cg)
+string HeaderSize(const ref Compiler cg)
 {
     return cg.Ir.Target.HeaderBytes().ToString();
 }
 
 // A size as an int32 (Length).
-string SizeToI32(Compiler cg, string v)
+string SizeToI32(const ref Compiler cg, string v)
 {
     return SizeIr(cg) == "i32" ? v : cg.Ir.Cast("trunc", SizeIr(cg), v, "i32");
 }
 
 // An int32 as a size.
-string I32ToSize(Compiler cg, string v, bool isSigned)
+string I32ToSize(const ref Compiler cg, string v, bool isSigned)
 {
     return SizeIr(cg) == "i32" ? v : cg.Ir.Cast(isSigned ? "sext" : "zext", "i32", v, SizeIr(cg));
 }
 
 // A size as an int64 (the index and length in a panic message, pointer differences).
-string SizeToI64(Compiler cg, string v, bool isSigned)
+string SizeToI64(const ref Compiler cg, string v, bool isSigned)
 {
     return SizeIr(cg) == "i64" ? v : cg.Ir.Cast(isSigned ? "sext" : "zext", SizeIr(cg), v, "i64");
 }
 
 // An integer as a size (an index, a count): converted like to int64/uint64 (nint/nuint on a 32-bit target). On a 32-bit
 // target a 64-bit value that does not fit becomes -1 (all bits set), which every bounds check rejects.
-string SizeIndex(Compiler cg, string v, int type)
+string SizeIndex(const ref Compiler cg, string v, int type)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -90,17 +90,17 @@ string SizeIndex(Compiler cg, string v, int type)
 }
 
 // A text of IR for the target (see Sized in Runtime.csh: $S, $P, $H, $I).
-string SizedText(Compiler cg, string text)
+string SizedText(const ref Compiler cg, string text)
 {
     return Sized(text, cg.Ir);
 }
 
-SizeAlign PointerLayout(Compiler cg, int count)
+SizeAlign PointerLayout(const ref Compiler cg, int count)
 {
     return SizeAlign { Size = (int64)(count * cg.Ir.Target.PtrBytes), Align = (int64)cg.Ir.Target.PtrAlign };
 }
 
-SizeAlign TypeLayout(Compiler cg, int t)
+SizeAlign TypeLayout(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     switch (types.Kind(t))
@@ -169,7 +169,7 @@ SizeAlign TypeLayout(Compiler cg, int t)
 
 // The layout of a struct imported from a C header: the fields sit at the offsets the C compiler chose; everything
 // else (arrays, bit fields, union members, padding) is filler. Returns the elements of the LLVM struct.
-void LayoutExplicitStruct(Compiler cg, int index)
+void LayoutExplicitStruct(const ref Compiler cg, int index)
 {
     var types = cg.Types;
     var si = cg.StructInfos.Get(index);

@@ -8,7 +8,7 @@ using CShift.Syntax;
 using CShift.Sema;
 using CShift.CodeGen;
 
-Value CheckRValue(Compiler cg, Expr e)
+Value CheckRValue(const ref Compiler cg, Expr e)
 {
     Value v = CheckExpr(cg, e);
     v.IsLValue = false;
@@ -17,7 +17,7 @@ Value CheckRValue(Compiler cg, Expr e)
     return v;
 }
 
-Value CheckExpr(Compiler cg, Expr e)
+Value CheckExpr(const ref Compiler cg, Expr e)
 {
     var tree = cg.Tree;
     switch (e.Kind)
@@ -96,7 +96,7 @@ Value CheckExpr(Compiler cg, Expr e)
 }
 
 // The parts of an expression that the checker does not type yet, so that the errors inside them are found.
-void CheckParts(Compiler cg, Expr e)
+void CheckParts(const ref Compiler cg, Expr e)
 {
     switch (e.Kind)
     {
@@ -106,7 +106,7 @@ void CheckParts(Compiler cg, Expr e)
 }
 
 // A name as a value (see EmitName).
-Value CheckName(Compiler cg, Expr e)
+Value CheckName(const ref Compiler cg, Expr e)
 {
     var n = cg.Tree.GetName(e);
     Value v = LookupVariable(cg, n.Name);
@@ -160,7 +160,7 @@ Value CheckName(Compiler cg, Expr e)
 }
 
 // A field of a struct value (see FieldAccess): an lvalue if the object is one.
-Value CheckField(Compiler cg, Value obj, string name, SourceLoc loc)
+Value CheckField(const ref Compiler cg, Value obj, string name, SourceLoc loc)
 {
     var p = FindField(cg, obj.Type, name);
     if (!p.Found)
@@ -178,7 +178,7 @@ Value CheckField(Compiler cg, Value obj, string name, SourceLoc loc)
     return Rvalue(p.Type, "", false);
 }
 
-Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
+Arg[] CheckArgs(const ref Compiler cg, Expr[] args, ref bool known)
 {
     var list = new Arg[args.Length];
     for (var i = 0; i < args.Length; i += 1)
@@ -192,7 +192,7 @@ Arg[] CheckArgs(Compiler cg, Expr[] args, ref bool known)
 
 // The arguments of a call to one of the candidates: integer arithmetic in an argument is computed in the type of the
 // parameter when the candidates agree on it (see ArgFrames and EmitArgsFor).
-Arg[] CheckArgsFor(Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
+Arg[] CheckArgsFor(const ref Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
 {
     int[] frames = ArgFrames(cg, cands, args.Length);
     int[] targets = ArgTargets(cg, cands, args.Length);
@@ -210,7 +210,7 @@ Arg[] CheckArgsFor(Compiler cg, Expr[] args, Candidate[] cands, ref bool known)
 }
 
 // Calls by name and methods of struct values (see EmitCallVia, EmitNameCall, EmitMemberCall).
-Value CheckCall(Compiler cg, Expr e, bool viaStart)
+Value CheckCall(const ref Compiler cg, Expr e, bool viaStart)
 {
     var call = cg.Tree.GetCall(e);
     bool known = true;
@@ -234,7 +234,7 @@ Value CheckCall(Compiler cg, Expr e, bool viaStart)
 }
 
 // A call through a function value (see EmitIndirectCall): the number of arguments and their conversions.
-Value CheckIndirectCall(Compiler cg, int ft, Expr[] args, SourceLoc loc)
+Value CheckIndirectCall(const ref Compiler cg, int ft, Expr[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ptypes = types.Params(ft);
@@ -257,7 +257,7 @@ Value CheckIndirectCall(Compiler cg, int ft, Expr[] args, SourceLoc loc)
     return Rvalue(types.Elem(ft), "", false);
 }
 
-Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
+Value CheckNameCall(const ref Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
 {
     bool known = true;
     Value variable = LookupVariable(cg, n.Name);
@@ -332,7 +332,7 @@ Value CheckNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStar
     return Rvalue(fi.Ret, "", false);
 }
 
-Value CheckUnary(Compiler cg, Expr e)
+Value CheckUnary(const ref Compiler cg, Expr e)
 {
     var u = cg.Tree.GetUnary(e);
     if (u.Op == UnOp.Deref)
@@ -363,7 +363,7 @@ Value CheckUnary(Compiler cg, Expr e)
 }
 
 // a op b. Like code generation, a left-deep chain (a + b + c ...) is walked in a loop, not by recursion.
-Value CheckBinary(Compiler cg, Expr e)
+Value CheckBinary(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var b = cg.Tree.GetBinary(e);
@@ -415,7 +415,7 @@ Value CheckBinary(Compiler cg, Expr e)
 // ---------------------------------------------------------------------------
 
 // An expression used as a value of 'target'.
-Value CheckExprAs(Compiler cg, Expr e, int target)
+Value CheckExprAs(const ref Compiler cg, Expr e, int target)
 {
     if (IsTypelessNew(cg, e))
         return CheckTypelessNew(cg, e, target);
@@ -440,7 +440,7 @@ Value CheckExprAs(Compiler cg, Expr e, int target)
 }
 
 // cond ? a : b; with a frame the branches are computed in it (see EmitConditionalIn).
-Value CheckConditionalIn(Compiler cg, Expr e, int frame)
+Value CheckConditionalIn(const ref Compiler cg, Expr e, int frame)
 {
     var c = cg.Tree.GetCond(e);
     CheckCondition(cg, c.Cond);
@@ -457,7 +457,7 @@ Value CheckConditionalIn(Compiler cg, Expr e, int frame)
 }
 
 // An operand of a framed expression (see EmitFramed).
-Value CheckFramed(Compiler cg, Expr e, int frame)
+Value CheckFramed(const ref Compiler cg, Expr e, int frame)
 {
     if (!IsFramable(cg, e))
         return CheckRValue(cg, e);
@@ -501,7 +501,7 @@ Value CheckFramed(Compiler cg, Expr e, int frame)
 }
 
 // l op r in the frame if both fit, otherwise by the usual rules (see EmitFramedStep).
-Value CheckFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
+Value CheckFramedStep(const ref Compiler cg, BinOp op, Value l, Value r, int frame, SourceLoc loc)
 {
     bool folded = false;
     Value lit = FoldLiterals(cg, op, l, r, ref folded);
@@ -521,7 +521,7 @@ Value CheckFramedStep(Compiler cg, BinOp op, Value l, Value r, int frame, Source
 
 // target = value, target op= value (see EmitAssign). Elements of arrays, slices and Fixed values are checked; indexers
 // (x[k] = v on a struct) and string elements are left to code generation for now.
-Value CheckAssign(Compiler cg, Expr e)
+Value CheckAssign(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var a = cg.Tree.GetAssign(e);
@@ -620,7 +620,7 @@ Value CheckAssign(Compiler cg, Expr e)
 
 // (T)x: the same value if it converts implicitly, numbers into each other; pointer casts are checked by code generation
 // for now (see EmitCast).
-Value CheckCast(Compiler cg, Expr e)
+Value CheckCast(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var c = cg.Tree.GetCast(e);
@@ -644,7 +644,7 @@ Value CheckCast(Compiler cg, Expr e)
 }
 
 // 'try x' (see EmitTry).
-Value CheckTry(Compiler cg, Expr e)
+Value CheckTry(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     Value subj = CheckRValue(cg, cg.Tree.GetTry(e).Operand);
@@ -670,7 +670,7 @@ Value CheckTry(Compiler cg, Expr e)
 
 // True while the checker is in the function that will be the entry point 'int Main()' (code generation knows it as
 // MainFunc; the checker runs before it is chosen).
-bool IsMainCandidate(Compiler cg)
+bool IsMainCandidate(const ref Compiler cg)
 {
     var fi = cg.Instances.Get(cg.Fn[0].Func);
     var d = cg.Funcs.Get(fi.Entry).Decl;
@@ -678,7 +678,7 @@ bool IsMainCandidate(Compiler cg)
 }
 
 // error("message"), error("message", code), error(E.Member) (see EmitErrorLit).
-Value CheckErrorLit(Compiler cg, Expr e)
+Value CheckErrorLit(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetErrorLit(e);
@@ -706,15 +706,15 @@ Value CheckErrorLit(Compiler cg, Expr e)
 
 // 'x is P' / 'x is P v' / 'x is not P' on Error<T> and Optional<T> (see EmitIs, EmitIsPattern); interfaces, unions and
 // threads are checked by code generation for now. The binding is declared where code generation declares it.
-Value CheckIs(Compiler cg, Expr e)
+Value CheckIs(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetIs(e);
     Value boolean = Rvalue(types.Bool, "", false);
-    if (n.Negated && n.BindName.Length > 0 && cg.GuardIs != e.Index)
+    if (n.Negated && n.BindName.Length > 0 && cg.St[0].GuardIs != e.Index)
         CheckError(cg, e.Loc, "'is not' can only bind '" + n.BindName + "' as the whole condition of an 'if' (then '" + n.BindName +
                               "' is usable in the 'else' branch, and after the 'if' if its branch returns, breaks or continues)");
-    cg.GuardIs = -1;
+    cg.St[0].GuardIs = -1;
     Value subj = CheckRValue(cg, n.Operand);
     int bound = types.Unknown;
     int t = subj.Type;
@@ -777,7 +777,7 @@ Value CheckIs(Compiler cg, Expr e)
 // The body of a lambda, in a scope of its own: its parameters (with the unknown type unless they are written), and the
 // variables of the enclosing function, which a lambda reads. Its 'return' belongs to the lambda, whose result type is
 // not known here, and 'break'/'continue' cannot leave it.
-void CheckLambdaBody(Compiler cg, Expr e, int[] paramTypes)
+void CheckLambdaBody(const ref Compiler cg, Expr e, int[] paramTypes)
 {
     var l = cg.Tree.GetLambda(e);
     int savedRet = cg.Fn[0].RetType;
@@ -813,7 +813,7 @@ void CheckLambdaBody(Compiler cg, Expr e, int[] paramTypes)
 }
 
 // True if the local variable 'name' belongs to a function or lambda around the lambda whose body is checked.
-bool IsCapturedName(Compiler cg, string name)
+bool IsCapturedName(const ref Compiler cg, string name)
 {
     int start = cg.Fn[0].LambdaVars - 1;
     if (start < 0)

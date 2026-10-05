@@ -25,7 +25,7 @@ using CShift.Emit;
 // of such values (its count is atomic). Strings, arrays, containers, Error<T>, pointers and Action/Func are not: their
 // reference counts are not atomic (and pointers or function values would alias data the other thread does not
 // expect). This is the rule for what a SharedPtr<T> passed to a thread may contain, and so for Thread<T> handles.
-bool IsThreadSafeType(Compiler cg, int t)
+bool IsThreadSafeType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
@@ -70,7 +70,7 @@ bool IsThreadSafeType(Compiler cg, int t)
 // thread (a new block that only the thread owns; strings cannot be changed, so the copy behaves exactly like the
 // original). The same goes for Optional<T>, Error<T> and structs made of such values, and for ReadOnlySlice<T> of
 // them: the thread gets a copy of the elements, which it cannot change either.
-bool IsThreadTransferable(Compiler cg, int t)
+bool IsThreadTransferable(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
@@ -103,7 +103,7 @@ bool IsThreadTransferable(Compiler cg, int t)
 
 // Why a type cannot be passed to a thread (for the error message): the innermost part that is the problem ("" if it is
 // the type itself). 'shared': the value would be shared with the thread (inside a SharedPtr<T>), not copied.
-string ThreadUnsafePart(Compiler cg, int t, bool shared)
+string ThreadUnsafePart(const ref Compiler cg, int t, bool shared)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
@@ -127,14 +127,14 @@ string ThreadUnsafePart(Compiler cg, int t, bool shared)
     return "";
 }
 
-string ThreadUnsafeLeaf(Compiler cg, int t, bool shared)
+string ThreadUnsafeLeaf(const ref Compiler cg, int t, bool shared)
 {
     string inner = ThreadUnsafePart(cg, t, shared);
     return inner.Length > 0 ? inner : cg.Types.Name(t);
 }
 
 // Called by EnsureSignature once the parameter types of a 'thread' function are known.
-void CheckThreadSignature(Compiler cg, FuncInfo fi)
+void CheckThreadSignature(const ref Compiler cg, FuncInfo fi)
 {
     var d = cg.Funcs.Get(fi.Entry).Decl;
     if (d.TypeParams.Length > 0)
@@ -162,7 +162,7 @@ void CheckThreadSignature(Compiler cg, FuncInfo fi)
 
 // A 'thread' function (and everything it calls, directly or not) may never read or write a global variable. Uses the
 // call graph that is collected for the check of the initialization order.
-void CheckThreadPurity(Compiler cg)
+void CheckThreadPurity(const ref Compiler cg)
 {
     for (var instance = 0; instance < cg.Instances.Count(); instance += 1)
     {
@@ -216,7 +216,7 @@ void CheckThreadPurity(Compiler cg)
     }
 }
 
-void ReportThreadGlobal(Compiler cg, FuncInfo fi, SourceLoc loc, int g, int via)
+void ReportThreadGlobal(const ref Compiler cg, FuncInfo fi, SourceLoc loc, int g, int via)
 {
     Fail(cg, loc, "'thread' function '" + fi.Name + "' uses the global variable '" + cg.Globals.Get(g).Name + "'" +
                       (via >= 0 ? " (through '" + cg.Instances.Get(via).Name + "')" : "") +
@@ -235,7 +235,7 @@ struct ThreadTypes
     int Handle;    // _ThreadVoid, or Thread<T>
 }
 
-int ThreadStruct(Compiler cg, string name, int[] args, SourceLoc loc)
+int ThreadStruct(const ref Compiler cg, string name, int[] args, SourceLoc loc)
 {
     var entry = TypeDeclEntry { };
     if (!LookupTypeDecl(cg, cg.Fn[0].File, name, ref entry) || entry.Kind != DeclKind.Struct)
@@ -243,7 +243,7 @@ int ThreadStruct(Compiler cg, string name, int[] args, SourceLoc loc)
     return GetStructType(cg, entry.Index, args, loc);
 }
 
-ThreadTypes ResolveThreadTypes(Compiler cg, int result, SourceLoc loc)
+ThreadTypes ResolveThreadTypes(const ref Compiler cg, int result, SourceLoc loc)
 {
     var tt = ThreadTypes { HasResult = !cg.Types.IsVoid(result) };
     tt.Core = ThreadStruct(cg, "System._ThreadCore", new int[0], loc);
@@ -263,7 +263,7 @@ ThreadTypes ResolveThreadTypes(Compiler cg, int result, SourceLoc loc)
 }
 
 // A method of a stdlib thread struct (no overloads, not generic).
-int ThreadMethod(Compiler cg, int owner, string name, SourceLoc loc)
+int ThreadMethod(const ref Compiler cg, int owner, string name, SourceLoc loc)
 {
     var cands = MethodCandidates(cg, owner, name);
     if (cands.Length == 0)
@@ -272,7 +272,7 @@ int ThreadMethod(Compiler cg, int owner, string name, SourceLoc loc)
 }
 
 // The thread-local pointer to the control block of the running thread (set by the trampoline, read by Thread.Cancelled).
-string CurrentThreadCore(Compiler cg)
+string CurrentThreadCore(const ref Compiler cg)
 {
     string name = "@__cs_thread_current_core";
     if (cg.Ir.Declared.Add(name))
@@ -280,7 +280,7 @@ string CurrentThreadCore(Compiler cg)
     return name;
 }
 
-void DeclarePthreads(Compiler cg)
+void DeclarePthreads(const ref Compiler cg)
 {
     cg.Ir.Declare("@malloc", "declare ptr @malloc(" + SizeIr(cg) + ")");
     cg.Ir.Declare("@pthread_create", "declare i32 @pthread_create(ptr, ptr, ptr, ptr)");
@@ -291,7 +291,7 @@ void DeclarePthreads(Compiler cg)
 }
 
 // The LLVM type of the argument block: { ptr payload, parameters... }.
-string ThreadArgsType(Compiler cg, FuncInfo fi)
+string ThreadArgsType(const ref Compiler cg, FuncInfo fi)
 {
     string text = "{ ptr";
     foreach (var t in fi.ParamTypes)
@@ -299,7 +299,7 @@ string ThreadArgsType(Compiler cg, FuncInfo fi)
     return text + " }";
 }
 
-string ThreadTrampolineName(Compiler cg, int instance)
+string ThreadTrampolineName(const ref Compiler cg, int instance)
 {
     return "@\"__cs_thread_start." + cg.Instances.Get(instance).Name + "." + instance.ToString() + "\"";
 }
@@ -308,7 +308,7 @@ string ThreadTrampolineName(Compiler cg, int instance)
 // Spawning: 'start f(...)'
 // ---------------------------------------------------------------------------
 
-Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
+Value EmitThreadSpawn(const ref Compiler cg, int instance, Arg[] args, SourceLoc loc)
 {
     var ir = cg.Ir;
     UseFunction(cg, instance);
@@ -364,7 +364,7 @@ Value EmitThreadSpawn(Compiler cg, int instance, Arg[] args, SourceLoc loc)
 
 // A copy of the value for another thread, with a reference count of its own (+1): new blocks for its strings, a
 // retained SharedPtr<T>, everything else as it is.
-string ThreadCopy(Compiler cg, int t, string v)
+string ThreadCopy(const ref Compiler cg, int t, string v)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -419,7 +419,7 @@ string ThreadCopy(Compiler cg, int t, string v)
 
 // A ReadOnlySlice<T> for another thread: a new array with copies of the elements (strings in them copied as well),
 // and a view of all of it.
-string ThreadCopySlice(Compiler cg, int t, string v)
+string ThreadCopySlice(const ref Compiler cg, int t, string v)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -469,7 +469,7 @@ string ThreadCopySlice(Compiler cg, int t, string v)
 }
 
 // A copy of a string in a new block (null stays null).
-string StringCloneHelper(Compiler cg)
+string StringCloneHelper(const ref Compiler cg)
 {
     string name = "@__cs_string_clone";
     if (cg.Ir.Declared.Add(name))
@@ -485,7 +485,7 @@ string StringCloneHelper(Compiler cg)
 // The trampoline pthread_create calls on the worker thread (one per thread function)
 // ---------------------------------------------------------------------------
 
-void EmitThreadTrampoline(Compiler cg, int instance)
+void EmitThreadTrampoline(const ref Compiler cg, int instance)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -541,7 +541,7 @@ void EmitThreadTrampoline(Compiler cg, int instance)
 // Thread.Cancelled
 // ---------------------------------------------------------------------------
 
-Value EmitThreadCancelled(Compiler cg, SourceLoc loc)
+Value EmitThreadCancelled(const ref Compiler cg, SourceLoc loc)
 {
     int func = cg.Fn[0].Func;
     var fi = cg.Instances.Get(func);

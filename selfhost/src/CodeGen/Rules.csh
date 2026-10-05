@@ -10,13 +10,13 @@ using System;
 using CShift.Syntax;
 using CShift.Sema;
 
-bool AnyUnknown(Compiler cg, Value a, Value b)
+bool AnyUnknown(const ref Compiler cg, Value a, Value b)
 {
     return cg.Types.IsUnknown(a.Type) || cg.Types.IsUnknown(b.Type);
 }
 
 // "" if a value of this type can become text ('+' with a string, interpolation), otherwise the message.
-string TextConversionError(Compiler cg, int t)
+string TextConversionError(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsUnknown(t) || types.IsString(t) || types.IsStringSlice(t) || types.IsBool(t) || types.IsChar(t) ||
@@ -36,7 +36,7 @@ string TextConversionError(Compiler cg, int t)
 }
 
 // Error<T> and Optional<T> are not conditions: "" or the message that says how to test them.
-string AmbiguousConditionError(Compiler cg, int t)
+string AmbiguousConditionError(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsError(t))
@@ -57,7 +57,7 @@ string AmbiguousConditionError(Compiler cg, int t)
 }
 
 // "" if a value of this type is a condition ('if', 'while', '&&', '?:'), otherwise the message.
-string ConditionError(Compiler cg, int t)
+string ConditionError(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsBool(t) || types.IsUnknown(t))
@@ -69,14 +69,14 @@ string ConditionError(Compiler cg, int t)
 }
 
 // Whether l + r joins text: one operand is a string or a string slice (the other may be anything that has a text).
-bool IsTextJoin(Compiler cg, BinOp op, int l, int r)
+bool IsTextJoin(const ref Compiler cg, BinOp op, int l, int r)
 {
     var types = cg.Types;
     return op == BinOp.Add && (types.IsString(l) || types.IsString(r) || types.IsStringSlice(l) || types.IsStringSlice(r));
 }
 
 // The result type of l op r for + - * / % & | ^ << >> (see EmitArithmetic), 0 with the message, or unknown.
-int ArithmeticType(Compiler cg, BinOp op, Value l, Value r, ref string why)
+int ArithmeticType(const ref Compiler cg, BinOp op, Value l, Value r, ref string why)
 {
     var types = cg.Types;
     if (AnyUnknown(cg, l, r))
@@ -134,7 +134,7 @@ int ArithmeticType(Compiler cg, BinOp op, Value l, Value r, ref string why)
 }
 
 // The type of l op r for == != < > <= >= (bool, see EmitCompare), 0 with the message, or unknown.
-int CompareType(Compiler cg, BinOp op, Value l, Value r, ref string why)
+int CompareType(const ref Compiler cg, BinOp op, Value l, Value r, ref string why)
 {
     var types = cg.Types;
     if (AnyUnknown(cg, l, r) || types.Kind(l.Type) == TypeKind.MethodGroup || types.Kind(r.Type) == TypeKind.MethodGroup)
@@ -207,7 +207,7 @@ int CompareType(Compiler cg, BinOp op, Value l, Value r, ref string why)
 }
 
 // -literal: a literal again (it still adapts to the type it is used with).
-Value NegateLiteral(Compiler cg, Value v)
+Value NegateLiteral(const ref Compiler cg, Value v)
 {
     var types = cg.Types;
     if (v.LitIsFloat)
@@ -228,7 +228,7 @@ Value NegateLiteral(Compiler cg, Value v)
 
 // The value of -v, +v, !v, ~v as far as its type goes (see EmitUnary): Type 0 with the message on an error, unknown for
 // the pointer operators.
-Value UnaryResult(Compiler cg, UnOp op, Value v, ref string why)
+Value UnaryResult(const ref Compiler cg, UnOp op, Value v, ref string why)
 {
     var types = cg.Types;
     if (types.IsUnknown(v.Type) || op == UnOp.Deref || op == UnOp.AddrOf)
@@ -281,7 +281,7 @@ Value UnaryResult(Compiler cg, UnOp op, Value v, ref string why)
 }
 
 // The type of 'c ? a : b' from the types of its branches (see EmitConditional), 0 with the message, or unknown.
-int ConditionalType(Compiler cg, Value a, Value b, ref string why)
+int ConditionalType(const ref Compiler cg, Value a, Value b, ref string why)
 {
     var types = cg.Types;
     if (AnyUnknown(cg, a, b))
@@ -313,7 +313,7 @@ int ConditionalType(Compiler cg, Value a, Value b, ref string why)
 
 // The type of 'var name = init' (see EmitVarDecl; collection expressions are settled before), 0 with the message, or
 // unknown.
-int VarTypeFromInit(Compiler cg, Value init, string name, ref string why)
+int VarTypeFromInit(const ref Compiler cg, Value init, string name, ref string why)
 {
     var types = cg.Types;
     int t = init.Type;
@@ -359,7 +359,7 @@ int VarTypeFromInit(Compiler cg, Value init, string name, ref string why)
 
 // The integer type arithmetic is computed in when its result becomes a 'target' (the T of an Optional<T>/Error<T>);
 // 0: none.
-int ArithmeticFrame(Compiler cg, int target)
+int ArithmeticFrame(const ref Compiler cg, int target)
 {
     var types = cg.Types;
     if (target == 0 || types.IsUnknown(target))
@@ -373,7 +373,7 @@ int ArithmeticFrame(Compiler cg, int target)
 
 // Expressions that are computed in the frame: + - * / % & | ^ << >>, unary - and ~, cond ? a : b (its branches) and
 // unchecked(...) around them.
-bool IsFramable(Compiler cg, Expr e)
+bool IsFramable(const ref Compiler cg, Expr e)
 {
     switch (e.Kind)
     {
@@ -398,7 +398,7 @@ bool IsFramable(Compiler cg, Expr e)
 }
 
 // new { ... } and new() without a type: they take the type they are used as (EmitExprAs, CheckExprAs).
-bool IsTypelessNew(Compiler cg, Expr e)
+bool IsTypelessNew(const ref Compiler cg, Expr e)
 {
     if (e.Kind == ExprKind.StructInit)
         return cg.Tree.GetStructInit(e).Type.IsNull();
@@ -408,7 +408,7 @@ bool IsTypelessNew(Compiler cg, Expr e)
 }
 
 // The struct a typeless new creates for a target type (the T of an Optional<T> / Error<T>), 0 if it is none.
-int TypelessNewType(Compiler cg, int target)
+int TypelessNewType(const ref Compiler cg, int target)
 {
     var types = cg.Types;
     if (target == 0 || types.IsUnknown(target))
@@ -426,7 +426,7 @@ string TypelessNewError()
 
 // The parameter types of a call's arguments where all candidates that take this many arguments agree on them (for a
 // typeless new; value parameters, not for generic functions), 0 otherwise.
-int[] ArgTargets(Compiler cg, Candidate[] cands, int count)
+int[] ArgTargets(const ref Compiler cg, Candidate[] cands, int count)
 {
     var targets = new int[count];
     var none = new int[count];
@@ -458,7 +458,7 @@ int[] ArgTargets(Compiler cg, Candidate[] cands, int count)
 // The frames of the arguments of a call (see ArithmeticFrame): for argument i the integer type of parameter i when all
 // candidates that take this many arguments agree on it (value parameters; not for generic functions); 0 otherwise. With
 // overloads that differ there (Foo(uint8) and Foo(int32)) the usual rules decide.
-int[] ArgFrames(Compiler cg, Candidate[] cands, int count)
+int[] ArgFrames(const ref Compiler cg, Candidate[] cands, int count)
 {
     var frames = new int[count];
     var none = new int[count];
@@ -487,7 +487,7 @@ int[] ArgFrames(Compiler cg, Candidate[] cands, int count)
     return frames;
 }
 // An operand fits the frame: an integer (not an enum) that converts to it implicitly.
-bool FitsFrame(Compiler cg, Value v, int frame)
+bool FitsFrame(const ref Compiler cg, Value v, int frame)
 {
     var types = cg.Types;
     if (!types.IsIntegral(v.Type))
@@ -497,7 +497,7 @@ bool FitsFrame(Compiler cg, Value v, int frame)
 
 // l op r computed in the frame: the frame if both operands fit (the count of a shift need not), 0 otherwise (the usual
 // rules apply).
-int FramedArithmeticType(Compiler cg, BinOp op, Value l, Value r, int frame)
+int FramedArithmeticType(const ref Compiler cg, BinOp op, Value l, Value r, int frame)
 {
     if (frame == 0 || !FitsFrame(cg, l, frame))
         return 0;
@@ -507,7 +507,7 @@ int FramedArithmeticType(Compiler cg, BinOp op, Value l, Value r, int frame)
 }
 
 // -v and ~v computed in the frame (- only in a signed one): the frame, or 0.
-int FramedUnaryType(Compiler cg, UnOp op, Value v, int frame)
+int FramedUnaryType(const ref Compiler cg, UnOp op, Value v, int frame)
 {
     if (frame == 0 || !FitsFrame(cg, v, frame))
         return 0;
@@ -517,7 +517,7 @@ int FramedUnaryType(Compiler cg, UnOp op, Value v, int frame)
 }
 
 // An integer literal (it still adapts to the type it is used with, like NegateLiteral).
-Value IntLiteralValue(Compiler cg, int64 n)
+Value IntLiteralValue(const ref Compiler cg, int64 n)
 {
     var types = cg.Types;
     int t = (n >= -2147483648 && n <= 2147483647) ? types.I32 : types.I64;
@@ -530,7 +530,7 @@ Value IntLiteralValue(Compiler cg, int64 n)
 // Two integer literals in a framed expression are combined when the program is compiled (uint8 x = 1 + 2 is 3, and
 // 200 + 100 is 300, which does not fit uint8: an error, not an overflow when the program runs). 'folded' tells whether
 // they were (both literals of moderate size, no division by zero).
-Value FoldLiterals(Compiler cg, BinOp op, Value l, Value r, ref bool folded)
+Value FoldLiterals(const ref Compiler cg, BinOp op, Value l, Value r, ref bool folded)
 {
     folded = false;
     if (!l.HasLit || !r.HasLit || l.LitIsFloat || r.LitIsFloat)
