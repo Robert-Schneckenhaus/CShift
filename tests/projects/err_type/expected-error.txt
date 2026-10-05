@@ -1,1 +1,1 @@
-'type' must be "executable" or "object"
+'type' must be "executable", "object" or "library", not "plugin"

@@ -31,6 +31,26 @@ test("diagnostics: file:line:col: error: text", () => {
     assert.strictEqual(list[1].severity, "warning");
 });
 
+test("diagnostics: the underline covers the expression at the error, not the rest of the line", () => {
+    const marked = (line, at) => {
+        const start = line.indexOf(at);
+        return line.substring(start, lib.errorRangeEnd(line, start));
+    };
+    assert.strictEqual(marked("        foo[i] = Bar(foo[i]);", "Bar"), "Bar(foo[i])");
+    assert.strictEqual(marked("    string s = text.Trim().ToUpper();", "text"), "text.Trim().ToUpper()");
+    assert.strictEqual(marked("    var n = List<int>.Create().Count();", "List"), "List<int>.Create().Count()");
+    assert.strictEqual(marked("    int x = \"a(b\" + 1;", "\""), "\"a(b\"");
+    assert.strictEqual(marked("    Console.WriteLine($\"{a}\");", "$"), "$\"{a}\"");
+    assert.strictEqual(marked("    int y = (int)value;", "(int)"), "(int)value");
+    assert.strictEqual(marked("    p->Next = q;", "p->"), "p->Next");
+    assert.strictEqual(marked("    x += 1.5;", "+="), "+=");
+    assert.strictEqual(marked("    Call(a,", "Call"), "Call(a,"); // the call goes on in the next line
+    // a declaration or a statement: the rest of the line
+    assert.strictEqual(marked("int Sign(int x)", "int"), "int Sign(int x)");
+    assert.strictEqual(marked("    using (var f = Open()) {", "using"), "using (var f = Open()) {");
+    assert.strictEqual(marked("    List<string> names = [];", "List"), "List<string> names = [];");
+});
+
 test("projects: the project whose sources contain the file", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
     const mk = (p, text) => {

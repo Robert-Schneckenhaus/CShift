@@ -1,8 +1,8 @@
 // Errors in calls through interface parameters and unions, all in one run.
-// expect-error: err_several_interfaces.csh:26:15: error: interface 'IShape' has no method 'Grow' that takes these arguments
-// expect-error: err_several_interfaces.csh:27:17: error: interface 'IShape' has no method 'Rotate' that takes these arguments
-// expect-error: err_several_interfaces.csh:28:26: error: cannot implicitly convert 'float64' to 'int32' (an explicit cast is required)
-// expect-error: err_several_interfaces.csh:36:13: error: union 'Shape' has no method 'Shrink' (it can call the methods of the interfaces it lists)
+// expect-error: err_several_interfaces.csh:26:11: error: interface 'IShape' has no method 'Grow' that takes these arguments
+// expect-error: err_several_interfaces.csh:27:11: error: interface 'IShape' has no method 'Rotate' that takes these arguments
+// expect-error: err_several_interfaces.csh:28:16: error: cannot implicitly convert 'float64' to 'int32' (an explicit cast is required)
+// expect-error: err_several_interfaces.csh:36:7: error: union 'Shape' has no method 'Shrink' (it can call the methods of the interfaces it lists)
 
 using System;
 

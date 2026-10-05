@@ -57,6 +57,8 @@ Value CheckMember(Compiler cg, Expr e)
     var types = cg.Types;
     var m = cg.Tree.GetMember(e);
     int file = cg.Fn[0].File;
+    if (m.NameLoc.Line > 0)
+        e.Loc = m.NameLoc; // errors point at the member's name, not at the '.' (the place of the node)
 
     int metaEnum = EnumMetaType(cg, m.Object, file, cg.Fn[0].Env);
     if (metaEnum != 0)
@@ -584,6 +586,8 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
                 return UnknownValue(cg);
             return Rvalue(types.PointerTo(types.Char), "", false);
         }
+        if (method == "AsBytes")
+            return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ReadOnlySliceOf(types.U8), "", false);
         if (method == "Substring")
         {
             if (args.Length == 0 || args.Length > 2)
@@ -620,6 +624,14 @@ Value CheckBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, bool
             return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.String, "", false);
         if (method == "ToArray" && !types.IsStringSlice(t))
             return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ArrayOf(SliceElemType(cg, t)), "", false);
+        if (method == "CStr" && types.IsStringSlice(t))
+        {
+            if (ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) || ReportIf(cg, loc, UnsafeError(cg, "StringSlice.CStr()")))
+                return UnknownValue(cg);
+            return Rvalue(types.PointerTo(types.Char), "", false);
+        }
+        if (method == "AsBytes" && types.IsStringSlice(t))
+            return ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) ? UnknownValue(cg) : Rvalue(types.ReadOnlySliceOf(types.U8), "", false);
         if (method == "Ptr")
         {
             if (ReportIf(cg, loc, ArgCountError(cg, args, 0, tname, method)) || ReportIf(cg, loc, UnsafeError(cg, tname + ".Ptr()")))
@@ -798,7 +810,7 @@ Value CheckNewArray(Compiler cg, Expr e)
         if (!n.Size.IsNull() && (n.Size.Kind != ExprKind.IntLit || (int64)cg.Tree.GetIntLit(n.Size).Value != n.Init.Length))
             CheckError(cg, e.Loc, "the array size must match the number of initializers");
         foreach (var item in n.Init)
-            CheckConversion(cg, CheckExprAs(cg, item, elem), elem, item.Loc);
+            CheckConversion(cg, CheckExprAs(cg, item, elem), elem, cg.Tree.StartOf(item));
     }
     else
     {
@@ -886,7 +898,7 @@ Value CheckStructInitOf(Compiler cg, Expr e, int t)
         ReportIf(cg, f.Loc, why);
         Value v = why.Length == 0 ? CheckExprAs(cg, f.Value, p.Type) : CheckRValue(cg, f.Value);
         if (why.Length == 0)
-            CheckConversion(cg, v, p.Type, f.Value.Loc);
+            CheckConversion(cg, v, p.Type, cg.Tree.StartOf(f.Value));
     }
     return Rvalue(t, "", false);
 }

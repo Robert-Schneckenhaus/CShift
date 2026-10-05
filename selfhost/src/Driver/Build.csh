@@ -364,6 +364,22 @@ int Cshc(string[] args)
                 o.ObjectOnly = true;
             if (command == "run")
                 o.Run = true;
+            if (project.Type == "library")
+            {
+                // a library is compiled as a part of the programs that use it ("dependencies"): building it alone
+                // checks it
+                if (command == "run")
+                {
+                    Console.WriteErrorLine("error: '" + project.Name + "' is a library (\"type\": \"library\"): it is run as a part of " +
+                                           "the projects that name it in \"dependencies\"");
+                    return 1;
+                }
+                o.Mode = "check";
+                int checkedResult = Build(o);
+                if (checkedResult == 0)
+                    Console.WriteLine("Checked library '" + project.Name + "' (it is compiled into the projects that name it in \"dependencies\")");
+                return checkedResult;
+            }
         }
         else
         {

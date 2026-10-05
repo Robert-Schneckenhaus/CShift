@@ -219,6 +219,22 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  %len = call $S @__cs_len(ptr %s)\n  %d = call ptr @__cs_data(ptr %s)\n" +
             "  call void @__cs_write(ptr %err, ptr %d, $S %len, i1 %nl)\n  ret void\n}\n\n";
 
+    // slice_cstr(data, length, keep): the bytes of a StringSlice followed by a 0 byte, for C. That is the slice itself
+    // if a 0 byte follows it (a slice up to the end of its string: the string's terminator); otherwise a new string
+    // with a copy, stored in *keep for the caller to release (*keep is null if nothing was copied)
+    text += "define internal ptr @__cs_slice_cstr(ptr %d, $S %len, ptr %keep) {\nentry:\n" +
+            "  store ptr null, ptr %keep\n" +
+            // an empty slice may have no data pointer at all (null), or a made-up one (a null string as a slice)
+            "  %isempty = icmp eq $S %len, 0\n  br i1 %isempty, label %empty, label %check\n" +
+            "empty:\n  ret ptr @.cs.empty\n" +
+            "check:\n  %endp = getelementptr i8, ptr %d, $S %len\n  %b = load i8, ptr %endp\n" +
+            "  %z = icmp eq i8 %b, 0\n  br i1 %z, label %direct, label %copy\n" +
+            "direct:\n  ret ptr %d\n" +
+            "copy:\n  %size = add $S %len, 1\n  %r = call ptr @__cs_alloc($S %size, $S %len)\n" +
+            "  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %d, $S %len, i1 false)\n" +
+            "  store ptr %r, ptr %keep\n  ret ptr %dst\n}\n\n";
+
     // from_cstr(char*): copies a NUL-terminated C string into a new string (null stays null)
     text += "define internal ptr @__cs_from_cstr(ptr %p) {\nentry:\n" +
             "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %null, label %copy\n" +

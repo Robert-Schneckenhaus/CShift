@@ -188,7 +188,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 * **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);
   **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
 * **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
-  32/64-bit multiplication and division. **Chunks.csh** cuts them into pieces at their labels; only the pieces that
+  32/64-bit multiplication and division. `memcpy`, `memmove` and `memset` go through *jump towers*: the move is
+  unrolled 16 times and the loop jumps into the middle of it, so that the first pass does the remainder and every
+  further pass 16 moves for one `subq`/`bcc` - longs where the addresses allow it (both even, or both odd after one
+  byte), bytes otherwise. A copy of 64 KB takes about 6 cycles per byte instead of 44, a fill 3.4 instead of 38. **Chunks.csh** cuts them into pieces at their labels; only the pieces that
   the program reaches are written.
 
 The calling convention is the one of GCC for m68k: arguments on the stack, results in `d0` (and `d1`), `a0` as well
@@ -198,5 +201,7 @@ for pointers; `d2`-`d7` and `a2`-`a6` are kept.
 
 * **vamos** ([amitools](https://github.com/cnvogelg/amitools)) runs AmigaOS command-line programs on the PC without an
   Amiga ROM: good for everything but the hardware. `vamos -v` also prints the number of CPU cycles, a measure of speed.
+  (`pip install amitools "machine68k<0.4"`: amitools 0.8 does not run with machine68k 0.4.) When `vamos` is
+  installed, `tests/run_tests.sh` runs [tests/amiga/memory.csh](../tests/amiga/memory.csh) with it.
 * **FS-UAE** (or WinUAE) with an A500 configuration and a Kickstart ROM (or the free AROS ROM) for graphics and the
   custom chips.

@@ -257,6 +257,18 @@ else
         report_fail "amiga trimming" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
     fi
 
+    # With vamos (amitools: pip install amitools "machine68k<0.4") AmigaOS programs run on this machine: the copies
+    # and fills of the Amiga runtime (memcpy, memmove, memset with their jump towers) against plain loops
+    if command -v vamos > /dev/null 2>&1; then
+        if ! "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$DIR/amiga/memory.csh" -o "$TMP/amiga_memory" 2> "$TMP/amiga.err"; then
+            report_fail "amiga runtime (vamos)" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
+        elif ! (cd "$TMP" && vamos amiga_memory > "$TMP/amiga.out" 2>&1) || ! grep -q "errors 0" "$TMP/amiga.out"; then
+            report_fail "amiga runtime (vamos)" "$(tail -n 3 "$TMP/amiga.out" | tr '\n' ' ')"
+        else
+            report_ok "amiga runtime (vamos)"
+        fi
+    fi
+
     # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
     # gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
     # and a global variable and, with the pretty printers that the program carries, a string as its text.
@@ -375,7 +387,9 @@ for target in "" "m68k-amigaos"; do
 done
 if [ -n "$problem" ]; then report_fail "cshiftc doc" "$problem"; else report_ok "cshiftc doc"; fi
 # The VS Code extension (vscode-extension/test): its logic and its connection to the editor, with this cshiftc.
-# Under MSYS2/Git Bash node is a Windows program: it may not be in PATH, and it needs Windows paths.
+# Under MSYS2/Git Bash node is a Windows program: it may not be in PATH, and it needs Windows paths. Like the projects
+# it needs a native target (F5 builds the program for the debugger with clang); it does not depend on CSHIFT_TARGET,
+# so a pass for WebAssembly leaves it to the native one.
 NODE=""
 if command -v node > /dev/null 2>&1; then
     NODE="node"
@@ -388,7 +402,9 @@ if command -v cygpath > /dev/null 2>&1; then
     EXT_TESTS="$(cygpath -w "$EXT_TESTS")"
     EXT_COMPILER="$(cygpath -w "$COMPILER")"
 fi
-if [ -n "$NODE" ]; then
+if [ ${#RUNNER[@]} -gt 0 ]; then
+    echo "vscode extension: skipped for ${CSHIFT_TARGET} (F5 needs a native target)"
+elif [ -n "$NODE" ]; then
     if CSHIFTC="$EXT_COMPILER" "$NODE" --test "$EXT_TESTS/lib.test.js" "$EXT_TESTS/extension.test.js" > "$TMP/ext.out" 2>&1; then
         report_ok "vscode extension"
     else

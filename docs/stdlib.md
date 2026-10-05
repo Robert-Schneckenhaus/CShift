@@ -74,6 +74,9 @@ writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `
 `GetLastWriteTimeUtc(path)` (`IoError<DateTime>`). Reading returns
 `IoError<string>` or `IoError<uint8[]>`, writing, copying and deleting return `IoError<void>` (see *Error codes*
 below); a UTF-8 BOM is skipped when reading text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
+Paths, names and commands (`File`, `Directory`, `Path`, the streams, `Process`) are `StringSlice` parameters: a string,
+or a part of one such as `line.Trim()`, is passed without `.ToString()`; a part that does not reach the end of its
+string is copied for the C library, a whole string is not.
 
 ```csharp
 using System;
@@ -134,7 +137,9 @@ foreach (var part in "a, b, c".Split(','))     // StringSlice[]: no string per p
     Console.WriteLine(part.Trim());
 ```
 
-`Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise) take strings (they serve generic containers). Positions
+`Equals`, `GetHashCode` (FNV-1a) and `CompareTo` (byte-wise) exist for strings and for `StringSlice` (the same hash
+for the same text): both can be keys of a `Dictionary`, elements of a `HashSet` or sorted in a `List`. `+` joins slices
+like strings, and `slice.CStr()` (`unsafe`) passes one to C. Positions
 are byte offsets; `string.FromBytes(bytes [, start, count])` builds a string from bytes. New helpers are just written
 as a function in `namespace String` (the first parameter is the `StringSlice`).
 
@@ -171,7 +176,8 @@ pauses the calling thread.
 
 **`FileStream`** — a file read or written piece by piece: `OpenRead(path)`, `OpenReadWrite(path)`, `Create(path)`,
 `Append(path)` (all `IoError<FileStream>`); `Read(buffer, offset, count)` (the number of bytes read, 0 at the end),
-`ReadByte()` (-1 at the end), `Write(bytes [, offset, count])`, `WriteByte(b)`, `WriteText(slice)` (UTF-8),
+`ReadByte()` (-1 at the end), `Write(bytes)` (a `ReadOnlySlice<uint8>`: an array, a part of one, `text.AsBytes()`),
+`Write(array, offset, count)`, `WriteByte(b)`, `WriteText(slice)` (UTF-8),
 `Position()`, `Seek(offset, SeekOrigin.Begin/Current/End)`, `Length()`, `Flush()`, `Close()` / `Dispose()`.
 **`StreamReader`** — `Open(path)`, `ReadLine()` (`Optional<string>`, without `\n` or `\r\n`; null at the end),
 `ReadToEnd()`, `EndOfStream()`; a UTF-8 BOM is skipped, invalid bytes become `?`. **`StreamWriter`** — `Create(path)`,
@@ -228,7 +234,7 @@ on that.
 `Memory.Allocate/Free` (`unsafe`), `Memory.CopyForThread(v)` (a copy that shares no reference count: strings get new
 blocks), `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`, `string.FromCStr` (`unsafe`), `ToString()`,
 `CompareTo()`, `Equals()`, `GetHashCode()` on numbers, `int.MaxValue/MinValue`. Files are embedded
-at compile time with the keywords [`embed`/`embed_filenames`](language/constants-and-globals.md#embedded-files-embed-and-embed_filenames).
+at compile time with the keywords [`embed`/`embed_filenames`/`embed_lines`](language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines).
 
 **Writing library code:** `stdlib/` is compiled by the compiler of the same commit, so it may use every language
 feature; only the compiler's own sources are limited to the stage 0 release. See [compiler.md](compiler.md).

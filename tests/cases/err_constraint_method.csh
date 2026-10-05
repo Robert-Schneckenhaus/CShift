@@ -1,7 +1,7 @@
 // In a generic body, a value of a type parameter offers the methods of its constraints (and ToString), checked once
 // for the body, also if nothing instantiates it.
-// expect-error: err_constraint_method.csh:20:33: error: 'first' has the type parameter 'T', which has no method 'Perimeter': a type parameter only offers the methods of its constraints ('T : IShape')
-// expect-error: err_constraint_method.csh:25:19: error: 'a' has the type parameter 'T', which has no method 'Clone': a type parameter only offers the methods of its constraints, and 'T' has none (add 'where T : I...')
+// expect-error: err_constraint_method.csh:20:24: error: 'first' has the type parameter 'T', which has no method 'Perimeter': a type parameter only offers the methods of its constraints ('T : IShape')
+// expect-error: err_constraint_method.csh:25:14: error: 'a' has the type parameter 'T', which has no method 'Clone': a type parameter only offers the methods of its constraints, and 'T' has none (add 'where T : I...')
 
 using System;
 

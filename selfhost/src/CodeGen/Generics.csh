@@ -104,7 +104,7 @@ bool SatisfiesInterface(Compiler cg, int t, int iface)
     var ii = cg.InterfaceInfos.Get(types.Decl(iface));
     var ie = cg.Interfaces.Get(ii.Entry);
     // Built-in types implement the standard interfaces of the prelude. Their methods are provided by the compiler
-    // (numbers, bool, char, enums) or by the String namespace of the standard library (strings).
+    // (numbers, bool, char, enums) or by the String namespace of the standard library (strings and string slices).
     if (cg.Files.Get(ie.File).IsPrelude)
     {
         string name = ie.Decl.Name;
@@ -112,8 +112,9 @@ bool SatisfiesInterface(Compiler cg, int t, int iface)
         bool selfArg = false;
         if (self is int s)
             selfArg = s == t;
-        bool primitive = types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
-        if (name == "IComparable" && (types.IsNumeric(t) || types.IsString(t)))
+        bool text = types.IsString(t) || types.IsStringSlice(t);
+        bool primitive = types.IsNumeric(t) || types.IsBool(t) || text || types.IsEnum(t);
+        if (name == "IComparable" && (types.IsNumeric(t) || text))
             return selfArg;
         if (name == "IEquatable" && primitive)
             return selfArg;

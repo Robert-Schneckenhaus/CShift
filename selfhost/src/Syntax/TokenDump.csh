@@ -71,7 +71,7 @@ string DumpToken(Token t)
     case TokenKind.FloatLit:
         return line + " " + DoubleBits(t.FloatValue) + (t.IsFloat32 ? " f" : "");
     default:
-        if (t.Kind >= TokenKind.KwNamespace && t.Kind <= TokenKind.KwEmbedFilenames)
+        if (t.Kind >= TokenKind.KwNamespace && t.Kind <= TokenKind.KwEmbedLines)
             return line + " " + t.Text;
         return line;
     }

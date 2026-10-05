@@ -170,7 +170,7 @@ ConstDecl = 'const' Type Identifier '=' ConstantExpression ';' ;
 A constant has a type of: a number, `bool`, `char`, `string`, an enum, or `ReadOnlySlice<T>` of these (a constant
 slice). Its value is computed when the program is compiled (see
 [constant expressions](expressions.md#constant-expressions)); an overflow, a division by zero or an index out of
-range is a compile error there. `embed("file")` and `embed_filenames("pattern")` read files into constants (see
+range is a compile error there. `embed("file")`, `embed_filenames("pattern")` and `embed_lines("file")` read files into constants (see
 [expressions](expressions.md#embed)).
 
 A top-level constant belongs to the file's namespace, can be used before its declaration and is checked even if

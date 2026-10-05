@@ -101,6 +101,9 @@ length) that keeps the whole block alive. Nothing is copied when a slice is made
 Slices have `Length`, `s[i]`, `s[^i]`, `s[i..j]` (another slice), `foreach`, `ToArray()` (`ToString()` for a
 `StringSlice`), and in `unsafe` code `Ptr()`. A `StringSlice` compares with `==` to strings and other string slices
 by its bytes and can be joined to text. [Constant slices](declarations.md#constants) are `ReadOnlySlice<T>`.
+Text converts to its characters, `ReadOnlySlice<char>`, without a copy (never back: the characters need not be
+UTF-8); `s.AsBytes()` of a `string` or `StringSlice` is the same view as `ReadOnlySlice<uint8>`, for functions that
+take bytes.
 
 ## Fixed-size arrays
 
@@ -229,6 +232,7 @@ initializer, an operand) in these cases:
 | `error(...)` | a result type (`error(E.X)` only to `Error<T>` and `Error<T, E>`) |
 | `Error<T, E>` | `Error<T>` |
 | `string` | `StringSlice` |
+| `string`, `StringSlice` | `ReadOnlySlice<char>` (the same bytes; a `string` prefers `StringSlice` in overload resolution) |
 | `T[]` | `Slice<T>`, `ReadOnlySlice<T>` |
 | `Slice<T>` | `ReadOnlySlice<T>` |
 | a struct | its base struct (and their bases): the base part is copied |

@@ -743,6 +743,7 @@ ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
         return ConstVal { Kind = ConstKind.String, Type = types.String, S = tree.GetStringLit(e).Value };
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
+    case ExprKind.EmbedLines:
         FailEmbedPlace(cg, e.Loc);
         break;
     case ExprKind.BoolLit:
@@ -1129,12 +1130,12 @@ ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
 }
 
 // ---------------------------------------------------------------------------
-// embed("file"), embed("*.txt"), embed_filenames("*.txt")
+// embed("file"), embed("*.txt"), embed_filenames("*.txt"), embed_lines("file")
 // ---------------------------------------------------------------------------
 
 bool IsEmbedExpr(Expr e)
 {
-    return e.Kind == ExprKind.Embed || e.Kind == ExprKind.EmbedFilenames;
+    return e.Kind == ExprKind.Embed || e.Kind == ExprKind.EmbedFilenames || e.Kind == ExprKind.EmbedLines;
 }
 
 void FailEmbedPlace(Compiler cg, SourceLoc loc)
@@ -1144,7 +1145,7 @@ void FailEmbedPlace(Compiler cg, SourceLoc loc)
 
 string EmbedPlaceError()
 {
-    return "embed(...) and embed_filenames(...) can only be the whole initializer of a constant: " +
+    return "embed(...), embed_filenames(...) and embed_lines(...) can only be the whole initializer of a constant: " +
            "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\");";
 }
 
@@ -1273,12 +1274,15 @@ string EmbedRead(Compiler cg, string word, string path, SourceLoc loc)
 // const ReadOnlySlice<string> X = embed("dir/*.txt"): the contents of the matching files, sorted by name.
 // embed_filenames gives the file names (without the folder) instead: a string without wildcards (the file must
 // exist), a ReadOnlySlice<string> with them (in the same order as embed).
+// const ReadOnlySlice<string> X = embed_lines("file"): the lines of one file (see EmbedLines).
 ConstVal ConstEmbed(Compiler cg, Expr init, int t)
 {
     var types = cg.Types;
     bool wantNames = init.Kind == ExprKind.EmbedFilenames;
     string word = wantNames ? "embed_filenames" : "embed";
     string pattern = cg.Tree.GetEmbed(init).Value;
+    if (init.Kind == ExprKind.EmbedLines)
+        return ConstEmbedLines(cg, init, t, pattern);
     if (!HasWildcard(pattern))
     {
         if (!types.IsString(t))
@@ -1301,6 +1305,36 @@ ConstVal ConstEmbed(Compiler cg, Expr init, int t)
         items[i] = ConstVal { Kind = ConstKind.String, Type = types.String, S = value };
     }
     return ConstVal { Kind = ConstKind.Slice, Type = sliceType, Items = items };
+}
+
+// const ReadOnlySlice<string> X = embed_lines("file"): the lines of one file, read now, without their line ends (\n or
+// \r\n); a line end at the end of the file does not start another line, and an empty file has no lines.
+ConstVal ConstEmbedLines(Compiler cg, Expr init, int t, string pattern)
+{
+    var types = cg.Types;
+    if (HasWildcard(pattern))
+        return ConstError(cg, init.Loc, "embed_lines reads one file, without '*' or '?' (the contents of several files: embed(\"" + pattern + "\"))");
+    int sliceType = types.ReadOnlySliceOf(types.String);
+    if (t != sliceType)
+        return ConstError(cg, init.Loc, "embed_lines(\"" + pattern + "\") gives the lines of the file, so the constant must be 'const ReadOnlySlice<string>', not '" +
+            types.Name(t) + "'");
+    string text = EmbedRead(cg, "embed_lines", EmbedPath(cg, "embed_lines", pattern, init.Loc), init.Loc);
+    var lines = List<ConstVal>.Create();
+    int start = 0;
+    while (start < text.Length)
+    {
+        int end = text.IndexOf('\n', start);
+        int next = end + 1;
+        if (end < 0)
+        {
+            end = text.Length;
+            next = end;
+        }
+        int stop = end > start && text[end - 1] == '\r' ? end - 1 : end;
+        lines.Add(ConstVal { Kind = ConstKind.String, Type = types.String, S = text.Substring(start, stop - start) });
+        start = next;
+    }
+    return ConstVal { Kind = ConstKind.Slice, Type = sliceType, Items = lines.ToArray() };
 }
 
 // The value of a top-level constant (evaluated once; a constant that needs itself is an error).

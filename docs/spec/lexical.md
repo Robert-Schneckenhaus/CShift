@@ -48,10 +48,10 @@ These words are reserved and cannot be used as names:
 
 ```
 break     case      const     continue  default   do        else      embed
-embed_filenames     enum      extern    false     for       foreach   if
-in        interface is        namespace new       null      ref       return
-sizeof    static    struct    switch    this      true      try       unchecked
-unsafe    using     while
+embed_filenames     embed_lines         enum      extern    false     for
+foreach   if        in        interface is        namespace new       null
+ref       return    sizeof    static    struct    switch    this      true
+try       unchecked unsafe    using     while
 ```
 
 These words are **contextual**: they have a special meaning only in one position and are ordinary identifiers

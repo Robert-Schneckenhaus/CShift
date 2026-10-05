@@ -40,6 +40,7 @@ Value EmitExprKind(Compiler cg, Expr e)
     case ExprKind.Slice: return EmitSlice(cg, e);
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
+    case ExprKind.EmbedLines:
         FailEmbedPlace(cg, e.Loc);
         return Value { };
     case ExprKind.NewArray: return EmitNewArray(cg, e);
@@ -445,8 +446,8 @@ Value EmitArithmetic(Compiler cg, BinOp op, Value l0, Value r0, SourceLoc loc)
     if (ArithmeticType(cg, op, l, r, ref why) == 0)
         Fail(cg, loc, why);
 
-    // String concatenation (the other operand may be any primitive).
-    if (op == BinOp.Add && (types.IsString(l.Type) || types.IsString(r.Type)))
+    // String concatenation (a string or a string slice and anything that has a text).
+    if (IsTextJoin(cg, op, l.Type, r.Type))
     {
         Value a = AsStringOperand(cg, l, loc);
         Value b = AsStringOperand(cg, r, loc);

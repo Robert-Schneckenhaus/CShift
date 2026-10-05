@@ -86,6 +86,7 @@ Value CheckExpr(Compiler cg, Expr e)
         return UnknownValue(cg); // its type comes from the Action/Func it is converted to (code generation for now)
     case ExprKind.Embed:
     case ExprKind.EmbedFilenames:
+    case ExprKind.EmbedLines:
         CheckError(cg, e.Loc, EmbedPlaceError());
         return UnknownValue(cg);
     default:
@@ -213,10 +214,20 @@ Value CheckCall(Compiler cg, Expr e, bool viaStart)
 {
     var call = cg.Tree.GetCall(e);
     bool known = true;
+    // the errors of a call (no such function, no matching overload, ...) point at the function's name; the node itself
+    // has the place of '('
     if (call.Callee.Kind == ExprKind.Name)
+    {
+        e.Loc = call.Callee.Loc;
         return CheckNameCall(cg, e, call, cg.Tree.GetName(call.Callee), viaStart);
+    }
     if (call.Callee.Kind == ExprKind.Member)
-        return CheckMemberCall(cg, e, call, cg.Tree.GetMember(call.Callee), viaStart);
+    {
+        var m = cg.Tree.GetMember(call.Callee);
+        if (m.NameLoc.Line > 0)
+            e.Loc = m.NameLoc;
+        return CheckMemberCall(cg, e, call, m, viaStart);
+    }
     CheckExpr(cg, call.Callee);
     CheckArgs(cg, call.Args, ref known);
     return UnknownValue(cg);
@@ -241,7 +252,7 @@ Value CheckIndirectCall(Compiler cg, int ft, Expr[] args, SourceLoc loc)
         if (v.IsRefArg)
             CheckError(cg, args[i].Loc, "function values (Action/Func) have no 'ref' parameters");
         else
-            CheckConversion(cg, v, ptypes[i], args[i].Loc);
+            CheckConversion(cg, v, ptypes[i], cg.Tree.StartOf(args[i]));
     }
     return Rvalue(types.Elem(ft), "", false);
 }
@@ -602,7 +613,7 @@ Value CheckAssign(Compiler cg, Expr e)
         rhs.IsLValue = false;
         rhs.IsConst = false;
         rhs.IsRefArg = false;
-        CheckConversion(cg, rhs, target.Type, a.Value.Loc);
+        CheckConversion(cg, rhs, target.Type, cg.Tree.StartOf(a.Value));
     }
     return Lvalue(target.Type, target.V, false);
 }
@@ -677,7 +688,7 @@ Value CheckErrorLit(Compiler cg, Expr e)
         codeType = first.Type;
     else
     {
-        CheckConversion(cg, first, types.String, n.Message.Loc);
+        CheckConversion(cg, first, types.String, cg.Tree.StartOf(n.Message));
         if (!n.Code.IsNull())
         {
             Value c = CheckRValue(cg, n.Code);
@@ -686,7 +697,7 @@ Value CheckErrorLit(Compiler cg, Expr e)
             else
             {
                 codeType = -1;
-                CheckConversion(cg, c, types.I32, n.Code.Loc);
+                CheckConversion(cg, c, types.I32, cg.Tree.StartOf(n.Code));
             }
         }
     }

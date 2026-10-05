@@ -30,6 +30,43 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Language
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
+- A `string` or `StringSlice` converts to `ReadOnlySlice<char>` without a copy, so code for slices of characters
+  takes text (a `string` argument still prefers a `StringSlice` parameter); never back, the characters need not be
+  UTF-8. `text.AsBytes()` is the same view as `ReadOnlySlice<uint8>`, for functions that take bytes.
+- `embed_lines("file")`: the lines of a file as a `const ReadOnlySlice<string>`, read when the program is compiled -
+  without their line ends (`\n` or `\r\n`), without an empty line after the last line end
+  ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
+
+### Amiga
+- `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
+  middle) and longs where the addresses allow: copying 64 KB takes about 6 cycles per byte instead of 44 (15 when only
+  one address is odd), filling 3.4 instead of 38. `Array.Copy`, list growth and string operations profit.
+  `memmove` backwards no longer copies byte by byte.
+- `tests/run_tests.sh` runs an AmigaOS test program of the runtime with vamos (amitools) when it is installed.
+- `Bitmap.DrawPattern` and `Sprite.Create` also take the rows as a `ReadOnlySlice<string>`, such as the lines of a
+  file from `embed_lines`; demo-amiga-gfx uses that instead of splitting the text at run time.
+
+### Standard library
+- `StringSlice` can do what `string` can: `Equals`, `GetHashCode` (the same hash as a string with the same text) and
+  `CompareTo`, so slices are keys of a `Dictionary`, elements of a `HashSet` and sorted in a `List`; `+` joins two
+  slices; `slice.CStr()` (`unsafe`) passes one to C, copied only if it does not reach the end of its string.
+- Paths, names and commands are `StringSlice` parameters: `File`, `Directory`, `Path`, `FileStream`/`StreamReader`/
+  `StreamWriter`, `Process.Run`/`RunCapture`/`GetEnv`, and the text of `File.WriteAllText` and `Encoding.GetBytes`.
+  `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
+- `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
+  `text.AsBytes()`.
+
+### Tools
+- Libraries: a project with `"type": "library"` is source code that other projects use; `"dependencies":
+  ["../geometry"]` in `cshift.json` makes its sources, `links`, include paths, defines and `ffiApi` (with its
+  `platforms` entries, e.g. prebuilt C libraries per platform) a part of the project. Libraries may depend on
+  libraries; one that is reached twice is used once, a cycle is an error. `cshiftc build` of a library checks it
+  ([projects](docs/language/projects.md#libraries)).
+- Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
+  at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing
+  method) at the name of the function, a missing member at its name instead of the `.` before it.
+- VS Code: an error underlines the expression it is about (`Bar(foo[i])`), not everything from there to the end of the
+  line; at a keyword or a declaration it is still the rest of the line.
 
 ## [0.23] - 2026-10-02
 

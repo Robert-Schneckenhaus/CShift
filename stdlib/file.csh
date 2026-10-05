@@ -12,7 +12,7 @@ using System.Native;
 struct File
 {
     /// Whether a file (or directory) exists at `path`.
-    static bool Exists(string path)
+    static bool Exists(StringSlice path)
     {
         unsafe
         {
@@ -26,7 +26,7 @@ struct File
 
     /// Deletes the file at `path`.
     /// @error IoError.CannotDelete the file does not exist or cannot be deleted.
-    static IoError<void> Delete(string path)
+    static IoError<void> Delete(StringSlice path)
     {
         unsafe
         {
@@ -38,7 +38,7 @@ struct File
 
     /// The contents of a file as bytes.
     /// @error IoError.CannotOpen the file does not exist or cannot be read.
-    static IoError<uint8[]> ReadAllBytes(string path)
+    static IoError<uint8[]> ReadAllBytes(StringSlice path)
     {
         unsafe
         {
@@ -72,7 +72,7 @@ struct File
     /// The contents of a UTF-8 text file. A leading byte order mark is removed.
     /// @error IoError.CannotOpen the file does not exist or cannot be read.
     /// @error IoError.InvalidText the file is not valid UTF-8.
-    static IoError<string> ReadAllText(string path)
+    static IoError<string> ReadAllText(StringSlice path)
     {
         return ReadAllText(path, Encoding.UTF8());
     }
@@ -80,7 +80,7 @@ struct File
     /// The contents of a text file in `encoding`. A leading UTF-8 byte order mark is removed.
     /// @error IoError.CannotOpen the file does not exist or cannot be read.
     /// @error IoError.InvalidText the file is not valid in the encoding.
-    static IoError<string> ReadAllText(string path, Encoding encoding)
+    static IoError<string> ReadAllText(StringSlice path, Encoding encoding)
     {
         var bytes = try ReadAllBytes(path);
         int start = 0;
@@ -95,7 +95,7 @@ struct File
     /// Creates the file or replaces its contents with `bytes`.
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     /// @error IoError.CannotWrite writing failed (the disk is full, ...).
-    static IoError<void> WriteAllBytes(string path, uint8[] bytes)
+    static IoError<void> WriteAllBytes(StringSlice path, ReadOnlySlice<uint8> bytes)
     {
         unsafe
         {
@@ -106,7 +106,7 @@ struct File
             int length = bytes.Length;
             nuint written = 0;
             if (length > 0)
-                written = fwrite(&bytes[0], 1, (nuint)length, f);
+                written = fwrite(bytes.Ptr(), 1, (nuint)length, f);
             int closed = fclose(f);
             if (written != (nuint)length || closed != 0)
                 return error("cannot write file '" + path + "'", IoError.CannotWrite);
@@ -118,7 +118,7 @@ struct File
     /// @error IoError.AlreadyExists `target` exists and `overwrite` is `false`.
     /// @error IoError.CannotOpen `source` cannot be read.
     /// @error IoError.CannotCreate `target` cannot be created.
-    static IoError<void> Copy(string source, string target, bool overwrite)
+    static IoError<void> Copy(StringSlice source, StringSlice target, bool overwrite)
     {
         if (!overwrite && Exists(target))
             return error("the file '" + target + "' already exists", IoError.AlreadyExists);
@@ -130,7 +130,7 @@ struct File
     /// @error IoError.AlreadyExists `target` exists.
     /// @error IoError.CannotOpen `source` cannot be read.
     /// @error IoError.CannotCreate `target` cannot be created.
-    static IoError<void> Copy(string source, string target)
+    static IoError<void> Copy(StringSlice source, StringSlice target)
     {
         return Copy(source, target, false);
     }
@@ -139,7 +139,7 @@ struct File
     /// @error IoError.CannotOpen `source` does not exist.
     /// @error IoError.AlreadyExists `target` exists and `overwrite` is `false`.
     /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
-    static IoError<void> Move(string source, string target, bool overwrite)
+    static IoError<void> Move(StringSlice source, StringSlice target, bool overwrite)
     {
         if (!Exists(source))
             return error("the file '" + source + "' does not exist", IoError.CannotOpen);
@@ -154,14 +154,14 @@ struct File
     /// @error IoError.CannotOpen `source` does not exist.
     /// @error IoError.AlreadyExists `target` exists.
     /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
-    static IoError<void> Move(string source, string target)
+    static IoError<void> Move(StringSlice source, StringSlice target)
     {
         return Move(source, target, false);
     }
 
     /// When the file was last written, in local time.
     /// @error IoError.CannotOpen the file does not exist.
-    static IoError<DateTime> GetLastWriteTime(string path)
+    static IoError<DateTime> GetLastWriteTime(StringSlice path)
     {
         var utc = try GetLastWriteTimeUtc(path);
         return utc.ToLocalTime();
@@ -169,7 +169,7 @@ struct File
 
     /// When the file was last written, in UTC.
     /// @error IoError.CannotOpen the file does not exist.
-    static IoError<DateTime> GetLastWriteTimeUtc(string path)
+    static IoError<DateTime> GetLastWriteTimeUtc(StringSlice path)
     {
         if (_Os.FileWriteTime(path) is int64 ticks)
             return DateTime { Ticks = ticks + _UnixEpochTicks, IsUtc = true };
@@ -179,7 +179,7 @@ struct File
     /// Creates the file or replaces its contents with `text` (UTF-8).
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     /// @error IoError.CannotWrite writing failed (the disk is full, ...).
-    static IoError<void> WriteAllText(string path, string text)
+    static IoError<void> WriteAllText(StringSlice path, StringSlice text)
     {
         return WriteAllText(path, text, Encoding.UTF8());
     }
@@ -187,7 +187,7 @@ struct File
     /// Creates the file or replaces its contents with `text` in `encoding`.
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     /// @error IoError.CannotWrite writing failed (the disk is full, ...).
-    static IoError<void> WriteAllText(string path, string text, Encoding encoding)
+    static IoError<void> WriteAllText(StringSlice path, StringSlice text, Encoding encoding)
     {
         return WriteAllBytes(path, encoding.GetBytes(text));
     }

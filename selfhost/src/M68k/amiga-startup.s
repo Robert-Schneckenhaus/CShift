@@ -93,24 +93,90 @@ snprintf:
 	jsr	__cs_vformat
 	lea	(20,%sp),%sp
 	rts
-| memcpy(dst, src, n): longs while both are even, then bytes
+| The copies and fills go through jump towers: a loop body unrolled 16 times that is entered in the middle, so that the
+| first pass does what does not fill 16 (a jmp to the end of the tower minus 2 bytes per move) and every further pass
+| 16 moves for one subq/bcc. Every move of a tower is one word (no extension words), which the entry relies on.
+| memcpy(dst, src, n): longs while both addresses are even (both odd: one byte first), the rest bytes
 memcpy:
 	move.l	(4,%sp),%a0
 	move.l	(8,%sp),%a1
 	move.l	(12,%sp),%d1
-	move.l	%a0,%d0
 .Lcs_copy_fwd:
-	move.l	%a0,%d0
-	move.l	%a1,-(%sp)
-	or.l	(%sp)+,%d0
-	btst	#0,%d0
-	bne	.Lcs_copy_bytes
-.Lcs_copy_longs:
-	cmp.l	#4,%d1
+	cmp.l	#16,%d1
 	bcs	.Lcs_copy_bytes
+	movem.l	%d2/%a2,-(%sp)
+	move.l	%a0,%d0
+	move.l	%a1,%d2
+	eor.l	%d0,%d2
+	btst	#0,%d2
+	bne	.Lcs_copy_btower
+	btst	#0,%d0
+	beq	.Lcs_copy_ltower
+	move.b	(%a1)+,(%a0)+
+	subq.l	#1,%d1
+.Lcs_copy_ltower:
+	move.l	%d1,%d2
+	lsr.l	#2,%d2
+	moveq	#15,%d0
+	and.l	%d2,%d0
+	lsr.l	#4,%d2
+	add.w	%d0,%d0
+	lea	.Lcs_copy_ltower_end,%a2
+	suba.w	%d0,%a2
+	jmp	(%a2)
+.Lcs_copy_ltower_top:
 	move.l	(%a1)+,(%a0)+
-	subq.l	#4,%d1
-	bra	.Lcs_copy_longs
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+	move.l	(%a1)+,(%a0)+
+.Lcs_copy_ltower_end:
+	subq.l	#1,%d2
+	bcc	.Lcs_copy_ltower_top
+	moveq	#3,%d0
+	and.l	%d0,%d1
+.Lcs_copy_btower:
+	move.l	%d1,%d2
+	moveq	#15,%d0
+	and.l	%d2,%d0
+	lsr.l	#4,%d2
+	add.w	%d0,%d0
+	lea	.Lcs_copy_btower_end,%a2
+	suba.w	%d0,%a2
+	jmp	(%a2)
+.Lcs_copy_btower_top:
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+	move.b	(%a1)+,(%a0)+
+.Lcs_copy_btower_end:
+	subq.l	#1,%d2
+	bcc	.Lcs_copy_btower_top
+	movem.l	(%sp)+,%d2/%a2
+	bra	.Lcs_copy_done
 .Lcs_copy_bytes:
 	tst.l	%d1
 	beq	.Lcs_copy_done
@@ -121,7 +187,7 @@ memcpy:
 	move.l	(4,%sp),%d0
 	move.l	%d0,%a0
 	rts
-| memmove: forwards when dst < src, else backwards
+| memmove: forwards when dst < src, else backwards from the ends (the same towers with -(An))
 memmove:
 	move.l	(4,%sp),%a0
 	move.l	(8,%sp),%a1
@@ -130,17 +196,140 @@ memmove:
 	bcs	.Lcs_copy_fwd
 	add.l	%d1,%a0
 	add.l	%d1,%a1
+	cmp.l	#16,%d1
+	bcs	.Lcs_move_back
+	movem.l	%d2/%a2,-(%sp)
+	move.l	%a0,%d0
+	move.l	%a1,%d2
+	eor.l	%d0,%d2
+	btst	#0,%d2
+	bne	.Lcs_move_btower
+	btst	#0,%d0
+	beq	.Lcs_move_ltower
+	move.b	-(%a1),-(%a0)
+	subq.l	#1,%d1
+.Lcs_move_ltower:
+	move.l	%d1,%d2
+	lsr.l	#2,%d2
+	moveq	#15,%d0
+	and.l	%d2,%d0
+	lsr.l	#4,%d2
+	add.w	%d0,%d0
+	lea	.Lcs_move_ltower_end,%a2
+	suba.w	%d0,%a2
+	jmp	(%a2)
+.Lcs_move_ltower_top:
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+	move.l	-(%a1),-(%a0)
+.Lcs_move_ltower_end:
+	subq.l	#1,%d2
+	bcc	.Lcs_move_ltower_top
+	moveq	#3,%d0
+	and.l	%d0,%d1
+.Lcs_move_btower:
+	move.l	%d1,%d2
+	moveq	#15,%d0
+	and.l	%d2,%d0
+	lsr.l	#4,%d2
+	add.w	%d0,%d0
+	lea	.Lcs_move_btower_end,%a2
+	suba.w	%d0,%a2
+	jmp	(%a2)
+.Lcs_move_btower_top:
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+	move.b	-(%a1),-(%a0)
+.Lcs_move_btower_end:
+	subq.l	#1,%d2
+	bcc	.Lcs_move_btower_top
+	movem.l	(%sp)+,%d2/%a2
+	bra	.Lcs_copy_done
 .Lcs_move_back:
 	tst.l	%d1
 	beq	.Lcs_copy_done
 	move.b	-(%a1),-(%a0)
 	subq.l	#1,%d1
 	bra	.Lcs_move_back
-| memset(dst, value, n)
+| memset(dst, value, n): a byte up to an even address, longs of the value (a tower), the rest bytes
 memset:
 	move.l	(4,%sp),%a0
 	move.l	(8,%sp),%d0
 	move.l	(12,%sp),%d1
+	cmp.l	#16,%d1
+	bcs	.Lcs_set_loop
+	movem.l	%d2-%d3/%a2,-(%sp)
+	move.l	%a0,%d2
+	btst	#0,%d2
+	beq	.Lcs_set_even
+	move.b	%d0,(%a0)+
+	subq.l	#1,%d1
+.Lcs_set_even:
+	and.l	#255,%d0
+	move.l	%d0,%d2
+	lsl.l	#8,%d2
+	or.l	%d2,%d0
+	move.l	%d0,%d2
+	swap	%d2
+	or.l	%d2,%d0
+	move.l	%d1,%d2
+	lsr.l	#2,%d2
+	moveq	#15,%d3
+	and.l	%d2,%d3
+	lsr.l	#4,%d2
+	add.w	%d3,%d3
+	lea	.Lcs_set_tower_end,%a2
+	suba.w	%d3,%a2
+	jmp	(%a2)
+.Lcs_set_tower_top:
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+	move.l	%d0,(%a0)+
+.Lcs_set_tower_end:
+	subq.l	#1,%d2
+	bcc	.Lcs_set_tower_top
+	movem.l	(%sp)+,%d2-%d3/%a2
+	moveq	#3,%d2
+	and.l	%d2,%d1
 .Lcs_set_loop:
 	tst.l	%d1
 	beq	.Lcs_set_done

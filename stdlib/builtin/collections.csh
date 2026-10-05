@@ -84,7 +84,8 @@ struct ReadOnlySlice<T>
 /// [String.Substring]. Nothing is copied; [StringSlice.ToString] copies.
 ///
 /// A string converts to a `StringSlice` for free, so the functions of [String] take slices and work on parts of a
-/// text. `==` compares the text; a slice can be joined to strings with `+`.
+/// text. `==` compares the text and `+` joins it like a string. Slices are `IEquatable`, `IHashable` and `IComparable`
+/// like strings: keys of a [Dictionary], elements of a sorted [List].
 struct StringSlice
 {
     /// The length in bytes.
@@ -95,4 +96,12 @@ struct StringSlice
 
     /// A pointer to the first byte (`unsafe`); the text is not followed by a 0 byte.
     char* Ptr();
+
+    /// The text as a C string (`unsafe`): followed by a 0 byte, for C functions. A slice that reaches the end of its
+    /// string is passed as it is; any other slice is copied into a string that lives until the end of the statement.
+    char* CStr();
+
+    /// The bytes of the text (UTF-8) as a view, for functions that take bytes; nothing is copied. (A `StringSlice`
+    /// converts to `ReadOnlySlice<char>` by itself.)
+    ReadOnlySlice<uint8> AsBytes();
 }

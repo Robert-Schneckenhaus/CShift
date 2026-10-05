@@ -1052,6 +1052,12 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
             HoldTemp(cg, s);
             return Rvalue(types.PointerTo(types.Char), ir.Call("ptr", "@__cs_data", "ptr " + s.V), false);
         }
+        if (method == "AsBytes")
+        {
+            // the bytes of the text as a view (no copy)
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            return ToSlice(cg, s, types.ReadOnlySliceOf(types.U8));
+        }
         if (method == "Substring")
         {
             if (args.Length == 0 || args.Length > 2)
@@ -1102,6 +1108,20 @@ Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, Sourc
         {
             ExpectArgs(cg, args, 0, tname, method, loc);
             return SliceToArray(cg, obj);
+        }
+        if (method == "CStr" && types.IsStringSlice(t))
+        {
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            RequireUnsafe(cg, loc, "StringSlice.CStr()");
+            return Rvalue(types.PointerTo(types.Char), StringSliceCStr(cg, obj), false);
+        }
+        if (method == "AsBytes" && types.IsStringSlice(t))
+        {
+            // the same view, as bytes
+            ExpectArgs(cg, args, 0, tname, method, loc);
+            Value view = ToRValue(cg, obj);
+            view.Type = types.ReadOnlySliceOf(types.U8);
+            return view;
         }
         if (method == "Ptr")
         {

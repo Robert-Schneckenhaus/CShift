@@ -39,6 +39,10 @@ struct string : IComparable<string>, IEquatable<string>, IHashable
     /// lives.
     char* CStr();
 
+    /// The bytes of the string (UTF-8) as a view, for functions that take bytes: `stream.Write(text.AsBytes())`;
+    /// nothing is copied. (A string converts to `ReadOnlySlice<char>` by itself.)
+    ReadOnlySlice<uint8> AsBytes();
+
     /// A string from a C string (`unsafe`): the bytes up to the first 0 byte are copied.
     static string FromCStr(char* text);
 

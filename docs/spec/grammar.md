@@ -180,7 +180,8 @@ Primary = Literal
         | 'default' '(' Type ')'
         | 'unchecked' '(' Expression ')'
         | 'embed' '(' StringLiteral ')'
-        | 'embed_filenames' '(' StringLiteral ')' ;
+        | 'embed_filenames' '(' StringLiteral ')'
+        | 'embed_lines' '(' StringLiteral ')' ;
 
 Pattern = [ 'not' ] ( Type [ Identifier ] | 'null' | 'error' [ Identifier ] ) ;
 
@@ -201,8 +202,9 @@ LambdaParams = Identifier | '(' [ Identifier { ',' Identifier } | Param { ',' Pa
 **Ambiguities** are resolved like this:
 
 * `(T)x` is a cast when `(T)` parses as a type and is followed by a name, a literal, `(`, `!`, `~`, `new`, `this`,
-  `sizeof`, `embed`, `null`, `true`, `false`, `try` or `unchecked`. Before `-`, `+`, `*` and `&` it is a cast only for
-  a built-in type name or a pointer or array type: `(int)-x` is a cast, `(a) - b` a subtraction.
+  `sizeof`, `embed`, `embed_filenames`, `embed_lines`, `null`, `true`, `false`, `try` or `unchecked`. Before `-`, `+`,
+  `*` and `&` it is a cast only for a built-in type name or a pointer or array type: `(int)-x` is a cast, `(a) - b` a
+  subtraction.
 * `Name<...>` in an expression has type arguments only when they parse as types, contain no number, and are followed
   by `(`, `.`, `{`, `;`, `,` or `)`; otherwise `<` is a comparison (`a < b, c > (d)`).
 * `>>` closes two type argument lists (`List<List<int>>`); in an expression it is a shift.

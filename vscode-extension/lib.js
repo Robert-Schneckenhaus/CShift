@@ -68,6 +68,90 @@ function characterOf(lineText, byteCol) {
     return bytes.subarray(0, Math.max(0, byteCol - 1)).toString("utf8").length;
 }
 
+const KEYWORDS = new Set([
+    "break", "case", "const", "continue", "default", "do", "else", "embed", "embed_filenames", "embed_lines", "enum",
+    "extern", "for", "foreach", "if", "interface", "namespace", "return", "start", "struct", "switch", "thread", "union",
+    "unsafe", "using", "var", "while", "void", "static",
+]);
+
+// Where the underline of an error that cshiftc reports at character 'start' of a line ends (exclusive). cshiftc gives
+// only the start: of an expression (a name with its members, calls and indexes, a literal, a cast) just that is marked,
+// 'Bar(foo[i])' in 'foo[i] = Bar(foo[i]);'. At a keyword or a declaration ('int Sign(int x)') the rest of the line is.
+function errorRangeEnd(lineText, start) {
+    const n = lineText.length;
+    const isIdent = (c) => c !== undefined && /[A-Za-z0-9_]/.test(c);
+    // the end of a string or char literal that starts at i (with the quote), or n if it does not end on this line
+    const literalEnd = (i) => {
+        const quote = lineText[i];
+        for (let j = i + 1; j < n; j++) {
+            if (lineText[j] === "\\")
+                j++;
+            else if (lineText[j] === quote)
+                return j + 1;
+        }
+        return n;
+    };
+    // the end of the brackets that open at i, with nested brackets and literals; n if they close on a later line
+    const groupEnd = (i) => {
+        const stack = [];
+        for (let j = i; j < n; j++) {
+            const c = lineText[j];
+            if (c === '"' || c === "'")
+                j = literalEnd(j) - 1;
+            else if (c === "(" || c === "[" || c === "{")
+                stack.push(c === "(" ? ")" : c === "[" ? "]" : "}");
+            else if (c === ")" || c === "]" || c === "}") {
+                if (stack.pop() !== c)
+                    return j + 1;
+                if (stack.length === 0)
+                    return j + 1;
+            }
+        }
+        return n;
+    };
+    let i = start;
+    let parts = 0; // the pieces of the expression: names, literals, brackets
+    let word = "";
+    while (i < n) {
+        const c = lineText[i];
+        if (c === '"' || c === "'" || (c === "$" && lineText[i + 1] === '"')) {
+            i = literalEnd(c === "$" ? i + 1 : i);
+        } else if (isIdent(c)) {
+            const from = i;
+            while (isIdent(lineText[i]))
+                i++;
+            if (parts === 0)
+                word = lineText.substring(from, i);
+            // type arguments of a generic call or type: List<int>.Create(), Max<T>(a, b)
+            const typeArgs = /^<[A-Za-z0-9_,\s\[\]<>?*]*>(?=[.(])/.exec(lineText.substring(i));
+            if (typeArgs)
+                i += typeArgs[0].length;
+        } else if (c === "(" || c === "[") {
+            i = groupEnd(i);
+        } else if (c === "." && isIdent(lineText[i + 1]) && parts > 0) {
+            i++;
+            continue;
+        } else if (c === "-" && lineText[i + 1] === ">" && parts > 0) {
+            i += 2;
+            continue;
+        } else
+            break;
+        parts++;
+    }
+    if (parts === 0) {
+        // an operator ('+', '+=', '==') or a single character
+        let j = start;
+        while (j < n && /[+\-*/%=<>!&|^~?:]/.test(lineText[j]))
+            j++;
+        return Math.max(j, Math.min(n, start + 1));
+    }
+    const rest = lineText.substring(i);
+    // a keyword or a declaration: 'int Sign(int x)', 'List<string> names = ...', 'using (...)'
+    if (parts === 1 && word.length > 0 && (KEYWORDS.has(word) || /^\s+[A-Za-z_]/.test(rest) || /^<[^>]*>\s+[A-Za-z_]/.test(rest)))
+        return n;
+    return i;
+}
+
 // ---------------------------------------------------------------------------
 // Running cshiftc
 // ---------------------------------------------------------------------------
@@ -253,7 +337,7 @@ function lldbConfiguration(config, build, script) {
 }
 
 module.exports = {
-    samePath, projectSources, projectContains, findProject, byteColumn, characterOf, overlayArgs, parseDiagnostics,
+    samePath, projectSources, projectContains, findProject, byteColumn, characterOf, errorRangeEnd, overlayArgs, parseDiagnostics,
     run, query, queryJson, outline, memberContext, check, projectName, debugTarget, debugBuild, findLldbScript,
     lldbConfiguration,
     tempDirectory: () => path.join(os.tmpdir(), "cshift-vscode-" + process.pid),

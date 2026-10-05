@@ -41,7 +41,7 @@ struct Encoding
 
     /// The bytes of `s` in this encoding. UTF-8: the bytes of the string as they are. ASCII: one byte per character;
     /// characters above 127 become `?`.
-    uint8[] GetBytes(string s)
+    uint8[] GetBytes(StringSlice s)
     {
         if (_kind == EncodingKind.UTF8)
         {
@@ -78,7 +78,7 @@ struct Encoding
     }
 
     /// The number of bytes [Encoding.GetBytes] returns for `s`.
-    int GetByteCount(string s)
+    int GetByteCount(StringSlice s)
     {
         if (_kind == EncodingKind.UTF8)
             return s.Length;

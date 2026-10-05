@@ -7,7 +7,7 @@
 // expect-error: err_several_checks.csh:56:14: error: 'string' is not a member of union 'Number'
 // expect-error: err_several_checks.csh:58:33: error: cannot convert function 'Square' to 'Func<int32, int32, int32>': 'Square' has the signature Func<int32, int32>
 // expect-error: err_several_checks.csh:59:24: error: cannot convert function 'Bump' to 'Action<int32>': 'Bump' has ref parameters or C conversions (string/struct marshalling) and cannot be used as a function pointer
-// expect-error: err_several_checks.csh:61:15: error: a call of 'Func<int32, int32>' needs 1 argument(s), got 2
+// expect-error: err_several_checks.csh:61:13: error: a call of 'Func<int32, int32>' needs 1 argument(s), got 2
 // expect-error: err_several_checks.csh:62:26: error: the lambda has 2 parameter(s), 'Func<int32, int32>' needs 1
 // expect-error: err_several_checks.csh:63:29: error: parameter 't' of the lambda has type 'string', but 'Func<int32, int32>' needs 'int32'
 // expect-error: err_several_checks.csh:64:5: error: cannot infer the type of 'any' from a lambda; declare it with its Action/Func type

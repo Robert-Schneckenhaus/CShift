@@ -1,9 +1,9 @@
 // Target-typed integer arithmetic: an operand that does not fit the target type means the usual rules apply (and the
 // result needs a cast); a constant expression that does not fit is an error.
-// expect-error: err_target_typed.csh:14:18: error: cannot implicitly convert 'int32' to 'uint8'
-// expect-error: err_target_typed.csh:15:18: error: cannot implicitly convert 'int32' to 'uint8'
+// expect-error: err_target_typed.csh:14:16: error: cannot implicitly convert 'int32' to 'uint8'
+// expect-error: err_target_typed.csh:15:16: error: cannot implicitly convert 'int32' to 'uint8'
 // expect-error: err_target_typed.csh:16:16: error: cannot implicitly convert 'int32' to 'uint8'
-// expect-error: err_target_typed.csh:17:20: error: cannot implicitly convert 'int32' to 'uint8'
+// expect-error: err_target_typed.csh:17:16: error: cannot implicitly convert 'int32' to 'uint8'
 // expect-error: err_target_typed.csh:19:20: error: operator cannot mix 'uint64' and signed types
 // expect-error: err_target_typed.csh:21:24: error: integer overflow in a constant expression (the value does not fit into uint8)
 int Main()

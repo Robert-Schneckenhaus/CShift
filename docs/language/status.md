@@ -23,7 +23,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Constraints (`where T : IComparable<T>`), checked at compile time | ✔ |
 | Enums with a mandatory base type and explicit values | ✔ |
 | `Enum<T>.Count`, `.Min`, `.Max`, `.Values`, `.Names` (constants) | ✔ (self-hosted, [enums](enums.md#enumt-facts-about-an-enum)) |
-| `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder; `embed("*.txt")`/`embed_filenames("*.txt")` give the contents/names of all matching files as a `const ReadOnlySlice<string>` | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed-and-embed_filenames)) |
+| `const string S = embed("file");`: a file's exact content as a constant, found next to the source file or in the project folder; `embed("*.txt")`/`embed_filenames("*.txt")` give the contents/names of all matching files as a `const ReadOnlySlice<string>`, `embed_lines("file")` the lines of a file | ✔ (self-hosted, [constants](constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)) |
 | Constant slices: `const ReadOnlySlice<int> P = [2, 3, ..Q];`, indexing/slicing/`Length` in constants | ✔ (self-hosted, [constants](constants-and-globals.md#constant-slices)) |
 | Collection expressions: `[a, b, ..c]` as `T[]`, `Slice<T>`, `List<T>`, `HashSet<T>` or any struct with `Create()`/`Add(T)` | ✔ (self-hosted, [collection expressions](arrays-strings-collections.md#collection-expressions)) |
 | `Fixed<T, N>`: fixed-size arrays stored inline (values: on the stack, inside structs), C arrays in structs imported as `Fixed` | ✔ (self-hosted, [fixed-size arrays](arrays-strings-collections.md#fixed-size-arrays-fixedt-n)) |
@@ -92,7 +92,7 @@ The design document leaves a number of things open; these are the decisions that
 * **Methods on `const ref` objects** operate on a copy (like C#'s `in`), so the read-only guarantee holds.
 * **Built in** (generated directly by the compiler as IR, no runtime library): `Console.Write/WriteLine`,
   `Memory.Allocate/Free/VolatileRead/VolatileWrite`, `Environment.Exit/Panic`, `Array.Copy`, `string.FromBytes`,
-  `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue` (files are embedded with the keywords `embed`/`embed_filenames`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
+  `ToString()`/`CompareTo()`/`Equals()`/`GetHashCode()` on numbers, `int.MaxValue/MinValue` (files are embedded with the keywords `embed`/`embed_filenames`/`embed_lines`). Everything else is in the [standard library](../stdlib.md) or comes via `extern "C"`.
 * **`Error<void>`:** `Error<void> Save() { ... return; }`. `try Save();` only checks for an error; there is no
   `Optional<void>`.
 * **Constants:** `const int MyConst = 5;` at the top level or inside functions. Numbers, `bool`, `char`, enums,
