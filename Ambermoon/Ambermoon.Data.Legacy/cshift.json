@@ -1,5 +1,6 @@
 {
 	"name": "Ambermoon.Data.Legacy",
 	"type": "library",
-	"sources": ["src"]
+	"sources": ["src"],
+	"dependencies": ["../Ambermoon.Data.Common"]
 }

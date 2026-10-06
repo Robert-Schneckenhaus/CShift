@@ -13,6 +13,8 @@ struct EnumInfo
     uint64[] Values;
     /// Whether the enum is a [Flags] enum (its texts combine names: "Blind, Poisoned").
     bool IsFlags;
+    /// The size of the enum in bytes.
+    int Size;
 
     /// The facts about the enum `T`.
     static EnumInfo Of<T>(bool isFlags)
@@ -23,21 +25,28 @@ struct EnumInfo
         // insertion sort by value: stable, so members with the same value keep their order
         for (var i = 0; i < count; i += 1)
         {
-            uint64 value = _ToUnsigned((int64)Enum<T>.Values[i], sizeof(T));
+            uint64 value = ToUnsigned((int64)Enum<T>.Values[i], sizeof(T));
             int position = values.Count();
             while (position > 0 && values[position - 1] > value)
                 position -= 1;
             values.Insert(position, value);
             names.Insert(position, Enum<T>.Names[i]);
         }
-        return EnumInfo { Names = names.ToArray(), Values = values.ToArray(), IsFlags = isFlags };
+        return EnumInfo { Names = names.ToArray(), Values = values.ToArray(), IsFlags = isFlags, Size = sizeof(T) };
     }
 
-    static uint64 _ToUnsigned(int64 value, int size)
+    /// The value as an unsigned number of `size` bytes.
+    static uint64 ToUnsigned(int64 value, int size)
     {
         if (size >= 8)
             return (uint64)value;
         return (uint64)value & (((uint64)1 << (size * 8)) - 1);
+    }
+
+    /// A number as a value of the enum (cut to its size, like a cast to the enum).
+    uint64 FromNumber(int64 number)
+    {
+        return ToUnsigned(number, Size);
     }
 
     /// The name of the value (Enum.GetName: the first member with it), or `null` if no member has it.
@@ -117,14 +126,14 @@ struct EnumInfo
 /// .NET's Enum.ToString() for any enum (names of [Flags] enums are combined when `isFlags`).
 string EnumText<T>(T value, bool isFlags)
 {
-    return EnumInfo.Of<T>(isFlags).Text(EnumInfo._ToUnsigned((int64)value, sizeof(T)));
+    return EnumInfo.Of<T>(isFlags).Text(EnumInfo.ToUnsigned((int64)value, sizeof(T)));
 }
 
 /// EnumHelper.GetFlagNames of the original: the names of the flags in the value, joined by " | ".
 /// (The generic variant of the original: "None" for no flags.)
 string GetFlagNames<T>(T value)
 {
-    uint64 flags = EnumInfo._ToUnsigned((int64)value, sizeof(T));
+    uint64 flags = EnumInfo.ToUnsigned((int64)value, sizeof(T));
     if (flags == 0)
         return "None";
     return EnumInfo.Of<T>(true).FlagNames(flags);
@@ -133,5 +142,5 @@ string GetFlagNames<T>(T value)
 /// Enum.GetName: the name of the value, `null` if no member has it.
 Optional<string> EnumName<T>(T value)
 {
-    return EnumInfo.Of<T>(false).GetName(EnumInfo._ToUnsigned((int64)value, sizeof(T)));
+    return EnumInfo.Of<T>(false).GetName(EnumInfo.ToUnsigned((int64)value, sizeof(T)));
 }
