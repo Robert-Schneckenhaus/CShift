@@ -245,6 +245,7 @@ shared_ptr.csh
 slices.csh
 stack_queue.csh
 stdlib_additions.csh
+stdlib_console_readline.csh
 stdlib_datetime.csh
 stdlib_dictionary.csh
 stdlib_errors.csh

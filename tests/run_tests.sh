@@ -24,6 +24,7 @@
 #        // expect-stderr: <text>   stderr contains <text>   (may be repeated)
 #        // arc-ignore              skip the leak check
 #        // options:       <args>   extra compiler options (e.g. --unchecked)
+#        // stdin:         <text>   a line of the program's standard input (may be repeated; without it, stdin is empty)
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
@@ -149,7 +150,8 @@ for file in "$DIR"/cases/*.csh; do
         continue
     fi
     # Run in the temp directory: some tests create files.
-    ( cd "$TMP" && "${RUNNER[@]}" "$TMP/case.exe" > "$TMP/case.out" 2> "$TMP/case.run.err" )
+    directives "$file" stdin > "$TMP/case.in"
+    ( cd "$TMP" && "${RUNNER[@]}" "$TMP/case.exe" < "$TMP/case.in" > "$TMP/case.out" 2> "$TMP/case.run.err" )
     code=$?
     want_exit="$(directives "$file" expect-exit | head -n 1)"
     want_exit="${want_exit:-0}"

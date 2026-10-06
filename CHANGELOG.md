@@ -14,6 +14,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   are allowed, and `x[k] = v` on a `const ref` struct now works when its `Set` does not change the struct (before it
   was always an error). `cshiftc check` and the VS Code extension show the error as well.
 
+### Standard library
+- `Console.ReadLine()` reads a line of the standard input (`Optional<string>`, without the line break; `null` at the
+  end of the input). What was written with `Console.Write` before is shown first, so `Console.Write("Name: ")` works
+  as a prompt. On every target: Linux, macOS, Windows, WebAssembly (WASI) and AmigaOS.
+
 ### Compiler
 - Fewer copies, and the compiler compiles itself with 20 % fewer instructions: `list.Get(i).Name` (and
   `list[i].Name`) reads the field where the element is instead of copying the whole element with all its references

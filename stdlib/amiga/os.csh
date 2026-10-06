@@ -101,6 +101,21 @@ struct _Os
     {
     }
 
+    // nothing is held back: the C library writes with dos.library directly
+    static void FlushOutput()
+    {
+    }
+
+    // the next byte of the standard input (the process's input handle), -1 at its end
+    static int ReadInputByte()
+    {
+        unsafe
+        {
+            uint8 b = 0;
+            return __dos_Read(__dos_Input(), &b, 1) == 1 ? b : -1;
+        }
+    }
+
     static void Wait(int milliseconds)
     {
         if (milliseconds > 0)

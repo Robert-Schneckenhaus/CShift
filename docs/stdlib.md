@@ -10,6 +10,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
 | `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stack.csh`, `queue.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
 | `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
+| `ConsoleInput` | `console.csh` | `ReadLine`, which the compiler calls for `Console.ReadLine()` |
 | `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
 | `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
 | `FastTrig` | `fasttrig.csh` | table-based trigonometry with integer angles and fixed point results (`FastTrig.Sin(angle)`) |
@@ -68,7 +69,15 @@ also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` rea
 **`Path`** — `Combine`, `Normalize`, `GetDirectory`, `GetFileName`, `GetExtension`, `GetStem`, `ChangeExtension`,
 `IsRooted`, `GetFullPath` (absolute, without `.`/`..`), `GetRelativePath(from, to)`.
 **Command line:** `int Main(string[] args)` receives the arguments without the program name. `Console.WriteError(Line)`
-writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`.
+writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`. `Console.ReadLine()` reads a
+line of the standard input (`Optional<string>` without the line break, `null` at its end; `console.csh`): what was
+written before is shown first, so `Console.Write("Name: ")` is a prompt.
+
+```csharp
+Console.Write("Name: ");
+if (Console.ReadLine() is string name)
+    Console.WriteLine("Hello, " + name);
+```
 
 **`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
 `WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`,
