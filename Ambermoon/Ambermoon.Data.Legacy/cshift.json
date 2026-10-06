@@ -1,0 +1,5 @@
+{
+	"name": "Ambermoon.Data.Legacy",
+	"type": "library",
+	"sources": ["src"]
+}
