@@ -70,7 +70,8 @@ void RemoveEvent(List<int> eventList, List<int> events, int index, bool alwaysDi
 
     if (listIndex != -1)
     {
-        bool canMoveSuccessorToBegin = true;
+        // (the original also offers this without a successor, and the chain then starts with nothing)
+        bool canMoveSuccessorToBegin = e.HasNext();
 
         if (e.HasNext() && !_AllowAsFirst(Store.TypeOf(e.Next)))
             canMoveSuccessorToBegin = false;
@@ -110,7 +111,8 @@ void RemoveEvent(List<int> eventList, List<int> events, int index, bool alwaysDi
                 eventList.Remove(id);
                 var eventsToRemove = List<int>.Create();
                 int eventToRemove = id;
-                while (eventToRemove >= 0)
+                // (the original runs forever if the chain is a loop)
+                while (eventToRemove >= 0 && !eventsToRemove.Contains(eventToRemove))
                 {
                     eventsToRemove.Add(eventToRemove);
                     eventToRemove = Store.NextOf(eventToRemove);

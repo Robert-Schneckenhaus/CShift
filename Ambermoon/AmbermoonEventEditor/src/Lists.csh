@@ -72,7 +72,8 @@ void ShowChain(List<int> eventList, List<int> events, int index)
     var chainEvents = List<int>.Create();
     int id = eventList[index];
 
-    while (id >= 0)
+    // (the original runs forever if the chain is a loop)
+    while (id >= 0 && !chainEvents.Contains(id))
     {
         chainEvents.Add(id);
         id = Store.NextOf(id);
