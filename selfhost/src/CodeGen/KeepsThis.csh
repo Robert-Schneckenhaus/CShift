@@ -30,6 +30,21 @@ struct KeepScan
     int Lowest;         // the lowest depth of a method being decided that the result relied on
     List<string> Locals; // the parameters and local variables in scope
     string Why;         // what changes 'this' (the first change found): "assigns 'Count'"
+    string RootLocal;   // not 'this' but this local variable (of type Owner) is asked about (LocalStaysUnchanged)
+}
+
+// Whether the local variable 'name' (of type t) stays unchanged in the statements list[from..]: it is not assigned,
+// not passed with 'ref', its address is not taken, and the methods called on it (or on its fields) keep them. Another
+// variable of the same name counts as a change.
+bool LocalStaysUnchanged(const ref Compiler cg, string name, int t, Stmt[] list, int from)
+{
+    var scan = KeepScan { Owner = t, Depth = 0, Lowest = 1000000, Locals = List<string>.Create(), Why = "", RootLocal = name };
+    for (var i = from; i < list.Length; i += 1)
+    {
+        if (!StmtKeepsThis(cg, ref scan, list[i]))
+            return false;
+    }
+    return true;
 }
 
 // Whether the method 'entry' (an index in Compiler.Funcs) of the struct type 'owner' leaves 'this' unchanged.
@@ -83,7 +98,7 @@ bool KeepsThisAt(const ref Compiler cg, int entry, int owner, int depth, ref int
         return false;
     }
     cg.KeepsThis.Set(key, KeepsBusy + depth);
-    var scan = KeepScan { Owner = owner, Depth = depth + 1, Lowest = 1000000, Locals = List<string>.Create(), Why = "" };
+    var scan = KeepScan { Owner = owner, Depth = depth + 1, Lowest = 1000000, Locals = List<string>.Create(), Why = "", RootLocal = "" };
     foreach (var p in d.Params)
         scan.Locals.Add(p.Name);
     bool keeps = StmtKeepsThis(cg, ref scan, d.Body);
@@ -174,10 +189,12 @@ int ThisPartType(const ref Compiler cg, const ref KeepScan scan, Expr e)
     switch (e.Kind)
     {
     case ExprKind.This:
-        return scan.Owner;
+        return scan.RootLocal.Length > 0 ? -1 : scan.Owner;
     case ExprKind.Name:
     {
         string name = tree.GetName(e).Name;
+        if (scan.RootLocal.Length > 0)
+            return name == scan.RootLocal ? scan.Owner : -1;
         if (IsKeepLocal(scan, name))
             return -1;
         var p = FindField(cg, scan.Owner, name);
@@ -239,7 +256,7 @@ bool CallOnKeepsThis(const ref Compiler cg, ref KeepScan scan, int t, string nam
 // union case of ReadOnlyChangeError: the methods of all members are asked).
 string UnionChangeReason(const ref Compiler cg, int union, string name)
 {
-    var scan = KeepScan { Owner = union, Depth = 0, Lowest = 1000000, Locals = List<string>.Create(), Why = "" };
+    var scan = KeepScan { Owner = union, Depth = 0, Lowest = 1000000, Locals = List<string>.Create(), Why = "", RootLocal = "" };
     if (CallOnKeepsThis(cg, ref scan, union, name))
         return "";
     return scan.Why.Length > 0 ? scan.Why : "changes it";
@@ -271,6 +288,8 @@ bool StmtKeepsThis(const ref Compiler cg, ref KeepScan scan, Stmt s)
         var d = tree.GetVarDecl(s);
         if (!ExprKeepsThis(cg, ref scan, d.Init))
             return false;
+        if (scan.RootLocal.Length > 0 && d.Name == scan.RootLocal)
+            return Changes(ref scan, "declares another '" + d.Name + "'");
         scan.Locals.Add(d.Name);
         return true;
     }
@@ -305,6 +324,8 @@ bool StmtKeepsThis(const ref Compiler cg, ref KeepScan scan, Stmt s)
         var n = tree.GetForeach(s);
         if (!ExprKeepsThis(cg, ref scan, n.Iterable))
             return false;
+        if (scan.RootLocal.Length > 0 && n.Name == scan.RootLocal)
+            return Changes(ref scan, "declares another '" + n.Name + "'");
         int mark = scan.Locals.Count();
         scan.Locals.Add(n.Name);
         if (!NestedKeepsThis(cg, ref scan, n.Body))
@@ -493,8 +514,8 @@ bool CallKeepsThis(const ref Compiler cg, ref KeepScan scan, CallExpr c)
         // Method(...) on 'this', unless a variable or a field with a function type has the name (EmitNameCall); else a
         // function
         string name = tree.GetName(c.Callee).Name;
-        if (IsKeepLocal(scan, name))
-            return true;
+        if (IsKeepLocal(scan, name) || scan.RootLocal.Length > 0)
+            return true; // a variable with a function type, or (for a local variable) any function
         var field = FindField(cg, scan.Owner, name);
         if (field.Found && IsCallableType(cg, field.Type))
             return true;

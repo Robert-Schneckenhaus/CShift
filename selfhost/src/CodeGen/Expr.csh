@@ -178,9 +178,9 @@ Value LookupVariable(const ref Compiler cg, string name)
     var vars = cg.Fn[0].Vars;
     for (var i = vars.Count(); i > 0; i -= 1)
     {
-        var v = vars.Get(i - 1);
-        if (v.Name != name)
+        if (vars.Get(i - 1).Name != name) // only the name is read (ElementField), not the whole variable
             continue;
+        var v = vars.Get(i - 1);
         if (v.IsConstant)
             return ConstToValue(cg, v.ConstValue); // a local constant is inlined
         if (v.IsRef)

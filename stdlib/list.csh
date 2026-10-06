@@ -75,6 +75,15 @@ struct List<T>
         return _state[0].Items[index];
     }
 
+    // Where the element at `index` is. 'list.Get(i).Name' (and 'list[i].Name') read the field there instead of copying
+    // the whole element first: the compiler calls this (ElementField in selfhost/src/CodeGen/Structs.csh).
+    unsafe T* _At(int index)
+    {
+        if (index < 0 || index >= Count())
+            Environment.Panic("List index out of range (index " + index.ToString() + ", count " + Count().ToString() + ")");
+        return &_state[0].Items[index];
+    }
+
     /// Replaces the element at `index` (also `list[index] = value`).
     /// @panics when `index` is not in 0 to `Count() - 1`.
     void Set(int index, T value)

@@ -559,6 +559,12 @@ Value EmitMember(const ref Compiler cg, Expr e)
         }
     }
 
+    if (!m.ViaArrow)
+    {
+        Value inPlace = ElementField(cg, e);
+        if (!inPlace.IsNone())
+            return inPlace;
+    }
     Value obj = SettleCollection(cg, EmitExpr(cg, m.Object)); // [1, 2].Length: an array
     if (m.ViaArrow)
         obj = DerefPointer(cg, obj, e.Loc);
@@ -704,4 +710,131 @@ bool EmitBuiltinStaticMember(const ref Compiler cg, int type, string member, ref
         }
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Fields of list elements
+// ---------------------------------------------------------------------------
+
+// list.Get(i).A.B (also list[i].A.B) on a List of structs: the field is read where the element is (List._At) and only
+// its value is copied - not the whole element with all its references, as Get would. Only where everything is known
+// before any code is written: the list is a variable, a parameter or a field (PathType) and every name is a field;
+// otherwise Value { } and the expression is compiled as usual.
+Value ElementField(const ref Compiler cg, Expr e)
+{
+    var tree = cg.Tree;
+    var types = cg.Types;
+    var names = List<string>.Create();
+    Expr cur = e;
+    while (cur.Kind == ExprKind.Member && !tree.GetMember(cur).ViaArrow)
+    {
+        names.Insert(0, tree.GetMember(cur).Name);
+        cur = tree.GetMember(cur).Object;
+    }
+    Expr list = Expr { };
+    Expr index = Expr { };
+    if (cur.Kind == ExprKind.Call)
+    {
+        var c = tree.GetCall(cur);
+        if (c.Callee.Kind != ExprKind.Member || c.Args.Length != 1)
+            return Value { };
+        var callee = tree.GetMember(c.Callee);
+        if (callee.Name != "Get" || callee.ViaArrow || callee.TypeArgs.Length > 0)
+            return Value { };
+        list = callee.Object;
+        index = c.Args[0];
+    }
+    else if (cur.Kind == ExprKind.Index && !tree.GetIndex(cur).FromEnd)
+    {
+        list = tree.GetIndex(cur).Object;
+        index = tree.GetIndex(cur).Index;
+    }
+    else
+        return Value { };
+    if (index.Kind == ExprKind.RefArg)
+        return Value { };
+    int lt = PathType(cg, list);
+    if (lt <= 0 || !types.IsStruct(lt))
+        return Value { };
+    var si = GetStructInfo(cg, lt);
+    var decl = cg.Structs.Get(si.Entry).Decl;
+    if (decl.Name != "List" || decl.TypeParams.Length != 1 || !cg.Files.Get(cg.Structs.Get(si.Entry).File).IsPrelude)
+        return Value { };
+    var at = MethodCandidates(cg, lt, "_At");
+    if (at.Length != 1 || MethodCandidates(cg, lt, "Get").Length != 1)
+        return Value { };
+    int elem = 0;
+    if (si.Env.TryGet(decl.TypeParams[0]) is int found)
+        elem = found;
+    if (elem <= 0 || !types.IsStruct(elem))
+        return Value { };
+    // the fields, from the element outwards
+    int t = elem;
+    var paths = List<int[]>.Create();
+    foreach (var name in names)
+    {
+        if (!types.IsStruct(t))
+            return Value { };
+        var p = FindField(cg, t, name);
+        if (!p.Found || (p.IsPrivate && CurrentOwner(cg) != p.Owner))
+            return Value { };
+        paths.Add(p.Indices);
+        t = p.Type;
+    }
+
+    var ir = cg.Ir;
+    Value lv = EmitExpr(cg, list);
+    var args = new Arg[1];
+    args[0] = Arg { V = EmitRValue(cg, index), Source = index };
+    int instance = ResolveOverload(cg, at, args, new int[0], e.Loc, "_At");
+    string addr = CallMethodOn(cg, lv, instance, "_At", args, e.Loc).V;
+    int ft = elem;
+    for (var i = 0; i < paths.Count(); i += 1)
+    {
+        var sb = StringBuilder.Create();
+        sb.Append("i32 0");
+        foreach (var k in paths.Get(i))
+            sb.Append(", i32 " + k.ToString());
+        addr = ir.Gep(LlvmType(cg, ft), addr, sb.ToString());
+        ft = FindField(cg, ft, names.Get(i)).Type;
+    }
+    string value = ir.Load(LlvmType(cg, ft), addr);
+    EmitRetain(cg, ft, value); // its own reference: the list may change before the value is used
+    return Rvalue(ft, value, NeedsArc(cg, ft));
+}
+
+// The type of a variable, a parameter, a field of 'this' or a field of one of them, without writing code; 0 for any
+// other expression.
+int PathType(const ref Compiler cg, Expr e)
+{
+    var tree = cg.Tree;
+    if (e.Kind == ExprKind.Name)
+    {
+        string name = tree.GetName(e).Name;
+        int local = FindLocal(cg, name);
+        if (local >= 0)
+        {
+            var v = cg.Fn[0].Vars.Get(local);
+            return v.IsConstant || v.Slot.Length == 0 ? 0 : v.Type;
+        }
+        if (cg.Fn[0].LambdaId > 0)
+            return 0; // perhaps a variable of an enclosing function
+        int owner = CurrentOwner(cg);
+        if (owner == 0)
+            return 0;
+        var p = FindField(cg, owner, name);
+        return p.Found ? p.Type : 0;
+    }
+    if (e.Kind == ExprKind.Member)
+    {
+        var m = tree.GetMember(e);
+        if (m.ViaArrow)
+            return 0;
+        int t = PathType(cg, m.Object);
+        if (t <= 0 || !cg.Types.IsStruct(t))
+            return 0;
+        var p = FindField(cg, t, m.Name);
+        return p.Found ? p.Type : 0;
+    }
+    return 0;
 }

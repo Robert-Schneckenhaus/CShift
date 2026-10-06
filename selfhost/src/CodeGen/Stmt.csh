@@ -244,8 +244,19 @@ void EmitBlock(const ref Compiler cg, Stmt block, bool newScope)
         cg.Fn[0].Checked = false;
     if (newScope)
         PushScope(cg);
-    foreach (var s in b.Stmts)
-        EmitStmt(cg, s);
+    var outerStmts = cg.Fn[0].BlockStmts;
+    int outerAt = cg.Fn[0].BlockAt;
+    bool outerScoped = cg.Fn[0].BlockScoped;
+    for (var i = 0; i < b.Stmts.Length; i += 1)
+    {
+        cg.Fn[0].BlockStmts = b.Stmts; // for EmitVarDecl: the statements after a declaration
+        cg.Fn[0].BlockAt = i;
+        cg.Fn[0].BlockScoped = newScope;
+        EmitStmt(cg, b.Stmts[i]);
+    }
+    cg.Fn[0].BlockStmts = outerStmts;
+    cg.Fn[0].BlockAt = outerAt;
+    cg.Fn[0].BlockScoped = outerScoped;
     if (newScope)
         PopScope(cg, true);
     if (b.IsUnsafe)
@@ -293,6 +304,24 @@ void EmitExprStmt(const ref Compiler cg, Stmt s)
     FlushTemps(cg, 0, true);
 }
 
+// Whether 'var x = init;' can make x an alias of init instead of a copy: init is a part of a read-only value (a
+// 'const ref' parameter, a field of one, a variable a lambda captured) with references to count, the declaration is a
+// statement of a block that ends the variable's scope, and the statements after it in the block only read x
+// (LocalStaysUnchanged). Nothing in the function can change such a part.
+bool IsReadOnlyAlias(const ref Compiler cg, Stmt s, VarDeclStmt d, Value init, int t)
+{
+    if (d.IsUsing || d.Init.IsNull() || !init.IsLValue || !init.IsConst || init.Type != t || !NeedsArc(cg, t) ||
+        IsInterfaceType(cg, t))
+        return false;
+    var f = cg.Fn[0];
+    if (f.BlockStmts == null || !f.BlockScoped || f.BlockAt < 0 || f.BlockAt >= f.BlockStmts.Length)
+        return false;
+    var here = f.BlockStmts[f.BlockAt];
+    if (here.Kind != s.Kind || here.Index != s.Index)
+        return false; // not a statement of the block itself (the initializer of a 'for', ...)
+    return LocalStaysUnchanged(cg, d.Name, t, f.BlockStmts, f.BlockAt + 1);
+}
+
 void EmitVarDecl(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
@@ -336,6 +365,18 @@ void EmitVarDecl(const ref Compiler cg, Stmt s)
 
     if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)
         Fail(cg, s.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");
+    if (IsReadOnlyAlias(cg, s, d, init, t))
+    {
+        // a copy of a part of a read-only value (var tree = cg.Tree; with a 'const ref' cg) that the rest of the block
+        // only reads: the variable is an alias of that part, like a 'const ref' parameter - no copy, no counting
+        string aliasSlot = ir.Alloca("ptr", d.Name);
+        ir.Store("ptr", init.V, aliasSlot);
+        FlushTemps(cg, 0, true);
+        cg.Fn[0].Vars.Add(ScopeVar { Name = d.Name, Type = t, Slot = aliasSlot, IsRef = true, IsConst = true });
+        if (ir.Debug)
+            DebugDeclare(cg, d.Name, t, aliasSlot, true, 0);
+        return;
+    }
     string llvm = LlvmType(cg, t);
     string slot = ir.Alloca(llvm, d.Name);
     if (!d.Init.IsNull())

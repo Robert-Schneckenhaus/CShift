@@ -195,6 +195,9 @@ struct FnState
     bool HasMoves;                     // ... Moves is set (code generation of a function or lambda body)
     bool InReturn;                     // the value of a 'return' is being computed
     List<string> ReturnMoves;          // ... the slots of the variables moved into it: the cleanup leaves them alone
+    Stmt[] BlockStmts;                 // the statements of the block that is being written (EmitBlock) ...
+    int BlockAt;                       // ... the one being written
+    bool BlockScoped;                  // ... and whether its variables end with it
     bool Live;                         // the checker: the current statement can be reached (structurally)
     bool CollectReturns;               // the checker: the body of a lambda whose result type is inferred (LambdaResultType)
     int LambdaReturn;                  // ... the type of its first 'return x' (0: none yet)

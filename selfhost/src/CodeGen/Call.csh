@@ -679,7 +679,13 @@ Value EmitMethodCallOn(const ref Compiler cg, Value obj, string name, Arg[] args
         Fail(cg, loc, "'" + name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + name + "(...)'");
     if (name.Length > 0 && name[0] == '_' && CurrentOwner(cg) != fi.Owner)
         Fail(cg, loc, "method '" + name + "' is private to '" + types.Name(fi.Owner) + "'");
+    return CallMethodOn(cg, obj, instance, name, args, loc);
+}
 
+// The call of a resolved method on a struct value: in place for a variable, on a copy for a temporary.
+Value CallMethodOn(const ref Compiler cg, Value obj, int instance, string name, Arg[] args, SourceLoc loc)
+{
+    var fi = cg.Instances.Get(instance);
     string thisPtr;
     if (obj.IsLValue)
     {

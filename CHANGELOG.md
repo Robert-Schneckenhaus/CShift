@@ -6,6 +6,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Compiler
+- Fewer copies, and the compiler compiles itself with 20 % fewer instructions: `list.Get(i).Name` (and
+  `list[i].Name`) reads the field where the element is instead of copying the whole element with all its references
+  first, and a local variable that copies a part of a `const ref` parameter (`var tree = cg.Tree;`) and is only read
+  afterwards is an alias of it instead of a copy.
+
 ### Language
 - **Changed:** calling a method that changes the struct on a `const ref` parameter (or on a field of one, or on a
   variable that a lambda uses) is a compile error instead of working on a copy that is thrown away. The message says
