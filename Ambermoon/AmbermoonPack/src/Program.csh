@@ -3,6 +3,7 @@
 namespace AmbermoonPack;
 
 using System;
+using Ambermoon;
 using Ambermoon.Data.Legacy.Compression;
 using Ambermoon.Data.Legacy.Serialization;
 
@@ -306,7 +307,7 @@ void PrintCompression(bool verbose, int uncompressedSize, int compressedSize, Op
 {
     if (!verbose)
         return;
-    string ratio = FormatFloat2((float)compressedSize * 100.0f / (float)uncompressedSize);
+    string ratio = FormatFloat((float)compressedSize * 100.0f / (float)uncompressedSize, 2);
     if (subfile is int number)
         Console.WriteLine($"{number:D3}: {uncompressedSize,-10} -> {compressedSize,-10} ({ratio}%)");
     else

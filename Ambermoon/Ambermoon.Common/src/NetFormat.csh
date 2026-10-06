@@ -1,11 +1,11 @@
-// Number texts as .NET writes them, so that the output is the same as the one of the original tool.
-namespace AmbermoonPack;
+namespace Ambermoon;
 
 using System;
 
-// A float with the custom format "0.00" like .NET (invariant culture): the exact value is rounded to 7 significant
-// digits first (half to even), and that decimal to 2 decimals (half away from zero).
-string FormatFloat2(float value)
+/// A float with the custom format "0.00" (as many zeros after the point as `decimals`) like .NET in the invariant
+/// culture: the exact value is rounded to 7 significant digits first (half to even), then to the decimals (half away
+/// from zero).
+string FormatFloat(float value, int decimals)
 {
     if (value != value)
         return "NaN";
@@ -33,11 +33,11 @@ string FormatFloat2(float value)
     var digits = List<int>.Create();
     int pointPosition; // the number of digits before the decimal point
     if (mantissa == 0)
-        return "0.00";
+        return decimals > 0 ? "0." + "0".Repeat(decimals) : "0";
     if (exponent >= 0)
     {
         if (exponent > 39)
-            return value.ToString("F2"); // far beyond what the tool prints (and exact anyway)
+            return value.ToString("F" + decimals.ToString()); // huge: no fraction to round
         _AppendDigits(ref digits, mantissa << exponent);
         pointPosition = digits.Count();
     }
@@ -45,7 +45,7 @@ string FormatFloat2(float value)
     {
         int k = -exponent;
         if (k > 59)
-            return negative ? "-0.00" : "0.00"; // below 2^-36: rounds to 0.00
+            return (negative ? "-" : "") + (decimals > 0 ? "0." + "0".Repeat(decimals) : "0"); // below 2^-36: rounds to zero
         uint64 integer = mantissa >> k;
         uint64 fraction = mantissa & (((uint64)1 << k) - 1);
         if (integer > 0)
@@ -85,8 +85,8 @@ string FormatFloat2(float value)
             _Increment(ref digits, ref pointPosition, keep - 1);
     }
 
-    // round to 2 decimals, half away from zero
-    int end = pointPosition + 2;
+    // round to the decimals, half away from zero
+    int end = pointPosition + decimals;
     if (end < digits.Count())
     {
         bool roundUp = digits[end] >= 5;
@@ -111,8 +111,9 @@ string FormatFloat2(float value)
         text.Append('0');
     for (var i = 0; i < pointPosition; i += 1)
         text.Append((char)('0' + (i < digits.Count() ? digits[i] : 0)));
-    text.Append('.');
-    for (var i = pointPosition; i < pointPosition + 2; i += 1)
+    if (decimals > 0)
+        text.Append('.');
+    for (var i = pointPosition; i < pointPosition + decimals; i += 1)
         text.Append((char)('0' + (i >= 0 && i < digits.Count() ? digits[i] : 0)));
     return text.ToString();
 }

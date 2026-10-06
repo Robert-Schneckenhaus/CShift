@@ -147,7 +147,7 @@ struct FileWriter
             compressionPrinter(compressedData.Length, fileData.Length, null);
 
         if (fileData.Length % 2 == 1 || compressedData.Length % 2 == 1)
-            return error("Lob source or compressed data is not word-aligned.");
+            return error("[Application] Lob source or compressed data is not word-aligned.");
 
         writer.WriteDword(header);
         writer.WriteDword((uint32)fileData.Length | ((uint32)lobType << 24));
@@ -171,20 +171,20 @@ struct FileWriter
         switch (fileType)
         {
             case FileType.JHPlusAMBR:
-                return error("File type '" + fileType + "' is no valid container format. Use the Write method instead for this file type.");
+                return error("[Data] File type '" + fileType + "' is no valid container format. Use the Write method instead for this file type.");
             case FileType.AMNC:
             case FileType.AMNP:
             case FileType.AMBR:
             case FileType.AMPC:
                 break;
             default:
-                return error("File type '" + fileType + "' is no container format.");
+                return error("[Data] File type '" + fileType + "' is no container format.");
         }
 
         if (filesData.Count() >= 0xffff) // JH uses the 1-based index as a word
-            return error("In a container file there can only be " + (0xffff - 1).ToString() + " files at max.");
+            return error("[Data] In a container file there can only be " + (0xffff - 1).ToString() + " files at max.");
         if (filesData.ContainsKey(0))
-            return error("The first file must have index 1 and not 0.");
+            return error("[Data] The first file must have index 1 and not 0.");
         if (filesData.Count() == 0)
             return error("Sequence contains no elements");
 
@@ -266,7 +266,7 @@ struct FileWriter
             var sectionCounts = List<uint32>.Create();
 
             if (maxIndex > 530) // the limit of the original code
-                return error("More than 530 files are not allowed.");
+                return error("[Application] More than 530 files are not allowed.");
 
             bool useSections = false;
 

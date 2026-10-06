@@ -261,7 +261,7 @@ struct _AdvancedLobCompressor
         if (RleCount >= 3 && !noRle)
         {
             if (Literals.Count() != 0 && Failure.Length == 0)
-                Failure = "There should be no stored literals when a RLE is compressed.";
+                Failure = "[Application] There should be no stored literals when a RLE is compressed.";
 
             int index = I - RleCount;
             int addTrieCount = RleCount;

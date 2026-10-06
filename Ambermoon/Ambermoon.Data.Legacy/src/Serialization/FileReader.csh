@@ -140,7 +140,7 @@ struct FileReader
             var fileSizes = Dictionary<int, int>.Create();
             int sectionCount = reader.ReadWord();
             if (sectionCount == 0)
-                return error("Invalid container section count.");
+                return error("[Data] Invalid container section count.");
 
             int offset = 0; // relative for now
             for (var i = 0; i < sectionCount; i += 1)
@@ -230,7 +230,7 @@ struct FileReader
         {
             // the header must be 0 (FileType.None)
             if (reader.ReadDword() != (uint32)FileType.None || reader.Overrun())
-                return error("Invalid AMNP file data.");
+                return error("[Data] Invalid AMNP file data.");
             reader = DataReader.FromData(JH.Crypt(ref reader, (uint16)fileNumber));
         }
 

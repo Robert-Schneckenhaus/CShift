@@ -31,7 +31,7 @@ struct TextLob
             }
         }
         if (skipBytes > 255)
-            return error("Data can't be compressed with text lob.");
+            return error("[Data] Data can't be compressed with text lob.");
 
         compressed.Add((uint8)skipBytes);
         int i = 0;
@@ -54,7 +54,7 @@ struct TextLob
         while (i < length)
         {
             if (data[i] > 0 && data[i] < 32)
-                return error("Unsupported text data at index " + i.ToString() + ".");
+                return error("[Data] Unsupported text data at index " + i.ToString() + ".");
             int maxMatchLength = Math.Min(_TextLobMaxMatchLength, length - i);
             var match = trie.GetLongestMatch(data, i, maxMatchLength);
             trie.Add(data, i, maxMatchLength);
