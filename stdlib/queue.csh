@@ -41,6 +41,12 @@ struct Queue<T>
         return queue;
     }
 
+    /// Whether the queue has storage: made by Create(), not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _state != null;
+    }
+
     /// The number of elements.
     int Count()
     {
@@ -50,8 +56,11 @@ struct Queue<T>
     }
 
     /// Adds `value` at the back of the queue.
+    /// @panics when the queue was not created ([Queue<T>.IsCreated]).
     void Enqueue(T value)
     {
+        if (_state == null)
+            Environment.Panic("the queue was not created (Queue<T>.Create()): the zero value (new(), a field without a value) is empty and cannot change");
         _Grow(Count() + 1);
         _state[0].Items[_Slot(_state[0].Count)] = value;
         _state[0].Count += 1;
@@ -155,11 +164,9 @@ struct Queue<T>
         return value;
     }
 
-    // Makes sure the storage exists and can hold at least 'needed' elements (the front moves to index 0).
+    // Makes sure the storage can hold at least 'needed' elements (the front moves to index 0).
     void _Grow(int needed)
     {
-        if (_state == null)
-            _state = new QueueState<T>[1];
         int capacity = 0;
         if (_state[0].Items != null)
             capacity = _state[0].Items.Length;

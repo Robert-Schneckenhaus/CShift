@@ -41,6 +41,12 @@ var b = a.Clone();
 `--arc-stats` (a `cshiftc`/`cshc` flag) prints the number of heap allocations and frees when the program exits, so
 you can check that everything balances.
 
+The compiler counts only where it has to. At the last use of a local variable - `return list;`, `var b = a;` when
+`a` is not read again, the fields of `return Point { Name = name }` - the reference is handed on instead of being
+counted up and, at the end of the scope, down again. And `text += ...` on a local variable writes in place when no
+other variable, slice or parameter refers to the string ([strings](arrays-strings-collections.md#strings)). Neither
+changes what a program does: a value that is still used elsewhere is never given away or changed.
+
 ## 3. Manual memory management needs `unsafe`
 
 ```csharp
@@ -90,6 +96,15 @@ float Length(const ref Vec2 value)
 {
     return sqrt(value.X * value.X + value.Y * value.Y);
 }
+```
+
+Methods can be called on a `const ref` parameter as long as they do not change the struct; the compiler finds out from
+their bodies and calls them on the caller's value directly. Adding to a `List` field is fine (that changes the list's
+storage, not the struct). Calling a method that changes the struct is an error that says what the method does:
+
+```text
+'Move' changes the read-only 'Vec2' it is called on (a 'const ref' parameter or a variable a lambda captured): it
+assigns 'X'. Call it on a copy ('var copy = ...;') or make the parameter 'ref'
 ```
 
 So a parameter is one of exactly three things:

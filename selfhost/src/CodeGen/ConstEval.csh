@@ -66,13 +66,13 @@ uint64 ConstMask(int bits)
     return (1ul << bits) - 1ul;
 }
 
-bool ConstSignedType(Compiler cg, int t)
+bool ConstSignedType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     return (types.IsInt(t) || types.IsEnum(t)) && types.IsSigned(t);
 }
 
-bool ConstIntLike(Compiler cg, int t)
+bool ConstIntLike(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     return types.IsInt(t) || types.IsChar(t) || types.IsEnum(t);
@@ -88,7 +88,7 @@ uint64 ConstPattern(ConstVal v, int bits)
 }
 
 // An integer value of a type from two's complement bits.
-ConstVal ConstFromPattern(Compiler cg, int type, uint64 pattern)
+ConstVal ConstFromPattern(const ref Compiler cg, int type, uint64 pattern)
 {
     var v = ConstVal { Kind = ConstKind.Int, Type = type };
     int bits = cg.Types.Bits(type);
@@ -105,7 +105,7 @@ ConstVal ConstFromPattern(Compiler cg, int type, uint64 pattern)
     return v;
 }
 
-bool ConstFits(Compiler cg, ConstVal v, int t)
+bool ConstFits(const ref Compiler cg, ConstVal v, int t)
 {
     int bits = cg.Types.Bits(t);
     if (ConstSignedType(cg, t))
@@ -126,7 +126,7 @@ ConstVal ConstMakeInt(int type, bool neg, uint64 mag, bool lit)
     return ConstVal { Kind = ConstKind.Int, Type = type, Neg = neg && mag != 0, Mag = mag, HasLit = lit };
 }
 
-ConstVal ConstMakeFloat(Compiler cg, int type, double f, bool lit)
+ConstVal ConstMakeFloat(const ref Compiler cg, int type, double f, bool lit)
 {
     double value = f;
     if (cg.Types.Bits(type) == 32)
@@ -134,13 +134,13 @@ ConstVal ConstMakeFloat(Compiler cg, int type, double f, bool lit)
     return ConstVal { Kind = ConstKind.Float, Type = type, F = value, HasLit = lit };
 }
 
-ConstVal ConstMakeBool(Compiler cg, bool b)
+ConstVal ConstMakeBool(const ref Compiler cg, bool b)
 {
     return ConstVal { Kind = ConstKind.Bool, Type = cg.Types.Bool, B = b };
 }
 
 // The value of an integer as a floating point number (a float32 is rounded once, directly from the integer).
-double ConstToFloat(Compiler cg, ConstVal v, int to)
+double ConstToFloat(const ref Compiler cg, ConstVal v, int to)
 {
     double m = (double)v.Mag;
     if (cg.Types.Bits(to) == 32)
@@ -187,7 +187,7 @@ int ConstOrder(ConstVal a, ConstVal b)
 
 // A floating point number converted to an integer type: truncated and clamped to the range (NaN gives 0), like the
 // llvm.fptosi.sat / fptoui.sat intrinsics that the generated code uses.
-ConstVal ConstSaturate(Compiler cg, double d, int to)
+ConstVal ConstSaturate(const ref Compiler cg, double d, int to)
 {
     var r = ConstVal { Kind = ConstKind.Int, Type = to };
     int bits = cg.Types.Bits(to);
@@ -242,7 +242,7 @@ Value ConstProbe(ConstVal v)
     return p;
 }
 
-ConstVal ConstNumericConvert(Compiler cg, ConstVal v, int to)
+ConstVal ConstNumericConvert(const ref Compiler cg, ConstVal v, int to)
 {
     var types = cg.Types;
     int from = v.Type;
@@ -259,7 +259,7 @@ ConstVal ConstNumericConvert(Compiler cg, ConstVal v, int to)
 }
 
 // An unsuffixed literal takes the type of the value it is combined with, if it fits.
-ConstVal ConstAdaptLiteral(Compiler cg, ConstVal v, int to)
+ConstVal ConstAdaptLiteral(const ref Compiler cg, ConstVal v, int to)
 {
     var types = cg.Types;
     if (!v.HasLit)
@@ -276,19 +276,19 @@ ConstVal ConstAdaptLiteral(Compiler cg, ConstVal v, int to)
 }
 
 // The implicit conversion of a value to a type (the counterpart of ConvertValue).
-ConstVal ConstUnknown(Compiler cg)
+ConstVal ConstUnknown(const ref Compiler cg)
 {
     return ConstVal { Kind = ConstKind.Unknown, Type = cg.Types.Unknown };
 }
 
 // An error in a constant expression: Recover, and the value is unknown.
-ConstVal ConstError(Compiler cg, SourceLoc loc, string message)
+ConstVal ConstError(const ref Compiler cg, SourceLoc loc, string message)
 {
     Recover(cg, loc, message);
     return ConstUnknown(cg);
 }
 
-ConstVal ConstConvert(Compiler cg, ConstVal v, int to, SourceLoc loc, bool allowEnumInt)
+ConstVal ConstConvert(const ref Compiler cg, ConstVal v, int to, SourceLoc loc, bool allowEnumInt)
 {
     var types = cg.Types;
     if (v.Kind == ConstKind.Unknown || types.IsUnknown(to))
@@ -348,7 +348,7 @@ string RoundTripText(double value, bool single)
 }
 
 // The text of a value in a string concatenation.
-string ConstToText(Compiler cg, ConstVal v)
+string ConstToText(const ref Compiler cg, ConstVal v)
 {
     switch (v.Kind)
     {
@@ -386,7 +386,7 @@ string ConstToText(Compiler cg, ConstVal v)
 }
 
 // The value as an IR constant.
-Value ConstToValue(Compiler cg, ConstVal v)
+Value ConstToValue(const ref Compiler cg, ConstVal v)
 {
     var types = cg.Types;
     Value r;
@@ -421,7 +421,7 @@ Value ConstToValue(Compiler cg, ConstVal v)
 }
 
 // A constant slice at run time: a view of a static block (not owned; the block is never freed).
-Value ConstSliceValue(Compiler cg, ConstVal v)
+Value ConstSliceValue(const ref Compiler cg, ConstVal v)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -444,12 +444,12 @@ Value ConstSliceValue(Compiler cg, ConstVal v)
 // Operators
 // ---------------------------------------------------------------------------
 
-ConstVal ConstOverflow(Compiler cg, SourceLoc loc, int t)
+ConstVal ConstOverflow(const ref Compiler cg, SourceLoc loc, int t)
 {
     return ConstError(cg, loc, "integer overflow in a constant expression (the value does not fit into " + cg.Types.Name(t) + ")");
 }
 
-ConstVal ConstIntOp(Compiler cg, BinOp op, ConstVal l, ConstVal r, int t, SourceLoc loc)
+ConstVal ConstIntOp(const ref Compiler cg, BinOp op, ConstVal l, ConstVal r, int t, SourceLoc loc)
 {
     var result = ConstVal { Kind = ConstKind.Int, Type = t };
     int bits = cg.Types.Bits(t);
@@ -532,7 +532,7 @@ ConstVal ConstIntOp(Compiler cg, BinOp op, ConstVal l, ConstVal r, int t, Source
     return result;
 }
 
-ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc loc)
+ConstVal ConstArith(const ref Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc loc)
 {
     var types = cg.Types;
     var l = l0;
@@ -609,7 +609,7 @@ ConstVal ConstArith(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc l
     return ConstIntOp(cg, op, lc, rc, t, loc);
 }
 
-ConstVal ConstDecide(Compiler cg, BinOp op, int order)
+ConstVal ConstDecide(const ref Compiler cg, BinOp op, int order)
 {
     switch (op)
     {
@@ -622,7 +622,7 @@ ConstVal ConstDecide(Compiler cg, BinOp op, int order)
     }
 }
 
-ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc loc)
+ConstVal ConstCompare(const ref Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc loc)
 {
     var types = cg.Types;
     var l = l0;
@@ -672,7 +672,7 @@ ConstVal ConstCompare(Compiler cg, BinOp op, ConstVal l0, ConstVal r0, SourceLoc
 // The evaluator
 // ---------------------------------------------------------------------------
 
-bool IsConstantType(Compiler cg, int t)
+bool IsConstantType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsUnknown(t))
@@ -682,14 +682,14 @@ bool IsConstantType(Compiler cg, int t)
     return IsConstantElementType(cg, t);
 }
 
-bool IsConstantElementType(Compiler cg, int t)
+bool IsConstantElementType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     return types.IsNumeric(t) || types.IsBool(t) || types.IsString(t) || types.IsEnum(t);
 }
 
 // The error for a constant of a type that cannot be constant (arrays and slices get a hint); the type is unknown then.
-int RecoverConstantType(Compiler cg, SourceLoc loc, int t)
+int RecoverConstantType(const ref Compiler cg, SourceLoc loc, int t)
 {
     var types = cg.Types;
     if ((types.IsArray(t) || types.Kind(t) == TypeKind.Slice) && IsConstantElementType(cg, types.Elem(t)))
@@ -698,13 +698,13 @@ int RecoverConstantType(Compiler cg, SourceLoc loc, int t)
     return RecoverType(cg, loc, "constants can only be numbers, bool, char, string, enum values or a ReadOnlySlice<T> of them");
 }
 
-ConstVal ConstNotConstant(Compiler cg, ConstScope sc)
+ConstVal ConstNotConstant(const ref Compiler cg, ConstScope sc)
 {
     Recover(cg, sc.DeclLoc, "the initializer of " + sc.What + " must be a constant expression (literals, operators, other constants)");
     return ConstUnknown(cg);
 }
 
-ConstVal ConstEval(Compiler cg, Expr e, ConstScope sc)
+ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
 {
     var types = cg.Types;
     var tree = cg.Tree;
@@ -1018,7 +1018,7 @@ int ConstBadIndex()
 }
 
 // An index or a range bound of a constant slice (^n counts from the end). Values that do not fit are reported as -1.
-int ConstIndex(Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
+int ConstIndex(const ref Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
 {
     var types = cg.Types;
     if (v.Kind != ConstKind.Int || !types.IsIntegral(v.Type) || types.IsEnum(v.Type))
@@ -1033,7 +1033,7 @@ int ConstIndex(Compiler cg, ConstVal v, bool fromEnd, int length, SourceLoc loc)
 }
 
 // x.Length of a constant slice or string.
-ConstVal ConstLength(Compiler cg, ConstVal v, SourceLoc loc)
+ConstVal ConstLength(const ref Compiler cg, ConstVal v, SourceLoc loc)
 {
     var types = cg.Types;
     if (v.Kind == ConstKind.Unknown)
@@ -1047,7 +1047,7 @@ ConstVal ConstLength(Compiler cg, ConstVal v, SourceLoc loc)
 }
 
 // A collection or constant slice as ReadOnlySlice<T>: every element converts to T.
-ConstVal ConstConvertSlice(Compiler cg, ConstVal v, int to, SourceLoc loc)
+ConstVal ConstConvertSlice(const ref Compiler cg, ConstVal v, int to, SourceLoc loc)
 {
     var types = cg.Types;
     if (!types.IsReadOnlySlice(to) || (v.Type != types.Collection && types.Elem(v.Type) != types.Elem(to)))
@@ -1064,7 +1064,7 @@ ConstVal ConstConvertSlice(Compiler cg, ConstVal v, int to, SourceLoc loc)
 
 // The enum of Enum<T> (the object of Enum<T>.Count and so on; the unknown type in the checker's generic bodies), or 0
 // if the expression is something else.
-int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
+int EnumMetaType(const ref Compiler cg, Expr e, int file, Dictionary<string, int> env)
 {
     if (e.Kind != ExprKind.Name)
         return 0;
@@ -1081,7 +1081,7 @@ int EnumMetaType(Compiler cg, Expr e, int file, Dictionary<string, int> env)
 }
 
 // Enum<T>.Count, .Min, .Max, .Values, .Names: facts about an enum, as constants.
-ConstVal EnumMeta(Compiler cg, int et, string what, SourceLoc loc)
+ConstVal EnumMeta(const ref Compiler cg, int et, string what, SourceLoc loc)
 {
     var types = cg.Types;
     if (types.IsUnknown(et))
@@ -1138,7 +1138,7 @@ bool IsEmbedExpr(Expr e)
     return e.Kind == ExprKind.Embed || e.Kind == ExprKind.EmbedFilenames || e.Kind == ExprKind.EmbedLines;
 }
 
-void FailEmbedPlace(Compiler cg, SourceLoc loc)
+void FailEmbedPlace(const ref Compiler cg, SourceLoc loc)
 {
     Fail(cg, loc, EmbedPlaceError());
 }
@@ -1191,7 +1191,7 @@ bool WildcardMatch(string pattern, string name)
 }
 
 // The folders a relative embed path is looked up in: the folder of the source file, then the project folder.
-List<string> EmbedBases(Compiler cg, SourceLoc loc)
+List<string> EmbedBases(const ref Compiler cg, SourceLoc loc)
 {
     var bases = List<string>.Create();
     bases.Add(Path.GetDirectory(cg.Diag.Files.Get(loc.File)));
@@ -1203,7 +1203,7 @@ List<string> EmbedBases(Compiler cg, SourceLoc loc)
 
 // The file of embed("name"): an absolute path as it is, otherwise relative to the source file that uses it, then
 // relative to the project's folder.
-string EmbedPath(Compiler cg, string word, string name, SourceLoc loc)
+string EmbedPath(const ref Compiler cg, string word, string name, SourceLoc loc)
 {
     if (Path.IsRooted(name))
     {
@@ -1226,7 +1226,7 @@ string EmbedPath(Compiler cg, string word, string name, SourceLoc loc)
 // The files of embed("dir/*.txt"): the wildcards may only be in the file name. The folder is looked up like a file
 // (absolute, beside the source file, in the project folder); the first folder with a matching file is used. The
 // names are sorted; no match gives an empty list.
-List<string> EmbedMatches(Compiler cg, string word, string pattern, SourceLoc loc, ref string folder)
+List<string> EmbedMatches(const ref Compiler cg, string word, string pattern, SourceLoc loc, ref string folder)
 {
     string dir = Path.GetDirectory(pattern);
     string filePattern = Path.GetFileName(pattern);
@@ -1259,7 +1259,7 @@ List<string> EmbedMatches(Compiler cg, string word, string pattern, SourceLoc lo
     return names;
 }
 
-string EmbedRead(Compiler cg, string word, string path, SourceLoc loc)
+string EmbedRead(const ref Compiler cg, string word, string path, SourceLoc loc)
 {
     var read = File.ReadAllText(path); // UTF-8; a byte order mark is dropped, everything else stays as it is
     if (read is string text)
@@ -1275,7 +1275,7 @@ string EmbedRead(Compiler cg, string word, string path, SourceLoc loc)
 // embed_filenames gives the file names (without the folder) instead: a string without wildcards (the file must
 // exist), a ReadOnlySlice<string> with them (in the same order as embed).
 // const ReadOnlySlice<string> X = embed_lines("file"): the lines of one file (see EmbedLines).
-ConstVal ConstEmbed(Compiler cg, Expr init, int t)
+ConstVal ConstEmbed(const ref Compiler cg, Expr init, int t)
 {
     var types = cg.Types;
     bool wantNames = init.Kind == ExprKind.EmbedFilenames;
@@ -1309,7 +1309,7 @@ ConstVal ConstEmbed(Compiler cg, Expr init, int t)
 
 // const ReadOnlySlice<string> X = embed_lines("file"): the lines of one file, read now, without their line ends (\n or
 // \r\n); a line end at the end of the file does not start another line, and an empty file has no lines.
-ConstVal ConstEmbedLines(Compiler cg, Expr init, int t, string pattern)
+ConstVal ConstEmbedLines(const ref Compiler cg, Expr init, int t, string pattern)
 {
     var types = cg.Types;
     if (HasWildcard(pattern))
@@ -1338,7 +1338,7 @@ ConstVal ConstEmbedLines(Compiler cg, Expr init, int t, string pattern)
 }
 
 // The value of a top-level constant (evaluated once; a constant that needs itself is an error).
-ConstVal ConstEvalDecl(Compiler cg, int index)
+ConstVal ConstEvalDecl(const ref Compiler cg, int index)
 {
     var entry = cg.Consts.Get(index);
     var c = entry.Decl;
@@ -1364,7 +1364,7 @@ ConstVal ConstEvalDecl(Compiler cg, int index)
 
 // A constant expression whose value becomes a constant of type 'target': integer arithmetic is computed in the target
 // type where its operands allow, like at run time (see ArithmeticFrame and EmitExprAs).
-ConstVal ConstEvalAs(Compiler cg, Expr e, ConstScope sc, int target)
+ConstVal ConstEvalAs(const ref Compiler cg, Expr e, ConstScope sc, int target)
 {
     int frame = ArithmeticFrame(cg, target);
     if (frame == 0 || !IsFramable(cg, e))
@@ -1372,7 +1372,7 @@ ConstVal ConstEvalAs(Compiler cg, Expr e, ConstScope sc, int target)
     return ConstFramed(cg, e, sc, frame);
 }
 
-ConstVal ConstFramed(Compiler cg, Expr e, ConstScope sc, int frame)
+ConstVal ConstFramed(const ref Compiler cg, Expr e, ConstScope sc, int frame)
 {
     if (!IsFramable(cg, e) || e.Kind == ExprKind.Unchecked)
         return ConstEval(cg, e, sc);
@@ -1415,7 +1415,7 @@ ConstVal ConstFramed(Compiler cg, Expr e, ConstScope sc, int frame)
 
 // The value of a member of the enum that is being declared: an integer constant that fits into the base type.
 // 'known' holds the members declared so far.
-int64 ConstEvalEnumMember(Compiler cg, Expr init, EnumInfo known, int file, string memberName, SourceLoc loc)
+int64 ConstEvalEnumMember(const ref Compiler cg, Expr init, EnumInfo known, int file, string memberName, SourceLoc loc)
 {
     var sc = ConstScope { File = file, HasEnum = true, Enum = known, What = "enum member '" + memberName + "'", DeclLoc = loc, Env = NoEnv() };
     ConstVal v = ConstEval(cg, init, sc);

@@ -53,9 +53,10 @@ int Main()
     alias.Append("x");
     failed += Check("shared storage", shared.ToString() == "x");
 
-    var lazy = new StringBuilder();
-    lazy.Append("lazy");
-    failed += Check("new StringBuilder", lazy.ToString() == "lazy");
+    var zero = new StringBuilder();
+    zero.Clear();
+    failed += Check("zero StringBuilder", zero.ToString() == "" && zero.Length() == 0 && !zero.IsCreated() &&
+                                          StringBuilder.Create().IsCreated());
 
     // HashSet
     var set = HashSet<string>.Create();
@@ -68,6 +69,9 @@ int Main()
     for (var i = 0; i < 100; i += 1)
         numbers.Add(i % 10);
     failed += Check("set ints", numbers.Count() == 10);
+    var zeroSet = new HashSet<int>();
+    failed += Check("zero set", zeroSet.Count() == 0 && !zeroSet.Contains(1) && !zeroSet.Remove(1) && !zeroSet.IsCreated() &&
+                                numbers.IsCreated());
 
     return failed;
 }

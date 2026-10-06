@@ -25,12 +25,12 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
 
-**`List<T>`** — a growable array. Create it with `List<int>.Create()` (or `new List<int>()`).
+**`List<T>`** — a growable array. Create it with `List<int>.Create()` or a collection expression (`List<int> xs = [];`).
 `Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)` / `list[i]`, `Set(i, v)` /
 `list[i] = v`, `Count()`, `Capacity()`, `IndexOf(v)`, `Contains(v)` (T: `IEquatable<T>`), `Sort()` (T:
 `IComparable<T>`, stable), `Reverse()`, `ToArray()`; with functions: `ForEach(action)`, `Where(test)` (a new list),
-`Select<U>(convert)`, `Any(test)`, `All(test)`, `FindIndex(test)` (`list.Where(x => x > 0)`). `foreach (var x in
-list)` works. An invalid index ends the program with a panic.
+`Select<U>(convert)`, `Any(test)`, `All(test)`, `FindIndex(test)` (`list.Where(x => x > 0)`), `IsCreated()`.
+`foreach (var x in list)` works. An invalid index ends the program with a panic.
 
 **`Dictionary<TKey, TValue>`** — a hash table. `Create()`, `Set(k, v)` / `dict[k] = v`, `Get(k)` / `dict[k]` (panics
 if the key is missing), `Add(k, v)` (`Error<void>`, fails on a duplicate key), `TryGet(k)` (`Optional<TValue>`), `GetOrDefault(k, fallback)`, `ContainsKey(k)`, `Remove(k)`,
@@ -39,11 +39,13 @@ if the key is missing), `Add(k, v)` (`Error<void>`, fails on a duplicate key), `
 `bool Equals(T other)` and `int GetHashCode()`.
 
 > Since there are no classes, `List` and `Dictionary` are small structs that point at shared storage: copies
-> (assignment, arguments) see the same elements. The storage is created by `Create()`, or by the first `Add`/`Set`; an
-> empty list from `new List<T>()` isn't yet connected to its copies before the first element is added — start with
-> `Create()` if you hand it out before adding to it.
+> (assignment, arguments) see the same elements. The storage is made by `Create()` (or `[]`). The zero value — `new()`,
+> `new List<T>()`, a field that was not given a value — is an empty container without storage: it can be read (`Count()`
+> is 0, `foreach` runs no turn), but `Add`/`Set`/`Append`/`Push`/`Enqueue` panic. `IsCreated()` tells which one it is.
+> The same holds for `HashSet`, `Stack`, `Queue` and `StringBuilder`.
 
-**`StringBuilder`** — builds text without copying on every `+` (`Append` takes strings and string slices): `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
+**`StringBuilder`** — builds text in a buffer (`Append` takes strings and string slices; `text += ...` on a local
+variable is in place as well, see [strings](language/arrays-strings-collections.md#strings)): `var sb = StringBuilder.Create(); sb.Append("x"); sb.Append('c'); sb.AppendLine("…");
 sb.Length(); sb.Get(i); sb.Clear(); string s = sb.ToString();` (a handle to shared storage, like `List`).
 **`HashSet<T>`** — `Create()`, `Add(v)` (`true` if it was new), `Contains(v)`, `Remove(v)`, `Count()`, `Clear()`,
 `ToArray()`.

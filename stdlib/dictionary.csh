@@ -47,8 +47,8 @@ struct DictionaryState<TKey, TValue>
 /// TKey must be IEquatable and IHashable: numbers, bool, char, enums and string are, and your own structs
 /// are as soon as they define 'bool Equals(T other)' and 'int GetHashCode()'.
 ///
-/// Like List<T>, a Dictionary is a handle to shared storage (see [List]): use Dictionary<K, V>.Create()
-/// when the dictionary is handed out before its first entry is added.
+/// Like List<T>, a Dictionary is a handle to shared storage (see [List]), made by Dictionary<K, V>.Create(). The zero
+/// value (`new()`, a field without a value) is an empty dictionary that can be read but not changed: Set panics.
 ///
 /// `dict[key]` reads a value ([Dictionary<TKey, TValue>.Get]), `dict[key] = value` sets one
 /// ([Dictionary<TKey, TValue>.Set]).
@@ -61,6 +61,12 @@ struct Dictionary<TKey, TValue>
     static Dictionary<TKey, TValue> Create()
     {
         return Dictionary<TKey, TValue> { _state = new DictionaryState<TKey, TValue>[1] };
+    }
+
+    /// Whether the dictionary has storage: made by Create(), not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _state != null;
     }
 
     /// The number of entries.
@@ -107,8 +113,11 @@ struct Dictionary<TKey, TValue>
     }
 
     /// Adds an entry, or replaces the value of an existing key (also `dict[key] = value`).
+    /// @panics when the dictionary was not created ([Dictionary<TKey, TValue>.IsCreated]).
     void Set(TKey key, TValue value)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         int index = _Find(key);
         if (index >= 0)
         {
@@ -122,6 +131,8 @@ struct Dictionary<TKey, TValue>
     /// @returns an error if the key exists already (the dictionary is not changed).
     Error<void> Add(TKey key, TValue value)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         if (_Find(key) >= 0)
             return error("an entry with the same key already exists");
         _Insert(key, value);
@@ -242,11 +253,14 @@ struct Dictionary<TKey, TValue>
         return -1;
     }
 
+    static string _NotCreated()
+    {
+        return "the dictionary was not created (Dictionary<TKey, TValue>.Create()): the zero value (new(), a field without a value) is empty and cannot change";
+    }
+
     // Adds an entry for a key that is known to be absent.
     void _Insert(TKey key, TValue value)
     {
-        if (_state == null)
-            _state = new DictionaryState<TKey, TValue>[1];
         if (_state[0].Buckets == null)
             _Resize(8);
 

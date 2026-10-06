@@ -9,7 +9,7 @@ using CShift.Sema;
 using CShift.Emit;
 
 // *p: the pointed-to memory as an lvalue.
-Value DerefPointer(Compiler cg, Value p, SourceLoc loc)
+Value DerefPointer(const ref Compiler cg, Value p, SourceLoc loc)
 {
     var types = cg.Types;
     RequireUnsafe(cg, loc, "pointer dereference");
@@ -21,7 +21,7 @@ Value DerefPointer(Compiler cg, Value p, SourceLoc loc)
 }
 
 // *p: "" if a value of type t can be dereferenced, otherwise the error.
-string DerefError(Compiler cg, int t)
+string DerefError(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsUnknown(t))
@@ -34,7 +34,7 @@ string DerefError(Compiler cg, int t)
 }
 
 // &x
-Value EmitAddressOf(Compiler cg, Expr e, Expr operand)
+Value EmitAddressOf(const ref Compiler cg, Expr e, Expr operand)
 {
     RequireUnsafe(cg, e.Loc, "taking an address");
     Value o = EmitExpr(cg, operand);
@@ -45,7 +45,7 @@ Value EmitAddressOf(Compiler cg, Expr e, Expr operand)
 
 // Memory.VolatileRead/VolatileWrite: a pointer to a number, bool, char, enum or pointer (what one load or store can
 // access). "" if the type is fine, otherwise the error.
-string VolatileTargetError(Compiler cg, int pointerType, string method)
+string VolatileTargetError(const ref Compiler cg, int pointerType, string method)
 {
     var types = cg.Types;
     if (types.IsUnknown(pointerType))
@@ -61,7 +61,7 @@ string VolatileTargetError(Compiler cg, int pointerType, string method)
 }
 
 // p + n, n + p, p - n, p - q (in elements)
-Value EmitPointerArithmetic(Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
+Value EmitPointerArithmetic(const ref Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -91,7 +91,7 @@ Value EmitPointerArithmetic(Compiler cg, BinOp op, Value l, Value r, SourceLoc l
 }
 
 // (T*)p, (nint)p, (T*)n. Returns false if the cast is not one of these.
-bool EmitPointerCast(Compiler cg, Value v, int to, SourceLoc loc, ref Value result)
+bool EmitPointerCast(const ref Compiler cg, Value v, int to, SourceLoc loc, ref Value result)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -158,7 +158,7 @@ bool EmitPointerCast(Compiler cg, Value v, int to, SourceLoc loc, ref Value resu
 }
 
 // string.FromCStr(char* p): copies a NUL-terminated C string into a string (null -> null).
-Value EmitStringFromCStr(Compiler cg, Arg[] args, SourceLoc loc)
+Value EmitStringFromCStr(const ref Compiler cg, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     if (args.Length != 1)

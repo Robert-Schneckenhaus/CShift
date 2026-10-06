@@ -92,6 +92,17 @@ if (greeting == "Hello, Ann!")
     Console.WriteLine("match");
 ```
 
+Building text piece by piece is cheap: `text += ...` (and `text = text + a + b`) on a local variable appends in place
+when nothing else refers to the string - no copy, a loop of appends takes linear time. A string that is shared (a
+copy in another variable, a slice of it, a parameter that the caller still holds) is never changed: it is copied
+first, exactly as immutability requires. The same holds for the pieces of `a + b + c`.
+
+```csharp
+string log = "";
+foreach (var item in items)
+    log += item.Name + ": " + item.Count.ToString() + "\n";   // linear, like a StringBuilder
+```
+
 **Interpolated strings** put values into text; `{x}` is the same as `+ x +`, so anything that can be added to a
 string works (numbers, `bool`, `char`, strings, and structs with a `string ToString()` method). `{{` and `}}` are
 braces:
@@ -226,8 +237,9 @@ foreach (var entry in ages.Entries())
 ```
 
 > `List` and `Dictionary` are small structs pointing at shared storage (there are no classes), so a copy sees the
-> same elements as the original. Start one with `.Create()` if you're going to hand out copies of it before adding
-> anything — an empty `new List<T>()` isn't connected to its copies yet.
+> same elements as the original. The storage is made by `.Create()` (or `[]`); the zero value — `new List<T>()`,
+> `new()`, a field without a value — is an empty container that can be read but not changed: `Add` and `Set` panic
+> (`IsCreated()` tells). The same holds for the containers below.
 
 ## `HashSet<T>`, `Stack<T>`, `Queue<T>` and `StringBuilder`
 

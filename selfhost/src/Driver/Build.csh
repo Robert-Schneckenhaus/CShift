@@ -940,7 +940,7 @@ int Build(BuildOptions o)
 }
 
 // Parses a source file and adds it to the compiler. Returns false after printing an error.
-bool AddSource(Compiler cg, Diagnostics diag, Ast tree, string path, bool prelude, List<FfiImport> imports)
+bool AddSource(const ref Compiler cg, Diagnostics diag, Ast tree, string path, bool prelude, List<FfiImport> imports)
 {
     var text = ReadSource(path);
     if (text is string source)
@@ -951,7 +951,7 @@ bool AddSource(Compiler cg, Diagnostics diag, Ast tree, string path, bool prelud
     return false;
 }
 
-void AddSourceText(Compiler cg, Diagnostics diag, Ast tree, string path, string source, bool prelude, List<FfiImport> imports)
+void AddSourceText(const ref Compiler cg, Diagnostics diag, Ast tree, string path, string source, bool prelude, List<FfiImport> imports)
 {
     int file = diag.AddFile(path);
     var lexer = Lexer.Create(source, file, diag);
@@ -1009,7 +1009,7 @@ int64 ParseNumber(string text)
 // The JSON answer of 'cshiftc query': {"hover": "...", "definition": {"file": "...", "line": n, "col": n}} for the name
 // at the position, {} if there is none. The definition is left out when it is not in a file (the embedded standard
 // library, a builtin).
-string QueryAnswer(Compiler cg, Diagnostics diag, BuildOptions o, Ast tree)
+string QueryAnswer(const ref Compiler cg, Diagnostics diag, BuildOptions o, Ast tree)
 {
     string target = SamePath(o.AtFile);
     int file = -1;

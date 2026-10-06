@@ -22,8 +22,9 @@ struct StringBuilderState
 /// string text = sb.ToString();
 /// ```
 ///
-/// Like List<T>, a StringBuilder is a small handle to shared storage: copies see the same text. Start it with
-/// StringBuilder.Create() before you hand it out.
+/// Like List<T>, a StringBuilder is a small handle to shared storage: copies see the same text. The storage is made
+/// by StringBuilder.Create(); the zero value (`new()`, a field without a value) is an empty text that can be read but
+/// not changed: Append panics.
 struct StringBuilder
 {
     StringBuilderState[] _state;
@@ -42,6 +43,12 @@ struct StringBuilder
         return sb;
     }
 
+    /// Whether the builder has storage: made by Create(), not the zero value (which cannot change).
+    bool IsCreated()
+    {
+        return _state != null;
+    }
+
     /// The length of the text so far, in bytes.
     int Length()
     {
@@ -51,8 +58,11 @@ struct StringBuilder
     }
 
     /// Appends `text`: a string or a part of one (a `StringSlice`; a string converts to it for free).
+    /// @panics when the builder was not created ([StringBuilder.IsCreated]).
     void Append(StringSlice text)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         int n = text.Length;
         if (n == 0)
             return;
@@ -68,6 +78,8 @@ struct StringBuilder
     /// Appends the character `c` (a byte).
     void Append(char c)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         _Reserve(Length() + 1);
         _state[0].Data[_state[0].Length] = (uint8)c;
         _state[0].Length += 1;
@@ -76,6 +88,8 @@ struct StringBuilder
     /// Appends `text` and a line break (`\n`).
     void AppendLine(StringSlice text)
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         Append(text);
         Append('\n');
     }
@@ -83,6 +97,8 @@ struct StringBuilder
     /// Appends a line break (`\n`).
     void AppendLine()
     {
+        if (_state == null)
+            Environment.Panic(_NotCreated());
         Append('\n');
     }
 
@@ -132,10 +148,13 @@ struct StringBuilder
         return string.FromBytes(_state[0].Data, 0, _state[0].Length);
     }
 
+    static string _NotCreated()
+    {
+        return "the StringBuilder was not created (StringBuilder.Create()): the zero value (new(), a field without a value) is empty and cannot change";
+    }
+
     void _Reserve(int needed)
     {
-        if (_state == null)
-            _state = new StringBuilderState[1];
         uint8[] data = _state[0].Data;
         int capacity = data == null ? 0 : data.Length;
         if (needed <= capacity)
@@ -144,8 +163,8 @@ struct StringBuilder
         while (size < needed)
             size = size * 2;
         var grown = new uint8[size];
-        for (var i = 0; i < _state[0].Length; i += 1)
-            grown[i] = data[i];
+        if (data != null)
+            Array.Copy(data, 0, grown, 0, _state[0].Length);
         _state[0].Data = grown;
     }
 }

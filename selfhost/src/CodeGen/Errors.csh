@@ -13,7 +13,7 @@ using CShift.Sema;
 using CShift.Emit;
 
 // A result that holds a value; 'payload' is empty for Error<void>.
-string MakeSome(Compiler cg, int resultType, string payloadOwned)
+string MakeSome(const ref Compiler cg, int resultType, string payloadOwned)
 {
     string ty = LlvmType(cg, resultType);
     string agg = cg.Ir.InsertValue(ty, "zeroinitializer", "i1", "true", "0");
@@ -22,14 +22,14 @@ string MakeSome(Compiler cg, int resultType, string payloadOwned)
     return cg.Ir.InsertValue(ty, agg, LlvmType(cg, cg.Types.Elem(resultType)), payloadOwned, "1");
 }
 
-string MakeErr(Compiler cg, int errorType, string msgOwned, string code)
+string MakeErr(const ref Compiler cg, int errorType, string msgOwned, string code)
 {
     string ty = LlvmType(cg, errorType);
     string agg = cg.Ir.InsertValue(ty, "zeroinitializer", "ptr", msgOwned, "2");
     return cg.Ir.InsertValue(ty, agg, "i32", code, "3");
 }
 
-bool IsVoidResult(Compiler cg, int t)
+bool IsVoidResult(const ref Compiler cg, int t)
 {
     return cg.Types.IsError(t) && cg.Types.IsVoid(cg.Types.Elem(t));
 }
@@ -37,7 +37,7 @@ bool IsVoidResult(Compiler cg, int t)
 // error("message"), error("message", code), error(E.Member) and error("message", E.Member). The type of the literal
 // remembers what the code is (none, an int, a member of the error enum E), so that it only converts to a result with
 // a matching code type (see ConversionCost).
-Value EmitErrorLit(Compiler cg, Expr e)
+Value EmitErrorLit(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -81,7 +81,7 @@ Value EmitErrorLit(Compiler cg, Expr e)
 
 // The name of a member of an error enum as a string (a literal): known at compile time for a constant, otherwise
 // chosen at run time; a value that is no member gives the name of the enum.
-string ErrorCodeName(Compiler cg, int enumType, string code)
+string ErrorCodeName(const ref Compiler cg, int enumType, string code)
 {
     var info = GetEnumInfo(cg, enumType);
     var ir = cg.Ir;
@@ -100,7 +100,7 @@ string ErrorCodeName(Compiler cg, int enumType, string code)
 }
 
 // 'error' as a pattern type: 'x is error e' matches a failed Error<T> (unless the program declares a type 'error').
-bool IsErrorPattern(Compiler cg, TypeRef t)
+bool IsErrorPattern(const ref Compiler cg, TypeRef t)
 {
     var node = cg.Tree.GetType(t);
     if (node.Kind != TypeRefKind.Named || node.Path.Length != 1 || node.Path[0] != "error" || node.Args.Length != 0)
@@ -111,7 +111,7 @@ bool IsErrorPattern(Compiler cg, TypeRef t)
 
 // The pattern type of 'x is P' / 'case P:' for a subject of type 'subject': the payload type, or - for 'error' - the
 // subject itself. A pattern of the subject's own type would always match; it is an error, because it reads like a test.
-int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, ref bool isError)
+int ResultPatternType(const ref Compiler cg, int subject, TypeRef pattern, SourceLoc loc, ref bool isError)
 {
     string why = "";
     int pt = ResultPatternTypeOrError(cg, subject, pattern, ref isError, ref why);
@@ -121,7 +121,7 @@ int ResultPatternType(Compiler cg, int subject, TypeRef pattern, SourceLoc loc, 
 }
 
 // ResultPatternType for the checker: 0 and the message instead of an error.
-int ResultPatternTypeOrError(Compiler cg, int subject, TypeRef pattern, ref bool isError, ref string why)
+int ResultPatternTypeOrError(const ref Compiler cg, int subject, TypeRef pattern, ref bool isError, ref string why)
 {
     var types = cg.Types;
     isError = IsErrorPattern(cg, pattern);
@@ -154,13 +154,13 @@ int ResultPatternTypeOrError(Compiler cg, int subject, TypeRef pattern, ref bool
 // 'x is not P' negates a pattern. A binding ('x is not T v') is assigned where the pattern did not fail, so it is only
 // allowed as the whole condition of an 'if' (see EmitIf): 'v' can then be used in the 'else' branch, and after the
 // 'if' when its branch cannot complete ('if (r is not int v) return 1; Use(v);').
-Value EmitIs(Compiler cg, Expr e)
+Value EmitIs(const ref Compiler cg, Expr e)
 {
     var n = cg.Tree.GetIs(e);
-    if (n.Negated && n.BindName.Length > 0 && cg.GuardIs != e.Index)
+    if (n.Negated && n.BindName.Length > 0 && cg.St[0].GuardIs != e.Index)
         Fail(cg, e.Loc, "'is not' can only bind '" + n.BindName + "' as the whole condition of an 'if' (then '" + n.BindName +
                             "' is usable in the 'else' branch, and after the 'if' if its branch returns, breaks or continues)");
-    cg.GuardIs = -1;
+    cg.St[0].GuardIs = -1;
     Value v = EmitIsPattern(cg, e);
     if (!n.Negated)
         return v;
@@ -168,7 +168,7 @@ Value EmitIs(Compiler cg, Expr e)
 }
 
 // 'x is T v' tests for a value of the payload type; 'x is error e' for a failure (e is the whole result).
-Value EmitIsPattern(Compiler cg, Expr e)
+Value EmitIsPattern(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -260,7 +260,7 @@ Value EmitIsPattern(Compiler cg, Expr e)
 }
 
 // 'try x': the value of an Error<T>, or return the error from the current function.
-Value EmitTry(Compiler cg, Expr e)
+Value EmitTry(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -317,7 +317,7 @@ Value EmitTry(Compiler cg, Expr e)
 // ---------------------------------------------------------------------------
 
 // __retain.<T> / __release.<T> of Error<T>, Optional<T> and error literals: the members that hold references.
-string ResultHelper(Compiler cg, int t, bool isRetain)
+string ResultHelper(const ref Compiler cg, int t, bool isRetain)
 {
     var types = cg.Types;
     var ir = cg.Ir;

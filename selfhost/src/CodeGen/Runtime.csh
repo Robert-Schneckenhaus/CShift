@@ -58,10 +58,28 @@ string CDeclare(IrWriter ir, string name, string declaration)
     return declaration + "\n";
 }
 
-string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
+// The C function that tells how many bytes a block from malloc/calloc/realloc has (at least what was asked for): for
+// appending to a string in place (__cs_append). The C libraries of AmigaOS and of the wasm backend (stdlib/amiga,
+// stdlib/wasm) have malloc_usable_size as well.
+string UsableSizeFunction(bool windows, string triple)
 {
+    if (windows)
+        return "_msize";
+    string lower = triple.ToLower();
+    bool apple = lower.Contains("apple") || lower.Contains("darwin") || lower.Contains("macos");
+    if (apple || (triple.Length == 0 && File.Exists("/System/Library/CoreServices/SystemVersion.plist")))
+        return "malloc_size";
+    return "malloc_usable_size";
+}
+
+string RuntimeFunctions(bool windows, string triple, bool arcStats, IrWriter ir)
+{
+    string usable = UsableSizeFunction(windows, triple);
     string text =
+        CDeclare(ir, "malloc", "declare ptr @malloc($S)") +
         CDeclare(ir, "calloc", "declare ptr @calloc($S, $S)") +
+        CDeclare(ir, "realloc", "declare ptr @realloc(ptr, $S)") +
+        CDeclare(ir, usable, "declare $S @" + usable + "(ptr)") +
         CDeclare(ir, "free", "declare void @free(ptr)") +
         CDeclare(ir, "exit", "declare void @exit(i32)") +
         CDeclare(ir, "memcmp", "declare i32 @memcmp(ptr, ptr, $S)") +
@@ -153,6 +171,20 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             (arcStats ? "  %n = atomicrmw add ptr @__cs_allocs, $S 1 monotonic\n" : "") +
             "  %lenp = getelementptr i8, ptr %p, $S $P\n  store $S %len, ptr %lenp\n  ret ptr %p\n}\n\n";
 
+    // alloc_text(payload size, length): a block for a string of 'length' bytes with reference count 1. Only the 0 byte
+    // behind the text is written; the caller copies the text itself (size > length: the 0 byte, maybe room to grow)
+    text += "define internal ptr @__cs_alloc_text($S %size, $S %len) {\nentry:\n" +
+            "  %total = add $S %size, $H\n" +
+            "  %p = call ptr @malloc($S %total)\n" +
+            "  %isnull = icmp eq ptr %p, null\n" +
+            "  br i1 %isnull, label %oom, label %ok\n" +
+            "oom:\n  call void @__cs_panic(ptr @.cs.oom)\n  unreachable\n" +
+            "ok:\n  store $S 1, ptr %p\n" +
+            (arcStats ? "  %n = atomicrmw add ptr @__cs_allocs, $S 1 monotonic\n" : "") +
+            "  %lenp = getelementptr i8, ptr %p, $S $P\n  store $S %len, ptr %lenp\n" +
+            "  %data = getelementptr i8, ptr %p, $S $H\n  %end = getelementptr i8, ptr %data, $S %len\n" +
+            "  store i8 0, ptr %end\n  ret ptr %p\n}\n\n";
+
     text += "define internal $S @__cs_len(ptr %s) {\nentry:\n" +
             "  %isnull = icmp eq ptr %s, null\n  br i1 %isnull, label %null, label %load\n" +
             "load:\n  %lenp = getelementptr i8, ptr %s, $S $P\n  %len = load $S, ptr %lenp\n  ret $S %len\n" +
@@ -181,7 +213,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
     text += "define internal ptr @__cs_concat(ptr %a, ptr %b) {\nentry:\n" +
             "  %la = call $S @__cs_len(ptr %a)\n  %lb = call $S @__cs_len(ptr %b)\n" +
             "  %len = add $S %la, %lb\n  %size = add $S %len, 1\n" +
-            "  %r = call ptr @__cs_alloc($S %size, $S %len)\n" +
+            "  %r = call ptr @__cs_alloc_text($S %size, $S %len)\n" +
             "  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  %da = call ptr @__cs_data(ptr %a)\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %da, $S %la, i1 false)\n" +
@@ -189,6 +221,39 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  %db = call ptr @__cs_data(ptr %b)\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst2, ptr %db, $S %lb, i1 false)\n" +
             "  ret ptr %r\n}\n\n";
+
+    // append(a, data, length, grow): a + the bytes [data, data + length), for 'a += b' and for a + b when a is a
+    // temporary. a is given up (consumed); the result is owned. When a is the only reference to its block, the bytes
+    // are written behind its text in place - the block grows with realloc if it is too small, with 'grow' by half
+    // again, so that a loop of appends is linear. Otherwise (a shared or constant string, or the bytes are a part of a
+    // itself) a new string is made, with that room as well, and a is released.
+    text += "define internal ptr @__cs_append(ptr %a, ptr %bd, $S %lb, i1 %grow) {\nentry:\n" +
+            "  %la = call $S @__cs_len(ptr %a)\n" +
+            "  %nob = icmp eq $S %lb, 0\n  br i1 %nob, label %same, label %sizes\n" +
+            "same:\n  ret ptr %a\n" +
+            "sizes:\n  %len = add $S %la, %lb\n  %need0 = add $S %len, 1\n  %need = add $S %need0, $H\n" +
+            "  %half = lshr $S %need, 1\n  %extra = select i1 %grow, $S %half, $S 0\n  %want = add $S %need, %extra\n" +
+            "  %anull = icmp eq ptr %a, null\n  br i1 %anull, label %fresh, label %count\n" +
+            "count:\n  %rc = load $S, ptr %a\n  %unique = icmp eq $S %rc, 1\n  br i1 %unique, label %alias, label %fresh\n" +
+            // the bytes inside a's own block (s += s): not in place, realloc could move them
+            "alias:\n  %ai = ptrtoint ptr %a to $S\n  %bi = ptrtoint ptr %bd to $S\n  %off = sub $S %bi, %ai\n" +
+            "  %inside = icmp ult $S %off, %need\n  br i1 %inside, label %fresh, label %room\n" +
+            "room:\n  %have = call $S @" + usable + "(ptr %a)\n  %fits = icmp ule $S %need, %have\n" +
+            "  br i1 %fits, label %write, label %resize\n" +
+            "resize:\n  %moved = call ptr @realloc(ptr %a, $S %want)\n  %failed = icmp eq ptr %moved, null\n" +
+            "  br i1 %failed, label %oom, label %write\n" +
+            "oom:\n  call void @__cs_panic(ptr @.cs.oom)\n  unreachable\n" +
+            "write:\n  %s = phi ptr [ %a, %room ], [ %moved, %resize ]\n" +
+            "  %lenp = getelementptr i8, ptr %s, $S $P\n  store $S %len, ptr %lenp\n" +
+            "  %data = getelementptr i8, ptr %s, $S $H\n  %dst = getelementptr i8, ptr %data, $S %la\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %bd, $S %lb, i1 false)\n" +
+            "  %end = getelementptr i8, ptr %data, $S %len\n  store i8 0, ptr %end\n  ret ptr %s\n" +
+            "fresh:\n  %payload = sub $S %want, $H\n  %r = call ptr @__cs_alloc_text($S %payload, $S %len)\n" +
+            "  %rd = getelementptr i8, ptr %r, $S $H\n  %ad = call ptr @__cs_data(ptr %a)\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %rd, ptr %ad, $S %la, i1 false)\n" +
+            "  %rb = getelementptr i8, ptr %rd, $S %la\n" +
+            "  call void @llvm.memcpy.p0.p0.$S(ptr %rb, ptr %bd, $S %lb, i1 false)\n" +
+            "  call void @__cs_release_flat(ptr %a)\n  ret ptr %r\n}\n\n";
 
     // substring(string, start, count): a new string; panics if the range is not inside the string
     text += "@.cs.substr = private constant [23 x i8] c\"substring out of range\\00\"\n" +
@@ -199,7 +264,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  %end = add $S %a, %n\n  %past = icmp sgt $S %end, %len\n  %bad = or i1 %neg, %past\n" +
             "  br i1 %bad, label %range, label %ok\n" +
             "range:\n  call void @__cs_panic(ptr @.cs.substr)\n  unreachable\n" +
-            "ok:\n  %size = add $S %n, 1\n  %r = call ptr @__cs_alloc($S %size, $S %n)\n" +
+            "ok:\n  %size = add $S %n, 1\n  %r = call ptr @__cs_alloc_text($S %size, $S %n)\n" +
             "  %d = call ptr @__cs_data(ptr %s)\n  %src = getelementptr i8, ptr %d, $S %a\n" +
             "  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %src, $S %n, i1 false)\n  ret ptr %r\n}\n\n";
@@ -230,7 +295,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "check:\n  %endp = getelementptr i8, ptr %d, $S %len\n  %b = load i8, ptr %endp\n" +
             "  %z = icmp eq i8 %b, 0\n  br i1 %z, label %direct, label %copy\n" +
             "direct:\n  ret ptr %d\n" +
-            "copy:\n  %size = add $S %len, 1\n  %r = call ptr @__cs_alloc($S %size, $S %len)\n" +
+            "copy:\n  %size = add $S %len, 1\n  %r = call ptr @__cs_alloc_text($S %size, $S %len)\n" +
             "  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %d, $S %len, i1 false)\n" +
             "  store ptr %r, ptr %keep\n  ret ptr %dst\n}\n\n";
@@ -240,7 +305,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  %isnull = icmp eq ptr %p, null\n  br i1 %isnull, label %null, label %copy\n" +
             "null:\n  ret ptr null\n" +
             "copy:\n  %len = call $S @strlen(ptr %p)\n  %size = add $S %len, 1\n" +
-            "  %r = call ptr @__cs_alloc($S %size, $S %len)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  %r = call ptr @__cs_alloc_text($S %size, $S %len)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %p, $S %len, i1 false)\n  ret ptr %r\n}\n\n";
 
     // make_args(argc, argv): the command line arguments without the program name as a string array
@@ -253,7 +318,7 @@ string RuntimeFunctions(bool windows, bool arcStats, IrWriter ir)
             "  %more = icmp ult $S %i, %count\n  br i1 %more, label %body, label %done\n" +
             "body:\n  %j = add $S %i, 1\n  %ap = getelementptr ptr, ptr %argv, $S %j\n  %s = load ptr, ptr %ap\n" +
             "  %len = call $S @strlen(ptr %s)\n  %size = add $S %len, 1\n" +
-            "  %str = call ptr @__cs_alloc($S %size, $S %len)\n  %dst = getelementptr i8, ptr %str, $S $H\n" +
+            "  %str = call ptr @__cs_alloc_text($S %size, $S %len)\n  %dst = getelementptr i8, ptr %str, $S $H\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %s, $S %len, i1 false)\n" +
             "  %ep = getelementptr ptr, ptr %data, $S %i\n  store ptr %str, ptr %ep\n" +
             "  %next = add $S %i, 1\n  br label %loop\n" +
@@ -331,7 +396,7 @@ string RoundTripHelper(IrWriter ir, string name, int first, int last, bool singl
         text += "  br i1 %same" + ps + ", label %done, label %p" + (p + 1).ToString() + "\n";
     }
     text += "done:\n  %n = call $S @strlen(ptr %buf)\n  %size = add $S %n, 1\n" +
-            "  %r = call ptr @__cs_alloc($S %size, $S %n)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
+            "  %r = call ptr @__cs_alloc_text($S %size, $S %n)\n  %dst = getelementptr i8, ptr %r, $S $H\n" +
             "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %buf, $S %n, i1 false)\n  ret ptr %r\n}\n\n";
     return text;
 }
@@ -343,7 +408,7 @@ string FormatHelper(string name, bool signed)
            "  %end = getelementptr i8, ptr %buf, i32 24\n" +
            "  %start = call ptr @__cs_digits(i64 %v, i1 " + (signed ? "true" : "false") + ", ptr %end)\n" +
            "  %a = ptrtoint ptr %start to $S\n  %b = ptrtoint ptr %end to $S\n  %n = sub $S %b, %a\n  %size = add $S %n, 1\n" +
-           "  %r = call ptr @__cs_alloc($S %size, $S %n)\n" +
+           "  %r = call ptr @__cs_alloc_text($S %size, $S %n)\n" +
            "  %dst = getelementptr i8, ptr %r, $S $H\n" +
            "  call void @llvm.memcpy.p0.p0.$S(ptr %dst, ptr %start, $S %n, i1 false)\n" +
            "  ret ptr %r\n}\n\n";

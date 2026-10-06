@@ -21,13 +21,13 @@ struct IndexEntry
 }
 
 // Records a use of a name (only in the 'check'/'query' mode, and not while the result type of a lambda is inferred).
-void IndexAt(Compiler cg, SourceLoc at, int length, SourceLoc def, string hover)
+void IndexAt(const ref Compiler cg, SourceLoc at, int length, SourceLoc def, string hover)
 {
     IndexAtTyped(cg, at, length, def, hover, 0, false);
 }
 
 // ... with the type of the name's value (or the type it names).
-void IndexAtTyped(Compiler cg, SourceLoc at, int length, SourceLoc def, string hover, int type, bool isTypeName)
+void IndexAtTyped(const ref Compiler cg, SourceLoc at, int length, SourceLoc def, string hover, int type, bool isTypeName)
 {
     if (!cg.St[0].Indexing || cg.St[0].Muted || at.Line <= 0 || length <= 0)
         return;
@@ -35,7 +35,7 @@ void IndexAtTyped(Compiler cg, SourceLoc at, int length, SourceLoc def, string h
 }
 
 // The last declared variable is declared at 'loc' (a parameter if isParam).
-void NoteVar(Compiler cg, SourceLoc loc, bool isParam)
+void NoteVar(const ref Compiler cg, SourceLoc loc, bool isParam)
 {
     var vars = cg.Fn[0].Vars;
     if (vars.Count() == 0)
@@ -48,7 +48,7 @@ void NoteVar(Compiler cg, SourceLoc loc, bool isParam)
 
 // The last declared variable is declared at 'nameLoc' (where its name is written; 'fallback' if that is not known),
 // with its type as written; the declaration itself is indexed (a hover on the name where it is declared).
-void NoteDeclared(Compiler cg, SourceLoc nameLoc, SourceLoc fallback, bool isParam, TypeRef type, RefKind refKind)
+void NoteDeclared(const ref Compiler cg, SourceLoc nameLoc, SourceLoc fallback, bool isParam, TypeRef type, RefKind refKind)
 {
     var vars = cg.Fn[0].Vars;
     if (vars.Count() == 0)
@@ -64,13 +64,13 @@ void NoteDeclared(Compiler cg, SourceLoc nameLoc, SourceLoc fallback, bool isPar
 }
 
 // The type as it is shown in a hover.
-string HoverType(Compiler cg, int t)
+string HoverType(const ref Compiler cg, int t)
 {
     return cg.Types.IsUnknown(t) ? "?" : cg.Types.Name(t);
 }
 
 // A local variable, parameter or pattern variable.
-void IndexLocal(Compiler cg, SourceLoc at, string name)
+void IndexLocal(const ref Compiler cg, SourceLoc at, string name)
 {
     if (!cg.St[0].Indexing)
         return;
@@ -85,7 +85,7 @@ void IndexLocal(Compiler cg, SourceLoc at, string name)
 }
 
 // A field of a struct type (its own or an inherited one).
-void IndexField(Compiler cg, SourceLoc at, int structType, string name)
+void IndexField(const ref Compiler cg, SourceLoc at, int structType, string name)
 {
     int s = structType;
     while (s != 0 && cg.Types.IsStruct(s))
@@ -106,7 +106,7 @@ void IndexField(Compiler cg, SourceLoc at, int structType, string name)
 
 // A field in a hover; one with a function type (Action/Func, a C function pointer) shows as the signature it is
 // called with: "uint32 Gl.GlFunctions.CreateShader(uint32) (function pointer field)".
-string FieldHover(Compiler cg, int t, string qualified)
+string FieldHover(const ref Compiler cg, int t, string qualified)
 {
     var types = cg.Types;
     bool c = types.IsCFunction(t);
@@ -129,7 +129,7 @@ string FieldHover(Compiler cg, int t, string qualified)
     return sb.ToString();
 }
 
-void IndexConst(Compiler cg, SourceLoc at, int length, int c)
+void IndexConst(const ref Compiler cg, SourceLoc at, int length, int c)
 {
     if (!cg.St[0].Indexing)
         return;
@@ -141,7 +141,7 @@ void IndexConst(Compiler cg, SourceLoc at, int length, int c)
 
 // The value of a constant in a hover: " = 42", " = \"text\"", or for a longer string (an embedded file) its size and
 // its first lines below the declaration.
-string ConstValueHover(Compiler cg, ConstVal v)
+string ConstValueHover(const ref Compiler cg, ConstVal v)
 {
     if (v.Kind == ConstKind.Slice || v.Kind == ConstKind.Unknown)
         return "";
@@ -174,7 +174,7 @@ string ConstValueHover(Compiler cg, ConstVal v)
     return sb.ToString();
 }
 
-void IndexGlobal(Compiler cg, SourceLoc at, int length, int g)
+void IndexGlobal(const ref Compiler cg, SourceLoc at, int length, int g)
 {
     var entry = cg.Globals.Get(g);
     int type = GlobalValue(cg, g).Type;
@@ -182,7 +182,7 @@ void IndexGlobal(Compiler cg, SourceLoc at, int length, int g)
 }
 
 // A call of a function or method instance: its signature.
-void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
+void IndexFunction(const ref Compiler cg, SourceLoc at, int length, int instance)
 {
     if (instance < 0)
         return;
@@ -211,7 +211,7 @@ void IndexFunction(Compiler cg, SourceLoc at, int length, int instance)
 }
 
 // A type in a hover; the type as written when it is not known (a generic body is checked with unknown type arguments).
-string DeclaredHoverType(Compiler cg, int t, TypeRef written)
+string DeclaredHoverType(const ref Compiler cg, int t, TypeRef written)
 {
     if (cg.Types.IsUnknown(t) && !written.IsNull())
         return cg.Tree.TypeToString(written);
@@ -220,7 +220,7 @@ string DeclaredHoverType(Compiler cg, int t, TypeRef written)
 
 // A member that the language provides (the Length of a string, array, slice or Fixed, the Message and Code of an error):
 // a hover, nowhere to go. Returns the value.
-Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string suffix)
+Value IndexBuiltinMember(const ref Compiler cg, MemberExpr m, int objType, Value v, string suffix)
 {
     IndexAtTyped(cg, m.NameLoc, m.Name.Length, SourceLoc { }, HoverType(cg, v.Type) + " " + cg.Types.Name(objType) + "." + m.Name +
                  suffix, v.Type, false);
@@ -229,7 +229,7 @@ Value IndexBuiltinMember(Compiler cg, MemberExpr m, int objType, Value v, string
 
 // A namespace name as written before '.' (Math.PI, Glfw.glfwInit()); one imported from a C header also says which
 // and goes to it.
-void IndexNamespace(Compiler cg, Expr e, string name)
+void IndexNamespace(const ref Compiler cg, Expr e, string name)
 {
     if (!cg.St[0].Indexing || e.Kind != ExprKind.Name)
         return;
@@ -242,7 +242,7 @@ void IndexNamespace(Compiler cg, Expr e, string name)
 
 // A call of a function that the language provides (Console.WriteLine, x.ToString(), ...): its signature as it was
 // called, unless an entry was recorded for the name since 'before' (a function of the standard library).
-void IndexBuiltinCall(Compiler cg, SourceLoc at, string owner, string method, Arg[] args, Value result, bool isStatic, int before)
+void IndexBuiltinCall(const ref Compiler cg, SourceLoc at, string owner, string method, Arg[] args, Value result, bool isStatic, int before)
 {
     if (!cg.St[0].Indexing || IsUnknown(cg, result))
         return;
@@ -317,7 +317,7 @@ string BuiltinParamName(string method, int i)
 
 // A call that was not resolved (an argument of unknown type, no matching overload): the function if there is only one
 // candidate and it is not generic.
-void IndexCandidates(Compiler cg, SourceLoc at, int length, Candidate[] cands)
+void IndexCandidates(const ref Compiler cg, SourceLoc at, int length, Candidate[] cands)
 {
     if (!cg.St[0].Indexing || cands.Length != 1 || at.Line <= 0)
         return;
@@ -331,7 +331,7 @@ void IndexCandidates(Compiler cg, SourceLoc at, int length, Candidate[] cands)
 
 // The length of the type name that the expression is ('List<int>': the name without type arguments); 0 for a qualified
 // name ('Ns.Type': the expression's place is that of its last '.', not of the name), which is not indexed.
-int TypeNameLength(Compiler cg, Expr e, string dotted)
+int TypeNameLength(const ref Compiler cg, Expr e, string dotted)
 {
     if (e.Kind == ExprKind.Name)
         return cg.Tree.GetName(e).Name.Length;
@@ -339,7 +339,7 @@ int TypeNameLength(Compiler cg, Expr e, string dotted)
 }
 
 // A type name as written (a struct, interface, enum or union of the program or the standard library).
-void IndexTypeName(Compiler cg, SourceLoc at, int length, TypeDeclEntry entry, string name)
+void IndexTypeName(const ref Compiler cg, SourceLoc at, int length, TypeDeclEntry entry, string name)
 {
     switch (entry.Kind)
     {
@@ -365,7 +365,7 @@ void IndexTypeName(Compiler cg, SourceLoc at, int length, TypeDeclEntry entry, s
     }
 }
 
-void IndexEnumMember(Compiler cg, SourceLoc at, int length, int enumEntry, int enumType, int member)
+void IndexEnumMember(const ref Compiler cg, SourceLoc at, int length, int enumEntry, int enumType, int member)
 {
     var info = GetEnumInfo(cg, enumType);
     var d = cg.Enums.Get(enumEntry).Decl;
@@ -383,7 +383,7 @@ void IndexEnumMember(Compiler cg, SourceLoc at, int length, int enumEntry, int e
 // ---------------------------------------------------------------------------
 
 // The innermost entry at the position (1-based line and column) of the file, or -1.
-int FindIndexEntry(Compiler cg, int file, int line, int col)
+int FindIndexEntry(const ref Compiler cg, int file, int line, int col)
 {
     int best = -1;
     for (var i = 0; i < cg.Index.Count(); i += 1)
@@ -428,7 +428,7 @@ string JsonString(string s)
 // ---------------------------------------------------------------------------
 
 // "file": "...", "line": n, "col": n (empty if the place is not in a file)
-string JsonPlace(Compiler cg, Diagnostics diag, SourceLoc at)
+string JsonPlace(const ref Compiler cg, Diagnostics diag, SourceLoc at)
 {
     if (at.Line <= 0 || at.File < 0 || at.File >= diag.Files.Count() || diag.Files.Get(at.File).StartsWith("<"))
         return "";
@@ -438,7 +438,7 @@ string JsonPlace(Compiler cg, Diagnostics diag, SourceLoc at)
 
 // Every place where the name of entry 'found' is written, the declaration included: the entries with the same
 // declaration.
-string ReferencesJson(Compiler cg, Diagnostics diag, int found)
+string ReferencesJson(const ref Compiler cg, Diagnostics diag, int found)
 {
     var def = cg.Index.Get(found).Def;
     var seen = HashSet<string>.Create();
@@ -471,7 +471,7 @@ void AddMember(StringBuilder sb, HashSet<string> seen, string name, string kind,
 }
 
 // A method as it is shown in a completion list: "int32 Add(int32 a, int32 b)".
-string MethodDetail(Compiler cg, FuncDecl d)
+string MethodDetail(const ref Compiler cg, FuncDecl d)
 {
     var sb = StringBuilder.Create();
     if (d.IsStatic)
@@ -493,7 +493,7 @@ string MethodDetail(Compiler cg, FuncDecl d)
 }
 
 // What can follow 'x.' when x has type t (or names the type t: its static members): a JSON list.
-string MembersJson(Compiler cg, int t, bool isTypeName)
+string MembersJson(const ref Compiler cg, int t, bool isTypeName)
 {
     var types = cg.Types;
     var sb = StringBuilder.Create();
@@ -569,7 +569,7 @@ string OutlineSymbol(string name, string kind, SourceLoc loc, string children)
 }
 
 // The declarations of a file, for the outline of an editor: types with their members, functions, constants, globals.
-string OutlineJson(Compiler cg, int file)
+string OutlineJson(const ref Compiler cg, int file)
 {
     var items = List<string>.Create();
     for (var i = 0; i < cg.Structs.Count(); i += 1)

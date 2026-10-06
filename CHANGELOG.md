@@ -6,6 +6,104 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Compiler
+- Fewer copies, and the compiler compiles itself with 20 % fewer instructions: `list.Get(i).Name` (and
+  `list[i].Name`) reads the field where the element is instead of copying the whole element with all its references
+  first, and a local variable that copies a part of a `const ref` parameter (`var tree = cg.Tree;`) and is only read
+  afterwards is an alias of it instead of a copy.
+
+### Language
+- **Changed:** calling a method that changes the struct on a `const ref` parameter (or on a field of one, or on a
+  variable that a lambda uses) is a compile error instead of working on a copy that is thrown away. The message says
+  what the method does ("it assigns 'Count'", "it calls 'Bump', which assigns 'Count'"); call it on a copy or make the
+  parameter `ref`. Methods that only change what a field refers to - `Items.Add(x)`, `Items[i] = x` on a `List` field -
+  are allowed, and `x[k] = v` on a `const ref` struct now works when its `Set` does not change the struct (before it
+  was always an error). `cshiftc check` and the VS Code extension show the error as well.
+
+## [0.26] - 2026-10-06
+
+### Language
+- A `string` or `StringSlice` converts to `ReadOnlySlice<char>` without a copy, so code for slices of characters
+  takes text (a `string` argument still prefers a `StringSlice` parameter); never back, the characters need not be
+  UTF-8. `text.AsBytes()` is the same view as `ReadOnlySlice<uint8>`, for functions that take bytes.
+- `embed_lines("file")`: the lines of a file as a `const ReadOnlySlice<string>`, read when the program is compiled -
+  without their line ends (`\n` or `\r\n`), without an empty line after the last line end
+  ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
+
+### Compiler
+- The compiler is about three times as fast: its functions take the compiler's state as `const ref Compiler` instead of
+  a copy, which counted the references of its 37 fields up and down at every call. Generating the IR of the compiler
+  itself takes 0.9 s instead of 3.0 s (69 % fewer instructions); `cshiftc check` and the VS Code extension profit as
+  well.
+- Appending to a string is in place when nothing else refers to it: `text += ...` and `text = text + a + b` on a local
+  variable, and the pieces of `a + b + c`. The block grows with `realloc`, with room to spare, so a loop of appends
+  takes linear time instead of quadratic (80,000 lines: 0.016 s instead of 8.1 s). A shared string - a copy, a slice,
+  a parameter the caller holds - is copied first, as before.
+- The last use of a local variable hands its reference on instead of counting it up now and down at the end of the
+  scope: `return list;`, `var b = a;` and `b = a;` when `a` is not read again, and the fields and items of
+  `return Foo { Items = items }` and `return [a, b]`. Which use is the last one is decided from the code (not inside
+  loops that reach it again, not when the variable's address is taken). In the compiler's own code 9 % of the retains
+  go away; on the 68000 a loop that builds and returns structs of a string and a list takes 13 % fewer cycles (on x86
+  LLVM had removed most of these pairs already).
+- A method that replaces a field of the copy it works on - called on a `const ref` parameter or on a temporary such
+  as `Make().Rename()`, of a struct or a union - no longer frees the old value twice (the caller still held it) and no
+  longer leaks the new one: the copy is released with what it holds after the call.
+- A method called on a `const ref` parameter (or on a field of one) no longer works on a copy when it does not change
+  `this`: the compiler decides from the method's body whether it assigns to a field, passes one with `ref` or takes
+  its address, or calls such a method on one. The methods of `List`, `Dictionary`, `StringBuilder` and the other
+  containers, for example, run on the caller's value without counting its references up and down.
+- A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
+  after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
+
+### Amiga
+- `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
+  middle) and longs where the addresses allow: copying 64 KB takes about 6 cycles per byte instead of 44 (15 when only
+  one address is odd), filling 3.4 instead of 38. `Array.Copy`, list growth and string operations profit.
+  `memmove` backwards no longer copies byte by byte.
+- `tests/run_tests.sh` runs an AmigaOS test program of the runtime with vamos (amitools) when it is installed.
+- `Bitmap.DrawPattern` and `Sprite.Create` also take the rows as a `ReadOnlySlice<string>`, such as the lines of a
+  file from `embed_lines`; demo-amiga-gfx uses that instead of splitting the text at run time.
+
+### Standard library
+- `StringSlice` can do what `string` can: `Equals`, `GetHashCode` (the same hash as a string with the same text) and
+  `CompareTo`, so slices are keys of a `Dictionary`, elements of a `HashSet` and sorted in a `List`; `+` joins two
+  slices; `slice.CStr()` (`unsafe`) passes one to C, copied only if it does not reach the end of its string.
+- Paths, names and commands are `StringSlice` parameters: `File`, `Directory`, `Path`, `FileStream`/`StreamReader`/
+  `StreamWriter`, `Process.Run`/`RunCapture`/`GetEnv`, and the text of `File.WriteAllText` and `Encoding.GetBytes`.
+  `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
+- `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
+  `text.AsBytes()`.
+- **Changed:** `List`, `Dictionary`, `HashSet`, `Stack`, `Queue` and `StringBuilder` no longer make their storage on
+  the first `Add`. The zero value - `new List<T>()`, `new()`, a field that was not given a value - is an empty
+  container that can be read (`Count()` is 0, `foreach` runs no turn) but not changed: `Add`, `Set`, `Append`, `Push`
+  and `Enqueue` panic and say so. Create them with `Create()` or `[]`; `IsCreated()` tells the two apart. Before, such a
+  container was not connected to its copies until something was added, and an `Add` on a copy (a `const ref`
+  parameter) could get lost.
+- `StringBuilder` copies its text with `Array.Copy` when it grows instead of byte by byte, and
+  `Encoding.UTF8().GetBytes` copies with `memcpy`. A loop that builds text with a `StringBuilder` runs 37 % fewer
+  instructions; the compiler, which writes its output that way, 5.6 % (with the change above).
+
+### Tools
+- Libraries: a project with `"type": "library"` is source code that other projects use; `"dependencies":
+  ["../geometry"]` in `cshift.json` makes its sources, `links`, include paths, defines and `ffiApi` (with its
+  `platforms` entries, e.g. prebuilt C libraries per platform) a part of the project. Libraries may depend on
+  libraries; one that is reached twice is used once, a cycle is an error. `cshiftc build` of a library checks it
+  ([projects](docs/language/projects.md#libraries)).
+- Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
+  at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing
+  method) at the name of the function, a missing member at its name instead of the `.` before it.
+- VS Code: an error underlines the expression it is about (`Bar(foo[i])`), not everything from there to the end of the
+  line; at a keyword or a declaration it is still the rest of the line.
+
+## [0.25] - 2026-10-03
+
+### Amiga
+- `Bitmap.DrawPattern` takes the rows as a `ReadOnlySlice<StringSlice>` (parts of a text, not copied), and a new
+  overload draws bytes: `DrawPattern(x, y, width, pattern)` with one color per byte of a `ReadOnlySlice<uint8>`, row
+  after row; a value of 32 or more leaves the pixel as it is. demo-amiga-gfx draws its ball and ship from text files.
+
+## [0.24] - 2026-10-03
+
 ### Website
 - A playground (/playground/): the compiler runs as WebAssembly in the browser and checks the program as you type,
   shows what the name at the cursor is (the hover of the VS Code extension) and the LLVM IR it generates; examples, and
@@ -30,43 +128,6 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Language
 - An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
   (a call is no longer ambiguous): the definition is called.
-- A `string` or `StringSlice` converts to `ReadOnlySlice<char>` without a copy, so code for slices of characters
-  takes text (a `string` argument still prefers a `StringSlice` parameter); never back, the characters need not be
-  UTF-8. `text.AsBytes()` is the same view as `ReadOnlySlice<uint8>`, for functions that take bytes.
-- `embed_lines("file")`: the lines of a file as a `const ReadOnlySlice<string>`, read when the program is compiled -
-  without their line ends (`\n` or `\r\n`), without an empty line after the last line end
-  ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
-
-### Amiga
-- `memcpy`, `memmove` and `memset` of the Amiga runtime use jump towers (an unrolled move that the loop enters in the
-  middle) and longs where the addresses allow: copying 64 KB takes about 6 cycles per byte instead of 44 (15 when only
-  one address is odd), filling 3.4 instead of 38. `Array.Copy`, list growth and string operations profit.
-  `memmove` backwards no longer copies byte by byte.
-- `tests/run_tests.sh` runs an AmigaOS test program of the runtime with vamos (amitools) when it is installed.
-- `Bitmap.DrawPattern` and `Sprite.Create` also take the rows as a `ReadOnlySlice<string>`, such as the lines of a
-  file from `embed_lines`; demo-amiga-gfx uses that instead of splitting the text at run time.
-
-### Standard library
-- `StringSlice` can do what `string` can: `Equals`, `GetHashCode` (the same hash as a string with the same text) and
-  `CompareTo`, so slices are keys of a `Dictionary`, elements of a `HashSet` and sorted in a `List`; `+` joins two
-  slices; `slice.CStr()` (`unsafe`) passes one to C, copied only if it does not reach the end of its string.
-- Paths, names and commands are `StringSlice` parameters: `File`, `Directory`, `Path`, `FileStream`/`StreamReader`/
-  `StreamWriter`, `Process.Run`/`RunCapture`/`GetEnv`, and the text of `File.WriteAllText` and `Encoding.GetBytes`.
-  `File.Exists(line.Trim())` works without `.ToString()`; strings are passed as before, without a copy.
-- `FileStream.Write` and `File.WriteAllBytes` take a `ReadOnlySlice<uint8>`: an array, a part of one, or
-  `text.AsBytes()`.
-
-### Tools
-- Libraries: a project with `"type": "library"` is source code that other projects use; `"dependencies":
-  ["../geometry"]` in `cshift.json` makes its sources, `links`, include paths, defines and `ffiApi` (with its
-  `platforms` entries, e.g. prebuilt C libraries per platform) a part of the project. Libraries may depend on
-  libraries; one that is reached twice is used once, a cycle is an error. `cshiftc build` of a library checks it
-  ([projects](docs/language/projects.md#libraries)).
-- Errors point at the right place: a value that does not convert at its start (`foo[i] = Bar(foo[i]);` at `Bar`, not
-  at the `(` before the argument), a call that does not resolve (no such function, no matching overload, a missing
-  method) at the name of the function, a missing member at its name instead of the `.` before it.
-- VS Code: an error underlines the expression it is about (`Bar(foo[i])`), not everything from there to the end of the
-  line; at a keyword or a declaration it is still the rest of the line.
 
 ## [0.23] - 2026-10-02
 

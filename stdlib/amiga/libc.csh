@@ -225,6 +225,17 @@ extern "C" void free(void* memory)
     }
 }
 
+// The bytes a block has (what was asked for: AllocMem gives exactly that); __cs_append grows strings in place with it.
+extern "C" nuint malloc_usable_size(void* memory)
+{
+    unsafe
+    {
+        if (memory == null)
+            return 0;
+        return (nuint)(*(int*)((uint8*)memory - 8) - 16);
+    }
+}
+
 extern "C" void* realloc(void* memory, nuint size)
 {
     unsafe

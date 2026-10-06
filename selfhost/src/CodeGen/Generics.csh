@@ -21,7 +21,7 @@ struct InterfaceInfo
     Dictionary<string, int> Env;
 }
 
-int[] ResolveTypeArgs(Compiler cg, TypeRef[] refs)
+int[] ResolveTypeArgs(const ref Compiler cg, TypeRef[] refs)
 {
     var list = new int[refs.Length];
     for (var i = 0; i < refs.Length; i += 1)
@@ -30,7 +30,7 @@ int[] ResolveTypeArgs(Compiler cg, TypeRef[] refs)
 }
 
 // The type arguments written after the last name of A.B<T>.
-TypeRef[] LastTypeArgs(Compiler cg, Expr e)
+TypeRef[] LastTypeArgs(const ref Compiler cg, Expr e)
 {
     if (e.Kind == ExprKind.Name)
         return cg.Tree.GetName(e).TypeArgs;
@@ -39,7 +39,7 @@ TypeRef[] LastTypeArgs(Compiler cg, Expr e)
     return new TypeRef[0];
 }
 
-string TypeArgsSuffix(Compiler cg, int[] args)
+string TypeArgsSuffix(const ref Compiler cg, int[] args)
 {
     if (args.Length == 0)
         return "";
@@ -53,7 +53,7 @@ string TypeArgsSuffix(Compiler cg, int[] args)
 // Interfaces
 // ---------------------------------------------------------------------------
 
-int GetInterfaceType(Compiler cg, int entry, int[] args, SourceLoc loc)
+int GetInterfaceType(const ref Compiler cg, int entry, int[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ie = cg.Interfaces.Get(entry);
@@ -80,7 +80,7 @@ int GetInterfaceType(Compiler cg, int entry, int[] args, SourceLoc loc)
     return t;
 }
 
-bool StructImplements(Compiler cg, int structType, int iface)
+bool StructImplements(const ref Compiler cg, int structType, int iface)
 {
     int t = structType;
     while (t != 0 && cg.Types.IsStruct(t))
@@ -96,7 +96,7 @@ bool StructImplements(Compiler cg, int structType, int iface)
     return false;
 }
 
-bool SatisfiesInterface(Compiler cg, int t, int iface)
+bool SatisfiesInterface(const ref Compiler cg, int t, int iface)
 {
     if (IsUnionType(cg, t))
         return UnionImplements(cg, t, iface); // its methods are dispatched on the tag
@@ -126,7 +126,7 @@ bool SatisfiesInterface(Compiler cg, int t, int iface)
     return false;
 }
 
-void CheckConstraints(Compiler cg, Constraint[] constraints, Dictionary<string, int> env, int file, SourceLoc loc)
+void CheckConstraints(const ref Compiler cg, Constraint[] constraints, Dictionary<string, int> env, int file, SourceLoc loc)
 {
     var types = cg.Types;
     foreach (var c in constraints)
@@ -151,7 +151,7 @@ void CheckConstraints(Compiler cg, Constraint[] constraints, Dictionary<string, 
 }
 
 // Checks that a struct provides every method of its interfaces.
-void VerifyStruct(Compiler cg, int structType)
+void VerifyStruct(const ref Compiler cg, int structType)
 {
     var types = cg.Types;
     var si = GetStructInfo(cg, structType);
@@ -212,7 +212,7 @@ void VerifyStruct(Compiler cg, int structType)
 
 // Matches the type as written in a parameter ('pattern') against the type of an argument and binds the type
 // parameters that occur in it. Returns false if they cannot match.
-bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file, int[] bound)
+bool Unify(const ref Compiler cg, TypeRef pattern, int actual, string[] tparams, int file, int[] bound)
 {
     var types = cg.Types;
     var node = cg.Tree.GetType(pattern);
@@ -324,7 +324,7 @@ bool Unify(Compiler cg, TypeRef pattern, int actual, string[] tparams, int file,
 }
 
 // The type arguments of a call of a generic function from its arguments; false if some cannot be inferred.
-bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
+bool InferTypeArgs(const ref Compiler cg, Candidate c, Arg[] args, ref int[] result)
 {
     var fe = cg.Funcs.Get(c.Entry);
     var d = fe.Decl;
@@ -357,7 +357,7 @@ bool InferTypeArgs(Compiler cg, Candidate c, Arg[] args, ref int[] result)
 // A lambda passed as a Func<..., R> gives R once its parameter types are known (from the other arguments or other
 // lambdas): the type of its body (LambdaResultType), as in list.Select(x => x.Name). Repeats while a lambda binds a
 // type parameter that another lambda needs.
-void InferFromLambdas(Compiler cg, Candidate c, Arg[] args, int[] bound)
+void InferFromLambdas(const ref Compiler cg, Candidate c, Arg[] args, int[] bound)
 {
     var types = cg.Types;
     var fe = cg.Funcs.Get(c.Entry);
@@ -411,7 +411,7 @@ void InferFromLambdas(Compiler cg, Candidate c, Arg[] args, int[] bound)
 }
 
 // True if every type parameter that occurs in the type as written is bound.
-bool IsPatternBound(Compiler cg, TypeRef pattern, string[] tparams, int[] bound)
+bool IsPatternBound(const ref Compiler cg, TypeRef pattern, string[] tparams, int[] bound)
 {
     var node = cg.Tree.GetType(pattern);
     if (node.Kind == TypeRefKind.Pointer || node.Kind == TypeRefKind.Array)
@@ -436,7 +436,7 @@ bool IsPatternBound(Compiler cg, TypeRef pattern, string[] tparams, int[] bound)
 // using / IDisposable
 // ---------------------------------------------------------------------------
 
-bool ImplementsDisposable(Compiler cg, int t)
+bool ImplementsDisposable(const ref Compiler cg, int t)
 {
     int s = t;
     while (s != 0 && cg.Types.IsStruct(s))
@@ -455,7 +455,7 @@ bool ImplementsDisposable(Compiler cg, int t)
 }
 
 // Calls Dispose() on the variable at the end of its scope.
-void CallDispose(Compiler cg, ScopeVar v)
+void CallDispose(const ref Compiler cg, ScopeVar v)
 {
     foreach (var c in MethodCandidates(cg, v.Type, "Dispose"))
     {
@@ -472,7 +472,7 @@ void CallDispose(Compiler cg, ScopeVar v)
 }
 
 // using (var r = ...) { body }
-void EmitUsingBlock(Compiler cg, Stmt s)
+void EmitUsingBlock(const ref Compiler cg, Stmt s)
 {
     var n = cg.Tree.GetUsingBlock(s);
     PushScope(cg);

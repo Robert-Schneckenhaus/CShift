@@ -8,7 +8,7 @@ using CShift.Syntax;
 using CShift.Sema;
 using CShift.CodeGen;
 
-void CheckStmt(Compiler cg, Stmt s)
+void CheckStmt(const ref Compiler cg, Stmt s)
 {
     switch (s.Kind)
     {
@@ -83,7 +83,7 @@ void CheckStmt(Compiler cg, Stmt s)
     }
 }
 
-void CheckBlock(Compiler cg, Stmt block, bool newScope)
+void CheckBlock(const ref Compiler cg, Stmt block, bool newScope)
 {
     var b = cg.Tree.GetBlock(block);
     if (b.NoScope)
@@ -103,7 +103,7 @@ void CheckBlock(Compiler cg, Stmt block, bool newScope)
 // The body of a loop: 'break' and 'continue' are allowed in it.
 // The body of a loop: 'break' and 'continue' are allowed in it. The result tells whether a 'break' / 'continue' was
 // reached (BreakLabel / ContinueLabel "hit").
-LoopCtx CheckLoopBody(Compiler cg, Stmt body, bool canContinue)
+LoopCtx CheckLoopBody(const ref Compiler cg, Stmt body, bool canContinue)
 {
     cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = "break", ContinueLabel = canContinue ? "continue" : "", ScopeDepth = ScopeCount(cg) });
     CheckStmt(cg, body);
@@ -114,7 +114,7 @@ LoopCtx CheckLoopBody(Compiler cg, Stmt body, bool canContinue)
 }
 
 // True for a call that does not return (Environment.Exit, Environment.Panic).
-bool EndsProgram(Compiler cg, Expr e)
+bool EndsProgram(const ref Compiler cg, Expr e)
 {
     if (e.Kind != ExprKind.Call)
         return false;
@@ -127,7 +127,7 @@ bool EndsProgram(Compiler cg, Expr e)
 
 // 'break' / 'continue': the innermost loop (or switch, for 'break') is marked as reached from here, if this statement
 // can be reached.
-void CheckBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
+void CheckBreakContinue(const ref Compiler cg, bool isBreak, SourceLoc loc)
 {
     var loops = cg.Fn[0].Loops;
     bool live = cg.Fn[0].Live;
@@ -151,7 +151,7 @@ void CheckBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
 }
 
 // A condition must be a bool (see EmitCondition).
-void CheckCondition(Compiler cg, Expr e)
+void CheckCondition(const ref Compiler cg, Expr e)
 {
     Value v = CheckRValue(cg, e);
     string why = ConditionError(cg, v.Type);
@@ -161,12 +161,12 @@ void CheckCondition(Compiler cg, Expr e)
 
 // 'if (x is not T v)' binds v in the enclosing scope, not visible in the 'if' branch (see EmitIf). After the 'if' it is
 // visible here in any case (code generation hides it where the 'if' branch can complete).
-void CheckIf(Compiler cg, Stmt s)
+void CheckIf(const ref Compiler cg, Stmt s)
 {
     var n = cg.Tree.GetIf(s);
     bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
     if (guard)
-        cg.GuardIs = n.Cond.Index;
+        cg.St[0].GuardIs = n.Cond.Index;
     else
         PushScope(cg);
     CheckCondition(cg, n.Cond);
@@ -188,7 +188,7 @@ void CheckIf(Compiler cg, Stmt s)
         PopScope(cg, false);
 }
 
-void CheckBranch(Compiler cg, Stmt s)
+void CheckBranch(const ref Compiler cg, Stmt s)
 {
     PushScope(cg);
     CheckStmt(cg, s);
@@ -198,7 +198,7 @@ void CheckBranch(Compiler cg, Stmt s)
 // A name can be declared only once in a scope: a local variable, constant or pattern variable that a block (or a
 // parameter list) already has is an error. An inner block may reuse the name of an outer one. A declaration at the
 // same place is the same one, checked again.
-void CheckNotDeclared(Compiler cg, SourceLoc loc, string name)
+void CheckNotDeclared(const ref Compiler cg, SourceLoc loc, string name)
 {
     var f = cg.Fn[0];
     if (f.ScopeStarts.Count() == 0 || name.Length == 0)
@@ -214,7 +214,7 @@ void CheckNotDeclared(Compiler cg, SourceLoc loc, string name)
     }
 }
 
-void CheckVarDecl(Compiler cg, Stmt s)
+void CheckVarDecl(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var d = cg.Tree.GetVarDecl(s);
@@ -282,7 +282,7 @@ void CheckVarDecl(Compiler cg, Stmt s)
 }
 
 // Reports if the value does not convert implicitly to the type (see ConvertValue).
-void CheckConversion(Compiler cg, Value v, int to, SourceLoc loc)
+void CheckConversion(const ref Compiler cg, Value v, int to, SourceLoc loc)
 {
     var types = cg.Types;
     if (IsUnknown(cg, v) || types.IsUnknown(to))
@@ -309,7 +309,7 @@ void CheckConversion(Compiler cg, Value v, int to, SourceLoc loc)
         CheckError(cg, loc, why);
 }
 
-void CheckReturn(Compiler cg, Stmt s)
+void CheckReturn(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var n = cg.Tree.GetReturn(s);
@@ -339,7 +339,7 @@ void CheckReturn(Compiler cg, Stmt s)
 
 // foreach: the loop variable has the element type (see EmitForeach): of an array, a string, a slice, a Fixed or the
 // result of Get(int) of a struct with Count() and Get(int).
-void CheckForeach(Compiler cg, Stmt s)
+void CheckForeach(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var n = cg.Tree.GetForeach(s);
@@ -379,7 +379,7 @@ void CheckForeach(Compiler cg, Stmt s)
 
 // switch: the subject, the labels and every section (see EmitSwitch), whether the switch is exhaustive and whether a
 // section falls through.
-void CheckSwitch(Compiler cg, Stmt s)
+void CheckSwitch(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var n = cg.Tree.GetSwitch(s);
@@ -495,7 +495,7 @@ void CheckSwitch(Compiler cg, Stmt s)
 }
 
 // 'case T name:' / 'case error e:' on a result or a union (see EmitSwitch).
-void CheckPatternLabel(Compiler cg, int st, CaseLabel label)
+void CheckPatternLabel(const ref Compiler cg, int st, CaseLabel label)
 {
     var types = cg.Types;
     bool isError = false;
@@ -520,7 +520,7 @@ void CheckPatternLabel(Compiler cg, int st, CaseLabel label)
 
 // The element type of 'foreach' over a struct: the result of its Get(int), with an 'int Count()' (see
 // EmitForeachStruct); unknown after an error.
-int ForeachStructElem(Compiler cg, int coll, SourceLoc loc)
+int ForeachStructElem(const ref Compiler cg, int coll, SourceLoc loc)
 {
     var types = cg.Types;
     string needs = "'foreach' over struct '" + types.Name(coll) + "' needs the methods 'int Count()' and 'T Get(int index)'";

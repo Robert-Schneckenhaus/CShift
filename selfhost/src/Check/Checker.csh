@@ -83,7 +83,7 @@ void CheckProgram(Compiler program)
 
 // Reports an error; the checker continues. A message that names the unknown type follows from an error that was
 // reported before (where the type is written), so it is left out.
-void CheckError(Compiler cg, SourceLoc loc, string message)
+void CheckError(const ref Compiler cg, SourceLoc loc, string message)
 {
     if (message.Contains(UnknownTypeName))
         return;
@@ -97,18 +97,18 @@ void CheckError(Compiler cg, SourceLoc loc, string message)
 }
 
 // A value of the unknown type (not checked further).
-Value UnknownValue(Compiler cg)
+Value UnknownValue(const ref Compiler cg)
 {
     return Rvalue(cg.Types.Unknown, "", false);
 }
 
-bool IsUnknown(Compiler cg, Value v)
+bool IsUnknown(const ref Compiler cg, Value v)
 {
     return cg.Types.IsUnknown(v.Type);
 }
 
 // The body of one function instance, with its parameters in the outermost scope (see EmitFunctionBody).
-void CheckFunction(Compiler cg, int instance)
+void CheckFunction(const ref Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
@@ -167,7 +167,7 @@ void CheckFunction(Compiler cg, int instance)
 
 // The initializers of the program's globals (see EmitGlobalsInit): each one in its own scope, converted to the type of
 // its global.
-void CheckGlobalInitializers(Compiler cg)
+void CheckGlobalInitializers(const ref Compiler cg)
 {
     for (var i = 0; i < cg.Globals.Count(); i += 1)
     {
@@ -193,7 +193,7 @@ void CheckGlobalInitializers(Compiler cg)
 
 // The name of a function instance in messages. The checker's instances of generic functions and of the methods of
 // generic structs show their type parameters ('Max<T>', 'Box<T>.Get'), not the unknown type.
-string DisplayName(Compiler cg, int instance)
+string DisplayName(const ref Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     if (!fi.Name.Contains(UnknownTypeName))
@@ -216,7 +216,7 @@ string TypeParamList(string[] names)
 }
 
 // In a generic body: remembers that the variable 'name' has the type parameter its declared type names (or forgets it).
-void NoteTypeParamVar(Compiler cg, string name, TypeRef declared)
+void NoteTypeParamVar(const ref Compiler cg, string name, TypeRef declared)
 {
     var f = cg.Fn[0];
     if (!f.Generic)
@@ -240,7 +240,7 @@ void NoteTypeParamVar(Compiler cg, string name, TypeRef declared)
 
 // In a generic body, a method call on a variable whose type is a type parameter: "" if one of the constraints of the
 // type parameter has the method (or it cannot be told), otherwise the error. Every type has ToString.
-string TypeParamMethodError(Compiler cg, string variable, string method)
+string TypeParamMethodError(const ref Compiler cg, string variable, string method)
 {
     var f = cg.Fn[0];
     if (!f.Generic || method == "ToString")

@@ -34,7 +34,7 @@ struct InterfaceMethodSig
 }
 
 // The signature of method k of the interface, with the interface's type arguments.
-InterfaceMethodSig InterfaceMethod(Compiler cg, int iface, int k)
+InterfaceMethodSig InterfaceMethod(const ref Compiler cg, int iface, int k)
 {
     var ii = cg.InterfaceInfos.Get(cg.Types.Decl(iface));
     var ie = cg.Interfaces.Get(ii.Entry);
@@ -51,14 +51,14 @@ InterfaceMethodSig InterfaceMethod(Compiler cg, int iface, int k)
     return sig;
 }
 
-int InterfaceMethodCount(Compiler cg, int iface)
+int InterfaceMethodCount(const ref Compiler cg, int iface)
 {
     var ii = cg.InterfaceInfos.Get(cg.Types.Decl(iface));
     return cg.Interfaces.Get(ii.Entry).Decl.Methods.Length;
 }
 
 // The method of the struct that implements method k of the interface (a function instance), or -1.
-int FindImplementation(Compiler cg, int structType, int iface, int k)
+int FindImplementation(const ref Compiler cg, int structType, int iface, int k)
 {
     var sig = InterfaceMethod(cg, iface, k);
     foreach (var c in MethodCandidates(cg, structType, sig.Name))
@@ -83,7 +83,7 @@ int FindImplementation(Compiler cg, int structType, int iface, int k)
 }
 
 // The method table of the struct for the interface (a constant, written the first time it is needed).
-string InterfaceTable(Compiler cg, int structType, int iface)
+string InterfaceTable(const ref Compiler cg, int structType, int iface)
 {
     var types = cg.Types;
     string name = "@\"vtable." + types.Name(structType) + "." + types.Name(iface) + "\"";
@@ -104,13 +104,13 @@ string InterfaceTable(Compiler cg, int structType, int iface)
     return name;
 }
 
-bool IsInterfaceType(Compiler cg, int t)
+bool IsInterfaceType(const ref Compiler cg, int t)
 {
     return cg.Types.Kind(t) == TypeKind.Interface;
 }
 
 // The cost of passing the argument to a 'ref' (refKind 1) or 'const ref' (2) parameter of interface type, -1 if not.
-int InterfaceArgCost(Compiler cg, Value v, int iface, int refKind)
+int InterfaceArgCost(const ref Compiler cg, Value v, int iface, int refKind)
 {
     var types = cg.Types;
     if (refKind == 0)
@@ -130,7 +130,7 @@ int InterfaceArgCost(Compiler cg, Value v, int iface, int refKind)
 
 // The { data, table } value for an interface parameter. For 'const ref' a struct is copied into a slot of the caller;
 // 'releaseSlots' collects those slots, to be released after the call.
-string InterfaceArgument(Compiler cg, Value v, int iface, int refKind, List<TempRelease> releaseSlots, SourceLoc loc)
+string InterfaceArgument(const ref Compiler cg, Value v, int iface, int refKind, List<TempRelease> releaseSlots, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -169,7 +169,7 @@ string InterfaceArgument(Compiler cg, Value v, int iface, int refKind, List<Temp
 
 // After a call: releases the copies made for 'const ref' interface parameters (loaded from their slots, because the
 // methods may have changed them).
-void ReleaseInterfaceCopies(Compiler cg, List<TempRelease> slots)
+void ReleaseInterfaceCopies(const ref Compiler cg, List<TempRelease> slots)
 {
     foreach (var s in slots)
         EmitRelease(cg, s.Type, cg.Ir.Load(LlvmType(cg, s.Type), s.Value));
@@ -177,7 +177,7 @@ void ReleaseInterfaceCopies(Compiler cg, List<TempRelease> slots)
 
 // shape.Method(args) on an interface parameter: the method from the table, called with the data pointer as 'this'.
 // The method of the interface that 'name(args)' calls (the cheapest conversions), or -1; shared with the checker.
-int ChooseInterfaceMethod(Compiler cg, int iface, string name, Arg[] args)
+int ChooseInterfaceMethod(const ref Compiler cg, int iface, string name, Arg[] args)
 {
     int count = InterfaceMethodCount(cg, iface);
     int chosen = -1;
@@ -203,7 +203,7 @@ int ChooseInterfaceMethod(Compiler cg, int iface, string name, Arg[] args)
     return chosen;
 }
 
-Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
+Value EmitInterfaceCall(const ref Compiler cg, Value obj, string name, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -252,7 +252,7 @@ Value EmitInterfaceCall(Compiler cg, Value obj, string name, Arg[] args, SourceL
 }
 
 // 'shape is S v' for an interface parameter: true if it points to an S (its table is the one of S); v is a copy.
-Value EmitInterfaceIs(Compiler cg, Value subj, int pattern, string bindName, SourceLoc loc)
+Value EmitInterfaceIs(const ref Compiler cg, Value subj, int pattern, string bindName, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;

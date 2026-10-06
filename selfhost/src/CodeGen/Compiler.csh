@@ -160,6 +160,7 @@ struct TempRelease
 {
     int Type;
     string Value;
+    bool InSlot;         // Value is a slot: what it holds when the temporary is released (a method may change it)
 }
 
 struct LoopCtx
@@ -190,6 +191,13 @@ struct FnState
     List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
     string EnvType;                    // the LLVM type of the environment
     string CallerArg;                  // a library function that reports its caller: the parameter with the call site
+    HashSet<int> Moves;                // the Name nodes that are the last use of a variable (Moves.csh)
+    bool HasMoves;                     // ... Moves is set (code generation of a function or lambda body)
+    bool InReturn;                     // the value of a 'return' is being computed
+    List<string> ReturnMoves;          // ... the slots of the variables moved into it: the cleanup leaves them alone
+    Stmt[] BlockStmts;                 // the statements of the block that is being written (EmitBlock) ...
+    int BlockAt;                       // ... the one being written
+    bool BlockScoped;                  // ... and whether its variables end with it
     bool Live;                         // the checker: the current statement can be reached (structurally)
     bool CollectReturns;               // the checker: the body of a lambda whose result type is inferred (LambdaResultType)
     int LambdaReturn;                  // ... the type of its first 'return x' (0: none yet)
@@ -236,6 +244,7 @@ struct CgState
     int LayoutContexts;   // the number of contexts started
     bool InstantiatingMethods;
     int LambdaCount;
+    int GuardIs;          // the 'x is not T v' that is the whole condition of the current 'if' (-1: none)
 }
 
 // ---------------------------------------------------------------------------
@@ -284,10 +293,11 @@ struct Compiler
     Dictionary<string, int> InstanceKeys;
     List<int> WorkQueue;
     List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
-    int GuardIs;                    // the 'x is not T v' that is the whole condition of the current 'if' (-1: none)
     HashSet<int> TrampolinesQueued;
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
     List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
+    Dictionary<string, int> KeepsThis; // "method:struct type": whether the method keeps 'this' (KeepsThis.csh)
+    Dictionary<string, string> KeepsWhy; // ... and what it does to 'this' if not
 
     // triple: the target ("" = the host) and the backend that generates the machine code; they decide the size of
     // pointers and the layout of structs (Emit/Target.csh)
@@ -303,6 +313,7 @@ struct Compiler
         cg.St[0].ProjectDir = "";
         cg.St[0].MutedError = "";
         cg.St[0].LambdaError = "";
+        cg.St[0].GuardIs = -1;
         cg.Fn = new FnState[1];
         cg.Files = List<FileContext>.Create();
         cg.Funcs = List<FuncEntry>.Create();
@@ -337,8 +348,9 @@ struct Compiler
         cg.InstanceKeys = Dictionary<string, int>.Create();
         cg.WorkQueue = List<int>.Create();
         cg.PendingTrampolines = List<int>.Create();
-        cg.GuardIs = -1;
         cg.TrampolinesQueued = HashSet<int>.Create();
+        cg.KeepsThis = Dictionary<string, int>.Create();
+        cg.KeepsWhy = Dictionary<string, string>.Create();
         cg.CheckedCollections = Dictionary<int, Value[]>.Create();
         cg.Index = List<IndexEntry>.Create();
         return cg;
@@ -346,14 +358,14 @@ struct Compiler
 }
 
 // Reports an error and ends the compiler.
-void Fail(Compiler cg, SourceLoc loc, string message)
+void Fail(const ref Compiler cg, SourceLoc loc, string message)
 {
     cg.Diag.ReportAt(loc, message);
     Environment.Exit(1);
 }
 
 // A type that cannot be resolved: Recover, and the type is unknown.
-int RecoverType(Compiler cg, SourceLoc loc, string message)
+int RecoverType(const ref Compiler cg, SourceLoc loc, string message)
 {
     Recover(cg, loc, message);
     return cg.Types.Unknown;
@@ -361,7 +373,7 @@ int RecoverType(Compiler cg, SourceLoc loc, string message)
 
 // An error after which the declarations and the checker go on (with the unknown type, docs/semantic-pass.md); the
 // program is not generated then. During code generation (after the checker) it ends the compiler like Fail.
-void Recover(Compiler cg, SourceLoc loc, string message)
+void Recover(const ref Compiler cg, SourceLoc loc, string message)
 {
     if (!cg.St[0].Recovering)
         Fail(cg, loc, message);
@@ -373,13 +385,13 @@ void Recover(Compiler cg, SourceLoc loc, string message)
 // Registration and lookup of declarations
 // ---------------------------------------------------------------------------
 
-string Qualified(Compiler cg, int file, string name)
+string Qualified(const ref Compiler cg, int file, string name)
 {
     string ns = cg.Files.Get(file).Ns;
     return ns.Length == 0 ? name : ns + "." + name;
 }
 
-void AddUnit(Compiler cg, CompilationUnit unit)
+void AddUnit(const ref Compiler cg, CompilationUnit unit)
 {
     cg.Files.Add(unit.File);
     int file = cg.Files.Count() - 1;
@@ -480,7 +492,7 @@ void AddUnit(Compiler cg, CompilationUnit unit)
         cg.Links.Add(unit.Links.Get(i));
 }
 
-void AddTypeDecl(Compiler cg, int file, string name, SourceLoc loc, TypeDeclEntry entry)
+void AddTypeDecl(const ref Compiler cg, int file, string name, SourceLoc loc, TypeDeclEntry entry)
 {
     string q = Qualified(cg, file, name);
     if (cg.TypeDecls.ContainsKey(q))
@@ -493,7 +505,7 @@ void AddTypeDecl(Compiler cg, int file, string name, SourceLoc loc, TypeDeclEntr
 
 // The names a simple name can stand for in a file, in lookup order: the file's own namespace (and its parents),
 // then the global namespace (they win over 'using' directives, like in C#), then the 'using' namespaces.
-string[] CandidateNames(Compiler cg, int file, string name)
+string[] CandidateNames(const ref Compiler cg, int file, string name)
 {
     var f = cg.Files.Get(file);
     var names = List<string>.Create();
@@ -512,7 +524,7 @@ string[] CandidateNames(Compiler cg, int file, string name)
 
 // Finds a struct, interface or enum; returns false if there is none.
 // 'Thread' without type arguments in a static call (Thread.Sleep(...)): the non-generic handle, '_ThreadVoid'.
-void UseBareThread(Compiler cg, int file, string dotted, int typeArgs, ref TypeDeclEntry entry)
+void UseBareThread(const ref Compiler cg, int file, string dotted, int typeArgs, ref TypeDeclEntry entry)
 {
     if (dotted != "Thread" || typeArgs != 0 || entry.Kind != DeclKind.Struct || cg.Structs.Get(entry.Index).Decl.TypeParams.Length == 0)
         return;
@@ -521,7 +533,7 @@ void UseBareThread(Compiler cg, int file, string dotted, int typeArgs, ref TypeD
         entry = voidEntry;
 }
 
-bool LookupTypeDecl(Compiler cg, int file, string name, ref TypeDeclEntry entry)
+bool LookupTypeDecl(const ref Compiler cg, int file, string name, ref TypeDeclEntry entry)
 {
     foreach (var c in CandidateNames(cg, file, name))
     {
@@ -536,7 +548,7 @@ bool LookupTypeDecl(Compiler cg, int file, string name, ref TypeDeclEntry entry)
 }
 
 // All functions a name can refer to (indices in Compiler.Funcs).
-int[] LookupFunctions(Compiler cg, int file, string name)
+int[] LookupFunctions(const ref Compiler cg, int file, string name)
 {
     var result = List<int>.Create();
     foreach (var c in CandidateNames(cg, file, name))
@@ -555,7 +567,7 @@ int[] LookupFunctions(Compiler cg, int file, string name)
     return result.ToArray();
 }
 
-bool IsNamespace(Compiler cg, int file, string name)
+bool IsNamespace(const ref Compiler cg, int file, string name)
 {
     foreach (var c in CandidateNames(cg, file, name))
     {
@@ -565,7 +577,7 @@ bool IsNamespace(Compiler cg, int file, string name)
     return false;
 }
 
-int LookupConst(Compiler cg, int file, string name)
+int LookupConst(const ref Compiler cg, int file, string name)
 {
     foreach (var c in CandidateNames(cg, file, name))
     {
@@ -581,7 +593,7 @@ int LookupConst(Compiler cg, int file, string name)
 // ---------------------------------------------------------------------------
 
 // The type for a primitive type name, or 0.
-int PrimitiveType(Compiler cg, string name)
+int PrimitiveType(const ref Compiler cg, string name)
 {
     var t = cg.Types;
     switch (name)
@@ -611,14 +623,14 @@ int PrimitiveType(Compiler cg, string name)
 }
 
 // A parameter type: an interface is allowed for 'ref' and 'const ref' parameters (Interfaces.csh).
-int ResolveParamType(Compiler cg, Param p, int file, Dictionary<string, int> env)
+int ResolveParamType(const ref Compiler cg, Param p, int file, Dictionary<string, int> env)
 {
     if (p.Ref == RefKind.None)
         return ResolveValueType(cg, p.Type.Id, file, env);
     return ResolveType(cg, p.Type.Id, file, env);
 }
 
-int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int> env)
+int ResolveValueType(const ref Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
     int t = ResolveType(cg, refType, file, env);
     if (cg.Types.Kind(t) == TypeKind.Interface)
@@ -631,7 +643,7 @@ int ResolveValueType(Compiler cg, int refType, int file, Dictionary<string, int>
 }
 
 // True if one of the types is the unknown type (an error was reported where it was written).
-bool HasUnknownType(Compiler cg, int[] list)
+bool HasUnknownType(const ref Compiler cg, int[] list)
 {
     foreach (var t in list)
     {
@@ -642,7 +654,7 @@ bool HasUnknownType(Compiler cg, int[] list)
 }
 
 // Resolves a type as written in the source. 'refType' is a TypeRef id. 'env' maps type parameters to types (may be null).
-int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
+int ResolveType(const ref Compiler cg, int refType, int file, Dictionary<string, int> env)
 {
     var tree = cg.Tree;
     var node = tree.GetType(TypeRef { Id = refType });
@@ -771,7 +783,7 @@ int ResolveType(Compiler cg, int refType, int file, Dictionary<string, int> env)
 }
 
 // Error<inner> (with the error enum 'code', or 0) or Optional<inner>, checking what may be nested.
-int ResultType(Compiler cg, string kind, int inner, int code, SourceLoc loc)
+int ResultType(const ref Compiler cg, string kind, int inner, int code, SourceLoc loc)
 {
     var types = cg.Types;
     string shown = kind + "<" + types.Name(inner) + (code != 0 ? ", " + types.Name(code) : "") + ">";
@@ -791,7 +803,7 @@ int ResultType(Compiler cg, string kind, int inner, int code, SourceLoc loc)
 
 // Action, Action<T1, ...> (no result) and Func<R>, Func<T1, ..., R> (the last argument is the result): pointers to
 // functions, like delegates in C# but without closures.
-int ResolveFunctionType(Compiler cg, TypeRefNode node, string dotted, int file, Dictionary<string, int> env)
+int ResolveFunctionType(const ref Compiler cg, TypeRefNode node, string dotted, int file, Dictionary<string, int> env)
 {
     var types = cg.Types;
     bool isAction = dotted == "Action";
@@ -819,7 +831,7 @@ int ResolveFunctionType(Compiler cg, TypeRefNode node, string dotted, int file, 
 }
 
 // The LLVM type of a type, as text.
-string LlvmType(Compiler cg, int t)
+string LlvmType(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     switch (types.Kind(t))
@@ -863,7 +875,7 @@ string LlvmType(Compiler cg, int t)
 }
 
 // True if values of the type own a reference count that must be released.
-bool NeedsArc(Compiler cg, int t)
+bool NeedsArc(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     var info = types.Info(t);
@@ -910,7 +922,7 @@ bool NeedsArc(Compiler cg, int t)
 // ---------------------------------------------------------------------------
 
 // Finds or creates the instance of a function for the given type arguments.
-int GetFuncInstance(Compiler cg, int entry, int owner, Dictionary<string, int> ownerEnv, int[] typeArgs, SourceLoc loc)
+int GetFuncInstance(const ref Compiler cg, int entry, int owner, Dictionary<string, int> ownerEnv, int[] typeArgs, SourceLoc loc)
 {
     var fe = cg.Funcs.Get(entry);
     var d = fe.Decl;
@@ -952,7 +964,7 @@ int GetFuncInstance(Compiler cg, int entry, int owner, Dictionary<string, int> o
     return index;
 }
 
-void EnsureSignature(Compiler cg, int instance)
+void EnsureSignature(const ref Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     if (fi.SignatureResolved)
@@ -996,7 +1008,7 @@ void EnsureSignature(Compiler cg, int instance)
 }
 
 // The name of the function in the IR: Name(param types), like in the C++ compiler; extern functions keep their C name.
-string FunctionSymbol(Compiler cg, FuncInfo fi)
+string FunctionSymbol(const ref Compiler cg, FuncInfo fi)
 {
     var d = cg.Funcs.Get(fi.Entry).Decl;
     if (d.IsExtern)
@@ -1011,7 +1023,7 @@ string FunctionSymbol(Compiler cg, FuncInfo fi)
 }
 
 // Makes sure the body of the function will be generated.
-void UseFunction(Compiler cg, int instance)
+void UseFunction(const ref Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
@@ -1031,7 +1043,7 @@ void UseFunction(Compiler cg, int instance)
 }
 
 // "declare <ret> @name(<param types>)" for an extern "C" function.
-void DeclareExtern(Compiler cg, int instance)
+void DeclareExtern(const ref Compiler cg, int instance)
 {
     var fi = cg.Instances.Get(instance);
     var d = cg.Funcs.Get(fi.Entry).Decl;
@@ -1068,7 +1080,7 @@ bool IsStdlibName(string name)
 
 // Whether the integer arithmetic of a function in the file is checked (overflow panics): yes, unless the program is
 // compiled with --unchecked ("unchecked": true in cshift.json); the standard library stays checked.
-bool CheckedByDefault(Compiler cg, int file)
+bool CheckedByDefault(const ref Compiler cg, int file)
 {
     if (!cg.St[0].Unchecked)
         return true;

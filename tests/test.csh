@@ -259,11 +259,13 @@ float Dot(const ref Vec2 a, const ref Vec2 b)
     return a.X * b.X + a.Y * b.Y;
 }
 
-// Methods called on a const ref parameter operate on a copy, so the caller's value stays untouched.
+// A method that changes the struct cannot be called on a const ref parameter (a compile error, see
+// cases/err_const_ref_changes.csh); a copy of it can be changed, the caller's value stays untouched.
 float ScaledX(const ref Vec2 v)
 {
-    v.Scale(2);
-    return v.X;
+    var copy = v;
+    copy.Scale(2);
+    return copy.X;
 }
 
 void PrintAge(const ref Animal a)
@@ -573,7 +575,7 @@ void TestStructs(ref Tester t)
     t.Check("const ref function", Dot(p1, p1) == 4 * 4 + 4 * 4);
     p1.Scale(2);
     t.Check("mutating method", p1.X == 8 && p1.Y == 8);
-    t.Check("method on const ref uses a copy", ScaledX(p1) == 8 && p1.X == 8);
+    t.Check("method on a copy of a const ref", ScaledX(p1) == 16 && p1.X == 8);
 
     // nested structs
     var r = Rect2 { Min = Vec2 { X = 1, Y = 1 }, Max = Vec2 { X = 4, Y = 3 } };

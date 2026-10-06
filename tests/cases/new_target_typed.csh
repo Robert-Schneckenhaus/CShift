@@ -24,7 +24,8 @@ struct Team
 }
 
 Player start = new { X = 3, Y = 4 };
-List<int> numbers = new();
+List<int> numbers = new();          // the zero value: an empty list that cannot change
+List<int> created = [];
 
 Player Make(int x, int y)
 {
@@ -50,9 +51,9 @@ int Main()
     Player empty = new();
     Console.WriteLine(Show(empty));
     Console.WriteLine(Show(start));
-    numbers.Add(1);
-    numbers.Add(2);
-    Console.WriteLine(numbers.Count());
+    created.Add(1);
+    created.Add(2);
+    Console.WriteLine(created.Count() + numbers.Count());
     player = new { X = 7, Y = 8 };
     Console.WriteLine(Show(player));
     Console.WriteLine(Show(Make(5, 6)));

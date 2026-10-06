@@ -75,12 +75,15 @@ int Main()
         sum += v;
     f += Check("foreach", sum == 9900 - 10 - 1);
 
-    // ---- a list that was never created explicitly works as well ----
-    var lazy = new List<int>();
-    f += Check("lazy empty", lazy.Count() == 0 && lazy.Capacity() == 0 && !lazy.Contains(1));
-    lazy.Add(7);
-    lazy.Add(8);
-    f += Check("lazy add", lazy.Count() == 2 && lazy.Get(1) == 8);
+    // ---- the zero value is an empty list that can be read (Add panics, see panic_not_created.csh) ----
+    var zero = new List<int>();
+    int seen = 0;
+    foreach (var v in zero)
+        seen += 1;
+    zero.Clear();
+    zero.Sort();
+    f += Check("zero value", zero.Count() == 0 && zero.Capacity() == 0 && !zero.Contains(1) && zero.ToArray().Length == 0 &&
+                             seen == 0 && !zero.IsCreated() && List<int>.Create().IsCreated());
 
     // ---- copies share the elements ----
     var shared = List<int>.Create();

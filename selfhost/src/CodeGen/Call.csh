@@ -15,7 +15,7 @@ struct Arg
     Expr Source;
 }
 
-Arg[] EmitArgs(Compiler cg, Expr[] args)
+Arg[] EmitArgs(const ref Compiler cg, Expr[] args)
 {
     var list = new Arg[args.Length];
     for (var i = 0; i < args.Length; i += 1)
@@ -24,7 +24,7 @@ Arg[] EmitArgs(Compiler cg, Expr[] args)
 }
 
 // The arguments of a call to one of the candidates (see ArgFrames).
-Arg[] EmitArgsFor(Compiler cg, Expr[] args, Candidate[] cands)
+Arg[] EmitArgsFor(const ref Compiler cg, Expr[] args, Candidate[] cands)
 {
     int[] frames = ArgFrames(cg, cands, args.Length);
     int[] targets = ArgTargets(cg, cands, args.Length);
@@ -40,7 +40,7 @@ Arg[] EmitArgsFor(Compiler cg, Expr[] args, Candidate[] cands)
 }
 
 // The cost of passing an argument to a parameter (-1 = impossible).
-int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, bool cstring)
+int ArgCost(const ref Compiler cg, Arg arg, int paramType, int refKind, bool nullable, bool cstring)
 {
     var v = arg.V;
     var types = cg.Types;
@@ -95,7 +95,7 @@ int ArgCost(Compiler cg, Arg arg, int paramType, int refKind, bool nullable, boo
 }
 
 // Chooses the function that matches the arguments best. Candidates are indices in Compiler.Funcs.
-int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name)
+int ResolveOverload(const ref Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name)
 {
     string why = "";
     int instance = TryResolveOverload(cg, candidates, args, explicitTypeArgs, loc, name, ref why);
@@ -105,7 +105,7 @@ int ResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] expli
 }
 
 // ResolveOverload for the checker: -1 and the message instead of an error.
-int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name, ref string why)
+int TryResolveOverload(const ref Compiler cg, Candidate[] candidates, Arg[] args, int[] explicitTypeArgs, SourceLoc loc, string name, ref string why)
 {
     var best = -1;
     int bestCost = 0;
@@ -225,7 +225,7 @@ int TryResolveOverload(Compiler cg, Candidate[] candidates, Arg[] args, int[] ex
 
 // True if both instances are extern "C" functions with the same C name (declarations of one C function, or a declaration
 // and its definition).
-bool SameCFunction(Compiler cg, int a, int b)
+bool SameCFunction(const ref Compiler cg, int a, int b)
 {
     var fa = cg.Instances.Get(a);
     var fb = cg.Instances.Get(b);
@@ -233,7 +233,7 @@ bool SameCFunction(Compiler cg, int a, int b)
 }
 
 // Emits the call of a function instance with the given (already evaluated) arguments.
-Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, SourceLoc loc)
+Value EmitDirectCall(const ref Compiler cg, int instance, string thisPtr, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -414,7 +414,7 @@ Value EmitDirectCall(Compiler cg, int instance, string thisPtr, Arg[] args, Sour
 }
 
 // How the C ABI passes small integers: they are extended to 32 bits by the caller.
-string AbiExtension(Compiler cg, int t)
+string AbiExtension(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     if (types.IsBool(t))
@@ -425,27 +425,27 @@ string AbiExtension(Compiler cg, int t)
 }
 
 // "i8 zeroext" for a parameter of the type.
-string AbiParam(Compiler cg, int t)
+string AbiParam(const ref Compiler cg, int t)
 {
     string ext = AbiExtension(cg, t);
     return ext.Length > 0 ? LlvmType(cg, t) + " " + ext : LlvmType(cg, t);
 }
 
 // A parameter of a C function: function values are plain function pointers there.
-string ExternAbiParam(Compiler cg, int t)
+string ExternAbiParam(const ref Compiler cg, int t)
 {
     return cg.Types.IsFunction(t) ? "ptr" : AbiParam(cg, t);
 }
 
 // "zeroext i8" for a result of the type.
-string AbiReturn(Compiler cg, int t)
+string AbiReturn(const ref Compiler cg, int t)
 {
     string ext = AbiExtension(cg, t);
     return ext.Length > 0 ? ext + " " + LlvmType(cg, t) : LlvmType(cg, t);
 }
 
 // The dotted name of an expression like A.B.C, or "" if it is anything else.
-string DottedName(Compiler cg, Expr e)
+string DottedName(const ref Compiler cg, Expr e)
 {
     if (e.Kind == ExprKind.Name)
         return cg.Tree.GetName(e).Name;
@@ -461,7 +461,7 @@ string DottedName(Compiler cg, Expr e)
 }
 
 // The free functions a name can refer to, as candidates.
-Candidate[] FreeCandidates(Compiler cg, int file, string name)
+Candidate[] FreeCandidates(const ref Compiler cg, int file, string name)
 {
     var list = List<Candidate>.Create();
     foreach (var f in LookupFunctions(cg, file, name))
@@ -472,7 +472,7 @@ Candidate[] FreeCandidates(Compiler cg, int file, string name)
 // A call of a free function or of a method of the current struct by its simple name.
 // 'viaStart': the call is the operand of 'start' (see EmitStart). A 'thread' function can only be called that way, and
 // 'start' only works with a direct call to one.
-Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
+Value EmitNameCall(const ref Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart)
 {
     Value variable = LookupVariable(cg, n.Name);
     if (!variable.IsNone())
@@ -536,7 +536,7 @@ Value EmitNameCall(Compiler cg, Expr e, CallExpr call, NameExpr n, bool viaStart
 }
 
 // obj.Method(args), Type.Method(args), Namespace.Function(args), Console.WriteLine(...)
-Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
+Value EmitMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaStart)
 {
     var types = cg.Types;
     int file = cg.Fn[0].File;
@@ -667,7 +667,7 @@ Value EmitMemberCall(Compiler cg, Expr e, CallExpr call, MemberExpr m, bool viaS
 
 // obj.Name(args) for a struct value: resolves the instance method and calls it on the object (in place if it is a
 // variable, else on a temporary copy). Also used by the indexer (obj[i] is obj.Get(i), obj[i] = v is obj.Set(i, v)).
-Value EmitMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, int[] methodTypeArgs, SourceLoc loc)
+Value EmitMethodCallOn(const ref Compiler cg, Value obj, string name, Arg[] args, int[] methodTypeArgs, SourceLoc loc)
 {
     var types = cg.Types;
     var cands = MethodCandidates(cg, obj.Type, name);
@@ -679,36 +679,40 @@ Value EmitMethodCallOn(Compiler cg, Value obj, string name, Arg[] args, int[] me
         Fail(cg, loc, "'" + name + "' is a static method, call it as '" + types.Name(fi.Owner) + "." + name + "(...)'");
     if (name.Length > 0 && name[0] == '_' && CurrentOwner(cg) != fi.Owner)
         Fail(cg, loc, "method '" + name + "' is private to '" + types.Name(fi.Owner) + "'");
+    return CallMethodOn(cg, obj, instance, name, args, loc);
+}
 
+// The call of a resolved method on a struct value: in place for a variable, on a copy for a temporary.
+Value CallMethodOn(const ref Compiler cg, Value obj, int instance, string name, Arg[] args, SourceLoc loc)
+{
+    var fi = cg.Instances.Get(instance);
     string thisPtr;
-    if (obj.IsLValue && !obj.IsConst)
+    if (obj.IsLValue)
     {
+        // a variable, or a read-only value ('const ref', a constant, a captured variable) that the method keeps
+        if (obj.IsConst && !MethodKeepsThis(cg, fi.Entry, fi.Owner))
+            Fail(cg, loc, ReadOnlyChangeError(cg, name, fi.Entry, fi.Owner));
         thisPtr = obj.V;
-    }
-    else if (obj.IsLValue)
-    {
-        // A read-only alias ('const ref'): the method could modify the object, so it works on a copy.
-        Value copy = Rvalue(obj.Type, Consume(cg, obj), true);
-        HoldTemp(cg, copy);
-        thisPtr = cg.Ir.Alloca(LlvmType(cg, obj.Type), "tmp");
-        cg.Ir.Store(LlvmType(cg, obj.Type), copy.V, thisPtr);
     }
     else
     {
-        HoldTemp(cg, obj);
-        thisPtr = cg.Ir.Alloca(LlvmType(cg, obj.Type), "tmp");
-        cg.Ir.Store(LlvmType(cg, obj.Type), obj.V, thisPtr);
+        // A temporary: the method works on a copy in a slot. The slot is released at the end of the statement with
+        // what it holds then.
+        string ty = LlvmType(cg, obj.Type);
+        thisPtr = cg.Ir.Alloca(ty, "tmp");
+        cg.Ir.Store(ty, Consume(cg, obj), thisPtr);
+        HoldTempSlot(cg, obj.Type, thisPtr);
     }
     return EmitDirectCall(cg, instance, thisPtr, args, loc);
 }
 
-Value EmitCall(Compiler cg, Expr e)
+Value EmitCall(const ref Compiler cg, Expr e)
 {
     return EmitCallVia(cg, e, false);
 }
 
 // 'start f(...)': the only way to call a 'thread' function.
-Value EmitStart(Compiler cg, Expr e)
+Value EmitStart(const ref Compiler cg, Expr e)
 {
     var s = cg.Tree.GetStart(e);
     if (s.Operand.Kind != ExprKind.Call)
@@ -716,18 +720,18 @@ Value EmitStart(Compiler cg, Expr e)
     return EmitCallVia(cg, s.Operand, true);
 }
 
-void RejectIndirectStart(Compiler cg, bool viaStart, SourceLoc loc)
+void RejectIndirectStart(const ref Compiler cg, bool viaStart, SourceLoc loc)
 {
     if (viaStart)
         Fail(cg, loc, "'start' can only be used with a direct call to a 'thread' function");
 }
 
-bool IsThreadInstance(Compiler cg, int instance)
+bool IsThreadInstance(const ref Compiler cg, int instance)
 {
     return cg.Funcs.Get(cg.Instances.Get(instance).Entry).Decl.IsThread;
 }
 
-Value EmitCallVia(Compiler cg, Expr e, bool viaStart)
+Value EmitCallVia(const ref Compiler cg, Expr e, bool viaStart)
 {
     var call = cg.Tree.GetCall(e);
     var callee = call.Callee;
@@ -747,7 +751,7 @@ Value EmitCallVia(Compiler cg, Expr e, bool viaStart)
 // Builtin static functions
 // ---------------------------------------------------------------------------
 
-Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, SourceLoc loc)
+Value EmitBuiltinStatic(const ref Compiler cg, string type, string method, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -881,7 +885,7 @@ Value EmitBuiltinStatic(Compiler cg, string type, string method, Arg[] args, Sou
 }
 
 // Calls a function of the standard library that extends a built-in type: "String.Method(self, args...)".
-Value EmitExtensionCall(Compiler cg, string ns, bool hasSelf, Value self, string method, Arg[] args, SourceLoc loc, ref bool found)
+Value EmitExtensionCall(const ref Compiler cg, string ns, bool hasSelf, Value self, string method, Arg[] args, SourceLoc loc, ref bool found)
 {
     var cands = FreeCandidates(cg, cg.Fn[0].File, ns + "." + method);
     found = cands.Length > 0;
@@ -903,7 +907,7 @@ Value EmitExtensionCall(Compiler cg, string ns, bool hasSelf, Value self, string
 
 // number.ToString("F2"): NumberFormat.FormatInt/FormatUInt/FormatFloat of the standard library (stdlib/numberformat.csh).
 // A format written as a string literal is checked now.
-Value EmitFormatNumber(Compiler cg, Value obj, Arg format, SourceLoc loc)
+Value EmitFormatNumber(const ref Compiler cg, Value obj, Arg format, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -971,14 +975,14 @@ string CheckNumberFormat(string format, bool floating)
     return "";
 }
 
-void ExpectArgs(Compiler cg, Arg[] args, int n, string type, string method, SourceLoc loc)
+void ExpectArgs(const ref Compiler cg, Arg[] args, int n, string type, string method, SourceLoc loc)
 {
     if (args.Length != n)
         Fail(cg, loc, "'" + type + "." + method + "' takes " + n.ToString() + " argument(s)");
 }
 
 // SharedPtr<T>.Create(value): moves the value into a new block {size count = 1, size unused, T value}.
-Value EmitSharedPtrCreate(Compiler cg, int sp, Value value, SourceLoc loc)
+Value EmitSharedPtrCreate(const ref Compiler cg, int sp, Value value, SourceLoc loc)
 {
     int elem = cg.Types.Elem(sp);
     Value v = ConvertValue(cg, value, elem, loc);
@@ -988,7 +992,7 @@ Value EmitSharedPtrCreate(Compiler cg, int sp, Value value, SourceLoc loc)
     return Rvalue(sp, block, true);
 }
 
-Value EmitBuiltinMethod(Compiler cg, Value obj, string method, Arg[] args, SourceLoc loc)
+Value EmitBuiltinMethod(const ref Compiler cg, Value obj, string method, Arg[] args, SourceLoc loc)
 {
     var types = cg.Types;
     var ir = cg.Ir;

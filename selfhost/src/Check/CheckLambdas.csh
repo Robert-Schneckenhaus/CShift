@@ -12,7 +12,7 @@ using CShift.CodeGen;
 
 // The type of the lambda's value with these parameter types: the type of its expression, or of the first 'return x'
 // of its block (void without one); 0 if it cannot be told (an error in the body, a value without a type of its own).
-int LambdaResultType(Compiler cg, Expr e, int[] paramTypes)
+int LambdaResultType(Compiler cg, Expr e, int[] paramTypes) // a copy: the body is checked with an IR writer of its own
 {
     var types = cg.Types;
     var l = cg.Tree.GetLambda(e);

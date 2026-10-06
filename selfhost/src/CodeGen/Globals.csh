@@ -25,7 +25,7 @@ struct GlobalEntry
 }
 
 // The global a name refers to (looked up like a constant), or -1.
-int LookupGlobal(Compiler cg, int file, string name)
+int LookupGlobal(const ref Compiler cg, int file, string name)
 {
     foreach (var c in CandidateNames(cg, file, name))
     {
@@ -37,7 +37,7 @@ int LookupGlobal(Compiler cg, int file, string name)
 }
 
 // The variable of a global as an lvalue. Its type and the LLVM variable are created on first use.
-Value GlobalValue(Compiler cg, int index)
+Value GlobalValue(const ref Compiler cg, int index)
 {
     var types = cg.Types;
     var g = cg.Globals.Get(index);
@@ -67,7 +67,7 @@ Value GlobalValue(Compiler cg, int index)
 }
 
 // The variable of a global that the code being written uses (recorded for the check of the initialization order).
-Value GlobalUse(Compiler cg, int index)
+Value GlobalUse(const ref Compiler cg, int index)
 {
     NoteGlobalUse(cg, index);
     return GlobalValue(cg, index);
@@ -83,7 +83,7 @@ int NoCodeKey()
 }
 
 // The key of the code that is being written: the function instance, or -1 - g for the initializer of global g.
-int CurrentCodeKey(Compiler cg)
+int CurrentCodeKey(const ref Compiler cg)
 {
     int func = cg.Fn[0].Func;
     if (cg.St[0].InitInstance != 0 && func == cg.St[0].InitInstance - 1)
@@ -104,7 +104,7 @@ void AddUse(Dictionary<int, List<int>> map, int key, int value)
     map.Set(key, fresh);
 }
 
-void NoteGlobalUse(Compiler cg, int index)
+void NoteGlobalUse(const ref Compiler cg, int index)
 {
     int key = CurrentCodeKey(cg);
     if (key != NoCodeKey())
@@ -112,14 +112,14 @@ void NoteGlobalUse(Compiler cg, int index)
 }
 
 // The code being written calls the function instance (or takes its address: it can be called through the pointer later).
-void NoteCall(Compiler cg, int instance)
+void NoteCall(const ref Compiler cg, int instance)
 {
     int key = CurrentCodeKey(cg);
     if (key != NoCodeKey())
         AddUse(cg.CodeCalls, key, instance);
 }
 
-void ReportInitOrder(Compiler cg, int g, int h, int via, HashSet<int> reported)
+void ReportInitOrder(const ref Compiler cg, int g, int h, int via, HashSet<int> reported)
 {
     var gd = cg.Globals.Get(g);
     var hd = cg.Globals.Get(h);
@@ -133,7 +133,7 @@ void ReportInitOrder(Compiler cg, int g, int h, int via, HashSet<int> reported)
 
 // An initializer must not use a global that is initialized later (or itself): the value would still be zero. The code the
 // initializer calls counts as well, so the functions it reaches (directly or through other functions) are searched.
-void CheckGlobalInitOrder(Compiler cg)
+void CheckGlobalInitOrder(const ref Compiler cg)
 {
     for (var g = 0; g < cg.Globals.Count(); g += 1)
     {
@@ -195,13 +195,13 @@ void CheckGlobalInitOrder(Compiler cg)
 // Starts a function without parameters: the initializers of the globals (kept) and the check of the constants
 // (dropped). Its code is written with the normal expression and statement code. Returns where the function starts in
 // the output, to be able to drop it again.
-int BeginSyntheticFunction(Compiler cg, string name)
+int BeginSyntheticFunction(const ref Compiler cg, string name)
 {
     return BeginSyntheticFunctionWith(cg, "define internal void @" + name + "()");
 }
 
 // The same with any function header (the thread trampolines).
-int BeginSyntheticFunctionWith(Compiler cg, string header)
+int BeginSyntheticFunctionWith(const ref Compiler cg, string header)
 {
     var types = cg.Types;
     var f = FnState { Func = SyntheticInstance(cg), RetType = types.Void, Checked = true, File = 0, Env = NoEnv() };
@@ -217,7 +217,7 @@ int BeginSyntheticFunctionWith(Compiler cg, string header)
 }
 
 // The function instance that code outside of functions (the initializers of the globals) is written in.
-int SyntheticInstance(Compiler cg)
+int SyntheticInstance(const ref Compiler cg)
 {
     var types = cg.Types;
     if (cg.St[0].InitInstance == 0)
@@ -234,7 +234,7 @@ int SyntheticInstance(Compiler cg)
     return cg.St[0].InitInstance - 1;
 }
 
-void EndSyntheticFunction(Compiler cg, int mark, bool keep)
+void EndSyntheticFunction(const ref Compiler cg, int mark, bool keep)
 {
     PopScope(cg, true);
     cg.Ir.Ret("void", "");
@@ -244,7 +244,7 @@ void EndSyntheticFunction(Compiler cg, int mark, bool keep)
 }
 
 // The code that gives the globals their initial values: a function that the entry point calls before Main.
-void EmitGlobalsInit(Compiler cg)
+void EmitGlobalsInit(const ref Compiler cg)
 {
     bool any = false;
     for (var i = 0; i < cg.Globals.Count(); i += 1)
@@ -277,7 +277,7 @@ void EmitGlobalsInit(Compiler cg)
 }
 
 // The constants of the program are checked even if nothing uses them: type, initializer and value.
-void CheckConstants(Compiler cg)
+void CheckConstants(const ref Compiler cg)
 {
     for (var i = 0; i < cg.Consts.Count(); i += 1)
     {
@@ -288,7 +288,7 @@ void CheckConstants(Compiler cg)
 
 // The function that releases the values of the globals at the end of the program, so that no heap block is left over.
 // Returns false if no global owns anything.
-bool EmitGlobalsRelease(Compiler cg)
+bool EmitGlobalsRelease(const ref Compiler cg)
 {
     var text = StringBuilder.Create();
     text.Append("define internal void @__cs_release_globals() {\nentry:\n");

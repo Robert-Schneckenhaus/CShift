@@ -11,7 +11,7 @@ using CShift.Emit;
 // Scopes and cleanup
 // ---------------------------------------------------------------------------
 
-void PushScope(Compiler cg)
+void PushScope(const ref Compiler cg)
 {
     cg.Fn[0].ScopeStarts.Add(cg.Fn[0].Vars.Count());
     if (cg.Ir.Debug)
@@ -19,13 +19,13 @@ void PushScope(Compiler cg)
 }
 
 // The number of open scopes.
-int ScopeCount(Compiler cg)
+int ScopeCount(const ref Compiler cg)
 {
     return cg.Fn[0].ScopeStarts.Count();
 }
 
 // Releases what the variables of one scope own (in reverse order of declaration).
-void EmitScopeCleanup(Compiler cg, int scope)
+void EmitScopeCleanup(const ref Compiler cg, int scope)
 {
     var f = cg.Fn[0];
     int start = f.ScopeStarts.Get(scope);
@@ -35,7 +35,7 @@ void EmitScopeCleanup(Compiler cg, int scope)
         var v = f.Vars.Get(i - 1);
         if (v.Disposable)
             CallDispose(cg, v);
-        if (v.OwnsArc && !v.IsRef)
+        if (v.OwnsArc && !v.IsRef && !(f.InReturn && f.ReturnMoves.Contains(v.Slot)))
         {
             string value = cg.Ir.Load(LlvmType(cg, v.Type), v.Slot);
             EmitRelease(cg, v.Type, value);
@@ -45,7 +45,7 @@ void EmitScopeCleanup(Compiler cg, int scope)
     }
 }
 
-void PopScope(Compiler cg, bool emitCleanup)
+void PopScope(const ref Compiler cg, bool emitCleanup)
 {
     var f = cg.Fn[0];
     int scope = f.ScopeStarts.Count() - 1;
@@ -60,13 +60,13 @@ void PopScope(Compiler cg, bool emitCleanup)
 }
 
 // Cleanup code for all scopes above 'depth' without popping them (used by return/break/continue).
-void EmitCleanupsDownTo(Compiler cg, int depth)
+void EmitCleanupsDownTo(const ref Compiler cg, int depth)
 {
     for (var s = ScopeCount(cg); s > depth; s -= 1)
         EmitScopeCleanup(cg, s - 1);
 }
 
-void DeclareVar(Compiler cg, string name, int type, string slot)
+void DeclareVar(const ref Compiler cg, string name, int type, string slot)
 {
     cg.Fn[0].Vars.Add(ScopeVar { Name = name, Type = type, Slot = slot, OwnsArc = NeedsArc(cg, type) });
     if (cg.Ir.Debug)
@@ -74,7 +74,7 @@ void DeclareVar(Compiler cg, string name, int type, string slot)
 }
 
 // The zero value of a type as an IR constant.
-string ZeroValue(Compiler cg, int t)
+string ZeroValue(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     switch (types.Kind(t))
@@ -104,7 +104,7 @@ string ZeroValue(Compiler cg, int t)
 // Function bodies
 // ---------------------------------------------------------------------------
 
-void EmitFunctionBody(Compiler cg, int instance)
+void EmitFunctionBody(const ref Compiler cg, int instance)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -117,6 +117,8 @@ void EmitFunctionBody(Compiler cg, int instance)
     f.Temps = List<TempRelease>.Create();
     f.Loops = List<LoopCtx>.Create();
     f.IsIntMain = cg.St[0].MainFunc == instance + 1 && types.IsInt(fi.Ret);
+    f.Moves = FindMoves(cg, d.Params, d.Body);
+    f.HasMoves = true;
     cg.Fn[0] = f;
 
     var sb = StringBuilder.Create();
@@ -218,7 +220,7 @@ void EmitFunctionBody(Compiler cg, int instance)
 }
 
 // The plain entry point of a function that reports its caller: calls name.at without a call site.
-void EmitCallerForwarder(Compiler cg, FuncInfo fi, string parameters)
+void EmitCallerForwarder(const ref Compiler cg, FuncInfo fi, string parameters)
 {
     string ret = AbiReturn(cg, fi.Ret);
     // the parameters are passed on as they are ("type %name"), plus no call site
@@ -230,7 +232,7 @@ void EmitCallerForwarder(Compiler cg, FuncInfo fi, string parameters)
     cg.Ir.AppendFunctionText("define internal " + ret + " " + fi.LlvmName + "(" + parameters + ") {\nentry:\n" + body + "}\n\n");
 }
 
-void EmitBlock(Compiler cg, Stmt block, bool newScope)
+void EmitBlock(const ref Compiler cg, Stmt block, bool newScope)
 {
     var b = cg.Tree.GetBlock(block);
     if (b.NoScope)
@@ -242,8 +244,19 @@ void EmitBlock(Compiler cg, Stmt block, bool newScope)
         cg.Fn[0].Checked = false;
     if (newScope)
         PushScope(cg);
-    foreach (var s in b.Stmts)
-        EmitStmt(cg, s);
+    var outerStmts = cg.Fn[0].BlockStmts;
+    int outerAt = cg.Fn[0].BlockAt;
+    bool outerScoped = cg.Fn[0].BlockScoped;
+    for (var i = 0; i < b.Stmts.Length; i += 1)
+    {
+        cg.Fn[0].BlockStmts = b.Stmts; // for EmitVarDecl: the statements after a declaration
+        cg.Fn[0].BlockAt = i;
+        cg.Fn[0].BlockScoped = newScope;
+        EmitStmt(cg, b.Stmts[i]);
+    }
+    cg.Fn[0].BlockStmts = outerStmts;
+    cg.Fn[0].BlockAt = outerAt;
+    cg.Fn[0].BlockScoped = outerScoped;
     if (newScope)
         PopScope(cg, true);
     if (b.IsUnsafe)
@@ -255,7 +268,7 @@ void EmitBlock(Compiler cg, Stmt block, bool newScope)
 // Statements
 // ---------------------------------------------------------------------------
 
-void EmitStmt(Compiler cg, Stmt s)
+void EmitStmt(const ref Compiler cg, Stmt s)
 {
     cg.Ir.EnsureInsertPoint();
     if (s.Loc.Line > 0)
@@ -282,7 +295,7 @@ void EmitStmt(Compiler cg, Stmt s)
     }
 }
 
-void EmitExprStmt(Compiler cg, Stmt s)
+void EmitExprStmt(const ref Compiler cg, Stmt s)
 {
     var n = cg.Tree.GetExprStmt(s);
     Value v = EmitExpr(cg, n.Expr);
@@ -291,7 +304,25 @@ void EmitExprStmt(Compiler cg, Stmt s)
     FlushTemps(cg, 0, true);
 }
 
-void EmitVarDecl(Compiler cg, Stmt s)
+// Whether 'var x = init;' can make x an alias of init instead of a copy: init is a part of a read-only value (a
+// 'const ref' parameter, a field of one, a variable a lambda captured) with references to count, the declaration is a
+// statement of a block that ends the variable's scope, and the statements after it in the block only read x
+// (LocalStaysUnchanged). Nothing in the function can change such a part.
+bool IsReadOnlyAlias(const ref Compiler cg, Stmt s, VarDeclStmt d, Value init, int t)
+{
+    if (d.IsUsing || d.Init.IsNull() || !init.IsLValue || !init.IsConst || init.Type != t || !NeedsArc(cg, t) ||
+        IsInterfaceType(cg, t))
+        return false;
+    var f = cg.Fn[0];
+    if (f.BlockStmts == null || !f.BlockScoped || f.BlockAt < 0 || f.BlockAt >= f.BlockStmts.Length)
+        return false;
+    var here = f.BlockStmts[f.BlockAt];
+    if (here.Kind != s.Kind || here.Index != s.Index)
+        return false; // not a statement of the block itself (the initializer of a 'for', ...)
+    return LocalStaysUnchanged(cg, d.Name, t, f.BlockStmts, f.BlockAt + 1);
+}
+
+void EmitVarDecl(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -334,6 +365,18 @@ void EmitVarDecl(Compiler cg, Stmt s)
 
     if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)
         Fail(cg, s.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");
+    if (IsReadOnlyAlias(cg, s, d, init, t))
+    {
+        // a copy of a part of a read-only value (var tree = cg.Tree; with a 'const ref' cg) that the rest of the block
+        // only reads: the variable is an alias of that part, like a 'const ref' parameter - no copy, no counting
+        string aliasSlot = ir.Alloca("ptr", d.Name);
+        ir.Store("ptr", init.V, aliasSlot);
+        FlushTemps(cg, 0, true);
+        cg.Fn[0].Vars.Add(ScopeVar { Name = d.Name, Type = t, Slot = aliasSlot, IsRef = true, IsConst = true });
+        if (ir.Debug)
+            DebugDeclare(cg, d.Name, t, aliasSlot, true, 0);
+        return;
+    }
     string llvm = LlvmType(cg, t);
     string slot = ir.Alloca(llvm, d.Name);
     if (!d.Init.IsNull())
@@ -358,14 +401,14 @@ void EmitVarDecl(Compiler cg, Stmt s)
     }
 }
 
-void EmitIf(Compiler cg, Stmt s)
+void EmitIf(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetIf(s);
     // 'if (x is not T v)': v belongs to the enclosing scope, visible where the pattern matched (see EmitIs)
     bool guard = n.Cond.Kind == ExprKind.Is && cg.Tree.GetIs(n.Cond).Negated && cg.Tree.GetIs(n.Cond).BindName.Length > 0;
     if (guard)
-        cg.GuardIs = n.Cond.Index;
+        cg.St[0].GuardIs = n.Cond.Index;
     else
         PushScope(cg); // scope of pattern variables declared in the condition
     Value c = EmitCondition(cg, n.Cond);
@@ -400,7 +443,7 @@ void EmitIf(Compiler cg, Stmt s)
 }
 
 // A branch of an 'if' is a scope of its own even without braces ('else if (x is not T v) return;' binds v there).
-void EmitBranch(Compiler cg, Stmt s)
+void EmitBranch(const ref Compiler cg, Stmt s)
 {
     PushScope(cg);
     EmitStmt(cg, s);
@@ -409,7 +452,7 @@ void EmitBranch(Compiler cg, Stmt s)
 
 // Hides a variable from name lookup (it stays in its scope for the cleanup): a binding of 'is not' where it is not
 // assigned.
-void SetVarVisible(Compiler cg, int index, bool visible)
+void SetVarVisible(const ref Compiler cg, int index, bool visible)
 {
     var vars = cg.Fn[0].Vars;
     var v = vars.Get(index);
@@ -422,12 +465,12 @@ void SetVarVisible(Compiler cg, int index, bool visible)
     vars.Set(index, v);
 }
 
-bool IsLiteralTrue(Compiler cg, Expr e)
+bool IsLiteralTrue(const ref Compiler cg, Expr e)
 {
     return !e.IsNull() && e.Kind == ExprKind.BoolLit && cg.Tree.GetBoolLit(e).Value;
 }
 
-void EmitWhile(Compiler cg, Stmt s)
+void EmitWhile(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetWhile(s);
@@ -459,7 +502,7 @@ void EmitWhile(Compiler cg, Stmt s)
     PopScope(cg, true);
 }
 
-void EmitDoWhile(Compiler cg, Stmt s)
+void EmitDoWhile(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetDoWhile(s);
@@ -480,7 +523,7 @@ void EmitDoWhile(Compiler cg, Stmt s)
     ir.SetBlock(endLabel);
 }
 
-void EmitFor(Compiler cg, Stmt s)
+void EmitFor(const ref Compiler cg, Stmt s)
 {
     var ir = cg.Ir;
     var n = cg.Tree.GetFor(s);
@@ -525,7 +568,7 @@ void EmitFor(Compiler cg, Stmt s)
     PopScope(cg, true);
 }
 
-void EmitBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
+void EmitBreakContinue(const ref Compiler cg, bool isBreak, SourceLoc loc)
 {
     var loops = cg.Fn[0].Loops;
     for (var i = loops.Count(); i > 0; i -= 1)
@@ -540,7 +583,7 @@ void EmitBreakContinue(Compiler cg, bool isBreak, SourceLoc loc)
     Fail(cg, loc, isBreak ? "'break' is only allowed inside a loop or switch" : "'continue' is only allowed inside a loop");
 }
 
-void EmitReturn(Compiler cg, Stmt s)
+void EmitReturn(const ref Compiler cg, Stmt s)
 {
     var types = cg.Types;
     var ir = cg.Ir;
@@ -550,11 +593,15 @@ void EmitReturn(Compiler cg, Stmt s)
     {
         if (types.IsVoid(rt))
             Fail(cg, s.Loc, "a void function cannot return a value");
+        // variables moved into the value (Moves.csh) keep their slots, which the cleanup below leaves alone
+        cg.Fn[0].InReturn = true;
+        cg.Fn[0].ReturnMoves = List<string>.Create();
         Value v = EmitExprAs(cg, n.Value, rt);
         Value cv = ConvertValue(cg, v, rt, n.Value.Loc);
         string rv = Consume(cg, cv);
         FlushTemps(cg, 0, true);
         EmitCleanupsDownTo(cg, 0);
+        cg.Fn[0].InReturn = false;
         ir.Ret(LlvmType(cg, rt), rv);
         return;
     }

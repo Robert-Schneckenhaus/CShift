@@ -20,12 +20,12 @@ struct EnumInfo
 }
 
 // An error enum: its values are error codes; it converts implicitly to int.
-bool IsErrorEnum(Compiler cg, int t)
+bool IsErrorEnum(const ref Compiler cg, int t)
 {
     return cg.Types.IsEnum(t) && GetEnumInfo(cg, t).IsError;
 }
 
-EnumInfo GetEnumInfo(Compiler cg, int enumType)
+EnumInfo GetEnumInfo(const ref Compiler cg, int enumType)
 {
     return cg.EnumInfos.Get(cg.Types.Decl(enumType));
 }
@@ -50,7 +50,7 @@ bool FitsInt(int64 v, int bits, bool isSigned)
     return v >= 0 && v < limit;
 }
 
-int GetEnumType(Compiler cg, int entry)
+int GetEnumType(const ref Compiler cg, int entry)
 {
     var types = cg.Types;
     var ee = cg.Enums.Get(entry);
@@ -112,7 +112,7 @@ int GetEnumType(Compiler cg, int entry)
 
 // __cs_enum_text.<E>(value): the value as text with a +1 reference count - the name of its member, like C# ("Green");
 // a value that is no member gives its number. For values that several members share, the first member's name.
-string EnumTextFunction(Compiler cg, int enumType)
+string EnumTextFunction(const ref Compiler cg, int enumType)
 {
     var types = cg.Types;
     var ir = cg.Ir;

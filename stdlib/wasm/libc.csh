@@ -218,6 +218,17 @@ extern "C" void free(void* memory)
     }
 }
 
+// The bytes a block has: all of its size class (__cs_append grows strings in place with it).
+extern "C" nuint malloc_usable_size(void* memory)
+{
+    unsafe
+    {
+        if (memory == null)
+            return 0;
+        return (nuint)(*(int*)((uint8*)memory - 4) - 8);
+    }
+}
+
 extern "C" void* realloc(void* memory, nuint size)
 {
     unsafe
