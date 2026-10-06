@@ -6,30 +6,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
-### Website
-- A playground (/playground/): the compiler runs as WebAssembly in the browser and checks the program as you type,
-  shows what the name at the cursor is (the hover of the VS Code extension) and the LLVM IR it generates; examples, and
-  a link that carries the program. The website build compiles it (site/scripts/playground.sh).
-- The playground runs programs: **Run** (Ctrl+Enter) compiles with the wasm backend and runs the program in the
-  browser, with its output below the editor.
-
-### Targets
-- A WebAssembly backend of its own: `--backend wasm` (or `"backend": "wasm"`) writes a `.wasm` module for WASI without
-  clang, wasi-libc or a linker, with a C library written in CShift (stdlib/wasm); functions without a body are imported
-  from the module `env` (with a warning). The compiler builds itself with it in seconds, and that compiler (as
-  WebAssembly) builds itself again byte for byte; the CI runs all tests with it ([docs/wasm.md](docs/wasm.md)).
-- WebAssembly: `--target wasm32-wasi` (or `"target": "wasm32-wasi"`) compiles a program to a `.wasm` file for node,
-  wasmtime and other WASI runtimes, with clang, wasi-libc and wasm-ld ([docs/wasm.md](docs/wasm.md)). The standard
-  library runs unchanged except where the platform has nothing: `start` (threads) is a compile error, `Process.Run`
-  cannot start programs, the local time is UTC. `CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` runs the tests
-  with node; the CI does it on Linux.
-- `CSHIFT_WASI_SYSROOT` names the sysroot of WASI (e.g. of wasi-sdk) when clang does not find it.
-- WebAssembly programs get 8 MB of stack (like the main thread on Linux) instead of wasm-ld's 64 KB, which deep
-  recursion overflowed into the heap.
+## [0.26] - 2026-10-06
 
 ### Language
-- An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
-  (a call is no longer ambiguous): the definition is called.
 - A `string` or `StringSlice` converts to `ReadOnlySlice<char>` without a copy, so code for slices of characters
   takes text (a `string` argument still prefers a `StringSlice` parameter); never back, the characters need not be
   UTF-8. `text.AsBytes()` is the same view as `ReadOnlySlice<uint8>`, for functions that take bytes.
@@ -38,6 +17,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
 
 ### Compiler
+- The compiler is about three times as fast: its functions take the compiler's state as `const ref Compiler` instead of
+  a copy, which counted the references of its 37 fields up and down at every call. Generating the IR of the compiler
+  itself takes 0.9 s instead of 3.0 s (69 % fewer instructions); `cshiftc check` and the VS Code extension profit as
+  well.
 - Appending to a string is in place when nothing else refers to it: `text += ...` and `text = text + a + b` on a local
   variable, and the pieces of `a + b + c`. The block grows with `realloc`, with room to spare, so a loop of appends
   takes linear time instead of quadratic (80,000 lines: 0.016 s instead of 8.1 s). A shared string - a copy, a slice,
@@ -55,10 +38,6 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `this`: the compiler decides from the method's body whether it assigns to a field, passes one with `ref` or takes
   its address, or calls such a method on one. The methods of `List`, `Dictionary`, `StringBuilder` and the other
   containers, for example, run on the caller's value without counting its references up and down.
-- The compiler is about three times as fast: its functions take the compiler's state as `const ref Compiler` instead of
-  a copy, which counted the references of its 37 fields up and down at every call. Generating the IR of the compiler
-  itself takes 0.9 s instead of 3.0 s (69 % fewer instructions); `cshiftc check` and the VS Code extension profit as
-  well.
 - A new string's block is no longer filled with zeros first (`malloc` instead of `calloc`): its text is copied in right
   after, only the 0 byte behind it is written. Arrays, lists and objects are still zeroed.
 
@@ -101,6 +80,40 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   method) at the name of the function, a missing member at its name instead of the `.` before it.
 - VS Code: an error underlines the expression it is about (`Bar(foo[i])`), not everything from there to the end of the
   line; at a keyword or a declaration it is still the rest of the line.
+
+## [0.25] - 2026-10-03
+
+### Amiga
+- `Bitmap.DrawPattern` takes the rows as a `ReadOnlySlice<StringSlice>` (parts of a text, not copied), and a new
+  overload draws bytes: `DrawPattern(x, y, width, pattern)` with one color per byte of a `ReadOnlySlice<uint8>`, row
+  after row; a value of 32 or more leaves the pixel as it is. demo-amiga-gfx draws its ball and ship from text files.
+
+## [0.24] - 2026-10-03
+
+### Website
+- A playground (/playground/): the compiler runs as WebAssembly in the browser and checks the program as you type,
+  shows what the name at the cursor is (the hover of the VS Code extension) and the LLVM IR it generates; examples, and
+  a link that carries the program. The website build compiles it (site/scripts/playground.sh).
+- The playground runs programs: **Run** (Ctrl+Enter) compiles with the wasm backend and runs the program in the
+  browser, with its output below the editor.
+
+### Targets
+- A WebAssembly backend of its own: `--backend wasm` (or `"backend": "wasm"`) writes a `.wasm` module for WASI without
+  clang, wasi-libc or a linker, with a C library written in CShift (stdlib/wasm); functions without a body are imported
+  from the module `env` (with a warning). The compiler builds itself with it in seconds, and that compiler (as
+  WebAssembly) builds itself again byte for byte; the CI runs all tests with it ([docs/wasm.md](docs/wasm.md)).
+- WebAssembly: `--target wasm32-wasi` (or `"target": "wasm32-wasi"`) compiles a program to a `.wasm` file for node,
+  wasmtime and other WASI runtimes, with clang, wasi-libc and wasm-ld ([docs/wasm.md](docs/wasm.md)). The standard
+  library runs unchanged except where the platform has nothing: `start` (threads) is a compile error, `Process.Run`
+  cannot start programs, the local time is UTC. `CSHIFT_TARGET=wasm32-wasi bash tests/run_tests.sh` runs the tests
+  with node; the CI does it on Linux.
+- `CSHIFT_WASI_SYSROOT` names the sysroot of WASI (e.g. of wasi-sdk) when clang does not find it.
+- WebAssembly programs get 8 MB of stack (like the main thread on Linux) instead of wasm-ld's 64 KB, which deep
+  recursion overflowed into the heap.
+
+### Language
+- An `extern "C"` declaration and a definition (`extern "C"` with a body) of the same C function are one function
+  (a call is no longer ambiguous): the definition is called.
 
 ## [0.23] - 2026-10-02
 
