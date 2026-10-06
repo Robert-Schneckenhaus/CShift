@@ -339,8 +339,15 @@ Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m
             int count = InterfaceMethodCount(cg, iface);
             for (var k = 0; k < count; k += 1)
             {
-                if (InterfaceMethod(cg, iface, k).Name == m.Name)
-                    return CheckInterfaceCall(cg, iface, m.Name, args, known, e.Loc);
+                if (InterfaceMethod(cg, iface, k).Name != m.Name)
+                    continue;
+                if (obj.IsLValue && obj.IsConst)
+                {
+                    string why = UnionChangeReason(cg, t, m.Name);
+                    if (why.Length > 0)
+                        CheckError(cg, e.Loc, ReadOnlyError(cg, m.Name, t, why));
+                }
+                return CheckInterfaceCall(cg, iface, m.Name, args, known, e.Loc);
             }
         }
         CheckError(cg, e.Loc, "union '" + types.Name(t) + "' has no method '" + m.Name + "' (it can call the methods of the interfaces it lists)");
@@ -435,6 +442,8 @@ Value CheckMethodCallOnAt(const ref Compiler cg, Value obj, string name, Arg[] a
         CheckError(cg, loc, "method '" + name + "' is private to '" + types.Name(fi.Owner) + "'");
         return UnknownValue(cg);
     }
+    if (obj.IsLValue && obj.IsConst && !MethodKeepsThis(cg, fi.Entry, fi.Owner))
+        CheckError(cg, loc, ReadOnlyChangeError(cg, name, fi.Entry, fi.Owner));
     return Rvalue(fi.Ret, "", false);
 }
 

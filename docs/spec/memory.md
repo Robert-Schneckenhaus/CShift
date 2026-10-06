@@ -53,11 +53,13 @@ A parameter is passed in one of three ways:
 
 `ref` needs an exact type and a place that can be assigned: `ref 3` and `ref list.Get(0)` are compile errors. A
 `ref` argument stays an alias for the call only: there are no `ref` locals, fields or results, so an alias cannot
-outlive the call. A method called on a `const ref` parameter (or on a field of one) runs on it directly when it does
-not change `this`, and on a copy of it otherwise. A method changes `this` when it assigns to a field (also to a field of
-an embedded struct or to an element of a `Fixed` field), passes one with `ref`, takes its address, or calls a method
-that changes it on `this` or on such a field; the compiler decides that from the method's body. What a field refers to
-is not a part of the struct: adding to a `List` field changes the list's storage, which a copy shares.
+outlive the call. A method called on a `const ref` parameter (or on a field of one) runs on it directly; calling a
+method that changes `this` there is a compile error, which names what the method does (call it on a copy, `var copy =
+x;`, or make the parameter `ref`). A method changes `this` when it assigns to a field (also to a field of an embedded
+struct or to an element of a `Fixed` field), passes one with `ref`, takes its address, or calls a method that changes it
+on `this` or on such a field; the compiler decides that from the method's body. What a field refers to is not a part of
+the struct: adding to a `List` field changes the list's storage, not the struct, so `p.Items.Add(x)` and `p.Items[i] =
+x` are allowed. The same holds for a variable that a lambda uses (it gets a read-only copy).
 
 An **interface** can be the type of a `ref` or `const ref` parameter (`void Draw(const ref IShape s)`): the function
 takes any struct or union that implements it, without a copy, and calls the methods of the actual type. The function is

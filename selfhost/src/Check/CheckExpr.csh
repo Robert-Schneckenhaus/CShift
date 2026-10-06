@@ -113,9 +113,13 @@ Value CheckName(const ref Compiler cg, Expr e)
     if (!v.IsNone())
     {
         IndexLocal(cg, e.Loc, n.Name);
-        if (IsInterfaceType(cg, v.Type) && IsCapturedName(cg, n.Name))
-            CheckError(cg, e.Loc, "a lambda cannot use the interface parameter '" + n.Name + "' (the lambda could outlive the " +
-                                  "struct it points to)");
+        if (IsCapturedName(cg, n.Name))
+        {
+            if (IsInterfaceType(cg, v.Type))
+                CheckError(cg, e.Loc, "a lambda cannot use the interface parameter '" + n.Name + "' (the lambda could outlive the " +
+                                      "struct it points to)");
+            v.IsConst = true; // a lambda gets a read-only copy (CaptureVariable)
+        }
         return v;
     }
     int owner = CurrentOwner(cg);
@@ -538,6 +542,8 @@ Value CheckAssign(const ref Compiler cg, Expr e)
                 CheckError(cg, a.Target.Loc, "a StringSlice is read-only (strings are immutable)");
             else if (types.IsReadOnlySlice(ht))
                 CheckError(cg, a.Target.Loc, "a ReadOnlySlice is read-only (use an array or a Slice<T> to change elements)");
+            else if (types.IsStruct(ht) && holder.IsLValue && holder.IsConst)
+                CheckReadOnlyIndexer(cg, ht, a.HasOp, e.Loc);
             CheckExpr(cg, a.Value);
             return UnknownValue(cg);
         }
@@ -820,4 +826,24 @@ bool IsCapturedName(const ref Compiler cg, string name)
         return false;
     int local = FindLocal(cg, name);
     return local >= 0 && local < start;
+}
+
+// x[k] = v on a read-only struct (a 'const ref' parameter, ...): only if Set (and Get for x[k] op= v) keep it.
+void CheckReadOnlyIndexer(const ref Compiler cg, int t, bool compound, SourceLoc loc)
+{
+    var methods = List<string>.Create();
+    methods.Add("Set");
+    if (compound)
+        methods.Add("Get");
+    foreach (var name in methods)
+    {
+        foreach (var c in MethodCandidates(cg, t, name))
+        {
+            if (!MethodKeepsThis(cg, c.Entry, c.Owner))
+            {
+                CheckError(cg, loc, ReadOnlyChangeError(cg, name, c.Entry, c.Owner));
+                return;
+            }
+        }
+    }
 }

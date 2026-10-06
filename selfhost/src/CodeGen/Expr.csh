@@ -1107,8 +1107,7 @@ Value EmitAssign(const ref Compiler cg, Expr e)
         Value holder = EmitExpr(cg, ix.Object);
         if (types.IsStruct(holder.Type))
         {
-            if (holder.IsConst)
-                Fail(cg, e.Loc, "cannot assign to an element of a read-only value (a constant or a 'const ref' parameter)");
+            // on a read-only value only if Get and Set keep it (EmitMethodCallOn reports it otherwise)
             // the key is used twice (Get and Set) and the values are passed on: each owned temporary is held once
             // here and passed on borrowed
             Value keyValue = EmitRValue(cg, ix.Index);

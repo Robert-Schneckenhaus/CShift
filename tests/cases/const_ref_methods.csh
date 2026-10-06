@@ -1,6 +1,7 @@
 // A method called on a 'const ref' parameter (or a field of one) runs on the caller's value directly when it does not
-// change 'this', and on a copy when it may: every way of changing it below must leave the caller's value as it was.
-// Main returns the number of failed checks; the ARC check makes sure that every reference is released once.
+// change 'this' - what a field refers to (the storage of a List) may change. The methods that change it are errors
+// there (err_const_ref_changes.csh); here they run on variables. Main returns the number of failed checks; the ARC check
+// makes sure that every reference is released once.
 // expect-exit: 0
 
 using System;
@@ -108,26 +109,8 @@ int Reads(const ref Thing t)
     f += Check("field method", t.Pos.Sum() == 3 && t.Label.Take() == "label");
     f += Check("indexer", t.Slot[2] == 3);
     t.Store(1);
+    t.Items[0] = 1;                             // List.Set keeps the List
     return f;
-}
-
-void Changes(const ref Thing t)
-{
-    t.Rename();
-    t.Bump();
-    t.Step();
-    t.SetPair();
-    t.Indirect();
-    t.SetSlot();
-    t.ByRef();
-    t.Promote();
-    t.Relabel();
-    t.Ping(3);
-    t.Poke();
-    t.Pos.Move(1);
-    t.Label.Put("other");
-    t.Fresh();
-    t.Replace();
 }
 
 void Grow(const ref Thing t)
@@ -143,10 +126,17 @@ int Main()
     var t = Thing { Name = "thing", Count = 3, Pos = Point { X = 1, Y = 2 }, Items = items, Slot = Cell { Value = 1 },
                     Label = Box<string> { Item = "label" } };
     f += Reads(t);
-    Changes(t);
-    f += Check("unchanged", t.Name == "thing" && t.Count == 3 && t.Pos.X == 1 && t.Pair[1] == 0 && t.Slot.Value == 1 &&
-                            t.Level == 0 && t.Label.Item == "label" && t.Items.Count() == 1);
     Grow(t);
     f += Check("shared list", t.Items.Count() == 2 && t.Items[1] == 7);
+    t.Bump();
+    t.Step();
+    t.SetPair();
+    t.Indirect();
+    t.SetSlot();
+    t.Promote();
+    t.Relabel();
+    t.Poke();
+    f += Check("changes on a variable", t.Count == 50 && t.Pos.X == 6 && t.Pair[1] == 9 && t.Slot.Value == 4 &&
+                                        t.Level == 1 && t.Label.Item == "new");
     return f;
 }

@@ -6,6 +6,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- **Changed:** calling a method that changes the struct on a `const ref` parameter (or on a field of one, or on a
+  variable that a lambda uses) is a compile error instead of working on a copy that is thrown away. The message says
+  what the method does ("it assigns 'Count'", "it calls 'Bump', which assigns 'Count'"); call it on a copy or make the
+  parameter `ref`. Methods that only change what a field refers to - `Items.Add(x)`, `Items[i] = x` on a `List` field -
+  are allowed, and `x[k] = v` on a `const ref` struct now works when its `Set` does not change the struct (before it
+  was always an error). `cshiftc check` and the VS Code extension show the error as well.
+
 ## [0.26] - 2026-10-06
 
 ### Language

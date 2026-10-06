@@ -98,9 +98,14 @@ float Length(const ref Vec2 value)
 }
 ```
 
-Methods can be called on a `const ref` parameter. One that does not change the struct (the compiler finds out from its
-body) runs on the caller's value directly; one that may change it runs on a copy, so the caller's value stays as it
-was.
+Methods can be called on a `const ref` parameter as long as they do not change the struct; the compiler finds out from
+their bodies and calls them on the caller's value directly. Adding to a `List` field is fine (that changes the list's
+storage, not the struct). Calling a method that changes the struct is an error that says what the method does:
+
+```text
+'Move' changes the read-only 'Vec2' it is called on (a 'const ref' parameter or a variable a lambda captured): it
+assigns 'X'. Call it on a copy ('var copy = ...;') or make the parameter 'ref'
+```
 
 So a parameter is one of exactly three things:
 

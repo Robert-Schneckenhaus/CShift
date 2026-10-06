@@ -267,10 +267,16 @@ Value EmitUnionCall(const ref Compiler cg, Value obj, string name, Arg[] args, S
         {
             if (InterfaceMethod(cg, iface, k).Name != name)
                 continue;
-            // a variable is changed in place by the method; a temporary value or a 'const ref' is called on a copy,
-            // released at the end of the statement with what it holds then
+            // a variable is changed in place by the method (a read-only one only if the method keeps it); a temporary
+            // value is called on a copy, released at the end of the statement with what it holds then
             string slot = obj.V;
-            if (!obj.IsLValue || obj.IsConst)
+            if (obj.IsLValue && obj.IsConst)
+            {
+                string why = UnionChangeReason(cg, union, name);
+                if (why.Length > 0)
+                    Fail(cg, loc, ReadOnlyError(cg, name, union, why));
+            }
+            else if (!obj.IsLValue)
             {
                 string ty = LlvmType(cg, union);
                 slot = cg.Ir.Alloca(ty, "union");

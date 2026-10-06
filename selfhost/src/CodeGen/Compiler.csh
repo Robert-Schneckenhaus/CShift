@@ -294,6 +294,7 @@ struct Compiler
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
     List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
     Dictionary<string, int> KeepsThis; // "method:struct type": whether the method keeps 'this' (KeepsThis.csh)
+    Dictionary<string, string> KeepsWhy; // ... and what it does to 'this' if not
 
     // triple: the target ("" = the host) and the backend that generates the machine code; they decide the size of
     // pointers and the layout of structs (Emit/Target.csh)
@@ -346,6 +347,7 @@ struct Compiler
         cg.PendingTrampolines = List<int>.Create();
         cg.TrampolinesQueued = HashSet<int>.Create();
         cg.KeepsThis = Dictionary<string, int>.Create();
+        cg.KeepsWhy = Dictionary<string, string>.Create();
         cg.CheckedCollections = Dictionary<int, Value[]>.Create();
         cg.Index = List<IndexEntry>.Create();
         return cg;
