@@ -240,6 +240,63 @@ int ImplicitIntCost(const ref Compiler cg, int from, int to)
     return -1;
 }
 
+// The cost of a conversion that gives a view of the same elements without a copy (-1 if it is none).
+int ViewConversionCost(const ref Compiler cg, int from, int to)
+{
+    var types = cg.Types;
+    // a whole string or array as a view (no copy)
+    if ((types.IsString(from) && types.IsStringSlice(to)) || (types.IsArray(from) && types.IsElemSlice(to) && types.Elem(from) == types.Elem(to)))
+        return 2;
+    // a Slice<T> as a ReadOnlySlice<T> (same layout; never the other way)
+    if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to) && types.Elem(from) == types.Elem(to))
+        return 1;
+    // text as its characters: a StringSlice as a ReadOnlySlice<char> (same layout), a whole string as a view (after
+    // StringSlice, which is preferred for a string); never the other way (the chars need not be UTF-8)
+    if (types.IsReadOnlySlice(to) && types.Elem(to) == types.Char)
+    {
+        if (types.IsStringSlice(from))
+            return 1;
+        if (types.IsString(from))
+            return 3;
+    }
+    return -1;
+}
+
+// Optional<A> -> Optional<B>, Error<A, E> -> Error<B, E> / Error<B>: the view conversions A -> B (and only those) are
+// lifted into results. Other conversions of the value stay explicit.
+bool IsLiftedView(const ref Compiler cg, int from, int to)
+{
+    var types = cg.Types;
+    bool sameKind = (types.IsOptional(from) && types.IsOptional(to)) ||
+                    (types.IsError(from) && types.IsError(to) && (types.Code(to) == 0 || types.Code(to) == types.Code(from)));
+    return sameKind && ViewConversionCost(cg, types.Elem(from), types.Elem(to)) >= 0;
+}
+
+// A lifted view conversion (IsLiftedView): the payload is converted whether the result holds a value or not (an empty
+// result holds a zero string or array, which is an empty view), the rest is copied.
+Value LiftView(const ref Compiler cg, Value v, int to, SourceLoc loc)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    int from = v.Type;
+    Value r = ToRValue(cg, v);
+    HoldTemp(cg, r);
+    string fromIr = LlvmType(cg, from);
+    string toIr = LlvmType(cg, to);
+    Value payload = Rvalue(types.Elem(from), ir.ExtractValue(fromIr, r.V, "1"), false);
+    string converted = Consume(cg, ConvertValue(cg, payload, types.Elem(to), loc));
+    string agg = ir.InsertValue(toIr, "zeroinitializer", "i1", ir.ExtractValue(fromIr, r.V, "0"), "0");
+    agg = ir.InsertValue(toIr, agg, LlvmType(cg, types.Elem(to)), converted, "1");
+    if (types.IsError(to))
+    {
+        string msg = ir.ExtractValue(fromIr, r.V, "2");
+        EmitRetain(cg, types.String, msg);
+        agg = ir.InsertValue(toIr, agg, "ptr", msg, "2");
+        agg = ir.InsertValue(toIr, agg, "i32", ir.ExtractValue(fromIr, r.V, "3"), "3");
+    }
+    return Rvalue(to, agg, true);
+}
+
 // The cost of converting the value to 'to' (0 = same type, -1 = not possible).
 int ConversionCost(const ref Compiler cg, Value v, int to)
 {
@@ -296,24 +353,15 @@ int ConversionCost(const ref Compiler cg, Value v, int to)
         int litCode = types.Code(from);
         return types.Code(to) == 0 || litCode == 0 || litCode == types.Code(to) ? 1 : -1;
     }
-    // a whole string or array as a view (no copy)
-    if ((types.IsString(from) && types.IsStringSlice(to)) || (types.IsArray(from) && types.IsElemSlice(to) && types.Elem(from) == types.Elem(to)))
-        return 2;
-    // a Slice<T> as a ReadOnlySlice<T> (same layout; never the other way)
-    if (types.Kind(from) == TypeKind.Slice && types.IsReadOnlySlice(to) && types.Elem(from) == types.Elem(to))
-        return 1;
-    // text as its characters: a StringSlice as a ReadOnlySlice<char> (same layout), a whole string as a view (after
-    // StringSlice, which is preferred for a string); never the other way (the chars need not be UTF-8)
-    if (types.IsReadOnlySlice(to) && types.Elem(to) == types.Char)
-    {
-        if (types.IsStringSlice(from))
-            return 1;
-        if (types.IsString(from))
-            return 3;
-    }
+    int view = ViewConversionCost(cg, from, to);
+    if (view >= 0)
+        return view;
     // Error<T, E> -> Error<T>: the code widens to int (same layout)
     if (types.IsError(from) && types.IsError(to) && types.Elem(from) == types.Elem(to) && types.Code(to) == 0)
         return 1;
+    // Optional<A> -> Optional<B>, Error<A, E> -> Error<B, E> / Error<B> when A -> B is a view
+    if (IsLiftedView(cg, from, to))
+        return ViewConversionCost(cg, types.Elem(from), types.Elem(to)) + 1;
     // an error enum is an int (but never a result value: 'return E.X;' in an Error<int> function would be a success)
     if (IsErrorEnum(cg, from))
     {
@@ -467,6 +515,8 @@ Value ConvertValue(const ref Compiler cg, Value v, int to, SourceLoc loc)
     }
     if (IsErrorEnum(cg, from) && types.IsIntegral(to))
         return Rvalue(to, NumericConvert(cg, ToRValue(cg, v).V, types.I32, to), false);
+    if (IsLiftedView(cg, from, to))
+        return LiftView(cg, v, to, loc);
     if (types.IsError(from) && types.IsError(to))
     {
         // Error<T, E> -> Error<T>

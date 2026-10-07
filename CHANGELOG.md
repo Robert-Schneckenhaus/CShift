@@ -13,6 +13,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   parameter `ref`. Methods that only change what a field refers to - `Items.Add(x)`, `Items[i] = x` on a `List` field -
   are allowed, and `x[k] = v` on a `const ref` struct now works when its `Set` does not change the struct (before it
   was always an error). `cshiftc check` and the VS Code extension show the error as well.
+- The free view conversions also work inside an `Optional<T>` or `Error<T>`: an `Optional<uint16[]>` converts to
+  `Optional<ReadOnlySlice<uint16>>`, an `Error<string, E>` to `Error<StringSlice, E>` or `Error<StringSlice>`, an
+  `Optional<Slice<T>>` to `Optional<ReadOnlySlice<T>>`. Other conversions of the value (numbers, structs) still have
+  to be written out.
 
 ### Compiler
 - Fewer copies, and the compiler compiles itself with 20 % fewer instructions: `list.Get(i).Name` (and

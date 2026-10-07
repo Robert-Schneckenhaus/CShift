@@ -181,6 +181,8 @@ bool same = word == "world";     // slices and strings compare by their bytes
   collection expressions convert to it for free (never the other way), so `int Sum(ReadOnlySlice<int> values)` accepts
   all of them and promises not to change them. Slicing a `ReadOnlySlice<T>` gives another one; `ToArray()` copies it
   into a normal array. [Constant slices](constants-and-globals.md#constant-slices) have this type.
+* These views work inside an `Optional<T>` or `Error<T>` as well: an `Optional<int[]>` converts to
+  `Optional<ReadOnlySlice<int>>`, an `Error<string>` to `Error<StringSlice>` (no copy either way).
 * A whole string or array converts to a slice for free, so a function that takes `StringSlice` or `Slice<T>` accepts
   both: `int Sum(Slice<int> values)` can be called with `a` or `a[1..]`.
 * Text is also a `ReadOnlySlice<char>`: a `string` or `StringSlice` converts to it for free, so code written for
