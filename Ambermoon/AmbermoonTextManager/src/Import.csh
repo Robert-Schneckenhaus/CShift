@@ -177,21 +177,6 @@ List<uint32> Keys(Dictionary<uint32, string> texts)
     return keys;
 }
 
-// `str.TrimStart()` (white space as .NET sees it)
-string TrimStartNet(string text)
-{
-    int i = 0;
-    while (i < text.Length)
-    {
-        int length = _CharacterBytes(text[i]);
-        int codePoint = _DecodeAt(text, i, length);
-        if (!IsWhiteSpaceNet(codePoint))
-            break;
-        i += length;
-    }
-    return text[i..].ToString();
-}
-
 int _CharacterBytes(uint8 b)
 {
     return b < 0x80 ? 1 : b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4;
@@ -215,7 +200,7 @@ int _DecodeAt(StringSlice text, int i, int length)
 // (`needsTermNull`) or to `size` characters
 uint8[] SizeString(int size, string text, bool trimStart, bool needsTermNull)
 {
-    string str = trimStart ? TrimStartNet(text) : text;
+    string str = trimStart ? TrimStartNet(text).ToString() : text;
     int length = LengthNet(str);
     string sized;
 

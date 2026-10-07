@@ -36,6 +36,37 @@ StringSlice TrimNet(StringSlice text)
     return text[start..end];
 }
 
+/// `text.TrimStart()` of .NET: without the white space ([IsWhiteSpaceNet]) at the start.
+StringSlice TrimStartNet(StringSlice text)
+{
+    int start = 0;
+    while (start < text.Length)
+    {
+        int length = _CodePointLength(text, start);
+        if (!IsWhiteSpaceNet(_CodePointAt(text, start, length)))
+            break;
+        start += length;
+    }
+    return text[start..];
+}
+
+/// `text.TrimEnd()` of .NET: without the white space ([IsWhiteSpaceNet]) at the end.
+StringSlice TrimEndNet(StringSlice text)
+{
+    int end = text.Length;
+    while (end > 0)
+    {
+        // the start of the last character
+        int first = end - 1;
+        while (first > 0 && (text[first] & 0xC0) == 0x80)
+            first -= 1;
+        if (!IsWhiteSpaceNet(_CodePointAt(text, first, end - first)))
+            break;
+        end = first;
+    }
+    return text[0..end];
+}
+
 /// Whether the text is empty or only white space (`string.IsNullOrWhiteSpace` of .NET).
 bool IsWhiteSpaceOnlyNet(StringSlice text)
 {
