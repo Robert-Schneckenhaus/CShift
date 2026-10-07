@@ -13,6 +13,7 @@ extern "C" int RemoveDirectoryA(char* path);
 extern "C" int _fseeki64(void* file, int64 offset, int origin);
 extern "C" int64 _ftelli64(void* file);
 extern "C" int fflush(void* file);
+extern "C" int _read(int fd, void* buffer, uint32 count);
 extern "C" void Sleep(uint32 milliseconds);
 
 // 100 ns units from 1601-01-01 (FILETIME) to 1970-01-01
@@ -115,6 +116,25 @@ struct _Os
         unsafe
         {
             fflush(file);
+        }
+    }
+
+    // writes what the C library holds back for stdout (and the other output files), before the program waits for input
+    static void FlushOutput()
+    {
+        unsafe
+        {
+            fflush(null);
+        }
+    }
+
+    // the next byte of the standard input, -1 at its end
+    static int ReadInputByte()
+    {
+        unsafe
+        {
+            uint8 b = 0;
+            return _read(0, &b, 1) == 1 ? b : -1;
         }
     }
 

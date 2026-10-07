@@ -10,6 +10,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
 | `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stack.csh`, `queue.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
 | `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
+| `ConsoleInput` | `console.csh` | `ReadLine`, which the compiler calls for `Console.ReadLine()` |
 | `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
 | `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
 | `FastTrig` | `fasttrig.csh` | table-based trigonometry with integer angles and fixed point results (`FastTrig.Sin(angle)`) |
@@ -21,6 +22,8 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System` | `stream.csh` | `FileStream`, `StreamReader`, `StreamWriter`, `SeekOrigin` |
 | `System` | `json.csh` | `Json`, `JsonValue`, `JsonKind`, `JsonError` |
 | `System` | `regex.csh` | `Regex`, `RegexMatch`, `RegexError` |
+| `System.Compression` | `compression.csh` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
+| `System.Image` | `image.csh`, `image_png.csh`, `image_bmp.csh`, `image_ppm.csh` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
 | `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
@@ -68,7 +71,15 @@ also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` rea
 **`Path`** — `Combine`, `Normalize`, `GetDirectory`, `GetFileName`, `GetExtension`, `GetStem`, `ChangeExtension`,
 `IsRooted`, `GetFullPath` (absolute, without `.`/`..`), `GetRelativePath(from, to)`.
 **Command line:** `int Main(string[] args)` receives the arguments without the program name. `Console.WriteError(Line)`
-writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`.
+writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`. `Console.ReadLine()` reads a
+line of the standard input (`Optional<string>` without the line break, `null` at its end; `console.csh`): what was
+written before is shown first, so `Console.Write("Name: ")` is a prompt.
+
+```csharp
+Console.Write("Name: ");
+if (Console.ReadLine() is string name)
+    Console.WriteLine("Hello, " + name);
+```
 
 **`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
 `WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`,
@@ -225,6 +236,59 @@ UTF-8 aware (`.` and sets match a whole character; positions are bytes). A searc
 ```csharp
 var date = try Regex.Create("(?<y>\\d{4})-(?<m>\\d{2})-(?<d>\\d{2})");
 Console.WriteLine(date.Replace("due 2026-10-01", "${d}.${m}.${y}"));   // due 01.10.2026
+```
+
+**`System.Compression`** — `Deflate.Compress(data [, level])` (raw deflate, RFC 1951: the entries of zip files),
+`Zlib.Compress` (RFC 1950: PNG) and `Gzip.Compress` (RFC 1952: `.gz` files) give `uint8[]`; levels 0 (stored) to 9
+like zlib's, 6 by default, each block written in the smallest of the stored, fixed and dynamic forms (the sizes are
+within a few bytes of zlib's). `Decompress(data)` of each gives `CompressionError<uint8[]>` (`InvalidData`,
+`Truncated`, `ChecksumMismatch`; damaged data never ends the program). `Crc32.Compute(data)` /
+`Crc32.Update(crc, data)` (start with 0) and `Adler32.Compute` / `Update` (start with 1) are the checksums.
+
+```csharp
+using System.Compression;
+
+var packed = Zlib.Compress(bytes, 9);
+var same = try Zlib.Decompress(packed);
+uint32 crc = Crc32.Compute(bytes);
+```
+
+**`System.Image`** — an **`Image`** is `Width` x `Height` pixels in `Pixels` (`uint32[]`, row by row from the top
+left, `0xAARRGGBB`, not premultiplied); copies share the pixels like a `List`, `Clone()` copies them.
+`Image.Create(w, h [, fill])` (transparent black without `fill`), `Image.Load(path)` / `Image.Decode(bytes)`
+(`ImageError<Image>`: the format is found by the content), `Save(path)` (the format of the extension: `.png`, `.bmp`,
+`.ppm`) / `Save(path, format)` / `Encode(format)`, `GetPixel(x, y)` / `SetPixel(x, y, color)` (a **`Color`**),
+`GetArgb` / `SetArgb` (`uint32`), `Clear(color)`, `Crop(x, y, w, h)`, `Copy(source, x, y)` and
+`Copy(source, sx, sy, w, h, x, y)` (replaces the pixels, clipped, may overlap within one image),
+`Image.DetectFormat(bytes)`, `Image.FormatOfPath(path)`. A `Color` has `A`, `R`, `G`, `B`;
+`Color.FromArgb(a, r, g, b)`, `Color.FromRgb(r, g, b)`, `Color.FromArgb(uint32)`, `ToArgb()`, `Color.Black()`,
+`White()`, `Transparent()` (`0x00FFFFFF`, like .NET). The formats (`ImageFormat`):
+
+* **PNG** — reads every color type and bit depth, interlaced or not, with transparency (`tRNS`); ancillary chunks
+  are skipped (no gamma correction). Writes a palette (1 to 8 bits per pixel) for up to 256 colors, else RGB or RGBA
+  with 8 bits per channel and a filter chosen per row.
+* **BMP** — reads the OS/2 and Windows headers (12 to 124 bytes), 1/4/8/16/24/32 bits per pixel, top-down and
+  bottom-up, RLE4/RLE8 and bit fields (with alpha only from an alpha mask: plain 32-bit pixels are opaque). Writes 24
+  bits per pixel, or 32 with an alpha mask (`BITMAPV4HEADER`) if a pixel is not opaque.
+* **PPM** — reads PBM, PGM and PPM (`P1` to `P6`, text and binary, up to 16 bits per sample); writes `P6` without
+  alpha.
+
+Decoding gives the same pixels as `System.Drawing` (GDI+) of .NET, including its rounding: 5- and 6-bit channels
+repeat their bits, 16-bit gray follows the steps of GDI+, a transparent gray (`tRNS`) is transparent black.
+
+```csharp
+using System.Image;
+
+var sprite = try Image.Load("sprite.png");
+for (var y = 0; y < sprite.Height; y += 1)
+{
+    for (var x = 0; x < sprite.Width; x += 1)
+    {
+        var c = sprite.GetPixel(x, y);
+        sprite.SetPixel(x, y, Color.FromArgb(c.A, 255 - c.R, 255 - c.G, 255 - c.B));
+    }
+}
+try sprite.Save("inverted.png");
 ```
 
 **`Random`** — `Random.Create(seed)` (the same sequence for the same seed, on every system) or `Random.Create()`

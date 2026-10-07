@@ -156,6 +156,9 @@ backend, AmigaOS libraries are imported from the NDK's SFD files (`using Gfx fro
 second on an A500), [demo-amiga-gfx/](demo-amiga-gfx/README.md) (bouncing balls with the blitter, a sprite and text;
 `Amiga.Screen`) and [demo-amiga-ndk/](demo-amiga-ndk/README.md) (a rotating cube in an Intuition window).
 
+Larger programs in CShift: [Ambermoon/](Ambermoon/README.md) has ports of command line tools for the data files of the
+Amiga game Ambermoon (packing with LOB compression, an event editor) and of the libraries they use.
+
 ## VS Code
 
 The `vscode-extension/` folder has an extension for `.csh` files: syntax highlighting and snippets, the errors of the

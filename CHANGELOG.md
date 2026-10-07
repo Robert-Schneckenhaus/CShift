@@ -6,6 +6,43 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.28] - 2026-10-07
+
+### Standard library
+- `System.Image`: images in memory (`Image`: 32-bit ARGB pixels, `Color`) and the file formats PNG (all color types
+  and bit depths, interlaced, transparency), BMP (1 to 32 bits per pixel, RLE, bit fields, OS/2 headers) and PPM/PGM/PBM:
+  `Image.Load(path)`, `Decode(bytes)`, `Save(path)` (the format of the extension), `Encode(format)`, `GetPixel`,
+  `SetPixel`, `Crop`, `Copy`. The decoded pixels are the ones `System.Drawing` (GDI+) of .NET gives, its rounding
+  included; PNGs are written with a palette when the image has up to 256 colors
+  ([standard library](docs/stdlib.md)).
+- `System.Compression`: `Deflate` (raw, as in zip files), `Zlib` and `Gzip` compress at levels 0 to 9 (the sizes are
+  within a few bytes of zlib's) and decompress (`CompressionError` for damaged data); the checksums `Crc32` and
+  `Adler32`.
+- `Console.ReadLine()` reads a line of the standard input (`Optional<string>`, without the line break; `null` at the
+  end of the input). What was written with `Console.Write` before is shown first, so `Console.Write("Name: ")` works
+  as a prompt. On every target: Linux, macOS, Windows, WebAssembly (WASI) and AmigaOS.
+
+### Compiler
+- **Fixed:** a branch of `?:` whose value is converted to the type of the other branch with a temporary (an array to
+  a `ReadOnlySlice`, as in `ReadOnlySlice<string> names = n < 3 ? new string[0] : args[2..];`) generated invalid
+  code that clang could not compile (it crashed): the temporary was released after the branches, also when it was
+  not made.
+
+### Tools
+- [Ambermoon/](Ambermoon/README.md): ports of command line tools of the Amiga game
+  [Ambermoon](https://github.com/Pyrdacor/Ambermoon) and of the libraries they need: `AmbermoonPack` (packs and unpacks
+  the game's file formats, 60 to 300 times faster than the original), `AmbermoonEventEditor` (edits the events of
+  maps and characters), `HexValueChanger`, the text pack tools of translations (`AmbermoonIntroTextPacker`,
+  `AmbermoonExtroTextPacker`, `AmbermoonExtroIntroTextPackCreator`), `AmbermoonDiskExtract` (the files of the ADF disk
+  images), `AmbermoonListExtractor` and the labyrinth tools (`AmbermoonLabdataEditor`, `AmbermoonLabdataExtractor`,
+  `AmbermoonUsedColorsDetector`, `Ambermoon3DMapViewer`), `AmbermoonMonsterEditor`, `AmbermoonItemEditor`,
+  `AmbermoonNameExtract`, `AmbermoonTextImport`, `AmbermoonTextManager`, `AmbermoonIntroPatcher`,
+  `AmbermoonExtroPatcher` and the image tools (`AmbermoonPaletteChanger`, `AmbermoonImageConverter`,
+  `AmbermoonFontCreator`, `AmbermoonFontProcessor`). Their results are those of the original tools
+  (`Ambermoon/tests/run.sh`, part of `tests/run_tests.sh`).
+
+## [0.27] - 2026-10-07
+
 ### Language
 - **Changed:** calling a method that changes the struct on a `const ref` parameter (or on a field of one, or on a
   variable that a lambda uses) is a compile error instead of working on a copy that is thrown away. The message says

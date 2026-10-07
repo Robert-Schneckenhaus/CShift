@@ -452,6 +452,13 @@ Value CheckBuiltinStatic(const ref Compiler cg, string type, string method, Arg[
 {
     var types = cg.Types;
     Value none = Rvalue(types.Void, "", false);
+    if (type == "Console" && method == "ReadLine")
+    {
+        // ConsoleInput.ReadLine of the standard library (stdlib/console.csh)
+        if (args.Length != 0)
+            CheckError(cg, loc, "Console.ReadLine takes no arguments");
+        return Rvalue(types.OptionalOf(types.String), "", false);
+    }
     if (type == "Console")
     {
         bool toStderr = method == "WriteError" || method == "WriteErrorLine";

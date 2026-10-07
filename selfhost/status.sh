@@ -41,7 +41,8 @@ for file in "$ROOT"/tests/cases/*.csh; do
         if grep -q "cshc does not support" "$TMP/c.err"; then unsupported+=("$name"); else fail+=("$name"); fi
         continue
     fi
-    ( cd "$TMP" && "$exe" > "$TMP/r.out" 2> "$TMP/r.err" ); code=$?
+    directives "$file" stdin > "$TMP/r.in"
+    ( cd "$TMP" && "$exe" < "$TMP/r.in" > "$TMP/r.out" 2> "$TMP/r.err" ); code=$?
     want_exit="$(directives "$file" expect-exit | head -n 1)"; want_exit="${want_exit:-0}"
     ok=1
     [ "$code" -ne "$want_exit" ] && ok=0

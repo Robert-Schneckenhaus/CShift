@@ -757,6 +757,16 @@ Value EmitBuiltinStatic(const ref Compiler cg, string type, string method, Arg[]
     var ir = cg.Ir;
     Value none = Rvalue(types.Void, "", false);
 
+    if (type == "Console" && method == "ReadLine")
+    {
+        if (args.Length != 0)
+            Fail(cg, loc, "Console.ReadLine takes no arguments");
+        bool found = false;
+        Value line = EmitExtensionCall(cg, "ConsoleInput", false, Value { }, "ReadLine", args, loc, ref found);
+        if (!found)
+            Fail(cg, loc, "Console.ReadLine needs the standard library (ConsoleInput.ReadLine is missing)");
+        return line;
+    }
     if (type == "Console")
     {
         bool toStderr = method == "WriteError" || method == "WriteErrorLine";

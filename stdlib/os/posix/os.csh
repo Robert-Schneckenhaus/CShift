@@ -13,6 +13,7 @@ extern "C" int rmdir(char* path);
 extern "C" int fseeko64(void* file, int64 offset, int origin);
 extern "C" int64 ftello64(void* file);
 extern "C" int fflush(void* file);
+extern "C" nint read(int fd, void* buffer, nuint count);
 extern "C" int usleep(uint32 microseconds);
 
 struct _Os
@@ -108,6 +109,25 @@ struct _Os
         unsafe
         {
             fflush(file);
+        }
+    }
+
+    // writes what the C library holds back for stdout (and the other output files), before the program waits for input
+    static void FlushOutput()
+    {
+        unsafe
+        {
+            fflush(null);
+        }
+    }
+
+    // the next byte of the standard input, -1 at its end
+    static int ReadInputByte()
+    {
+        unsafe
+        {
+            uint8 b = 0;
+            return read(0, &b, 1) == 1 ? b : -1;
         }
     }
 

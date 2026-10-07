@@ -1,3 +1,4 @@
+arc_conditional_conversion_temps.csh
 arc_stress.csh
 builtins.csh
 collection_expressions.csh
@@ -245,10 +246,13 @@ shared_ptr.csh
 slices.csh
 stack_queue.csh
 stdlib_additions.csh
+stdlib_console_readline.csh
+stdlib_compression.csh
 stdlib_datetime.csh
 stdlib_dictionary.csh
 stdlib_errors.csh
 stdlib_file.csh
+stdlib_image.csh
 stdlib_json.csh
 stdlib_list.csh
 stdlib_math.csh

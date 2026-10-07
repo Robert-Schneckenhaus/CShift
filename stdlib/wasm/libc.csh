@@ -531,6 +531,21 @@ extern "C" nuint fread(void* buffer, nuint size, nuint count, void* file)
     }
 }
 
+// read(fd, buffer, count): at most count bytes of a file descriptor (Console.ReadLine reads the standard input, fd 0)
+extern "C" nint read(int fd, void* buffer, nuint count)
+{
+    unsafe
+    {
+        int* iov = (int*)malloc((nuint)8);
+        int got = 0;
+        iov[0] = (int)(nint)buffer;
+        iov[1] = (int)count;
+        int failed = __wasi_fd_read(fd, iov, 1, &got);
+        free(iov);
+        return failed != 0 ? (nint)(-1) : (nint)got;
+    }
+}
+
 extern "C" nuint fwrite(void* buffer, nuint size, nuint count, void* file)
 {
     unsafe
