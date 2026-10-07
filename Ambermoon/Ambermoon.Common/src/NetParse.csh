@@ -23,6 +23,51 @@ Optional<uint32> ParseUInt(StringSlice text)
     return (uint32)value;
 }
 
+/// `long.TryParse(text)` of .NET: like [ParseInt], for -9223372036854775808 to 9223372036854775807.
+Optional<int64> ParseLong(StringSlice text)
+{
+    var t = _TrimNetWhiteSpace(text);
+    if (t.Length == 0)
+        return null;
+    bool negative = t[0] == '-';
+    int start = t[0] == '+' || negative ? 1 : 0;
+    if (start == t.Length)
+        return null;
+    uint64 limit = negative ? (uint64)9223372036854775807 + 1 : 9223372036854775807;
+    uint64 value = 0;
+    for (var i = start; i < t.Length; i += 1)
+    {
+        if (t[i] < '0' || t[i] > '9')
+            return null;
+        uint64 digit = (uint64)(t[i] - '0');
+        if (value > (limit - digit) / 10)
+            return null;
+        value = value * 10 + digit;
+    }
+    return negative ? unchecked((int64)(0 - value)) : (int64)value;
+}
+
+/// `long.Parse(text, NumberStyles.AllowHexSpecifier)` of .NET: hexadecimal digits only (up to 16 that are not leading
+/// zeros, the bits of a long: "ffffffffffffffff" is -1); `null` if it is no such number.
+Optional<int64> ParseHexLong(StringSlice text)
+{
+    if (text.Length == 0)
+        return null;
+    uint64 value = 0;
+    int digits = 0;
+    foreach (var c in text)
+    {
+        if (!Char.IsHexDigit(c))
+            return null;
+        if (digits > 0 || c != '0')
+            digits += 1;
+        if (digits > 16)
+            return null;
+        value = (value << 4) | (uint64)Char.HexValue(c);
+    }
+    return unchecked((int64)value);
+}
+
 // the value of an optionally signed decimal number with white space around it whose magnitude is at most 'limit'
 Optional<int64> _ParseInteger(StringSlice text, int64 limit)
 {

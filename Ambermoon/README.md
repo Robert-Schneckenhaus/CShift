@@ -20,6 +20,7 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonLabdataExtractor/` | writes a labyrinth with only the walls and objects that a 3D map uses | `AmbermoonTools/AmbermoonLabdataExtractor` |
 | `AmbermoonUsedColorsDetector/` | shows the colors that the textures of a 3D map use | `AmbermoonTools/AmbermoonUsedColorsDetector` |
 | `Ambermoon3DMapViewer/` | shows a 3D map as text and the walls and objects of its blocks | `AmbermoonTools/Ambermoon3DMapViewer` |
+| `AmbermoonMonsterEditor/` | shows and changes values of the monsters (`Monster_char.amb`, before 1.14 `Monster_char_data.amb`) | `AmbermoonTools/AmbermoonMonsterEditor` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
@@ -59,6 +60,7 @@ AmbermoonLabdataEditor labdata/001 Amberfiles      # edits labdata/001 (an unpac
 AmbermoonLabdataExtractor labdata/001 maps/258 new  # new: labyrinth 001 with only what map 258 uses
 AmbermoonUsedColorsDetector 258 Amberfiles           # the colors of the textures of map 258
 Ambermoon3DMapViewer maps/258 Amberfiles            # map 258 as text, then the walls and objects of blocks
+AmbermoonMonsterEditor "big spider" 0x18 2 1000    # in the game data folder: the word at 0x18 of the monster
 ```
 
 ## How the port was checked
@@ -87,6 +89,9 @@ Ambermoon3DMapViewer maps/258 Amberfiles            # map 258 as text, then the 
   blocks, `AmbermoonLabdataEditor` in 400 random editing sessions (all commands, random answers, saved at the end):
   the output and the files are the same as those of the original (where the original does not end with an exception,
   see below).
+* **AmbermoonMonsterEditor**: 82 command lines (all options, invalid numbers and ranges, ids and names, changes with
+  backups) in the data of English 1.07 and 1.20, German 1.20 (names with umlauts), an empty folder and ADF images: the
+  same output, exit codes and files as the original (with the patches that make it work at all, see below).
 
 ## Different from the original
 
@@ -145,6 +150,15 @@ when it removes old matches. Packing is 60 to 300 times faster:
   those of `2Wall3D.amb` and `2Object3D.amb` (it uses a merged copy); its backup of a file with an extension is
   `<name>_backup<extension>` (the original writes `<name>_backup/<extension>` and fails because the folder does not
   exist).
+* AmbermoonMonsterEditor works with the data of the game. The original ends with an exception before it does anything:
+  it makes a graphic provider that it does not use, which fails with the current library (for 1.14 and newer it runs
+  out of memory reading the messages of the executable the old way), it reads only `Monster_char_data.amb` (since 1.14
+  `Monster_char.amb`: this reads and writes that one when the other is missing) and it fails at the empty files in it
+  ("Invalid Monster_char_data.amb file."; this skips them, as the library does). The id of an empty file gives "No
+  monster exists with id" (the original ends with an exception). `--all` and `--all-not-0` without an offset and a
+  size show the usage, and their range messages show the given offset and size (the original shows other parameters or
+  ends with an exception). The game data is read from the current folder (the original looks into the folder of the
+  program first), without the battle graphics of the monsters (which the tool does not use).
 * Damaged ADF images and data give error messages where the original ends with an exception (the French 1.17 images
   in the Ambermoon repository have a damaged `2Object3D.amb`: both fail).
 
