@@ -31,7 +31,10 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
-| `tests/` | tests with expected results of the original tools | |
+| `tests/` | tests with expected results of the original tools; `tests/reference/`: building the originals and comparing them with the ports | |
+
+[HANDOVER.md](HANDOVER.md) has the state of the work: what is left to port, how the ports were checked and the bugs
+found in the original tools.
 
 ## Building
 

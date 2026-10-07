@@ -38,7 +38,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   images), `AmbermoonListExtractor` and the labyrinth tools (`AmbermoonLabdataEditor`, `AmbermoonLabdataExtractor`,
   `AmbermoonUsedColorsDetector`, `Ambermoon3DMapViewer`), `AmbermoonMonsterEditor`, `AmbermoonItemEditor`,
   `AmbermoonNameExtract`, `AmbermoonTextImport`, `AmbermoonTextManager`, `AmbermoonIntroPatcher` and
-  `AmbermoonExtroPatcher`. Their results are those of the original tools (`Ambermoon/tests/run.sh`, part of `tests/run_tests.sh`).
+  `AmbermoonExtroPatcher`. Their results are those of the original tools (`Ambermoon/tests/run.sh`, part of
+  `tests/run_tests.sh`).
 - Building the compiler from source starts from cshiftc 0.26 instead of 0.09 (`selfhost/stage0.txt`, downloaded by
   `selfhost/fetch-stage0.sh`): the compiler's own sources may use the language and the standard library of 0.26.
 
