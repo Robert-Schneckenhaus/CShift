@@ -1,3 +1,4 @@
+arc_conditional_conversion_temps.csh
 arc_stress.csh
 builtins.csh
 collection_expressions.csh

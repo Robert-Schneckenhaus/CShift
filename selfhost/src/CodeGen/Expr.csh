@@ -1233,6 +1233,8 @@ Value EmitConditionalIn(const ref Compiler cg, Expr e, int frame)
     ir.AppendCode(thenCode);
     ir.ResumeBlock(thenEnd);
     string av = Consume(cg, ConvertValue(cg, a, t, c.Then.Loc));
+    // a conversion can make temporaries (an array that becomes a slice): they exist only in this branch
+    ReleaseTemps(cg, TakeTemps(cg, baseCount));
     ReleaseTemps(cg, thenTemps);
     string thenFinal = ir.CurrentBlock();
     ir.Br(endLabel);
@@ -1240,6 +1242,7 @@ Value EmitConditionalIn(const ref Compiler cg, Expr e, int frame)
     ir.AppendCode(elseCode);
     ir.ResumeBlock(elseEnd);
     string bv = Consume(cg, ConvertValue(cg, b, t, c.Else.Loc));
+    ReleaseTemps(cg, TakeTemps(cg, baseCount));
     ReleaseTemps(cg, elseTemps);
     string elseFinal = ir.CurrentBlock();
     ir.Br(endLabel);

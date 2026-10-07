@@ -20,6 +20,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   as a prompt. On every target: Linux, macOS, Windows, WebAssembly (WASI) and AmigaOS.
 
 ### Compiler
+- **Fixed:** a branch of `?:` whose value is converted to the type of the other branch with a temporary (an array to
+  a `ReadOnlySlice`, as in `ReadOnlySlice<string> names = n < 3 ? new string[0] : args[2..];`) generated invalid
+  code that clang could not compile (it crashed): the temporary was released after the branches, also when it was
+  not made.
 - Fewer copies, and the compiler compiles itself with 20 % fewer instructions: `list.Get(i).Name` (and
   `list[i].Name`) reads the field where the element is instead of copying the whole element with all its references
   first, and a local variable that copies a part of a `const ref` parameter (`var tree = cg.Tree;`) and is only read
