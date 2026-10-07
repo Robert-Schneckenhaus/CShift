@@ -10,8 +10,8 @@
 #                                                   AmbermoonPack="dotnet AmbermoonPack.dll"
 #
 # The tools: AmbermoonPack, AmbermoonEventEditor, HexValueChanger, AmbermoonIntroTextPacker, AmbermoonExtroTextPacker,
-# AmbermoonExtroIntroTextPackCreator. The console output is compared without carriage returns (Windows writes them
-# for line breaks).
+# AmbermoonExtroIntroTextPackCreator, AmbermoonDiskExtract. The console output is compared without carriage returns
+# (Windows writes them for line breaks).
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
@@ -19,7 +19,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 TOOLS=(AmbermoonPack AmbermoonEventEditor HexValueChanger AmbermoonIntroTextPacker AmbermoonExtroTextPacker
-       AmbermoonExtroIntroTextPackCreator)
+       AmbermoonExtroIntroTextPackCreator AmbermoonDiskExtract)
 declare -A COMMAND
 
 RECORD=0
@@ -142,10 +142,26 @@ test_creator() {
     echo "creator testish $(hash_file "$work/out/Intro_texts.amb") $(hash_file "$work/out/Extro_texts.amb")" >> "$RESULTS"
 }
 
+# AmbermoonDiskExtract: the files of the ADF images in adf/
+test_diskextract() {
+    local EXTRACT="$1" name args work
+    while read -r name args; do
+        work="$TMP/d_$name"
+        mkdir -p "$work"
+        args="${args//@ADF@/$DIR/adf}"
+        args="${args//@OUT@/$work/out}"
+        # shellcheck disable=SC2086
+        (cd "$work" && $EXTRACT $args > stdout 2>&1 < /dev/null; echo "exit $?" >> stdout)
+        sed -i "s#$DIR/adf#ADF#g; s#$work#WORK#g" "$work/stdout"
+        echo "adf $name $(hash_text "$work/stdout") $(hash_dir "$work/out")" >> "$RESULTS"
+    done < <(cases "$DIR/adf/cases.txt")
+}
+
 # the kinds of results of each tool
 declare -A KINDS=(
     [AmbermoonPack]="pack unpack" [AmbermoonEventEditor]="events" [HexValueChanger]="hex"
     [AmbermoonIntroTextPacker]="intro" [AmbermoonExtroTextPacker]="extro" [AmbermoonExtroIntroTextPackCreator]="creator"
+    [AmbermoonDiskExtract]="adf"
 )
 for tool in "${TOOLS[@]}"; do
     [ -n "${COMMAND[$tool]:-}" ] || continue
@@ -156,6 +172,7 @@ for tool in "${TOOLS[@]}"; do
         AmbermoonIntroTextPacker) test_texts intro "${COMMAND[$tool]}" ;;
         AmbermoonExtroTextPacker) test_texts extro "${COMMAND[$tool]}" ;;
         AmbermoonExtroIntroTextPackCreator) test_creator "${COMMAND[$tool]}" ;;
+        AmbermoonDiskExtract) test_diskextract "${COMMAND[$tool]}" ;;
     esac
 done
 

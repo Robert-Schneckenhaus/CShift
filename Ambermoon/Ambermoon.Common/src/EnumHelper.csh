@@ -144,3 +144,27 @@ Optional<string> EnumName<T>(T value)
 {
     return EnumInfo.Of<T>(false).GetName(EnumInfo.ToUnsigned((int64)value, sizeof(T)));
 }
+
+/// The values of an enum like `Enum.GetValues` of .NET (EnumHelper.GetValues): all declared members sorted by their
+/// value as an unsigned number (members with the same value in the order of their declaration).
+T[] GetEnumValues<T>()
+{
+    var values = Enum<T>.Values;
+    var result = new T[values.Length];
+    var keys = new uint64[values.Length];
+    for (var i = 0; i < values.Length; i += 1)
+    {
+        // insertion sort: stable, and enums are small
+        var key = EnumInfo.ToUnsigned((int64)values[i], sizeof(T));
+        int j = i;
+        while (j > 0 && keys[j - 1] > key)
+        {
+            keys[j] = keys[j - 1];
+            result[j] = result[j - 1];
+            j -= 1;
+        }
+        keys[j] = key;
+        result[j] = values[i];
+    }
+    return result;
+}

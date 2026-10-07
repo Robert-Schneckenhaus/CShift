@@ -33,8 +33,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - [Ambermoon/](Ambermoon/README.md): ports of command line tools of the Amiga game
   [Ambermoon](https://github.com/Pyrdacor/Ambermoon) and of the libraries they need: `AmbermoonPack` (packs and unpacks
   the game's file formats, 60 to 300 times faster than the original), `AmbermoonEventEditor` (edits the events of
-  maps and characters), `HexValueChanger`, and the text pack tools of translations (`AmbermoonIntroTextPacker`,
-  `AmbermoonExtroTextPacker`, `AmbermoonExtroIntroTextPackCreator`). Their results are those of the original tools
+  maps and characters), `HexValueChanger`, the text pack tools of translations (`AmbermoonIntroTextPacker`,
+  `AmbermoonExtroTextPacker`, `AmbermoonExtroIntroTextPackCreator`), `AmbermoonDiskExtract` (the files of the ADF disk
+  images) and `AmbermoonListExtractor`. Their results are those of the original tools
   (`Ambermoon/tests/run.sh`, part of `tests/run_tests.sh`).
 - Building the compiler from source starts from cshiftc 0.26 instead of 0.09 (`selfhost/stage0.txt`, downloaded by
   `selfhost/fetch-stage0.sh`): the compiler's own sources may use the language and the standard library of 0.26.

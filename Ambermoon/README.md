@@ -7,13 +7,15 @@ read and write the data files of the Amiga game Ambermoon.
 | Folder | What it is | Port of |
 |---|---|---|
 | `Ambermoon.Common/` | library: directions, the texts of enums and floats as .NET writes them, numbers, files and texts read as .NET reads them | `Ambermoon.Common` (parts) |
-| `Ambermoon.Data.Common/` | library: the events of maps and characters, the enumerations they use | `Ambermoon.Data.Common` (parts) |
-| `Ambermoon.Data.Legacy/` | library: big-endian readers and writers, the file formats (JH, LOB, VOL1, AMNC, AMNP, AMBR, AMPC), the LOB compressions, the events | `Ambermoon.Data.Legacy` (parts) |
+| `Ambermoon.Data.Common/` | library: events, maps, tilesets, characters, items, graphics, texts and the enumerations they use | `Ambermoon.Data.Common` (parts) |
+| `Ambermoon.Data.Legacy/` | library: big-endian readers and writers, the file formats (JH, LOB, VOL1, AMNC, AMNP, AMBR, AMPC), the LOB compressions, loading the game data from folders and ADF disk images, Amiga executables (also imploded), the data of the executable (names, messages, items, ...), Text.amb, maps, characters, events | `Ambermoon.Data.Legacy` (parts) |
 | `Ambermoon.Data.Descriptions/` | library: descriptions of the values of all event types (for editors) | `AmbermoonTools/Ambermoon.Data.Descriptions` |
 | `AmbermoonTextPacks/` | library: the intro and extro text packs of the remake (shared by the three text pack tools) | the packing code of the text packers |
 | `AmbermoonPack/` | packs files into the formats of the game and unpacks them | `AmbermoonTools/AmbermoonPack` |
 | `AmbermoonEventEditor/` | edits the events of maps, NPCs and party members | `AmbermoonTools/AmbermoonEventEditor` |
 | `HexValueChanger/` | changes bytes at an offset in one or many files | `AmbermoonTools/HexValueChanger` |
+| `AmbermoonDiskExtract/` | extracts the files of the game from its ADF disk images | `AmbermoonTools/AmbermoonDiskExtract` |
+| `AmbermoonListExtractor/` | writes the party members of the game as a Markdown table | `AmbermoonTools/AmbermoonListExtractor` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
@@ -47,6 +49,8 @@ HexValueChanger -r saves '*.sav'                     # the same bytes changed in
 AmbermoonIntroTextPacker Czech                       # Czech/IntroTexts/*.txt -> Czech/Intro_texts.amb
 AmbermoonExtroTextPacker Czech "<KLIK>" "DANIEL ZIMA"  # Czech/ExtroTextGroups/ -> Czech/Extro_texts.amb
 AmbermoonExtroIntroTextPackCreator czech 1.00 out    # in the Ambermoon repository: out/Intro_texts.amb, out/Extro_texts.amb
+AmbermoonDiskExtract adfs extracted                 # the files of the ADF images in adfs/ (-u: decompressed)
+AmbermoonListExtractor Amberfiles lists              # lists/PartyMembers.md
 ```
 
 ## How the port was checked
@@ -62,6 +66,14 @@ AmbermoonExtroIntroTextPackCreator czech 1.00 out    # in the Ambermoon reposito
   their translators and click texts), and texts in all encodings that .NET reads (byte order marks of UTF-8, UTF-16
   and UTF-32, invalid UTF-8): the same files and output as the originals.
 * **HexValueChanger**: sessions with all commands on one file and on file patterns, also recursive.
+* **The game data** (loading, ADF images, imploded executables, the data of the executable, Text.amb): everything
+  that is read (files, names, messages, texts, glyphs, cursors, palettes, user interface graphics, buttons, items)
+  is the same as in the original for English 1.07 (the old executable) and 1.20 and German 1.20, extracted and as ADF
+  images. Loading is about 20 times faster.
+* **AmbermoonDiskExtract**: the files of the ADF images of English 1.07 and 1.20 and German 1.20, encoded and
+  decompressed (see below for the three files that differ); 300 times faster (the original recompresses with its slow
+  LOB compression).
+* **AmbermoonListExtractor**: the party members of English and German 1.20 (extracted and ADF).
 
 ## Different from the original
 
@@ -104,10 +116,25 @@ when it removes old matches. Packing is 60 to 300 times faster:
   current folder to its temporary folder first, so the files end up there and are deleted with it). The usage line
   names the tool (the original says "AmbermoonReleaseCreator"). Missing source folders or files give an error message.
 
+* AmbermoonDiskExtract writes the files that are on the disks. The original writes `2Wall3D.amb`, `2Object3D.amb`
+  and `3Object3D.amb` changed: when it loads the game data, it loads the labyrinths, which merges the textures of
+  `3Wall3D.amb` and `3Object3D.amb` into the containers of `2Wall3D.amb` and `2Object3D.amb` and moves the positions
+  of readers that it then writes from. Without a destination folder the files are written into the current folder (the
+  original writes them into the folder of the program).
+* AmbermoonListExtractor: game data without a party member's map character gives an error message (English 1.07: the
+  original ends with an exception). The original does not compile with the current library (it uses
+  `NumberOfFreeHands`, now `NumberOfOccupiedHands`).
+* Damaged ADF images and data give error messages where the original ends with an exception (the French 1.17 images
+  in the Ambermoon repository have a damaged `2Object3D.amb`: both fail).
+
 **Faster and simpler.** AmbermoonExtroIntroTextPackCreator packs the texts itself (with `AmbermoonTextPacks`): the
 original copies them into a temporary folder in the layout of the packers, builds both packers with `dotnet publish`
 and runs them. The texts and the packs are the same; translator names are passed as they are (the original quotes
 them for a command line, which breaks names with quotes).
+
+The game data is loaded when it is needed: `GameData` loads the files (from the folder or the ADF images), and the
+parts are made from them on demand (`ExecutableData.FromGameData`, `MapManager.Create`, maps by `GetMap`). The
+original makes all parts when it loads the data (graphics, all maps and labyrinths, songs, the intro and extro, ...).
 
 **Small differences.**
 

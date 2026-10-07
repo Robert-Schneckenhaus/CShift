@@ -123,3 +123,120 @@ write(B + 'ExtroTexts/end_texts/000.txt', b'left out')
 T = 'creator/Translations/Testish/'
 write(T + 'click-text.txt', b'\xef\xbb\xbf \t<KLICK>\xc2\xa0\r\n')
 write(T + 'translators.txt', '# translators\r\n  ANNA \u0160T\u011aP\u00c1NKOV\u00c1  \r\n\r\n   \n#X\nBOB B\rCARL'.encode())
+
+# AmbermoonDiskExtract: ADF disk images (an OFS image for disk A, an international FFS image for disk C) with raw
+# files, AMBR containers, a directory and files that need extension blocks.
+def amiga_hash(name, international):
+    h = len(name)
+    for ch in name:
+        c = ord(ch)
+        if 'a' <= ch <= 'z' or (international and 224 <= c <= 254 and c != 247):
+            c -= 32
+        h = (h * 13 + c) & 0x7ff
+    return h % 72
+
+def ambr(files):
+    data = b'AMBR' + len(files).to_bytes(2, 'big')
+    for f in files:
+        data += len(f).to_bytes(4, 'big')
+    return data + b''.join(files)
+
+class Adf:
+    def __init__(self, ffs, international):
+        self.data = bytearray(1760 * 512)
+        self.ffs = ffs
+        self.international = international
+        self.data[0:4] = b'DOS' + bytes([(1 if ffs else 0) | (2 if international else 0)])
+        self.next = 2
+        self.dirs = {}
+        self.make_header(880, 'ROOT', 1, 0)
+        self.put(880, 4, 0)
+        self.put(880, 12, 0x48)
+        self.put(880, 312, 0xffffffff)
+        self.dirs[''] = 880
+    def put(self, block, offset, value):
+        self.data[block * 512 + offset:block * 512 + offset + 4] = (value & 0xffffffff).to_bytes(4, 'big')
+    def get(self, block, offset):
+        return int.from_bytes(self.data[block * 512 + offset:block * 512 + offset + 4], 'big')
+    def alloc(self):
+        b = self.next
+        self.next += 1
+        if self.next == 880:
+            self.next = 882
+        return b
+    def make_header(self, block, name, sec_type, parent):
+        self.put(block, 0, 2)
+        self.put(block, 4, block if block != 880 else 0)
+        n = name.encode('latin-1')
+        self.data[block * 512 + 512 - 80] = len(n)
+        self.data[block * 512 + 512 - 79:block * 512 + 512 - 79 + len(n)] = n
+        self.put(block, 512 - 12, parent)
+        self.put(block, 512 - 4, sec_type)
+    def link(self, directory, name, block):
+        # appended to the hash chain of the directory
+        h = amiga_hash(name, self.international)
+        first = self.get(directory, 24 + h * 4)
+        if first == 0:
+            self.put(directory, 24 + h * 4, block)
+        else:
+            b = first
+            while self.get(b, 512 - 16):
+                b = self.get(b, 512 - 16)
+            self.put(b, 512 - 16, block)
+    def directory(self, path):
+        if path in self.dirs:
+            return self.dirs[path]
+        parent_path, _, name = path.rpartition('/')
+        parent = self.directory(parent_path)
+        block = self.alloc()
+        self.make_header(block, name, 2, parent)
+        self.link(parent, name, block)
+        self.dirs[path] = block
+        return block
+    def add(self, path, content):
+        parent_path, _, name = path.rpartition('/')
+        parent = self.directory(parent_path)
+        header = self.alloc()
+        self.make_header(header, name, (-3) & 0xffffffff, parent)
+        self.put(header, 512 - 188, len(content))
+        self.link(parent, name, header)
+        size = 512 if self.ffs else 488
+        chunks = [content[i:i + size] for i in range(0, len(content), size)] or []
+        table_block = header
+        seq = 0
+        for start in range(0, max(len(chunks), 1), 72):
+            part = chunks[start:start + 72]
+            if start > 0:
+                ext = self.alloc()
+                self.put(ext, 0, 16)
+                self.put(ext, 4, ext)
+                self.put(ext, 512 - 12, header)
+                self.put(ext, 512 - 4, (-3) & 0xffffffff)
+                self.put(table_block, 512 - 8, ext)
+                table_block = ext
+            self.put(table_block, 8, len(part))
+            for i, chunk in enumerate(part):
+                b = self.alloc()
+                seq += 1
+                if self.ffs:
+                    self.data[b * 512:b * 512 + len(chunk)] = chunk
+                else:
+                    self.put(b, 0, 8)
+                    self.put(b, 4, header)
+                    self.put(b, 8, seq)
+                    self.put(b, 12, len(chunk))
+                    self.data[b * 512 + 24:b * 512 + 24 + len(chunk)] = chunk
+                self.put(table_block, 24 + (71 - i) * 4, b)
+
+disk_a = Adf(False, False)
+disk_a.add('Keymap', bytes(r.randint(0, 255) for _ in range(300)))
+disk_a.add('AM2_BLIT', text(40000))
+disk_a.add('Initial/Chest_data.amb', ambr([text(100), b'', bytes(r.randint(0, 255) for _ in range(50))]))
+disk_a.add('Initial/Party_data.sav', text(77))
+disk_a.add('Readme', text(40))
+write('adf/AMBER_A.adf', bytes(disk_a.data))
+disk_c = Adf(True, True)
+disk_c.add('1Map_texts.amb', ambr([text(200), text(10), text(1)]))
+disk_c.add('1Icon_gfx.amb', ambr([text(80000)]))
+disk_c.add('Save.00/Party_char.amb', ambr([text(30)]))
+write('adf/amber_c.adf', bytes(disk_c.data))

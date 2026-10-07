@@ -86,3 +86,82 @@ List<string> SplitLinesNet(StringSlice text)
         lines.Add(text[start..].ToString());
     return lines;
 }
+
+/// `text.ToLower()` of .NET for the letters of European languages: ASCII, Latin-1 and Latin Extended-A (Czech,
+/// Polish, French, German, ...); other characters stay as they are.
+string ToLowerNet(StringSlice text)
+{
+    return _MapCase(text, true);
+}
+
+/// `text.ToUpper()` of .NET for the letters of European languages (see [ToLowerNet]).
+string ToUpperNet(StringSlice text)
+{
+    return _MapCase(text, false);
+}
+
+/// The lower case letter of a code point (see [ToLowerNet]).
+int ToLowerCodePoint(int c)
+{
+    if ((c >= 'A' && c <= 'Z') || (c >= 0xC0 && c <= 0xDE && c != 0xD7))
+        return c + 32;
+    if (c == 0x178)
+        return 0xFF;
+    if ((c >= 0x100 && c <= 0x137 && c != 0x130) || (c >= 0x14A && c <= 0x177))
+        return c | 1;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E))
+        return (c & 1) == 1 ? c + 1 : c;
+    return c;
+}
+
+/// The upper case letter of a code point (see [ToLowerNet]).
+int ToUpperCodePoint(int c)
+{
+    if ((c >= 'a' && c <= 'z') || (c >= 0xE0 && c <= 0xFE && c != 0xF7))
+        return c - 32;
+    if (c == 0xFF)
+        return 0x178;
+    if (c == 0xB5)
+        return 0x39C;
+    if ((c >= 0x100 && c <= 0x137 && c != 0x131) || (c >= 0x14A && c <= 0x177))
+        return c & ~1;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E))
+        return (c & 1) == 0 ? c - 1 : c;
+    return c;
+}
+
+string _MapCase(StringSlice text, bool lower)
+{
+    var output = new uint8[text.Length + 8];
+    int o = 0;
+    int i = 0;
+    while (i < text.Length)
+    {
+        int length = _CodePointLength(text, i);
+        int c = _CodePointAt(text, i, length);
+        int mapped = lower ? ToLowerCodePoint(c) : ToUpperCodePoint(c);
+        if (mapped == c || length > 2)
+        {
+            for (var k = 0; k < length; k += 1)
+                output[o + k] = text[i + k];
+            o += length;
+        }
+        else
+        {
+            // ASCII and the Latin letters above take 1 or 2 bytes, as do their counterparts
+            if (mapped < 0x80)
+            {
+                output[o] = (uint8)mapped;
+                o += 1;
+            }
+            else
+            {
+                output[o] = (uint8)(0xC0 | (mapped >> 6));
+                output[o + 1] = (uint8)(0x80 | (mapped & 0x3F));
+                o += 2;
+            }
+        }
+        i += length;
+    }
+    return string.FromBytes(output, 0, o);
+}
