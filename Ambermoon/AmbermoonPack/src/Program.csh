@@ -179,12 +179,6 @@ bool _AllDigits(StringSlice text)
     return true;
 }
 
-// a file (not a directory)
-bool IsFile(StringSlice path)
-{
-    return File.Exists(path) && !Directory.Exists(path);
-}
-
 void Exit(int code)
 {
     Environment.Exit(code);
@@ -384,7 +378,7 @@ Error<Dictionary<uint32, uint8[]>> GetContainerData(string source)
 {
     if (IsFile(source))
         return GetContainerDataFromFiles([source]);
-    return GetContainerDataFromFiles(GetFiles(source));
+    return GetContainerDataFromFiles(GetFiles(source).ToArray());
 }
 
 // REPACK: reads a file of the game and writes it again (with other compression options)
@@ -575,7 +569,7 @@ void PackItems(string[] args)
         Exit(ErrorSourceFound);
     }
 
-    var found = GetContainerDataFromFiles(GetFiles(args[1]));
+    var found = GetContainerDataFromFiles(GetFiles(args[1]).ToArray());
     if (found is error readError)
     {
         Console.WriteLine("Internal error: " + readError.Message);
@@ -609,19 +603,6 @@ void PackItems(string[] args)
     WriteFile(args[2], outputWriter);
 
     Console.WriteLine("File was written successfully.");
-}
-
-// the files (not the directories) in a directory, as paths, sorted (byte by byte)
-string[] GetFiles(string directory)
-{
-    var paths = List<string>.Create();
-    foreach (var name in Directory.GetEntries(directory))
-    {
-        string path = Path.Combine(directory, name);
-        if (IsFile(path))
-            paths.Add(path);
-    }
-    return paths.ToArray();
 }
 
 // Files named by numbers (001, 002.bin, ...) are the files with these numbers; if no file has such a name, the files

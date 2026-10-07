@@ -1,5 +1,5 @@
-# MD5 sums of the results of the original tools (Ambermoon/tests/run.sh --record): kind, case, console output,
-# written file (or folder) and, for the editor, the edited file.
+# MD5 sums of the results of the original tools (Ambermoon/tests/run.sh --record): kind, case, console output
+# and the files written (for the editor also the edited file; for the creator only the two files).
 pack amnp-c0 1f4107bd05b47f265ef7f70e54494b3b 28f0db38295581c8e98a7287681d7fe5
 unpack amnp-c0 58eea01c3617046502779c6961f1a497 52390066b6f32b2320b4d3ccd7592a0a
 pack amnp-c1 89a515ce38fd014d9fc94806044e710e f794b01ad67798eee0fa26789b7cf054
@@ -80,3 +80,23 @@ events random21.txt:npc 8962fc6ba86438ad56bdfa692f84a06e 43910a70c43fb6c7b1da95d
 events random22.txt:npc 5ac09c88d50a692279ffefe0355bf320 410218bb597becebd13c4baa62f375ff a0785074b98320987dd63c9ab5aca285
 events random23.txt:npc f76ca9ac6cd3e56532777a6065b73466 3f085c6006eb5ae29c98f187125501c2 a0785074b98320987dd63c9ab5aca285
 events random24.txt:npc 24b5f39f578d1a6d8d34f180a926d5d0 8750561107987ffac9de754094350553 a0785074b98320987dd63c9ab5aca285
+hex 1:s1.txt 855a092f3849bf0ba5fd4a1f3bb7d032 5e8a6d6c3d4a6ee3c0d6f4c2e35aec59
+hex 2:s2.txt 5c4134b3c187a22da331290e1a92b204 6a129cbd1825bf320fff7996eb603f73
+hex 3:s3.txt 4801317fc6ecd36fe53e26989652ed2c 74e5187fd6ad6b49947a2c343725cb64
+hex 4:s4.txt 75761a56f978f022d37ff14e69acefc7 45728df115d4681d1e0dd874c8b8afad
+hex 5:s5.txt 723bee6fed182d61e7dc3572bff0225c 74e5187fd6ad6b49947a2c343725cb64
+hex 6:s6.txt 50bd0c00780f1eb7d1d40cebc2f4792c 74e5187fd6ad6b49947a2c343725cb64
+hex 7:s7.txt 50bd0c00780f1eb7d1d40cebc2f4792c 74e5187fd6ad6b49947a2c343725cb64
+hex 8:s8.txt 7a5a8ba82d289b8bb15262568689682d b3c0798c80045ecf4af84e9cd7cbdcbe
+hex 9:s9.txt 413bdafec6177fe70ceb737ae1b08f53 73e7d99a6b5dbbf90dd3cb6e6b26b007
+hex 10:s10.txt 8fa27a63d85eaf7276446b3decb30133 aaff12bc8412b4a90998204aebfc6386
+hex 11:s2.txt 5c4134b3c187a22da331290e1a92b204 98260fbce5391e5577e68212ab710456
+intro intro 0849a0209be4152ec326334f91b7e489 4f9b640a5951867cb74f6376d8e6c7e8
+intro intro-cwd 0849a0209be4152ec326334f91b7e489 4f9b640a5951867cb74f6376d8e6c7e8
+intro intro-help bb3324f153bb4d8d346bd79e8b33f6e6 -
+extro extro 6858d923322b5cf81629f31bf966de07 059f6ca81c934134fdb19e00380c22b4
+extro extro-cwd 6858d923322b5cf81629f31bf966de07 059f6ca81c934134fdb19e00380c22b4
+extro extro-click 6858d923322b5cf81629f31bf966de07 431d65251b564b8555ee638c7d802992
+extro extro-names 6858d923322b5cf81629f31bf966de07 cf8afa466198ee8057b895787b4bc8ad
+extro extro-help aabb0ae333b130cf3eebeabe00eb0c13 -
+creator testish 7b8f72d501248690d7787617c0d159cd d2052f01af733e796bf8349dbf4a56a0

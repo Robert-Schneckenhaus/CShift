@@ -6,12 +6,17 @@ read and write the data files of the Amiga game Ambermoon.
 
 | Folder | What it is | Port of |
 |---|---|---|
-| `Ambermoon.Common/` | library: directions, the texts of enums and floats as .NET writes them | `Ambermoon.Common` (parts) |
+| `Ambermoon.Common/` | library: directions, the texts of enums and floats as .NET writes them, numbers, files and texts read as .NET reads them | `Ambermoon.Common` (parts) |
 | `Ambermoon.Data.Common/` | library: the events of maps and characters, the enumerations they use | `Ambermoon.Data.Common` (parts) |
 | `Ambermoon.Data.Legacy/` | library: big-endian readers and writers, the file formats (JH, LOB, VOL1, AMNC, AMNP, AMBR, AMPC), the LOB compressions, the events | `Ambermoon.Data.Legacy` (parts) |
 | `Ambermoon.Data.Descriptions/` | library: descriptions of the values of all event types (for editors) | `AmbermoonTools/Ambermoon.Data.Descriptions` |
+| `AmbermoonTextPacks/` | library: the intro and extro text packs of the remake (shared by the three text pack tools) | the packing code of the text packers |
 | `AmbermoonPack/` | packs files into the formats of the game and unpacks them | `AmbermoonTools/AmbermoonPack` |
 | `AmbermoonEventEditor/` | edits the events of maps, NPCs and party members | `AmbermoonTools/AmbermoonEventEditor` |
+| `HexValueChanger/` | changes bytes at an offset in one or many files | `AmbermoonTools/HexValueChanger` |
+| `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
+| `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
+| `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
 | `tests/` | tests with expected results of the original tools | |
 
 ## Building
@@ -21,9 +26,10 @@ cshiftc build Ambermoon/AmbermoonPack          # -> Ambermoon/AmbermoonPack/bin/
 cshiftc build Ambermoon/AmbermoonEventEditor   # -> Ambermoon/AmbermoonEventEditor/bin/AmbermoonEventEditor
 ```
 
-The tools need a compiler from this repository (newer than 0.26): the event editor reads its commands with
-`Console.ReadLine()`. `bash Ambermoon/tests/run.sh [path/to/cshiftc]` builds both tools and compares their results
-with those of the original tools (`tests/run_tests.sh` runs it too).
+and the same for the other tools. They need a compiler from this repository (newer than 0.26): the event editor and
+HexValueChanger read their commands with `Console.ReadLine()`, and the extro text packer needs a fix of conditional
+expressions. `bash Ambermoon/tests/run.sh [path/to/cshiftc]` builds all tools and compares their results with those
+of the original tools (`tests/run_tests.sh` runs it too).
 
 ## Usage
 
@@ -36,6 +42,11 @@ AmbermoonPack REPACK Monster_char.amb out.amb -c2    # a container in another co
 AmbermoonPack JH+LOB Dict Dict.amb 0xd2e7           # JH-encrypted LOB with the key 0xd2e7
 
 AmbermoonEventEditor maps/258 0                      # the events of map 258 (0: map, 1: NPC, 2: party member)
+
+HexValueChanger -r saves '*.sav'                     # the same bytes changed in all files *.sav below saves/
+AmbermoonIntroTextPacker Czech                       # Czech/IntroTexts/*.txt -> Czech/Intro_texts.amb
+AmbermoonExtroTextPacker Czech "<KLIK>" "DANIEL ZIMA"  # Czech/ExtroTextGroups/ -> Czech/Extro_texts.amb
+AmbermoonExtroIntroTextPackCreator czech 1.00 out    # in the Ambermoon repository: out/Intro_texts.amb, out/Extro_texts.amb
 ```
 
 ## How the port was checked
@@ -47,6 +58,10 @@ AmbermoonEventEditor maps/258 0                      # the events of map 258 (0:
 * **AmbermoonEventEditor**: the listings of all maps, NPCs and party members, and 1200 random editing sessions (all
   commands, random answers, saved at the end): the output and the saved files are the same as those of the original
   (with the crashes of the original that are fixed here fixed the same way in it, see below).
+* **The text pack tools**: the packs of all translations in the Ambermoon repository (Czech, English, Polish; with
+  their translators and click texts), and texts in all encodings that .NET reads (byte order marks of UTF-8, UTF-16
+  and UTF-32, invalid UTF-8): the same files and output as the originals.
+* **HexValueChanger**: sessions with all commands on one file and on file patterns, also recursive.
 
 ## Different from the original
 
@@ -77,6 +92,22 @@ when it removes old matches. Packing is 60 to 300 times faster:
   `reorder`, `copychain` and `graph` with branches to indices outside of the events; chains that are loops (`chain`,
   `remove`); "Make the successor the new chain start" for an event without a successor (only offered when there is
   one); files that are too short; the end of the input (ends the program).
+* HexValueChanger: the documented inputs that did nothing work: Enter keeps a byte, `~` inverts it (the original
+  rejects both as invalid), and an invalid length is 1 as the message says (the original then asks for no byte). A
+  mask that is out of range is asked again without applying the operation to the next value. Bytes behind the end of
+  a file (or before its start) are left out with a message (the original ends with an exception, also when only one
+  of several files is too short). A file or folder that does not exist gives an error message; the end of the input
+  ends the program (the original asks for the offset again forever).
+* The text packers: file and folder names without a number give an error message (the original ends with an
+  exception).
+* AmbermoonExtroIntroTextPackCreator: an output folder given as a relative path is written (the original changes the
+  current folder to its temporary folder first, so the files end up there and are deleted with it). The usage line
+  names the tool (the original says "AmbermoonReleaseCreator"). Missing source folders or files give an error message.
+
+**Faster and simpler.** AmbermoonExtroIntroTextPackCreator packs the texts itself (with `AmbermoonTextPacks`): the
+original copies them into a temporary folder in the layout of the packers, builds both packers with `dotnet publish`
+and runs them. The texts and the packs are the same; translator names are passed as they are (the original quotes
+them for a command line, which breaks names with quotes).
 
 **Small differences.**
 

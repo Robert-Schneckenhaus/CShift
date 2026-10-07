@@ -10,3 +10,6 @@ tools/debug/*.py text eol=lf
 # Files that tests embed byte for byte (BOM, CRLF and LF mixed on purpose).
 tests/cases/embed/** -text
 tests/projects/embed/data/** -text
+# The data of the Ambermoon tests: their results are compared byte for byte.
+Ambermoon/tests/** -text
+Ambermoon/tests/*.sh text eol=lf

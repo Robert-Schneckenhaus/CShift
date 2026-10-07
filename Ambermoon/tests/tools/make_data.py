@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Writes the synthetic test data of Ambermoon/tests (no data of the game): files to pack, a 2D map with events and an
-# NPC with events. Deterministic: the same files every time.
+# NPC with events, files for HexValueChanger, texts for the text packers and a folder in the layout of the Ambermoon
+# repository for AmbermoonExtroIntroTextPackCreator. Deterministic: the same files every time.
 #
 #   python3 make_data.py <tests folder>
 import os, random, sys
@@ -77,3 +78,48 @@ for i in range(width * height):
     tiles += bytes([r.randint(0, 255), r.randint(0, 12), r.randint(0, 255), r.randint(0, 255)])
 write('events/map/300', bytes(head) + bytes(tiles) + events_block(48, 12) + bytes(r.randint(0, 255) for _ in range(40)))
 write('events/npc', bytes(r.randint(0, 255) for _ in range(0x122)) + events_block(30, 6))
+
+# HexValueChanger: files of different sizes, one in a folder below
+write('hex/files/a.bin', bytes(r.randint(0, 255) for _ in range(64)))
+write('hex/files/b.bin', bytes(r.randint(0, 255) for _ in range(32)))
+write('hex/files/c.txt', text(16))
+write('hex/files/sub/d.bin', bytes(r.randint(0, 255) for _ in range(40)))
+
+# text packers: texts in all the encodings that File.ReadAllText of .NET reads (byte order marks of UTF-8, UTF-16 and
+# UTF-32), invalid UTF-8, line breaks, commands with and without a first text, folders that are left out
+I = 'texts/IntroTexts/'
+write(I + '000.txt', b'\xef\xbb\xbfBOM ' + text(20))
+write(I + '001.txt', b'\xff\xfe' + 'UTF-16 LE: \u00e4\u00f6\u00fc \u20ac'.encode('utf-16-le'))
+write(I + '002.txt', b'\xfe\xff' + 'BE \U0001F600 \ud800'.encode('utf-16-be', 'surrogatepass'))
+write(I + '003.txt', b'bad \x80 \xc3 \xe2\x82 \xf0\x9f\x98 \xed\xa0\x80 \xc0\xaf \xf5 end\xe2')
+write(I + '004.txt', b'line1\r\nline2\rline3\n')
+write(I + '005.txt', b'')
+write(I + '009.000.txt', text(30))
+write(I + '010.000.txt', b'cmd a')
+write(I + '010.001.txt', b'cmd b')
+write(I + '011.002.txt', b'a command without .000')
+write(I + '011.003.txt', text(12))
+write(I + '012.000.txt', b'\xff\xfe\x00\x00' + 'UTF-32 \u00df'.encode('utf-32-le'))
+write(I + '012.001.txt', b'\xff\xfe\x41')
+E = 'texts/ExtroTextGroups/'
+write(E + '000/000/000.txt', text(40))
+write(E + '000/000/001.txt', b'e2 \xe4')
+write(E + '000/001/000.txt', b'odd')
+write(E + '002/000/000.txt', 'Gr\u00fc\u00dfe'.encode())
+write(E + '002/003/010.txt', text(25))
+write(E + '002/003/002.txt', text(7))
+write(E + 'xyz/000.txt', b'left out')
+write(E + 'end_texts/000.txt', b'left out')
+
+# AmbermoonExtroIntroTextPackCreator: the language "Testish" in the layout of the Ambermoon repository
+B = 'creator/Disks/Bugfixing/Testish/'
+for i in range(15):
+    write(B + 'IntroTexts/%03d.txt' % i, (b'\xef\xbb\xbf' if i == 3 else b'') + text(r.randint(5, 60)))
+for c in range(6):
+    for g in range(r.randint(1, 3)):
+        for t in range(r.randint(1, 4)):
+            write(B + 'ExtroTexts/%03d/%03d/%03d.txt' % (c, g, t), text(r.randint(3, 50)))
+write(B + 'ExtroTexts/end_texts/000.txt', b'left out')
+T = 'creator/Translations/Testish/'
+write(T + 'click-text.txt', b'\xef\xbb\xbf \t<KLICK>\xc2\xa0\r\n')
+write(T + 'translators.txt', '# translators\r\n  ANNA \u0160T\u011aP\u00c1NKOV\u00c1  \r\n\r\n   \n#X\nBOB B\rCARL'.encode())
