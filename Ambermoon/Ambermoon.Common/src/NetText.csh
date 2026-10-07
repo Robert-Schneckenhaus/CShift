@@ -165,3 +165,79 @@ string _MapCase(StringSlice text, bool lower)
     }
     return string.FromBytes(output, 0, o);
 }
+
+/// Whether ICU (which .NET uses for culture-aware comparisons on Linux) ignores the character completely: control
+/// characters other than tab and line breaks, the soft hyphen, zero-width and direction marks, the byte order mark,
+/// variation selectors and tags.
+bool IsIgnorableNet(int c)
+{
+    return (c >= 0 && c <= 0x08) || (c >= 0x0E && c <= 0x1F) || (c >= 0x7F && c <= 0x9F) || c == 0xAD ||
+           c == 0x34F || c == 0x61C || c == 0x180E || (c >= 0x200B && c <= 0x200F) || (c >= 0x202A && c <= 0x202E) ||
+           (c >= 0x2060 && c <= 0x206F) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0xFEFF || (c >= 0xFFF9 && c <= 0xFFFB) ||
+           (c >= 0xE0000 && c <= 0xE0FFF);
+}
+
+/// The text without the characters that culture-aware comparisons ignore (see [IsIgnorableNet]).
+string WithoutIgnorableNet(StringSlice text)
+{
+    var result = StringBuilder.Create();
+    int i = 0;
+    while (i < text.Length)
+    {
+        int length = _CodePointLength(text, i);
+        if (!IsIgnorableNet(_CodePointAt(text, i, length)))
+            result.Append(text[i..i + length]);
+        i += length;
+    }
+    return result.ToString();
+}
+
+/// `text.EndsWith(value)` of .NET (culture-aware: characters that ICU ignores do not count, so `"a  "` ends with
+/// `" \0 "`).
+bool EndsWithNet(StringSlice text, StringSlice value)
+{
+    return WithoutIgnorableNet(text).EndsWith(WithoutIgnorableNet(value));
+}
+
+/// `text.StartsWith(value)` of .NET (culture-aware, see [EndsWithNet]).
+bool StartsWithNet(StringSlice text, StringSlice value)
+{
+    return WithoutIgnorableNet(text).StartsWith(WithoutIgnorableNet(value));
+}
+
+/// `string.Compare(a, b) == 0` of .NET (culture-aware, see [EndsWithNet]).
+bool EqualsNet(StringSlice a, StringSlice b)
+{
+    return WithoutIgnorableNet(a) == WithoutIgnorableNet(b);
+}
+
+/// The length of the text in UTF-16 characters (`text.Length` of .NET).
+int LengthNet(StringSlice text)
+{
+    int count = 0;
+    int i = 0;
+    while (i < text.Length)
+    {
+        int length = _CodePointLength(text, i);
+        count += length == 4 ? 2 : 1;
+        i += length;
+    }
+    return count;
+}
+
+/// The first `count` UTF-16 characters of the text (all of it if it is shorter; a character outside of the BMP that
+/// would be split is left out).
+StringSlice FirstCharactersNet(StringSlice text, int count)
+{
+    int i = 0;
+    while (i < text.Length && count > 0)
+    {
+        int length = _CodePointLength(text, i);
+        int units = length == 4 ? 2 : 1;
+        if (units > count)
+            break;
+        count -= units;
+        i += length;
+    }
+    return text[0..i];
+}

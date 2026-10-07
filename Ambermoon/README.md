@@ -22,6 +22,7 @@ read and write the data files of the Amiga game Ambermoon.
 | `Ambermoon3DMapViewer/` | shows a 3D map as text and the walls and objects of its blocks | `AmbermoonTools/Ambermoon3DMapViewer` |
 | `AmbermoonMonsterEditor/` | shows and changes values of the monsters (`Monster_char.amb`, before 1.14 `Monster_char_data.amb`) | `AmbermoonTools/AmbermoonMonsterEditor` |
 | `AmbermoonItemEditor/` | shows, adds, edits and removes items (`Objects.amb/001`, before 1.14 in `AM2_CPU` and `AM2_BLIT`) | `AmbermoonTools/AmbermoonItemEditor` |
+| `AmbermoonTextImport/` | exports the texts of a text file (map texts, `Text.amb`, ...) into text files and imports them | `AmbermoonTools/AmbermoonTextImport` |
 | `AmbermoonNameExtract/` | exports the names of characters, places, goto points, the dictionary and items into text files and imports them | `AmbermoonTools/AmbermoonNameExtract` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
@@ -64,6 +65,8 @@ AmbermoonUsedColorsDetector 258 Amberfiles           # the colors of the texture
 Ambermoon3DMapViewer maps/258 Amberfiles            # map 258 as text, then the walls and objects of blocks
 AmbermoonMonsterEditor "big spider" 0x18 2 1000    # in the game data folder: the word at 0x18 of the monster
 AmbermoonItemEditor Objects/001                     # the items of an unpacked Objects.amb (or a 1.07 game data folder)
+AmbermoonTextImport -e Amberfiles 1Map_texts.amb texts   # texts/1Map_texts.amb/001/000.txt, ...
+AmbermoonTextImport -i Amberfiles 1Map_texts.amb texts   # and back (-c: the best compression)
 AmbermoonNameExtract e Amberfiles names              # all names as names/NPC_char/001.txt, ...
 AmbermoonNameExtract i Amberfiles names              # and back into the game data (backups: *.backup)
 ```
@@ -97,6 +100,10 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
 * **AmbermoonItemEditor**: more than 600 random editing sessions (all commands, random answers, saved at the end) on
   the item files of English and German 1.20 and the executables of English 1.07: the same output and files (also
   `AM2_CPU` and `AM2_BLIT`) as the original, with its bugs fixed in it the same way (see below).
+* **AmbermoonTextImport**: the export of all text files of English and German 1.20 (also `Text.amb`) with all options,
+  and the import of the exported texts and of changed ones (umlauts, spaces and zeros at the ends, soft hyphens, gaps
+  in the numbering, missing and empty folders with the questions answered), also with the extended compression: the
+  same output and files as the original.
 * **AmbermoonNameExtract**: the export and import of all kinds of names, of containers and of the game data (English
   and German 1.20, also ADF images), with missing names (asked for), changed and too long ones: the same output and
   files as the original, with its bugs fixed in it the same way (see below). The export is 20 times faster.
@@ -179,6 +186,10 @@ when it removes old matches. Packing is 60 to 300 times faster:
   items while an added item has no name yet, removing a negative number and starting without an argument work (the
   original ends with an exception); the end of the input ends the program (the original ends with an exception or, for
   an item file, says "Unable to load item data.").
+* AmbermoonTextImport: the end of the input when it asks whether to continue is "no" (the original ends with an
+  exception), and texts that do not fit `Text.amb` (a wrong number of texts) give an error message. The folders of
+  texts are read in the order of their names (the original takes the order of the file system, which only decides
+  which error is shown first).
 * AmbermoonNameExtract: importing goto points keeps the maps intact (the original drops the first two bytes of each
   map with goto points and the automap types of 3D maps behind them: the maps can no longer be read). With the game
   data, the places, the dictionary and the items are read from their start (the original reads them where loading the
@@ -210,4 +221,6 @@ original makes all parts when it loads the data (graphics, all maps and labyrint
 
 Kept as in the original (it is what the original does, not a failure): the descriptions use a display mapping only the
 first time a value is shown (the original sets it to null "to avoid recursive loops" and never back), display names
-that the editor changes stay changed, and JH+LOB always uses the LOB of the original game.
+that the editor changes stay changed, and JH+LOB always uses the LOB of the original game. The text tools compare the
+ends of texts like .NET's culture-aware `StartsWith` and `EndsWith`, which ignore zeros, soft hyphens and other
+characters (so a map text that ends with two spaces counts as one that ends with " \0 " and gets no " \0 ").

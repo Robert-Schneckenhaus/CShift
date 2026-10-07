@@ -21,7 +21,8 @@ trap 'rm -rf "$TMP"' EXIT
 TOOLS=(AmbermoonPack AmbermoonEventEditor HexValueChanger AmbermoonIntroTextPacker AmbermoonExtroTextPacker
        AmbermoonExtroIntroTextPackCreator AmbermoonDiskExtract)
 BUILD_ONLY=(AmbermoonListExtractor AmbermoonLabdataEditor AmbermoonLabdataExtractor AmbermoonUsedColorsDetector
-            Ambermoon3DMapViewer AmbermoonMonsterEditor AmbermoonItemEditor AmbermoonNameExtract)
+            Ambermoon3DMapViewer AmbermoonMonsterEditor AmbermoonItemEditor AmbermoonNameExtract
+            AmbermoonTextImport)
 declare -A COMMAND
 
 RECORD=0
