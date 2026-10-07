@@ -22,7 +22,8 @@ TOOLS=(AmbermoonPack AmbermoonEventEditor HexValueChanger AmbermoonIntroTextPack
        AmbermoonExtroIntroTextPackCreator AmbermoonDiskExtract)
 BUILD_ONLY=(AmbermoonListExtractor AmbermoonLabdataEditor AmbermoonLabdataExtractor AmbermoonUsedColorsDetector
             Ambermoon3DMapViewer AmbermoonMonsterEditor AmbermoonItemEditor AmbermoonNameExtract
-            AmbermoonTextImport AmbermoonTextManager AmbermoonIntroPatcher AmbermoonExtroPatcher)
+            AmbermoonTextImport AmbermoonTextManager AmbermoonIntroPatcher AmbermoonExtroPatcher
+            AmbermoonPaletteChanger AmbermoonImageConverter AmbermoonFontCreator AmbermoonFontProcessor)
 declare -A COMMAND
 
 RECORD=0
@@ -124,6 +125,15 @@ test_texts() {
     local kind="$1" PACKER="$2" name packer args work output
     while read -r name packer args; do
         [ "$packer" = "$kind" ] || continue
+        # Windows passes the arguments of a program in the ANSI code page, not as UTF-8 (see Todo.md): the cases with
+        # other characters than ASCII in their arguments are left out there
+        case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*)
+                if LC_ALL=C grep -q '[^ -~]' <<< "$args"; then
+                    echo "skip  Ambermoon $kind $name (arguments that are not ASCII, on Windows)"
+                    continue
+                fi ;;
+        esac
         work="$TMP/t_$name"
         cp -r "$DIR/texts" "$work"
         local argv=()

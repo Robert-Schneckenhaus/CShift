@@ -31,6 +31,11 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
+| `AmbermoonBitmaps/` | library: graphics of the game as images, palettes as colors, and how GDI+ loads image files (its pixel formats) | `AmbermoonTools/AmbermoonBitmaps` |
+| `AmbermoonPaletteChanger/` | replaces each color of an image by the nearest color of a palette of the game | `AmbermoonTools/AmbermoonPaletteChanger` |
+| `AmbermoonImageConverter/` | converts an image into the bit planes of a graphic of the game (3, 4, 5 bit planes, textures, multi-tile graphics) | `AmbermoonTools/AmbermoonImageConverter` |
+| `AmbermoonFontCreator/` | makes a font file of the extro from a JSON specification and two glyph atlases | `AmbermoonTools/AmbermoonFontCreator` |
+| `AmbermoonFontProcessor/` | copies glyphs of a glyph atlas into free slots (adds rows) and saves it | `AmbermoonTools/AmbermoonFontProcessor` (its GlyphTool) |
 | `tests/` | tests with expected results of the original tools; `tests/reference/`: building the originals and comparing them with the ports | |
 
 [HANDOVER.md](HANDOVER.md) has the state of the work: what is left to port, how the ports were checked and the bugs
@@ -81,7 +86,14 @@ AmbermoonTextManager -e Amberfiles texts            # all texts and names of the
 AmbermoonTextManager -i Amberfiles texts -f Text.amb   # Text.amb back into the game data
 AmbermoonNameExtract e Amberfiles names              # all names as names/NPC_char/001.txt, ...
 AmbermoonNameExtract i Amberfiles names              # and back into the game data (backups: *.backup)
+AmbermoonPaletteChanger image.png Palettes/001 32 out.png   # the colors of palette 001
+AmbermoonImageConverter item.png Palettes/001 item.bin 5    # 5 bit planes (0: textures, 1: multi-tile, 3, 4)
+AmbermoonFontCreator font.json SmallGlyphs.png LargeGlyphs.png Extro_fonts
+AmbermoonFontProcessor SmallGlyphs.png [commands.txt]   # copy <index> | save [path] | exit
 ```
+
+The image tools read and write PNG, BMP and PPM with `System.Image` of the standard library (the originals use
+`System.Drawing`, which reads more formats - GIF, JPEG, TIFF - but works on Windows only).
 
 ## How the port was checked
 
@@ -132,6 +144,18 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
 * **AmbermoonMonsterEditor**: 82 command lines (all options, invalid numbers and ranges, ids and names, changes with
   backups) in the data of English 1.07 and 1.20, German 1.20 (names with umlauts), an empty folder and ADF images: the
   same output, exit codes and files as the original (with the patches that make it work at all, see below).
+
+* **The image tools** (on Windows, where `System.Drawing` of the originals works): the pixels that `System.Image`
+  decodes are the ones GDI+ gives for 70 test images (all PNG color types and bit depths, interlaced, with
+  transparency; BMP with 1 to 32 bits, RLE, bit fields, OS/2 headers, written by GDI+ too), and GDI+ reads every file
+  that `System.Image` writes with the same pixels. `AmbermoonPaletteChanger`: 200 runs (those images, four palettes of
+  the game and their color counts): the same pixels and file formats as the original. `AmbermoonImageConverter`: 195
+  command lines (images with exact, transparent and other colors, all formats, frames, offsets, transparent and
+  forbidden indices, palettes from images, the errors): the same output and files. `AmbermoonFontCreator`: the fonts
+  of the Czech and Polish translations with all glyph atlases of the repository and 14 changed specifications (case
+  of the names, defaults, errors, output folders): the same output, exit codes and files. `AmbermoonFontProcessor`:
+  120 random sessions on the glyph atlases of the repository (copies that add rows, saves, invalid commands, command
+  files): the same output and pixels as the original (with the call of its GlyphTool, see below).
 
 ## Different from the original
 
@@ -239,6 +263,20 @@ when it removes old matches. Packing is 60 to 300 times faster:
   file).
 * Damaged ADF images and data give error messages where the original ends with an exception (the French 1.17 images
   in the Ambermoon repository have a damaged `2Object3D.amb`: both fail).
+* AmbermoonPaletteChanger works with images that GDI+ loads with a palette (PNG and BMP with 1, 4 or 8 bits without
+  transparency; the original ends with an exception in `SetPixel`); missing or invalid arguments, a palette file
+  shorter than the number of colors and files that are no images give an error message (the original ends with an
+  exception).
+* AmbermoonImageConverter: an image that does not fit the format and the frames (the frames reach past the image or
+  the output) and texts as optional numbers give an error message, as does a palette image with fewer than 32 pixels
+  (the original ends with an exception, or reads behind the pixels of the palette image).
+* AmbermoonFontCreator: invalid JSON (and numbers that are no integers of the right size) gives the message for a
+  specification that cannot be read, and images that cannot be read give an error message (the original ends with
+  an exception).
+* AmbermoonFontProcessor: the original does nothing as it is: its program only declares functions, the call of
+  `GlyphTool.Main(args)` is commented out. The port is that GlyphTool. `exit` ends it (in the original it does
+  nothing), and so does the end of the input (the original asks again forever); `tests/reference/patches/` has these
+  changes for the original.
 
 **Faster and simpler.** AmbermoonExtroIntroTextPackCreator packs the texts itself (with `AmbermoonTextPacks`): the
 original copies them into a temporary folder in the layout of the packers, builds both packers with `dotnet publish`
@@ -250,6 +288,11 @@ parts are made from them on demand (`ExecutableData.FromGameData`, `MapManager.C
 original makes all parts when it loads the data (graphics, all maps and labyrinths, songs, the intro and extro, ...).
 
 **Small differences.**
+
+* The image tools read PNG, BMP and PPM (the originals: what GDI+ reads, also GIF, JPEG, TIFF and icons, but no PPM).
+  Writing a PNG gives the same pixels as GDI+ in another (usually smaller) file; a BMP with transparent pixels keeps
+  its alpha channel (GDI+ writes 32-bit BMPs whose alpha it ignores when it reads them). The messages of failed file
+  operations are those of CShift, not of .NET.
 
 * AmbermoonPack sorts file names byte by byte; the original uses the sort order of the current culture (this only
   matters for names that are not numbers, in different case). A type is a name in capitals or a number (the original

@@ -7,13 +7,14 @@ ports live in this folder (`Ambermoon/`); [README.md](README.md) describes each 
 everything that is different from the original. This file is the handover: what is done, what is left, how the ports
 were checked and what was found in the originals.
 
-The work was paused after the text tools, the intro and the extro (before the release creators and the image tools).
+The work was paused after the image tools (before AmbermoonPatcher and the release creators). The standard library
+has `System.Image` (PNG, BMP, PPM) and `System.Compression` (deflate, zlib, gzip, CRC-32) for them now.
 
 
 ## Done
 
 Libraries: `Ambermoon.Common`, `Ambermoon.Data.Common`, `Ambermoon.Data.Legacy`, `Ambermoon.Data.Descriptions`,
-`Ambermoon.Data.Text.Patching`, `AmbermoonTextPacks` (the parts that the tools need).
+`Ambermoon.Data.Text.Patching`, `AmbermoonTextPacks`, `AmbermoonBitmaps` (the parts that the tools need).
 
 | Tool | Checked against the original (details in README.md) |
 |---|---|
@@ -31,6 +32,10 @@ Libraries: `Ambermoon.Common`, `Ambermoon.Data.Common`, `Ambermoon.Data.Legacy`,
 | AmbermoonTextManager | export of 1.20 and 1.07, import (gives the files of 1.20 byte for byte, 100x faster) |
 | AmbermoonIntroPatcher | the Czech intro base with Czech and English texts, all encodings |
 | AmbermoonExtroPatcher | the Czech extro base with the Czech, English and Polish extro texts, translators, config files |
+| AmbermoonPaletteChanger | 200 runs: 50 images (all PNG and BMP variants) with four palettes, pixels compared through GDI+ |
+| AmbermoonImageConverter | 195 command lines: all formats, frames, offsets, transparent/forbidden indices, errors |
+| AmbermoonFontCreator | the Czech and Polish fonts, all glyph atlases of the repository, 14 changed specifications |
+| AmbermoonFontProcessor | 120 random sessions on the glyph atlases (the original patched to run its GlyphTool) |
 
 `Ambermoon/tests/run.sh` (part of `tests/run_tests.sh`) checks the tools that need no game data with synthetic data
 against recorded results of the originals (`tests/expected.txt`, `tests/tools/make_data.py`), and builds the others
@@ -56,25 +61,23 @@ AmbermoonMapCharEditor, AmbermoonMapEditor2D, AmbermoonMapEditor3D, AmbermoonUIE
    German game into another language with the text tools above, write ADF images, LHA and zip archives). They use the
    NuGet packages `Amiga.FileFormats.ADF`, `Amiga.FileFormats.LHA` and `SharpZipLib`. A port needs ADF writing (the
    library reads ADF images: `Ambermoon.Data.Legacy/src/Serialization/ADFReader.csh`), LHA compression (lh5?) and zip
-   (deflate) in CShift; the standard library has no deflate. Look at the sources of the Amiga.FileFormats packages
-   (NuGet restore works through the proxy) and at what the release creators need of them. They are meant to run from
+   (deflate) in CShift; the standard library has deflate now (`System.Compression`: `Deflate`, `Crc32` for zip).
+   Look at the sources of the Amiga.FileFormats packages (NuGet restore works through the proxy) and at what the
+   release creators need of them. They are meant to run from
    the folder of the Ambermoon repository (see their README.md).
-3. **The image tools**: AmbermoonFontCreator (316 lines), AmbermoonFontProcessor (525), AmbermoonImageConverter (383),
-   AmbermoonPaletteChanger (143), AmbermoonMonsterBattleImageGenerator (140, also uses the package
-   `Ambermoon.Data.GameDataRepository`, a project in Ambermoon.net), and the library `AmbermoonBitmaps` (80). They read
-   and write PNG/BMP with `System.Drawing.Common` 10, **which only works on Windows** (since .NET 7), so the originals
-   cannot be run in a Linux container to compare: either check them on Windows, or swap System.Drawing for another
-   image library in the reference build (the logic of the tools is mostly pixel loops). A port needs PNG decoding and
-   encoding (inflate/deflate, CRC) in CShift.
-4. Not looked at: `CSharpToC` (a library that exports C# code to C) and `CTests` (its test program): no Ambermoon data
-   tools.
+3. ~~The image tools~~: done (see above). They were checked on Windows, where `System.Drawing` of the originals
+   works; the pixels were compared by a small .NET program that dumps what GDI+ decodes (the decoders of
+   `System.Image` give the same pixels as GDI+, also its rounding: see `docs/stdlib.md`). The library
+   `AmbermoonBitmaps/src/GdiBitmap.csh` knows which pixel format GDI+ gives a file (indexed, RGB without alpha, ARGB),
+   which decides what `SetPixel` does in the originals. AmbermoonMonsterBattleImageGenerator was skipped (as asked).
+4. Skip the rest
 5. Optional: golden tests with synthetic game data for the tools that need game data (they are only built by
    `tests/run.sh` now), e.g. labyrinths and maps for LabdataExtractor, monster and item files for the editors.
 
 The task list of the work (in the order it was done): libraries and AmbermoonPack, the event editor, the small tools,
 the game data (ADF, executables), the labyrinth tools, the characters and items (monster, item and name tools), the
-texts (TextImport, TextManager, IntroPatcher, ExtroPatcher). Next: AmbermoonPatcher (decide), the release creators, the
-image tools.
+texts (TextImport, TextManager, IntroPatcher, ExtroPatcher), the image tools (with System.Image and
+System.Compression in the standard library). Next: AmbermoonPatcher (decide), the release creators.
 
 
 ## How the ports were checked (tests/reference/)
