@@ -24,6 +24,7 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonItemEditor/` | shows, adds, edits and removes items (`Objects.amb/001`, before 1.14 in `AM2_CPU` and `AM2_BLIT`) | `AmbermoonTools/AmbermoonItemEditor` |
 | `Ambermoon.Data.Text.Patching/` | library: the fonts of the intro and the extro, patching them into executables, the code pages of .NET for the texts of translations | `AmbermoonTools/Ambermoon.Data.Text.Patching` |
 | `AmbermoonIntroPatcher/` | writes the texts and fonts of a translation into the intro | `AmbermoonTools/AmbermoonIntroPatcher` |
+| `AmbermoonExtroPatcher/` | writes the texts, translators and fonts of a translation into the extro (re-flows the lines to fit) | `AmbermoonTools/AmbermoonExtroPatcher` |
 | `AmbermoonTextImport/` | exports the texts of a text file (map texts, `Text.amb`, ...) into text files and imports them | `AmbermoonTools/AmbermoonTextImport` |
 | `AmbermoonTextManager/` | exports all texts and names of the game into text files and imports them | `AmbermoonTools/AmbermoonTextManager` |
 | `AmbermoonNameExtract/` | exports the names of characters, places, goto points, the dictionary and items into text files and imports them | `AmbermoonTools/AmbermoonNameExtract` |
@@ -71,6 +72,8 @@ AmbermoonItemEditor Objects/001                     # the items of an unpacked O
 AmbermoonTextImport -e Amberfiles 1Map_texts.amb texts   # texts/1Map_texts.amb/001/000.txt, ...
 AmbermoonTextImport -i Amberfiles 1Map_texts.amb texts   # and back (-c: the best compression)
 AmbermoonIntroPatcher base Czech/IntroTexts out/Ambermoon_intro fonts 852   # the intro of a translation
+AmbermoonExtroPatcher base Czech/ExtroTexts out fonts 852 "<KLIK>" "DANIEL ZIMA"   # the extro of a translation
+AmbermoonExtroPatcher config.json                   # the same with a config file (see example-config.json)
 AmbermoonTextManager -e Amberfiles texts            # all texts and names of the game
 AmbermoonTextManager -i Amberfiles texts -f Text.amb   # Text.amb back into the game data
 AmbermoonNameExtract e Amberfiles names              # all names as names/NPC_char/001.txt, ...
@@ -113,6 +116,9 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
 * **AmbermoonIntroPatcher**: the intro of the Czech translation (made into a base: its font hunk a placeholder) with
   the Czech and English intro texts, both extro fonts, the code pages and encoding names, and all errors: the same
   output and files as the original.
+* **AmbermoonExtroPatcher**: the Czech extro base with the extro texts of the Czech, English and Polish translations
+  and the English text groups, both fonts, code pages and encoding names, one or more translators, config files, and
+  the errors: the same output and files as the original.
 * **AmbermoonTextManager**: the export of English 1.20 and 1.07 (whose `Text.amb` it makes of the executable), the
   import of the exported texts (which gives the files of 1.20 byte for byte) and of changed ones (long names with
   warnings, umlauts and other letters with and without `-u`, line breaks, single files with `-f`, `-x`, `-c`): the
@@ -208,6 +214,11 @@ when it removes old matches. Packing is 60 to 300 times faster:
   ends with an exception). Texts with characters that the font does not have and damaged executables give an error
   message (the original ends with an exception). The encodings are those of the code pages 437, 850, 852, 866, 1250,
   1251, 1252, 28591, 28592, 28605, 20127 and 65001 (UTF-8) and their names (the original takes all of .NET).
+* AmbermoonExtroPatcher: errors give a message where the original ends with an exception or shows one with its stack
+  trace (unknown encodings, characters that the font does not have, invalid config files, folder names shorter than 3
+  characters, more than 6 click groups). An output file without a folder works. Folders and files with the same number
+  are taken in the order of their names (the original takes the order of the file system for them). The encodings are
+  those of AmbermoonIntroPatcher.
 * AmbermoonTextManager: the text files are listed in a fixed order (the original takes them from an
   `ImmutableDictionary`, whose order changes from run to run). Missing folders, numbers of places, items and goto
   points that do not match the data, and damaged data give an error message (the original ends with an exception or
