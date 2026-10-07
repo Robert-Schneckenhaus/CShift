@@ -35,7 +35,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   the game's file formats, 60 to 300 times faster than the original), `AmbermoonEventEditor` (edits the events of
   maps and characters), `HexValueChanger`, the text pack tools of translations (`AmbermoonIntroTextPacker`,
   `AmbermoonExtroTextPacker`, `AmbermoonExtroIntroTextPackCreator`), `AmbermoonDiskExtract` (the files of the ADF disk
-  images) and `AmbermoonListExtractor`. Their results are those of the original tools
+  images), `AmbermoonListExtractor` and the labyrinth tools (`AmbermoonLabdataEditor`, `AmbermoonLabdataExtractor`,
+  `AmbermoonUsedColorsDetector`, `Ambermoon3DMapViewer`). Their results are those of the original tools
   (`Ambermoon/tests/run.sh`, part of `tests/run_tests.sh`).
 - Building the compiler from source starts from cshiftc 0.26 instead of 0.09 (`selfhost/stage0.txt`, downloaded by
   `selfhost/fetch-stage0.sh`): the compiler's own sources may use the language and the standard library of 0.26.

@@ -7,8 +7,8 @@ read and write the data files of the Amiga game Ambermoon.
 | Folder | What it is | Port of |
 |---|---|---|
 | `Ambermoon.Common/` | library: directions, the texts of enums and floats as .NET writes them, numbers, files and texts read as .NET reads them | `Ambermoon.Common` (parts) |
-| `Ambermoon.Data.Common/` | library: events, maps, tilesets, characters, items, graphics, texts and the enumerations they use | `Ambermoon.Data.Common` (parts) |
-| `Ambermoon.Data.Legacy/` | library: big-endian readers and writers, the file formats (JH, LOB, VOL1, AMNC, AMNP, AMBR, AMPC), the LOB compressions, loading the game data from folders and ADF disk images, Amiga executables (also imploded), the data of the executable (names, messages, items, ...), Text.amb, maps, characters, events | `Ambermoon.Data.Legacy` (parts) |
+| `Ambermoon.Data.Common/` | library: events, maps, labyrinths, tilesets, characters, monsters, items, graphics, texts and the enumerations they use | `Ambermoon.Data.Common` (parts) |
+| `Ambermoon.Data.Legacy/` | library: big-endian readers and writers, the file formats (JH, LOB, VOL1, AMNC, AMNP, AMBR, AMPC), the LOB compressions, loading the game data from folders and ADF disk images, Amiga executables (also imploded), the data of the executable (names, messages, items, ...), Text.amb, maps, labyrinths and their textures, characters, monsters, events | `Ambermoon.Data.Legacy` (parts) |
 | `Ambermoon.Data.Descriptions/` | library: descriptions of the values of all event types (for editors) | `AmbermoonTools/Ambermoon.Data.Descriptions` |
 | `AmbermoonTextPacks/` | library: the intro and extro text packs of the remake (shared by the three text pack tools) | the packing code of the text packers |
 | `AmbermoonPack/` | packs files into the formats of the game and unpacks them | `AmbermoonTools/AmbermoonPack` |
@@ -16,6 +16,10 @@ read and write the data files of the Amiga game Ambermoon.
 | `HexValueChanger/` | changes bytes at an offset in one or many files | `AmbermoonTools/HexValueChanger` |
 | `AmbermoonDiskExtract/` | extracts the files of the game from its ADF disk images | `AmbermoonTools/AmbermoonDiskExtract` |
 | `AmbermoonListExtractor/` | writes the party members of the game as a Markdown table | `AmbermoonTools/AmbermoonListExtractor` |
+| `AmbermoonLabdataEditor/` | shows and edits the walls, objects and object data of a labyrinth (a file of `2Lab_data.amb`) | `AmbermoonTools/AmbermoonLabdataEditor` |
+| `AmbermoonLabdataExtractor/` | writes a labyrinth with only the walls and objects that a 3D map uses | `AmbermoonTools/AmbermoonLabdataExtractor` |
+| `AmbermoonUsedColorsDetector/` | shows the colors that the textures of a 3D map use | `AmbermoonTools/AmbermoonUsedColorsDetector` |
+| `Ambermoon3DMapViewer/` | shows a 3D map as text and the walls and objects of its blocks | `AmbermoonTools/Ambermoon3DMapViewer` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
@@ -51,6 +55,10 @@ AmbermoonExtroTextPacker Czech "<KLIK>" "DANIEL ZIMA"  # Czech/ExtroTextGroups/ 
 AmbermoonExtroIntroTextPackCreator czech 1.00 out    # in the Ambermoon repository: out/Intro_texts.amb, out/Extro_texts.amb
 AmbermoonDiskExtract adfs extracted                 # the files of the ADF images in adfs/ (-u: decompressed)
 AmbermoonListExtractor Amberfiles lists              # lists/PartyMembers.md
+AmbermoonLabdataEditor labdata/001 Amberfiles      # edits labdata/001 (an unpacked file of 2Lab_data.amb)
+AmbermoonLabdataExtractor labdata/001 maps/258 new  # new: labyrinth 001 with only what map 258 uses
+AmbermoonUsedColorsDetector 258 Amberfiles           # the colors of the textures of map 258
+Ambermoon3DMapViewer maps/258 Amberfiles            # map 258 as text, then the walls and objects of blocks
 ```
 
 ## How the port was checked
@@ -74,6 +82,11 @@ AmbermoonListExtractor Amberfiles lists              # lists/PartyMembers.md
   decompressed (see below for the three files that differ); 300 times faster (the original recompresses with its slow
   LOB compression).
 * **AmbermoonListExtractor**: the party members of English and German 1.20 (extracted and ADF).
+* **The labyrinth tools**: `AmbermoonLabdataExtractor` for 441 maps of 1.20 with their labyrinths,
+  `AmbermoonUsedColorsDetector` for all 84 3D maps, `Ambermoon3DMapViewer` for all 3D maps with the info of their
+  blocks, `AmbermoonLabdataEditor` in 400 random editing sessions (all commands, random answers, saved at the end):
+  the output and the files are the same as those of the original (where the original does not end with an exception,
+  see below).
 
 ## Different from the original
 
@@ -124,6 +137,14 @@ when it removes old matches. Packing is 60 to 300 times faster:
 * AmbermoonListExtractor: game data without a party member's map character gives an error message (English 1.07: the
   original ends with an exception). The original does not compile with the current library (it uses
   `NumberOfFreeHands`, now `NumberOfOccupiedHands`).
+* The labyrinth tools: an empty labyrinth file (1.20 has six: `2Lab_data.amb` 20 to 25) or one that is too short
+  gives "The labyrinth data is incomplete." (the original ends with an exception). Numbers in the input of
+  `Ambermoon3DMapViewer` that are not numbers are asked again, and the end of the input ends the program in it and
+  in `AmbermoonLabdataEditor` (the original ends with an exception). `AmbermoonLabdataEditor` reads the graphics of
+  the labyrinth as the original does, but without merging the textures of `3Wall3D.amb` and `3Object3D.amb` into
+  those of `2Wall3D.amb` and `2Object3D.amb` (it uses a merged copy); its backup of a file with an extension is
+  `<name>_backup<extension>` (the original writes `<name>_backup/<extension>` and fails because the folder does not
+  exist).
 * Damaged ADF images and data give error messages where the original ends with an exception (the French 1.17 images
   in the Ambermoon repository have a damaged `2Object3D.amb`: both fail).
 

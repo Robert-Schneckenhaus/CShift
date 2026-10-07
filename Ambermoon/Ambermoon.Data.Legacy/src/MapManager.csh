@@ -14,6 +14,7 @@ struct MapManager
     GameData GameData;
     Dictionary<uint32, Tileset> Tilesets;
     Dictionary<uint32, Map> _maps;
+    Dictionary<uint32, Labdata> _labdata;
 
     /// The map manager of loaded game data (with its tilesets).
     /// @error Icon_data.amb is missing.
@@ -27,7 +28,13 @@ struct MapManager
             var reader = icons.Files[number];
             tilesets[(uint32)number] = TilesetReader.ReadTileset(ref reader, (uint32)number);
         }
-        return MapManager { GameData = gameData, Tilesets = tilesets, _maps = Dictionary<uint32, Map>.Create() };
+        return MapManager
+        {
+            GameData = gameData,
+            Tilesets = tilesets,
+            _maps = Dictionary<uint32, Map>.Create(),
+            _labdata = Dictionary<uint32, Labdata>.Create()
+        };
     }
 
     /// The map of an index; null if there is no such map.
@@ -85,5 +92,24 @@ struct MapManager
     Optional<Tileset> GetTilesetForMap(Map map)
     {
         return Tilesets.TryGet(map.TilesetOrLabdataIndex);
+    }
+
+    /// The labyrinth data of a 3D map, with its graphics (2Lab_data.amb; 3Lab_data.amb contains the same).
+    /// @error there is no such labyrinth data or it is damaged.
+    Error<Labdata> GetLabdataForMap(Map map)
+    {
+        uint32 index = map.TilesetOrLabdataIndex;
+        if (_labdata.TryGet(index) is Labdata known)
+            return known;
+        if (GameData.Files.TryGet("2Lab_data.amb") is not FileContainer container)
+            return error("The given key '2Lab_data.amb' was not present in the dictionary.");
+        if (container.Files.TryGet((int)index) is not DataReader reader)
+            return error($"The given key '{index}' was not present in the dictionary.");
+        if (reader.Size() == 0)
+            return error($"The given key '{index}' was not present in the dictionary.");
+        reader.Position = 0;
+        var labdata = try LabdataReader.ReadLabdata(ref reader, GameData);
+        _labdata[index] = labdata;
+        return labdata;
     }
 }

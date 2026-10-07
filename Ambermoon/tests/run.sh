@@ -11,7 +11,7 @@
 #
 # The tools: AmbermoonPack, AmbermoonEventEditor, HexValueChanger, AmbermoonIntroTextPacker, AmbermoonExtroTextPacker,
 # AmbermoonExtroIntroTextPackCreator, AmbermoonDiskExtract. The console output is compared without carriage returns
-# (Windows writes them for line breaks).
+# (Windows writes them for line breaks). The tools that need the data of the game (BUILD_ONLY) are only built.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
@@ -20,6 +20,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 TOOLS=(AmbermoonPack AmbermoonEventEditor HexValueChanger AmbermoonIntroTextPacker AmbermoonExtroTextPacker
        AmbermoonExtroIntroTextPackCreator AmbermoonDiskExtract)
+BUILD_ONLY=(AmbermoonListExtractor AmbermoonLabdataEditor AmbermoonLabdataExtractor AmbermoonUsedColorsDetector
+            Ambermoon3DMapViewer)
 declare -A COMMAND
 
 RECORD=0
@@ -42,7 +44,7 @@ else
     if [ -z "$COMPILER" ]; then echo "cshiftc not found"; exit 2; fi
     CC_ARGS=()
     if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
-    for tool in "${TOOLS[@]}"; do
+    for tool in "${TOOLS[@]}" "${BUILD_ONLY[@]}"; do
         if ! "$COMPILER" build "$ROOT/Ambermoon/$tool" "${CC_ARGS[@]}" -o "$TMP/$tool" > "$TMP/build.log" 2>&1; then
             echo "FAIL  Ambermoon: building $tool failed:"
             head -n 20 "$TMP/build.log"
