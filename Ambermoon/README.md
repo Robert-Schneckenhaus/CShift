@@ -23,6 +23,7 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonMonsterEditor/` | shows and changes values of the monsters (`Monster_char.amb`, before 1.14 `Monster_char_data.amb`) | `AmbermoonTools/AmbermoonMonsterEditor` |
 | `AmbermoonItemEditor/` | shows, adds, edits and removes items (`Objects.amb/001`, before 1.14 in `AM2_CPU` and `AM2_BLIT`) | `AmbermoonTools/AmbermoonItemEditor` |
 | `AmbermoonTextImport/` | exports the texts of a text file (map texts, `Text.amb`, ...) into text files and imports them | `AmbermoonTools/AmbermoonTextImport` |
+| `AmbermoonTextManager/` | exports all texts and names of the game into text files and imports them | `AmbermoonTools/AmbermoonTextManager` |
 | `AmbermoonNameExtract/` | exports the names of characters, places, goto points, the dictionary and items into text files and imports them | `AmbermoonTools/AmbermoonNameExtract` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
@@ -67,6 +68,8 @@ AmbermoonMonsterEditor "big spider" 0x18 2 1000    # in the game data folder: th
 AmbermoonItemEditor Objects/001                     # the items of an unpacked Objects.amb (or a 1.07 game data folder)
 AmbermoonTextImport -e Amberfiles 1Map_texts.amb texts   # texts/1Map_texts.amb/001/000.txt, ...
 AmbermoonTextImport -i Amberfiles 1Map_texts.amb texts   # and back (-c: the best compression)
+AmbermoonTextManager -e Amberfiles texts            # all texts and names of the game
+AmbermoonTextManager -i Amberfiles texts -f Text.amb   # Text.amb back into the game data
 AmbermoonNameExtract e Amberfiles names              # all names as names/NPC_char/001.txt, ...
 AmbermoonNameExtract i Amberfiles names              # and back into the game data (backups: *.backup)
 ```
@@ -104,6 +107,10 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
   and the import of the exported texts and of changed ones (umlauts, spaces and zeros at the ends, soft hyphens, gaps
   in the numbering, missing and empty folders with the questions answered), also with the extended compression: the
   same output and files as the original.
+* **AmbermoonTextManager**: the export of English 1.20 and 1.07 (whose `Text.amb` it makes of the executable), the
+  import of the exported texts (which gives the files of 1.20 byte for byte) and of changed ones (long names with
+  warnings, umlauts and other letters with and without `-u`, line breaks, single files with `-f`, `-x`, `-c`): the
+  same output and files as the original. The import is more than 100 times faster (0.3 s instead of 40 s).
 * **AmbermoonNameExtract**: the export and import of all kinds of names, of containers and of the game data (English
   and German 1.20, also ADF images), with missing names (asked for), changed and too long ones: the same output and
   files as the original, with its bugs fixed in it the same way (see below). The export is 20 times faster.
@@ -190,6 +197,13 @@ when it removes old matches. Packing is 60 to 300 times faster:
   exception), and texts that do not fit `Text.amb` (a wrong number of texts) give an error message. The folders of
   texts are read in the order of their names (the original takes the order of the file system, which only decides
   which error is shown first).
+* AmbermoonTextManager: the text files are listed in a fixed order (the original takes them from an
+  `ImmutableDictionary`, whose order changes from run to run). Missing folders, numbers of places, items and goto
+  points that do not match the data, and damaged data give an error message (the original ends with an exception or
+  shows one with its stack trace). With `-c` the dictionary falls back to the LOB of the original game where the text
+  LOB cannot compress it (the original fails). Goto points are found also on maps with characters that move by the
+  hour (the original takes 288 positions instead of 12 for them). `-u` removes the marks of Latin, Greek and Cyrillic
+  letters (the original decomposes all characters of Unicode).
 * AmbermoonNameExtract: importing goto points keeps the maps intact (the original drops the first two bytes of each
   map with goto points and the automap types of 3D maps behind them: the maps can no longer be read). With the game
   data, the places, the dictionary and the items are read from their start (the original reads them where loading the
@@ -215,9 +229,11 @@ original makes all parts when it loads the data (graphics, all maps and labyrint
 * AmbermoonPack sorts file names byte by byte; the original uses the sort order of the current culture (this only
   matters for names that are not numbers, in different case). A type is a name in capitals or a number (the original
   also takes lists like "LOB,AMBR").
-* The library: `DataReader` and `DataWriter` are values (passed as `ref`); reading past the end gives zeros and sets
-  `Overrun()` instead of throwing. `FileWriter.WriteJH` does not encrypt the caller's array in place. Events are a union
-  of the event kinds in an `EventStore` with ids instead of objects with references.
+* The library: characters that the encoding of the game does not have become the best fit of .NET's ISO-8859-1 as in
+  the original (— is "-", “ is '"', Ā is "A"; else "?"). `DataReader` and `DataWriter` are values (passed as `ref`);
+  reading past the end gives zeros and sets `Overrun()` instead of throwing. `FileWriter.WriteJH` does not encrypt the
+  caller's array in place. Events are a union of the event kinds in an `EventStore` with ids instead of objects with
+  references.
 
 Kept as in the original (it is what the original does, not a failure): the descriptions use a display mapping only the
 first time a value is shown (the original sets it to null "to avoid recursive loops" and never back), display names

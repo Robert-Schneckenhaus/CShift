@@ -17,7 +17,8 @@ struct AmbermoonEncoding
         return string.FromBytes(output, 0, o);
     }
 
-    /// The bytes of a text: one byte per character; characters that the encoding does not have become '?'.
+    /// The bytes of a text: one byte per character (UTF-16 character as in .NET: a character outside of the BMP is two
+    /// '?'); other characters become their best fit of .NET's ISO-8859-1 (— is '-', “ is '"', Ā is 'A', ...) or '?'.
     static uint8[] GetBytes(StringSlice text)
     {
         var output = new uint8[text.Length];
@@ -28,7 +29,14 @@ struct AmbermoonEncoding
             int length = _Utf8Length(text[i]);
             int codePoint = _Decode(text, i, length);
             i += length;
-            output[o] = _ByteOf(codePoint);
+            if (codePoint > 0xFFFF)
+            {
+                output[o] = (uint8)'?';
+                o += 1;
+                output[o] = (uint8)'?';
+            }
+            else
+                output[o] = _ByteOf(codePoint);
             o += 1;
         }
         return output[0..o].ToArray();
@@ -85,7 +93,7 @@ struct AmbermoonEncoding
             case 0xdf: return 0x9e; // ß
             case 0xe1: return 0xa0; // á
             case 0xc0: return 0xb6; // À
-            default: return codePoint <= 0xff ? (uint8)codePoint : (uint8)'?';
+            default: return codePoint <= 0xff ? (uint8)codePoint : Latin1BestFit(codePoint);
         }
     }
 }
@@ -143,7 +151,14 @@ struct Latin1Encoding
             int length = _Utf8Length(text[i]);
             int codePoint = _Decode(text, i, length);
             i += length;
-            output[o] = codePoint <= 0xff ? (uint8)codePoint : (uint8)'?';
+            if (codePoint > 0xFFFF)
+            {
+                output[o] = (uint8)'?';
+                o += 1;
+                output[o] = (uint8)'?';
+            }
+            else
+                output[o] = codePoint <= 0xff ? (uint8)codePoint : Latin1BestFit(codePoint);
             o += 1;
         }
         return output[0..o].ToArray();
