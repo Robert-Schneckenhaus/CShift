@@ -55,6 +55,15 @@ struct Use
         return HiddenByte(0);
     }
 
+    /// A signed byte from -128 to 127 (stored as its byte: the minimum -128 is 0x80).
+    static ValueDescription SByte(string name, bool required)
+    {
+        return ValueDescription {
+            Slot = -1, Type = ValueType.SByte, Name = name, MinValue = 0x80, MaxValue = 0x7f, DefaultValue = 0,
+            Required = required, ShowAsHex = false
+        };
+    }
+
     static ValueDescription Word(string name, bool required, uint16 maxValue, uint16 minValue, uint16 defaultValue, bool showAsHex)
     {
         return ValueDescription {
@@ -163,6 +172,11 @@ struct Use
     static ValueDescription Flags16(EnumInfo enumType, string name, bool required)
     {
         return EnumOf(enumType, name, required, false, 0, true, true, new int64[0], null);
+    }
+
+    static ValueDescription Flags16(EnumInfo enumType, string name, bool required, int64 defaultValue)
+    {
+        return EnumOf(enumType, name, required, false, defaultValue, true, true, new int64[0], null);
     }
 
     static ValueDescription TenBits(string name, string propertyName, int byteOffset, int bitOffset, bool required)

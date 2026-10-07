@@ -21,6 +21,8 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonUsedColorsDetector/` | shows the colors that the textures of a 3D map use | `AmbermoonTools/AmbermoonUsedColorsDetector` |
 | `Ambermoon3DMapViewer/` | shows a 3D map as text and the walls and objects of its blocks | `AmbermoonTools/Ambermoon3DMapViewer` |
 | `AmbermoonMonsterEditor/` | shows and changes values of the monsters (`Monster_char.amb`, before 1.14 `Monster_char_data.amb`) | `AmbermoonTools/AmbermoonMonsterEditor` |
+| `AmbermoonItemEditor/` | shows, adds, edits and removes items (`Objects.amb/001`, before 1.14 in `AM2_CPU` and `AM2_BLIT`) | `AmbermoonTools/AmbermoonItemEditor` |
+| `AmbermoonNameExtract/` | exports the names of characters, places, goto points, the dictionary and items into text files and imports them | `AmbermoonTools/AmbermoonNameExtract` |
 | `AmbermoonIntroTextPacker/` | packs the intro texts of a translation into `Intro_texts.amb` | `AmbermoonTools/AmbermoonIntroTextPacker` |
 | `AmbermoonExtroTextPacker/` | packs the extro texts of a translation into `Extro_texts.amb` | `AmbermoonTools/AmbermoonExtroTextPacker` |
 | `AmbermoonExtroIntroTextPackCreator/` | makes both text packs of a language from the texts in the Ambermoon repository | `AmbermoonTools/AmbermoonExtroIntroTextPackCreator` |
@@ -61,6 +63,9 @@ AmbermoonLabdataExtractor labdata/001 maps/258 new  # new: labyrinth 001 with on
 AmbermoonUsedColorsDetector 258 Amberfiles           # the colors of the textures of map 258
 Ambermoon3DMapViewer maps/258 Amberfiles            # map 258 as text, then the walls and objects of blocks
 AmbermoonMonsterEditor "big spider" 0x18 2 1000    # in the game data folder: the word at 0x18 of the monster
+AmbermoonItemEditor Objects/001                     # the items of an unpacked Objects.amb (or a 1.07 game data folder)
+AmbermoonNameExtract e Amberfiles names              # all names as names/NPC_char/001.txt, ...
+AmbermoonNameExtract i Amberfiles names              # and back into the game data (backups: *.backup)
 ```
 
 ## How the port was checked
@@ -89,6 +94,12 @@ AmbermoonMonsterEditor "big spider" 0x18 2 1000    # in the game data folder: th
   blocks, `AmbermoonLabdataEditor` in 400 random editing sessions (all commands, random answers, saved at the end):
   the output and the files are the same as those of the original (where the original does not end with an exception,
   see below).
+* **AmbermoonItemEditor**: more than 600 random editing sessions (all commands, random answers, saved at the end) on
+  the item files of English and German 1.20 and the executables of English 1.07: the same output and files (also
+  `AM2_CPU` and `AM2_BLIT`) as the original, with its bugs fixed in it the same way (see below).
+* **AmbermoonNameExtract**: the export and import of all kinds of names, of containers and of the game data (English
+  and German 1.20, also ADF images), with missing names (asked for), changed and too long ones: the same output and
+  files as the original, with its bugs fixed in it the same way (see below). The export is 20 times faster.
 * **AmbermoonMonsterEditor**: 82 command lines (all options, invalid numbers and ranges, ids and names, changes with
   backups) in the data of English 1.07 and 1.20, German 1.20 (names with umlauts), an empty folder and ADF images: the
   same output, exit codes and files as the original (with the patches that make it work at all, see below).
@@ -159,6 +170,23 @@ when it removes old matches. Packing is 60 to 300 times faster:
   size show the usage, and their range messages show the given offset and size (the original shows other parameters or
   ends with an exception). The game data is read from the current folder (the original looks into the folder of the
   program first), without the battle graphics of the monsters (which the tool does not use).
+* AmbermoonItemEditor: editing an item that exists works. The original reads each value at one position and writes
+  it at the next: it shows wrong current values and ends with an exception halfway (for an item file it then says
+  "Unable to load item data." and ends). Saving the executables keeps `AM2_BLIT` whole (the original cuts its second
+  code hunk to a quarter: it takes the size in dwords for bytes), and saving twice works (the original keeps the old
+  number of items and breaks the data the second time). Negative values of signed bytes (hit points, damage, ...) can
+  be entered (the original takes no negative numbers, so Enter on a negative current value sets the default). Finding
+  items while an added item has no name yet, removing a negative number and starting without an argument work (the
+  original ends with an exception); the end of the input ends the program (the original ends with an exception or, for
+  an item file, says "Unable to load item data.").
+* AmbermoonNameExtract: importing goto points keeps the maps intact (the original drops the first two bytes of each
+  map with goto points and the automap types of 3D maps behind them: the maps can no longer be read). With the game
+  data, the places, the dictionary and the items are read from their start (the original reads them where loading the
+  game data left the readers, at their end, and ends with an exception). Place names of 30 characters are kept (the
+  original keeps 29, which cuts two place names of the English game). Missing files, folders and names of the game data
+  and names of text files that are no numbers give an error message (the original ends with an exception); so does the
+  end of the input when a name is asked for (nothing is written then). The backup is a copy (the original moves the
+  file).
 * Damaged ADF images and data give error messages where the original ends with an exception (the French 1.17 images
   in the Ambermoon repository have a damaged `2Object3D.amb`: both fail).
 

@@ -5,6 +5,13 @@ using Ambermoon;
 using Ambermoon.Data;
 using Ambermoon.Data.Enumerations;
 
+/// The goto points of a map and the offset of their number in the data of the map.
+struct MapGotoPoints
+{
+    List<GotoPoint> GotoPoints;
+    int Offset;
+}
+
 /// Reads the maps of 1Map_data.amb, 2Map_data.amb and 3Map_data.amb.
 struct MapReader
 {
@@ -36,6 +43,22 @@ struct MapReader
     /// Reads a map; 2D maps need their tileset (for the types of the tiles).
     /// @error the data is damaged.
     static Error<Map> ReadMap(uint32 index, ref DataReader reader, Optional<Tileset> tileset)
+    {
+        return _ReadMap(index, ref reader, tileset, false);
+    }
+
+    /// The goto points of a map (its tiles or blocks are skipped: no tileset is needed) and the offset of their
+    /// number (a word) in the data (MapReader.ReadGotoPoints and GetGotoPointOffset of the original).
+    /// @error the data is damaged.
+    static Error<MapGotoPoints> ReadGotoPoints(ref DataReader reader)
+    {
+        var map = try _ReadMap(0, ref reader, null, true);
+        int automapTypes = map.Type == MapType.Map3D ? map.EventList.Count() : 0;
+        int offset = reader.Position - 2 - map.GotoPoints.Count() * 20 - automapTypes;
+        return MapGotoPoints { GotoPoints = map.GotoPoints, Offset = offset };
+    }
+
+    static Error<Map> _ReadMap(uint32 index, ref DataReader reader, Optional<Tileset> tileset, bool skipTiles)
     {
         var map = Map.Create(index);
         reader.Position = 0;
@@ -75,7 +98,9 @@ struct MapReader
 
         // the tiles or blocks
         int count = map.Width * map.Height;
-        if (map.Type == MapType.Map2D)
+        if (skipTiles)
+            reader.Position += (map.Type == MapType.Map2D ? 4 : 2) * count;
+        else if (map.Type == MapType.Map2D)
         {
             if (tileset is not Tileset tiles)
                 return error("Missing tileset of the map.");

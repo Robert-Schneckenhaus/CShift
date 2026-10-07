@@ -168,6 +168,22 @@ struct ValueDescription
         return b >= 128 ? b - 256 : b;
     }
 
+    /// Reads the value from the data at `dataIndex` and moves `dataIndex` behind it: a word big-endian, a signed byte
+    /// with its sign, other values as a byte (not for ten and twelve bit values).
+    int Read(uint8[] data, ref int dataIndex)
+    {
+        int index = dataIndex;
+        if (Type == ValueType.Word || Type == ValueType.Flag16 || Type == ValueType.EventIndex)
+        {
+            dataIndex += 2;
+            return (data[index] << 8) | data[index + 1];
+        }
+        dataIndex += 1;
+        if (Type == ValueType.SByte)
+            return data[index] >= 128 ? data[index] - 256 : data[index];
+        return data[index];
+    }
+
     /// Writes the value into the event data at `dataIndex` and moves `dataIndex` behind it.
     void Write(uint8[] data, ref int dataIndex, uint16 value)
     {
