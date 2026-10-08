@@ -114,6 +114,22 @@
 						"1": { "name": "storage.type.cshift" },
 						"2": { "name": "entity.name.type.cshift" }
 					}
+				},
+				{
+					"comment": "error FileError { ... }: an error enum (not 'case error e:' or 'is error e)', which go on)",
+					"match": "\\b(error)\\s+([A-Za-z_]\\w*)(?=\\s*(?:\\{|$|//))",
+					"captures": {
+						"1": { "name": "storage.type.cshift" },
+						"2": { "name": "entity.name.type.cshift" }
+					}
+				},
+				{
+					"comment": "union Shape : IShape { Circle, Rect }",
+					"match": "\\b(union)\\s+([A-Za-z_]\\w*)(?=\\s*(?:\\{|:|$|//))",
+					"captures": {
+						"1": { "name": "storage.type.cshift" },
+						"2": { "name": "entity.name.type.cshift" }
+					}
 				}
 			]
 		},
@@ -159,11 +175,16 @@
 				},
 				{
 					"comment": "new Vec2(), x is Error<int> r, where T : ...  -- the type after the keyword is a type name",
-					"match": "\\b(new|is|where)\\b(?:\\s+(?!(?:null|true|false)\\b)([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*))?",
+					"match": "\\b(new|is|where)\\b(?:\\s+(?!(?:null|true|false|error|not)\\b)([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*))?",
 					"captures": {
 						"1": { "name": "keyword.operator.expression.cshift" },
 						"2": { "patterns": [{ "include": "#type-ref" }] }
 					}
+				},
+				{
+					"comment": "x is error e, case error e: (the pattern of a failed result)",
+					"name": "keyword.operator.expression.cshift",
+					"match": "(?<=\\bis\\s|\\bcase\\s|\\bnot\\s)error\\b(?!\\s*\\()"
 				},
 				{
 					"name": "keyword.operator.expression.cshift",
@@ -245,6 +266,13 @@
 
 		"type-usages": {
 			"patterns": [
+				{
+					"comment": "struct initializer with the { on the next line: var c = Creator / return Creator / Call(a, Creator: a type name at the end of a line after =, =>, return, ( or , (the expression goes on)",
+					"match": "(?<==\\s|=>\\s|\\breturn\\s|,\\s|\\()([A-Z]\\w*(?:\\.[A-Z]\\w*)*)(?=\\s*(?:<[^;(){}]*>)?\\s*$)",
+					"captures": {
+						"1": { "name": "entity.name.type.cshift" }
+					}
+				},
 				{
 					"comment": "struct initializer: Vec2 { X = 1, Y = 2 }",
 					"match": "\\b([A-Z]\\w*)(?=\\s*(?:<[^;(){}]*>)?\\s*\\{\\s*(?:\\}|[A-Za-z_]\\w*\\s*=(?!=)))",

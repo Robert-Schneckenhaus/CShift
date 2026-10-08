@@ -42,6 +42,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - [Ambermoon Tools](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools): the release creators (`AmbermoonReleaseCreator`, `AmbermoonAdvancedReleaseCreator`)
   with the libraries `Amiga.FileFormats` (ADF disk images and LHA archives, written byte for byte like the originals)
   and `Ambermoon.Release` (zip, tar.gz). The releases of all languages are the same as those of the original.
+- VS Code: the declarations of error enums (`error FileError { ... }`) and unions (`union Shape : IShape { ... }`) are
+  highlighted like those of structs and enums, `error` in `x is error e` and `case error e:` as a keyword, and the type
+  of a struct initializer whose `{` is on the next line (`var c = Creator` / `{ ... };`) as a type.
 - The Ambermoon tools moved from the folder `Ambermoon/` of this repository to the folder `Tools/` of the
   [Ambermoon repository](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools), with scripts that build them with the latest release of CShift
   (`tests/run_tests.sh` no longer runs their tests).
