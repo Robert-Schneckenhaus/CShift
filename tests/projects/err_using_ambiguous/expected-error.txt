@@ -1,0 +1,1 @@
+main.csh:8:5: error: 'JsonValue' is ambiguous: 'System.JsonValue' and 'Shapes.JsonValue' (their namespaces are both used; write the full name)

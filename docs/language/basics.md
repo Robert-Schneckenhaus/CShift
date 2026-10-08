@@ -31,7 +31,8 @@ using System;                // the standard library's main namespace
 ```
 
 Name lookup checks the current file's own namespace and the global namespace first, then `using` namespaces — the
-same order as C#.
+same order as C#. A type that two `using` namespaces have (say a `JsonValue` of your own next to `System.JsonValue`) is
+ambiguous: write its full name, `MyApp.Data.JsonValue`.
 
 ## Comments
 

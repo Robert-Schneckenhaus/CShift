@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- A type, constant or global that two `using` namespaces declare is ambiguous, a compile error that names both
+  (`'JsonValue' is ambiguous: 'System.JsonValue' and 'Amber.Base.JsonValue'`): the full name chooses one. Before, the
+  first `using` won without a word, so a new type of the standard library (`System.JsonValue`, `System.Color`) could
+  replace a program's own type of the same name. A declaration of the file's own namespace still hides those of the
+  `using` namespaces, as in C#.
+
 ### Targets
 - Games in the browser: a program with GLFW and OpenGL, compiled with `--backend wasm`, runs in the browser unchanged
   with [web/cshift.js](web/cshift.js) (a JavaScript runtime without dependencies: WASI with an in-memory file system,
@@ -15,6 +22,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   [docs/wasm.md](docs/wasm.md#games-in-the-browser)).
 - The wasm backend exports the function table and `malloc`/`free` (for the host), and does not warn about the GLFW and
   OpenGL functions it imports.
+- C headers (`using X from "h.h"`) for a WebAssembly target are read with the sysroot of WASI in `CSHIFT_WASI_SYSROOT`,
+  like the build uses it; before, libclang looked for the C library's headers of the host and failed.
 
 ### Website
 - A games page (/games/): [demo-snake](demo-snake) (new: Snake with a software renderer and `glDrawPixels`) and

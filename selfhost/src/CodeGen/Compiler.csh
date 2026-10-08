@@ -547,6 +547,40 @@ bool LookupTypeDecl(const ref Compiler cg, int file, string name, ref TypeDeclEn
     return false;
 }
 
+// The error for a name that two 'using' namespaces declare ("" if it is not ambiguous); kind: 0 a type, 1 a constant,
+// 2 a global. The file's own namespace (and its parents) and the global namespace come first: a declaration found there
+// hides those of the 'using' namespaces, like in C#.
+string AmbiguousName(const ref Compiler cg, int file, string name, int kind)
+{
+    var f = cg.Files.Get(file);
+    var found = List<string>.Create();
+    var names = CandidateNames(cg, file, name);
+    int own = names.Length - f.Usings.Count();
+    for (var i = 0; i < names.Length; i += 1)
+    {
+        bool declared = kind == 0 ? cg.TypeDecls.ContainsKey(names[i]) : kind == 1 ? cg.ConstDecls.ContainsKey(names[i]) :
+                        cg.GlobalDecls.ContainsKey(names[i]);
+        if (!declared)
+            continue;
+        if (i < own)
+            return "";
+        if (!found.Contains(names[i]))
+            found.Add(names[i]);
+    }
+    if (found.Count() < 2)
+        return "";
+    var quoted = List<string>.Create();
+    foreach (var q in found.ToArray())
+        quoted.Add("'" + q + "'");
+    return "'" + name + "' is ambiguous: " + string.Join(" and ", quoted.ToArray()) + " (their namespaces are both used; " +
+           "write the full name)";
+}
+
+string AmbiguousTypeName(const ref Compiler cg, int file, string name)
+{
+    return AmbiguousName(cg, file, name, 0);
+}
+
 // All functions a name can refer to (indices in Compiler.Funcs).
 int[] LookupFunctions(const ref Compiler cg, int file, string name)
 {
@@ -692,6 +726,12 @@ int ResolveType(const ref Compiler cg, int refType, int file, Dictionary<string,
 
     var entry = TypeDeclEntry { };
     bool found = LookupTypeDecl(cg, file, dotted, ref entry);
+    if (found)
+    {
+        string ambiguous = AmbiguousTypeName(cg, file, dotted);
+        if (ambiguous.Length > 0)
+            return RecoverType(cg, node.Loc, ambiguous);
+    }
     if (found && node.Path.Length == 1 && dotted == "Thread" && node.Args.Length == 0 && entry.Kind == DeclKind.Struct &&
         cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0)
     {

@@ -771,7 +771,12 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
         }
         int c = LookupConst(cg, sc.File, name);
         if (c >= 0)
+        {
+            string ambiguous = AmbiguousName(cg, sc.File, name, 1);
+            if (ambiguous.Length > 0)
+                Recover(cg, e.Loc, ambiguous);
             return ConstEvalDecl(cg, c);
+        }
         return ConstNotConstant(cg, sc);
     }
     case ExprKind.Member:

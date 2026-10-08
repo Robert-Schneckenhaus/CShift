@@ -45,11 +45,13 @@ whole file and does not include nested namespaces (`using A;` does not make `A.B
 A name `X` in a file with the namespace `N` is looked up in this order:
 
 1. local variables and parameters, innermost scope first, then the members of the enclosing struct (in a method);
-2. the file's namespace `N`, then the global namespace;
+2. the file's namespace `N` and its parents (for `A.B`: `A.B`, then `A`), then the global namespace;
 3. the namespaces of the file's `using` declarations.
 
-* **Types and constants:** the first place that declares the name wins. Among `using` namespaces, the first `using`
-  (in the order of the file) wins; there is no ambiguity error.
+* **Types, constants and globals:** the first place that declares the name wins, so a declaration of the file's
+  namespace hides those of the `using` namespaces. A name that is found only through `using` declarations and that two
+  of their namespaces declare is ambiguous, a compile error: the full name chooses one (`using System; using
+  Amber.Base;` with a `JsonValue` in both: `Amber.Base.JsonValue`).
 * **Functions:** the functions of all visible places with that name form one overload set (the file's namespace, the
   global namespace and every `using` namespace); overload resolution picks the best one. Two candidates that match
   equally well make the call ambiguous (a compile error) - qualify the name to choose one (`A.F()`).

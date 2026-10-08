@@ -82,6 +82,12 @@ Value CheckMember(const ref Compiler cg, Expr e)
         if (colorColor || owner == 0 || !FindField(cg, owner, dotted.Split('.')[0].ToString()).Found)
         {
             bool isTypeName = LookupTypeDecl(cg, file, dotted, ref entry);
+            string ambiguous = isTypeName ? AmbiguousTypeName(cg, file, dotted) : "";
+            if (ambiguous.Length > 0)
+            {
+                CheckError(cg, m.Object.Loc, ambiguous);
+                return UnknownValue(cg);
+            }
             if (isTypeName && dotted == "Thread" && m.Name == "Cancelled" && entry.Kind == DeclKind.Struct)
             {
                 // see EmitThreadCancelled; a lambda belongs to the function it is written in
@@ -235,6 +241,13 @@ Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m
         }
         if (LookupTypeDecl(cg, file, dotted, ref entry))
         {
+            string ambiguous = AmbiguousTypeName(cg, file, dotted);
+            if (ambiguous.Length > 0)
+            {
+                CheckArgs(cg, call.Args, ref known);
+                CheckError(cg, e.Loc, ambiguous);
+                return UnknownValue(cg);
+            }
             UseBareThread(cg, file, dotted, LastTypeArgs(cg, m.Object).Length, ref entry);
             if (entry.Kind != DeclKind.Struct)
             {
