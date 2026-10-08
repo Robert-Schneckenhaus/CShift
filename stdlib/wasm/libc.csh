@@ -26,6 +26,7 @@ extern "C" int __wasi_fd_prestat_dir_name(int fd, void* path, int length);
 extern "C" int __wasi_fd_readdir(int fd, void* buffer, int length, int64 cookie, void* used);
 extern "C" int __wasi_path_open(int fd, int dirflags, void* path, int length, int oflags, int64 rights, int64 inheriting, int fdflags, void* opened);
 extern "C" int __wasi_path_filestat_get(int fd, int flags, void* path, int length, void* filestat);
+extern "C" int __wasi_path_filestat_set_times(int fd, int flags, void* path, int length, int64 access, int64 modification, int which);
 extern "C" int __wasi_path_create_directory(int fd, void* path, int length);
 extern "C" int __wasi_path_remove_directory(int fd, void* path, int length);
 extern "C" int __wasi_path_unlink_file(int fd, void* path, int length);
@@ -609,6 +610,38 @@ extern "C" int rename(char* from, char* to)
         if (dirA < 0 || dirB < 0)
             return -1;
         return __wasi_path_rename(dirA, a.CStr(), a.Length, dirB, b.CStr(), b.Length) == 0 ? 0 : -1;
+    }
+}
+
+// utimensat of wasi-libc for the current directory (AT_FDCWD): the times are struct timespec[2] (seconds, nanoseconds;
+// 16 bytes each); a nanosecond value of UTIME_OMIT (-2) keeps a time, UTIME_NOW (-1) sets the current time
+extern "C" int utimensat(int dir, char* path, void* times, int flags)
+{
+    unsafe
+    {
+        string relative = "";
+        int fd = _Resolve(path, ref relative);
+        if (fd < 0)
+            return -1;
+        int64* t = (int64*)times;
+        int64 access = 0;
+        int64 modification = 0;
+        int which = 0; // fstflags: ATIM 1, ATIM_NOW 2, MTIM 4, MTIM_NOW 8
+        if (t[1] == -1)
+            which |= 2;
+        else if (t[1] != -2)
+        {
+            access = t[0] * 1000000000 + t[1];
+            which |= 1;
+        }
+        if (t[3] == -1)
+            which |= 8;
+        else if (t[3] != -2)
+        {
+            modification = t[2] * 1000000000 + t[3];
+            which |= 4;
+        }
+        return __wasi_path_filestat_set_times(fd, 1, relative.CStr(), relative.Length, access, modification, which) == 0 ? 0 : -1;
     }
 }
 

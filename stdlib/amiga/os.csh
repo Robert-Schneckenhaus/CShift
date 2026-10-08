@@ -57,6 +57,22 @@ struct _Os
         }
     }
 
+    // sets when the file (or directory) was last written: 100 ns units since 1970 (dos.library 36)
+    static bool SetFileWriteTime(StringSlice path, int64 ticks)
+    {
+        unsafe
+        {
+            int64 t = ticks - _AmigaEpoch;
+            if (t < 0)
+                t = 0;
+            var stamp = new int[3];
+            stamp[0] = (int)(t / 864000000000);                // days
+            stamp[1] = (int)(t % 864000000000 / 600000000);    // minutes
+            stamp[2] = (int)(t % 600000000 / 200000);          // ticks of 1/50 s
+            return __dos_SetFileDate(path.CStr(), &stamp[0]) != 0;
+        }
+    }
+
     // replaces 'to' if it exists
     static bool Rename(StringSlice from, StringSlice to)
     {

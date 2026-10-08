@@ -10,6 +10,7 @@ extern "C" void* localtime_r(nint* time, void* tm);
 extern "C" int stat(char* path, void* buffer);
 extern "C" int rename(char* from, char* to);
 extern "C" int rmdir(char* path);
+extern "C" int utimes(char* path, void* times);
 extern "C" int fseeko64(void* file, int64 offset, int origin);
 extern "C" int64 ftello64(void* file);
 extern "C" int fflush(void* file);
@@ -66,6 +67,28 @@ struct _Os
                 return null;
             nint* mtime = (nint*)&buffer[_PosixLayout.StatMtime()]; // struct timespec st_mtim
             return (int64)mtime[0] * 10000000 + (int64)mtime[1] / 100;
+        }
+    }
+
+    // sets when the file (or directory) was last written (and accessed): 100 ns units since 1970-01-01 00:00 UTC
+    static bool SetFileWriteTime(StringSlice path, int64 ticks)
+    {
+        unsafe
+        {
+            // struct timeval[2] (access, modification): seconds, microseconds
+            int64 seconds = ticks / 10000000;
+            int64 micros = ticks % 10000000 / 10;
+            if (micros < 0)
+            {
+                seconds -= 1;
+                micros += 1000000;
+            }
+            var times = new nint[4];
+            times[0] = (nint)seconds;
+            times[1] = (nint)micros;
+            times[2] = (nint)seconds;
+            times[3] = (nint)micros;
+            return utimes(path.CStr(), &times[0]) == 0;
         }
     }
 

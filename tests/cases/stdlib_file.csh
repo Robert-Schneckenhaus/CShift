@@ -110,6 +110,15 @@ int Main()
     var cannotCreate = File.WriteAllText("no_such_directory/x.txt", "a");
     f += Check("cannot create", cannotCreate is error e3 && e3.Message.Contains("cannot create"));
 
+    // ---- the time of the last write ----
+    var stamp = DateTime.CreateUtc(2021, 4, 20, 9, 41, 30);
+    f += Succeeded("SetLastWriteTimeUtc", File.SetLastWriteTimeUtc(path, stamp));
+    f += Check("GetLastWriteTimeUtc", File.GetLastWriteTimeUtc(path) is DateTime written && written.Ticks == stamp.Ticks);
+    var local = DateTime.Create(2024, 1, 24, 12, 24, 6);
+    f += Succeeded("SetLastWriteTime", File.SetLastWriteTime(path, local));
+    f += Check("GetLastWriteTime", File.GetLastWriteTime(path) is DateTime writtenLocal && writtenLocal.Ticks == local.Ticks);
+    f += Check("SetLastWriteTime missing fails", File.SetLastWriteTimeUtc("no_such_directory/x.txt", stamp) is error);
+
     // ---- delete ----
     f += Succeeded("Delete", File.Delete(path));
     f += Check("deleted", !File.Exists(path));

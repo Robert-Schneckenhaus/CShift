@@ -9,6 +9,7 @@ extern "C" int clock_gettime(void* clock, void* time); // clockid_t is a pointer
 extern "C" int stat(char* path, void* buffer);
 extern "C" int rename(char* from, char* to);
 extern "C" int rmdir(char* path);
+extern "C" int utimensat(int dir, char* path, void* times, int flags);
 extern "C" int fseeko(void* file, int64 offset, int origin);
 extern "C" int64 ftello(void* file);
 extern "C" int fflush(void* file);
@@ -60,6 +61,27 @@ struct _Os
             if (stat(path.CStr(), &buffer[0]) != 0)
                 return null;
             return buffer[11] * 10000000 + (buffer[12] & 0xFFFFFFFF) / 100; // st_mtim at offset 88
+        }
+    }
+
+    // sets when the file (or directory) was last written: 100 ns units since 1970-01-01 00:00 UTC
+    static bool SetFileWriteTime(StringSlice path, int64 ticks)
+    {
+        unsafe
+        {
+            // struct timespec[2] of wasi-libc (access: UTIME_OMIT, modification): seconds, nanoseconds (16 bytes each)
+            int64 seconds = ticks / 10000000;
+            int64 nanos = ticks % 10000000 * 100;
+            if (nanos < 0)
+            {
+                seconds -= 1;
+                nanos += 1000000000;
+            }
+            var times = new int64[4];
+            times[1] = -2; // UTIME_OMIT
+            times[2] = seconds;
+            times[3] = nanos;
+            return utimensat(-2, path.CStr(), &times[0], 0) == 0; // AT_FDCWD
         }
     }
 

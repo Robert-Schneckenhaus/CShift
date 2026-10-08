@@ -62,7 +62,8 @@ shared storage, like `List`.
 **Number formats** (`numberformat.csh`) — `x.ToString("F2")`, `$"{x,8:F2}"`: `D`, `X`, `B`, `F`, `N`, `E`, `P`, `G`
 with up to two digits, see [number formats](language/arrays-strings-collections.md#number-formats-and-alignment).
 `NumberFormat.Check(format, floatingPoint)` tells why a format is not valid (`""` if it is).
-**`Process.Run("command")`** runs a command line through the shell and returns its exit code; `RunCapture("command")`
+**`Process.Run("command")`** runs a command line through the shell and returns its exit code (what the program wrote
+before is written out first, so the output of the command comes after it); `RunCapture("command")`
 also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
 (`Optional<string>`); `IsWindows()` reports the platform.
 **`Directory`** — `Exists(path)`, `Create(path)` (including parent directories), `GetEntries(path)` (names, sorted),
@@ -84,7 +85,8 @@ if (Console.ReadLine() is string name)
 **`File`** (static, text is UTF-8 by default): `ReadAllText(path [, encoding])`, `ReadAllBytes(path)`,
 `WriteAllText(path, text [, encoding])`, `WriteAllBytes(path, bytes)`, `Exists(path)`, `Delete(path)`,
 `Copy(source, target [, overwrite])`, `Move(source, target [, overwrite])`, `GetLastWriteTime(path)` /
-`GetLastWriteTimeUtc(path)` (`IoError<DateTime>`). Reading returns
+`GetLastWriteTimeUtc(path)` (`IoError<DateTime>`), `SetLastWriteTime(path, time)` / `SetLastWriteTimeUtc(path, time)`
+(also for folders; on POSIX systems the time of the last access is set too). Reading returns
 `IoError<string>` or `IoError<uint8[]>`, writing, copying and deleting return `IoError<void>` (see *Error codes*
 below); a UTF-8 BOM is skipped when reading text. Paths go to the C library unchanged (so, on Windows, no non-ASCII characters in the path).
 Paths, names and commands (`File`, `Directory`, `Path`, the streams, `Process`) are `StringSlice` parameters: a string,

@@ -15,10 +15,12 @@ using System.Native;
 /// ```
 struct Process
 {
-    /// Runs a command line through the system shell (`sh` or `cmd.exe`) and waits for it.
+    /// Runs a command line through the system shell (`sh` or `cmd.exe`) and waits for it. What the program wrote
+    /// before is written out first, so that the output of the command comes after it.
     /// @returns the exit code of the program, or -1 if it could not be started.
     static int Run(StringSlice command)
     {
+        _Os.FlushOutput();
         int result = 0;
         unsafe
         {
@@ -50,6 +52,7 @@ struct Process
     /// @returns nothing (`null`) if the program could not be started.
     static Optional<string> RunCapture(StringSlice command)
     {
+        _Os.FlushOutput();
         var sb = StringBuilder.Create();
         unsafe
         {

@@ -176,6 +176,24 @@ struct File
         return error("cannot read the time of '" + path + "'", IoError.CannotOpen);
     }
 
+    /// Sets when the file (or folder) was last written; a local `time` is converted to UTC. On POSIX systems the time
+    /// of the last access is set too.
+    /// @error IoError.CannotWrite the file does not exist or its time cannot be changed.
+    static IoError<void> SetLastWriteTime(StringSlice path, DateTime time)
+    {
+        return SetLastWriteTimeUtc(path, time);
+    }
+
+    /// Sets when the file (or folder) was last written, in UTC (a local `time` is converted).
+    /// @error IoError.CannotWrite the file does not exist or its time cannot be changed.
+    static IoError<void> SetLastWriteTimeUtc(StringSlice path, DateTime time)
+    {
+        var utc = time.ToUniversalTime();
+        if (!_Os.SetFileWriteTime(path, utc.Ticks - _UnixEpochTicks))
+            return error("cannot set the time of '" + path + "'", IoError.CannotWrite);
+        return;
+    }
+
     /// Creates the file or replaces its contents with `text` (UTF-8).
     /// @error IoError.CannotCreate the file cannot be created (a missing folder, no permission).
     /// @error IoError.CannotWrite writing failed (the disk is full, ...).

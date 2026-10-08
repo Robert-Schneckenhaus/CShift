@@ -28,6 +28,7 @@ extern "C" int __dos_Examine(int lock, void* info);
 extern "C" int __dos_ExNext(int lock, void* info);
 extern "C" int __dos_CreateDir(char* name);
 extern "C" int __dos_CurrentDir(int lock);
+extern "C" int __dos_SetFileDate(char* name, void* date);
 extern "C" void __dos_Delay(int ticks);
 extern "C" int __dos_Execute(char* command, int input, int output);
 extern "C" int __dos_NameFromLock(int lock, char* buffer, int length);

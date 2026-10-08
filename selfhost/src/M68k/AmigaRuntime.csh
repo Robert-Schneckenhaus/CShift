@@ -48,6 +48,7 @@ const ReadOnlySlice<string> AmigaStubs = [
     "__dos_DateStamp|__cs_DOSBase|-192|d1",
     "__dos_Delay|__cs_DOSBase|-198|d1",
     "__dos_Execute|__cs_DOSBase|-222|d1,d2,d3",
+    "__dos_SetFileDate|__cs_DOSBase|-396|d1,d2",
     "__dos_NameFromLock|__cs_DOSBase|-402|d1,d2,d3",
     "__dos_SystemTagList|__cs_DOSBase|-606|d1,d2",
     "__dos_GetVar|__cs_DOSBase|-906|d1,d2,d3,d4",

@@ -10,6 +10,9 @@ extern "C" void* _localtime64(int64* time);
 extern "C" int GetFileAttributesExA(char* path, int level, void* data);
 extern "C" int MoveFileExA(char* from, char* to, uint32 flags);
 extern "C" int RemoveDirectoryA(char* path);
+extern "C" void* CreateFileA(char* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int SetFileTime(void* file, void* creation, void* access, void* write);
+extern "C" int CloseHandle(void* handle);
 extern "C" int _fseeki64(void* file, int64 offset, int origin);
 extern "C" int64 _ftelli64(void* file);
 extern "C" int fflush(void* file);
@@ -73,6 +76,22 @@ struct _Os
                 return null;
             int64 fileTime = (int64)data[5] | ((int64)data[6] << 32);
             return fileTime - _FileTimeEpoch;
+        }
+    }
+
+    // sets when the file (or directory) was last written: 100 ns units since 1970-01-01 00:00 UTC
+    static bool SetFileWriteTime(StringSlice path, int64 ticks)
+    {
+        unsafe
+        {
+            // FILE_WRITE_ATTRIBUTES, all sharing, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS (for directories)
+            void* file = CreateFileA(path.CStr(), 0x100u, 7u, null, 3u, 0x02000000u, null);
+            if (file == (void*)(nint)(-1))
+                return false;
+            int64 fileTime = ticks + _FileTimeEpoch;
+            bool ok = SetFileTime(file, null, null, &fileTime) != 0;
+            CloseHandle(file);
+            return ok;
         }
     }
 
