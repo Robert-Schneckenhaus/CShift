@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.29] - 2026-10-08
+
 ### Language
 - A type, constant or global that two `using` namespaces declare is ambiguous, a compile error that names both
   (`'JsonValue' is ambiguous: 'System.JsonValue' and 'Amber.Base.JsonValue'`): the full name chooses one. Before, the
