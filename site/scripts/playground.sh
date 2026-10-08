@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Builds the compiler of the playground (src/components/Playground.astro): cshc as WebAssembly, into public/playground/,
 # with the compiler given (a cshiftc of this version). Its examples (src/playground/examples.js) must compile and run.
+# Then the games of the games page (src/components/Games.astro) into public/games/.
 #
 #   site/scripts/playground.sh <cshiftc>
 #
-# Needs clang with the C library of WASI (Ubuntu: wasi-libc, libclang-rt-<version>-dev-wasm32, lld-<version>) and node.
+# Needs clang with the C library of WASI (Ubuntu: wasi-libc, libclang-rt-<version>-dev-wasm32, lld-<version>),
+# libclang (the C headers of demo-opengl) and node.
 set -euo pipefail
 CSHIFTC="$(cd "$(dirname "${1:?cshiftc}")" && pwd)/$(basename "$1")"
 SITE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,3 +35,11 @@ done
 mkdir -p "$SITE/public/playground"
 (cd "$ROOT" && "$CSHIFTC" build selfhost --target wasm32-wasi -o "$SITE/public/playground/cshc.wasm")
 echo "built $SITE/public/playground/cshc.wasm ($(wc -c < "$SITE/public/playground/cshc.wasm") bytes)"
+
+# the games page (src/components/Games.astro): the demos, built with the wasm backend, and the runtime web/cshift.js
+# (demo-opengl imports the headers of GLFW and OpenGL: libclang)
+mkdir -p "$SITE/public/games"
+(cd "$ROOT" && "$CSHIFTC" build demo-snake --backend wasm -o "$SITE/public/games/snake.wasm")
+(cd "$ROOT" && "$CSHIFTC" build demo-opengl --backend wasm -o "$SITE/public/games/cube.wasm")
+cp "$ROOT/web/cshift.js" "$SITE/public/games/cshift.js"
+echo "built $SITE/public/games: $(cd "$SITE/public/games" && ls | tr '\n' ' ')"

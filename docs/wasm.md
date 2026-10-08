@@ -42,8 +42,38 @@ The code is simple and correct first: values live in WebAssembly locals, structs
 blocks become nested WebAssembly blocks. WebAssembly runtimes compile it further, so it is not slow, but LLVM's
 optimizations make the code of `--target wasm32-wasi` faster.
 
-The tests run with `CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm bash tests/run_tests.sh`. They also build the
-compiler as WebAssembly with the backend, and that compiler (under node) must build itself again, byte for byte.
+The tests run with `CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm bash tests/run_tests.sh`. They also run the cases
+of the backend itself ([tests/wasm](../tests/wasm): suspending and resuming a program), and build the compiler as
+WebAssembly with the backend: that compiler (under node) must build itself again, byte for byte.
+
+## Games in the browser
+
+A program with a window (GLFW) and OpenGL runs in the browser unchanged, game loop and all:
+
+```
+cshiftc build demo-snake --backend wasm -o program.wasm
+cp web/cshift.js web/index.html .         # next to program.wasm
+python3 -m http.server                    # open http://localhost:8000/
+```
+
+[web/cshift.js](../web/cshift.js) is the runtime of the page (one JavaScript module without dependencies):
+
+| | In the browser |
+|---|---|
+| WASI | the console goes to the page (and to `console`), the clock, arguments, an in-memory file system with the files given to `run()` (`files: { "/data/map.json": "data/map.json" }`: fetched before the start) |
+| GLFW | the window is the `<canvas>`; keyboard, mouse, wheel and character callbacks; `glfwGetKey`, `glfwGetCursorPos`, `glfwGetTime`, the framebuffer size. Esc and `glfwSetWindowShouldClose` end the loop as on the desktop. |
+| OpenGL | WebGL 2: the functions of OpenGL 3.3 core that WebGL 2 has, called directly (`extern "C" void glClear(uint32 mask);`) or through `glfwGetProcAddress`; GLSL `#version 330 core` becomes `#version 300 es`. From OpenGL 1.1: `glDrawPixels`, `glPixelZoom`, `glRasterPos2f` (a software renderer's picture, drawn as a texture). |
+| the loop | `glfwPollEvents` (and `glfwWaitEvents`) suspends the program until the browser's next frame |
+
+A browser shows a frame only when the program returns to it, but a game's loop never returns. The backend therefore
+changes the functions that can reach `glfwPollEvents` (directly, or through a function pointer): when the runtime
+suspends the program in that call, each of them saves its locals and returns; for the next frame the runtime calls the
+program again, and each function restores its locals and continues in the call (like Binaryen's Asyncify). Programs
+without such a call are not changed. The demos [demo-snake](../demo-snake) (a software renderer with `glDrawPixels`)
+and [demo-opengl](../demo-opengl) (OpenGL 3.3 with shaders) run on the website's games page.
+
+What does not work in the browser: the extensions of desktop OpenGL that WebGL 2 lacks (geometry shaders, `glMapBuffer`,
+double precision), several windows, and sleeping (`Thread.Sleep` returns at once: the frame is the unit of time).
 
 ## What the LLVM target needs
 

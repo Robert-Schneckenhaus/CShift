@@ -490,8 +490,23 @@ else
     fi
 fi
 
-# --- 5. the wasm backend compiles the compiler: as WebAssembly (under node) it must build itself again, byte for byte -
+# --- 5. the wasm backend: its own cases (tests/wasm/*.csh: the output must be <name>.expected, exit code 0), then it
+#        compiles the compiler: as WebAssembly (under node) that must build itself again, byte for byte -------------
 if [ "${CSHIFT_BACKEND:-}" = "wasm" ]; then
+    echo "== wasm/"
+    for file in "$DIR"/wasm/*.csh; do
+        name="$(basename "$file" .csh)"
+        if ! "$COMPILER" --backend wasm "$file" -o "$TMP/wasm-case.wasm" 2> "$TMP/wasm-case.err"; then
+            report_fail "wasm/$name" "compilation failed: $(head -n 3 "$TMP/wasm-case.err" | tr '\n' ' ')"
+        elif ! "${RUNNER[@]}" "$TMP/wasm-case.wasm" > "$TMP/wasm-case.out" 2> "$TMP/wasm-case.err"; then
+            report_fail "wasm/$name" "the program failed: $(head -n 3 "$TMP/wasm-case.err" | tr '\n' ' ')"
+        elif ! diff -q <(tr -d '\r' < "$TMP/wasm-case.out") "$DIR/wasm/$name.expected" > /dev/null; then
+            report_fail "wasm/$name" "output differs from $name.expected: $(head -n 3 "$TMP/wasm-case.out" | tr '\n' ' ')"
+        else
+            report_ok "wasm/$name"
+        fi
+    done
+
     echo "== wasm backend: cshc.wasm builds itself"
     lib=(--stdlib "$DIR/../stdlib")
     if ! (cd "$DIR/.." && "$COMPILER" build selfhost --backend wasm "${lib[@]}" -o "$TMP/cshc-a.wasm") > /dev/null 2> "$TMP/wasm-a.err"; then

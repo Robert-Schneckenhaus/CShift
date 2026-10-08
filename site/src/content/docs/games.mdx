@@ -1,0 +1,21 @@
+---
+title: Games in the browser
+description: CShift programs with GLFW and OpenGL, compiled to WebAssembly and played in the browser.
+template: splash
+tableOfContents: false
+prev: false
+next: false
+---
+
+import Games from "../../components/Games.astro";
+
+These are the demos of the repository, unchanged: CShift programs that open a window with GLFW and draw with
+OpenGL, written for the desktop. The compiler's own WebAssembly backend (`--backend wasm`) translates them, and a small
+JavaScript runtime gives them GLFW and OpenGL in the browser (WebGL 2). Their game loop stays a plain loop: the
+program is suspended in `glfwPollEvents` until the browser shows the next frame.
+
+<Games />
+
+To run your own program like this: `cshiftc build mygame --backend wasm -o program.wasm`, then put it next to
+`web/cshift.js` and `web/index.html` of the repository and open the page through a web server. More in
+[WebAssembly](../docs/wasm/#games-in-the-browser).

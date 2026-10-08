@@ -1,0 +1,12 @@
+{
+	"name": "demo-snake",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/demo-snake",
+	"optimize": 2,
+	"platforms": {
+		"windows": { "libraryPaths": ["../demo-opengl/lib"], "links": ["glfw3", "opengl32", "gdi32", "user32", "shell32"] },
+		"linux": { "links": ["glfw", "GL"] }
+	}
+}

@@ -30,6 +30,7 @@ export default defineConfig({
                         { label: "Overview", link: "/docs/" },
                         { label: "Installation", link: "/docs/install/" },
                         { label: "Playground", link: "/playground/" },
+                        { label: "Games in the browser", link: "/games/" },
                     ],
                 },
                 { label: "Language guide", items: [{ autogenerate: { directory: "language" } }] },

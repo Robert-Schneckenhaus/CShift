@@ -148,7 +148,9 @@ in any file. Errors are printed as `file:line:column: error: text`.
 A project is described by a `cshift.json` (sources, output, libraries, per-platform settings; see
 [docs/build.md](docs/build.md)). C libraries are used without hand-written declarations: `using Zlib from "zlib.h";`
 imports the header as a namespace ([docs/ffi.md](docs/ffi.md)). Two complete examples with C libraries and VS Code
-tasks: [demo-minifb/](demo-minifb/) (a MiniFB window) and [demo-opengl/](demo-opengl/) (OpenGL 3.3 with GLFW).
+tasks: [demo-minifb/](demo-minifb/) (a MiniFB window), [demo-opengl/](demo-opengl/) (OpenGL 3.3 with GLFW) and
+[demo-snake/](demo-snake/) (a game with GLFW and `glDrawPixels`). The last two also run in the browser
+([docs/wasm.md](docs/wasm.md#games-in-the-browser)).
 
 CShift also runs on the **Amiga**: `--target m68k-amigaos` builds an AmigaOS executable with CShift's own 68000
 backend, AmigaOS libraries are imported from the NDK's SFD files (`using Gfx from "graphics_lib.sfd";`)
