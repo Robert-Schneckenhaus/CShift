@@ -29,7 +29,9 @@ the git log.
 ## Tooling
 
 - [ ] VS Code: renaming, and completion of names (not only of members after `.`), on top of the symbol index of
-      `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)).
+      `cshiftc query` (see [docs/semantic-pass.md](docs/semantic-pass.md)). Renaming needs a complete `--references`
+      first: the index does not record where types, fields, enum members and constants are declared, nor the field
+      names of initializers (`Point { X = 1 }`), so the references of `Point` and `X` miss those places.
 - [ ] Errors with an end: cshiftc reports where an error starts, and the VS Code extension guesses how far the
       expression goes (`errorRangeEnd` in [vscode-extension/lib.js](vscode-extension/lib.js)). The parser would have
       to keep the end of every expression, and `cshiftc check` print it.
