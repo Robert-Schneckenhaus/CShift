@@ -39,9 +39,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   when the output went to a file or a pipe, the output of the command came before earlier lines of the program.
 
 ### Tools
-- [Ambermoon/](Ambermoon/README.md): the release creators (`AmbermoonReleaseCreator`, `AmbermoonAdvancedReleaseCreator`)
+- [Ambermoon Tools](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools): the release creators (`AmbermoonReleaseCreator`, `AmbermoonAdvancedReleaseCreator`)
   with the libraries `Amiga.FileFormats` (ADF disk images and LHA archives, written byte for byte like the originals)
   and `Ambermoon.Release` (zip, tar.gz). The releases of all languages are the same as those of the original.
+- The Ambermoon tools moved from the folder `Ambermoon/` of this repository to the folder `Tools/` of the
+  [Ambermoon repository](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools), with scripts that build them with the latest release of CShift
+  (`tests/run_tests.sh` no longer runs their tests).
 - Building the compiler from source starts from cshiftc 0.28 (`selfhost/stage0.txt`): the compiler's own sources
   may use the language and the standard library of 0.28.
 
@@ -68,7 +71,7 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   not made.
 
 ### Tools
-- [Ambermoon/](Ambermoon/README.md): ports of command line tools of the Amiga game
+- [Ambermoon Tools](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools): ports of command line tools of the Amiga game
   [Ambermoon](https://github.com/Pyrdacor/Ambermoon) and of the libraries they need: `AmbermoonPack` (packs and unpacks
   the game's file formats, 60 to 300 times faster than the original), `AmbermoonEventEditor` (edits the events of
   maps and characters), `HexValueChanger`, the text pack tools of translations (`AmbermoonIntroTextPacker`,
@@ -77,8 +80,7 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   `AmbermoonUsedColorsDetector`, `Ambermoon3DMapViewer`), `AmbermoonMonsterEditor`, `AmbermoonItemEditor`,
   `AmbermoonNameExtract`, `AmbermoonTextImport`, `AmbermoonTextManager`, `AmbermoonIntroPatcher`,
   `AmbermoonExtroPatcher` and the image tools (`AmbermoonPaletteChanger`, `AmbermoonImageConverter`,
-  `AmbermoonFontCreator`, `AmbermoonFontProcessor`). Their results are those of the original tools
-  (`Ambermoon/tests/run.sh`, part of `tests/run_tests.sh`).
+  `AmbermoonFontCreator`, `AmbermoonFontProcessor`). Their results are those of the original tools.
 
 ## [0.27] - 2026-10-07
 

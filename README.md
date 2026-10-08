@@ -158,8 +158,9 @@ backend, AmigaOS libraries are imported from the NDK's SFD files (`using Gfx fro
 second on an A500), [demo-amiga-gfx/](demo-amiga-gfx/README.md) (bouncing balls with the blitter, a sprite and text;
 `Amiga.Screen`) and [demo-amiga-ndk/](demo-amiga-ndk/README.md) (a rotating cube in an Intuition window).
 
-Larger programs in CShift: [Ambermoon/](Ambermoon/README.md) has ports of command line tools for the data files of the
-Amiga game Ambermoon (packing with LOB compression, an event editor) and of the libraries they use.
+Larger programs in CShift: the [Ambermoon Tools](https://github.com/Pyrdacor/Ambermoon/tree/release/v1.12/Tools) (in the repository of the Amiga game Ambermoon) are ports of
+its command line tools for the data files of the game (packing with LOB compression, editors, text and image tools,
+the release creators) and of the libraries they use.
 
 ## VS Code
 

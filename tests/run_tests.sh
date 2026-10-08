@@ -27,7 +27,6 @@
 #        // stdin:         <text>   a line of the program's standard input (may be repeated; without it, stdin is empty)
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
-#   3a. Ambermoon/tests/run.sh            -> the ported Ambermoon tools give the results of the original tools.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
 #      VS Code extension (vscode-extension/test, if node is installed).
 
@@ -297,20 +296,6 @@ else
         report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
     else
         report_ok "debug information"
-    fi
-fi
-
-# --- 3a. the Ambermoon tools (Ambermoon/): their results for synthetic data are the ones of the original tools ----
-if [ ${#RUNNER[@]} -gt 0 ] || [ -n "${CSHIFT_TARGET:-}" ]; then
-    echo "== Ambermoon/ (skipped for ${CSHIFT_TARGET})"
-else
-    echo "== Ambermoon/"
-    if bash "$DIR/../Ambermoon/tests/run.sh" "$COMPILER" > "$TMP/ambermoon.log" 2>&1; then
-        report_ok "Ambermoon tools"
-        [ -z "${VERBOSE:-}" ] && tail -n 1 "$TMP/ambermoon.log"
-    else
-        report_fail "Ambermoon tools" "$(grep -m 3 FAIL "$TMP/ambermoon.log" | tr '\n' ' ')"
-        grep -v "^ok" "$TMP/ambermoon.log" | head -n 20
     fi
 fi
 

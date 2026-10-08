@@ -43,8 +43,8 @@ the git log.
       ANSI paths too, so a non-ASCII argument works as a path but is not UTF-8 text. Converting only the arguments
       would break such paths; the consistent fix is an application manifest with `activeCodePage` UTF-8 (Windows 10
       1903+), which makes argv and all `A` functions UTF-8 - it needs a resource compiler (`llvm-windres`) in the
-      toolchain of the release. Until then `Ambermoon/tests/run.sh` leaves out the cases with non-ASCII arguments
-      on Windows.
+      toolchain of the release. Until then the tests of the Ambermoon tools (`Tools/tests/run.sh` in the Ambermoon
+      repository) leave out the cases with non-ASCII arguments on Windows.
 - [ ] `System.Image`: GIF and JPEG decoding; a palette (and its PNG/BMP form) kept in `Image` for indexed images.
 - [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
 - [ ] The rest of the byte functions on slices: `Encoding.GetString`, `string.FromBytes` and `FileStream.Read`
