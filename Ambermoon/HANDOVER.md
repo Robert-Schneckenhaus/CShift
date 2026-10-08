@@ -7,14 +7,15 @@ ports live in this folder (`Ambermoon/`); [README.md](README.md) describes each 
 everything that is different from the original. This file is the handover: what is done, what is left, how the ports
 were checked and what was found in the originals.
 
-The work was paused after the image tools (before AmbermoonPatcher and the release creators). The standard library
+The command line tools are done: the release creators were the last ones (AmbermoonPatcher is skipped, as asked). The standard library
 has `System.Image` (PNG, BMP, PPM) and `System.Compression` (deflate, zlib, gzip, CRC-32) for them now.
 
 
 ## Done
 
 Libraries: `Ambermoon.Common`, `Ambermoon.Data.Common`, `Ambermoon.Data.Legacy`, `Ambermoon.Data.Descriptions`,
-`Ambermoon.Data.Text.Patching`, `AmbermoonTextPacks`, `AmbermoonBitmaps` (the parts that the tools need).
+`Ambermoon.Data.Text.Patching`, `AmbermoonTextPacks`, `AmbermoonBitmaps`, `Amiga.FileFormats`, `Ambermoon.Release`
+(the parts that the tools need).
 
 | Tool | Checked against the original (details in README.md) |
 |---|---|
@@ -36,6 +37,8 @@ Libraries: `Ambermoon.Common`, `Ambermoon.Data.Common`, `Ambermoon.Data.Legacy`,
 | AmbermoonImageConverter | 195 command lines: all formats, frames, offsets, transparent/forbidden indices, errors |
 | AmbermoonFontCreator | the Czech and Polish fonts, all glyph atlases of the repository, 14 changed specifications |
 | AmbermoonFontProcessor | 120 random sessions on the glyph atlases (the original patched to run its GlyphTool) |
+| AmbermoonReleaseCreator | the releases of English, Czech, Polish, French and German: the same archives (entries, contents, ADF images byte for byte) |
+| AmbermoonAdvancedReleaseCreator | folders and versions, errors: the same output and archives |
 
 `Ambermoon/tests/run.sh` (part of `tests/run_tests.sh`) checks the tools that need no game data with synthetic data
 against recorded results of the originals (`tests/expected.txt`, `tests/tools/make_data.py`), and builds the others
@@ -52,19 +55,14 @@ The remaining command line projects of `AmbermoonTools` (the others have a user 
 Ambermoon3DMapEditor, AmbermoonButtonGraphicsDesigner, AmbermoonCharEditor, AmbermoonEditor, AmbermoonImageEditor,
 AmbermoonMapCharEditor, AmbermoonMapEditor2D, AmbermoonMapEditor3D, AmbermoonUIEventEditor):
 
-1. **AmbermoonPatcher** (1202 lines: a small language to patch data files: `# fix`, `Replace/Insert/Delete`
-   destinations like `Party_char.amb[15]:0x1C`, constants, byte sequences, source expressions, `Run` fix lists, `&`
-   imports, comments; specified in its `README.md`). **The original does not compile** (38 errors: `FileManager.GetTexts`
-   is unfinished, `Parser` uses an undefined `rValue` and has type errors), so there is nothing to compare with. Options:
-   implement the language of its README (and check it with own tests), or leave it out. Not started.
-2. **AmbermoonReleaseCreator** (806 lines) and **AmbermoonAdvancedReleaseCreator** (158 lines): build releases (patch a
-   German game into another language with the text tools above, write ADF images, LHA and zip archives). They use the
-   NuGet packages `Amiga.FileFormats.ADF`, `Amiga.FileFormats.LHA` and `SharpZipLib`. A port needs ADF writing (the
-   library reads ADF images: `Ambermoon.Data.Legacy/src/Serialization/ADFReader.csh`), LHA compression (lh5?) and zip
-   (deflate) in CShift; the standard library has deflate now (`System.Compression`: `Deflate`, `Crc32` for zip).
-   Look at the sources of the Amiga.FileFormats packages (NuGet restore works through the proxy) and at what the
-   release creators need of them. They are meant to run from
-   the folder of the Ambermoon repository (see their README.md).
+1. ~~AmbermoonPatcher~~: skipped (as asked; the original does not compile: `FileManager.GetTexts` is unfinished,
+   `Parser` uses an undefined `rValue` and has type errors).
+2. ~~The release creators~~: done. `Amiga.FileFormats` is a port of the writing parts of the packages
+   Amiga.FileFormats.ADF 1.0.5 and .LHA 1.0.1 (sources: github.com/Pyrdacor/Amiga, the commits are in the nuspec files
+   of the packages), `Ambermoon.Release` has zip and tar.gz. The release creator runs the tools as programs like the
+   original (`AMBERMOON_TOOLS` or the `PATH`); calling them in the same process would need TextManager without its
+   globals and its `Environment.Exit`. Compared on Windows with `tests/reference/scripts/releasecreator.py` (see
+   README.md for how the original is built for it).
 3. ~~The image tools~~: done (see above). They were checked on Windows, where `System.Drawing` of the originals
    works; the pixels were compared by a small .NET program that dumps what GDI+ decodes (the decoders of
    `System.Image` give the same pixels as GDI+, also its rounding: see `docs/stdlib.md`). The library
@@ -77,7 +75,8 @@ AmbermoonMapCharEditor, AmbermoonMapEditor2D, AmbermoonMapEditor3D, AmbermoonUIE
 The task list of the work (in the order it was done): libraries and AmbermoonPack, the event editor, the small tools,
 the game data (ADF, executables), the labyrinth tools, the characters and items (monster, item and name tools), the
 texts (TextImport, TextManager, IntroPatcher, ExtroPatcher), the image tools (with System.Image and
-System.Compression in the standard library). Next: AmbermoonPatcher (decide), the release creators.
+System.Compression in the standard library), the release creators (with File.SetLastWriteTime in the standard
+library). Left: the optional golden tests (5.).
 
 
 ## How the ports were checked (tests/reference/)

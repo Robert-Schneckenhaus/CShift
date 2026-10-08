@@ -283,3 +283,62 @@ int _PutCodePoint(uint8[] output, int o, int codePoint)
     output[o + 3] = (uint8)(0x80 | (codePoint & 0x3F));
     return o + 4;
 }
+
+/// An entry of a directory tree ([FileSystemEntriesWindows]): its path and whether it is a directory.
+struct NetEntry
+{
+    string Path;
+    bool IsDirectory;
+}
+
+/// The files and directories below `directory` in the order in which .NET gives them on Windows
+/// (`Directory.GetFiles(directory, "*", SearchOption.AllDirectories)`, `EnumerateFileSystemInfos`): the entries of a
+/// directory in the order of NTFS (the names compared in upper case), then those of its directories, level by level.
+/// The directory itself is not included; empty if it does not exist.
+List<NetEntry> FileSystemEntriesWindows(StringSlice directory)
+{
+    var result = List<NetEntry>.Create();
+    var pending = Queue<string>.Create();
+    pending.Enqueue(directory.ToString());
+    while (pending.TryDequeue() is string current)
+    {
+        var names = List<_NtfsName>.Create();
+        foreach (var name in Directory.GetEntries(current))
+            names.Add(_NtfsName { Key = ToUpperNet(name), Name = name });
+        names.Sort();
+        foreach (var entry in names)
+        {
+            var path = Path.Combine(current, entry.Name);
+            bool isDirectory = Directory.Exists(path);
+            result.Add(NetEntry { Path = path, IsDirectory = isDirectory });
+            if (isDirectory)
+                pending.Enqueue(path);
+        }
+    }
+    return result;
+}
+
+/// The paths of the files below `directory` in the order of .NET on Windows (see [FileSystemEntriesWindows]).
+List<string> GetFilesWindows(StringSlice directory)
+{
+    var result = List<string>.Create();
+    foreach (var entry in FileSystemEntriesWindows(directory))
+    {
+        if (!entry.IsDirectory)
+            result.Add(entry.Path);
+    }
+    return result;
+}
+
+// A name in the order of NTFS: upper case, ordinal.
+struct _NtfsName : IComparable<_NtfsName>
+{
+    string Key;
+    string Name;
+
+    int CompareTo(_NtfsName other)
+    {
+        int c = Key.CompareTo(other.Key);
+        return c != 0 ? c : Name.CompareTo(other.Name);
+    }
+}

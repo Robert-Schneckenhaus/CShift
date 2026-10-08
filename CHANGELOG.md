@@ -32,7 +32,16 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Fixes
 - demo-opengl: the fragment shader lacked a semicolon.
 
+### Standard library
+- `File.SetLastWriteTime(path, time)` and `SetLastWriteTimeUtc(path, time)` set when a file or folder was last written
+  (Windows, Linux, macOS, WebAssembly, AmigaOS 2.0 and newer).
+- **Fixed:** `Process.Run` and `Process.RunCapture` write out what the program wrote before they start the command:
+  when the output went to a file or a pipe, the output of the command came before earlier lines of the program.
+
 ### Tools
+- [Ambermoon/](Ambermoon/README.md): the release creators (`AmbermoonReleaseCreator`, `AmbermoonAdvancedReleaseCreator`)
+  with the libraries `Amiga.FileFormats` (ADF disk images and LHA archives, written byte for byte like the originals)
+  and `Ambermoon.Release` (zip, tar.gz). The releases of all languages are the same as those of the original.
 - Building the compiler from source starts from cshiftc 0.28 (`selfhost/stage0.txt`): the compiler's own sources
   may use the language and the standard library of 0.28.
 

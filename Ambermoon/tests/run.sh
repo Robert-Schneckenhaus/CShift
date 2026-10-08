@@ -23,7 +23,8 @@ TOOLS=(AmbermoonPack AmbermoonEventEditor HexValueChanger AmbermoonIntroTextPack
 BUILD_ONLY=(AmbermoonListExtractor AmbermoonLabdataEditor AmbermoonLabdataExtractor AmbermoonUsedColorsDetector
             Ambermoon3DMapViewer AmbermoonMonsterEditor AmbermoonItemEditor AmbermoonNameExtract
             AmbermoonTextImport AmbermoonTextManager AmbermoonIntroPatcher AmbermoonExtroPatcher
-            AmbermoonPaletteChanger AmbermoonImageConverter AmbermoonFontCreator AmbermoonFontProcessor)
+            AmbermoonPaletteChanger AmbermoonImageConverter AmbermoonFontCreator AmbermoonFontProcessor
+            AmbermoonReleaseCreator AmbermoonAdvancedReleaseCreator)
 declare -A COMMAND
 
 RECORD=0

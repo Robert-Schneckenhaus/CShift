@@ -36,6 +36,10 @@ read and write the data files of the Amiga game Ambermoon.
 | `AmbermoonImageConverter/` | converts an image into the bit planes of a graphic of the game (3, 4, 5 bit planes, textures, multi-tile graphics) | `AmbermoonTools/AmbermoonImageConverter` |
 | `AmbermoonFontCreator/` | makes a font file of the extro from a JSON specification and two glyph atlases | `AmbermoonTools/AmbermoonFontCreator` |
 | `AmbermoonFontProcessor/` | copies glyphs of a glyph atlas into free slots (adds rows) and saves it | `AmbermoonTools/AmbermoonFontProcessor` (its GlyphTool) |
+| `Amiga.FileFormats/` | library: ADF disk images (OFS/FFS, bootable) and LHA archives (LH5 to LH7) as the packages Amiga.FileFormats.ADF and .LHA write them | `Amiga.FileFormats.ADF`, `Amiga.FileFormats.LHA` (the writing parts) |
+| `Ambermoon.Release/` | library: zip files (reading, and writing like .NET's `ZipFile`), tar.gz files like SharpZipLib, the archives of a release | `Package` of the release creators |
+| `AmbermoonReleaseCreator/` | makes a release of a language (texts, intro, extro, fonts and boot disk patched): the ADF images and the archives | `AmbermoonTools/AmbermoonReleaseCreator` |
+| `AmbermoonAdvancedReleaseCreator/` | makes the archives of prepared folders of Ambermoon Advanced | `AmbermoonTools/AmbermoonAdvancedReleaseCreator` |
 | `tests/` | tests with expected results of the original tools; `tests/reference/`: building the originals and comparing them with the ports | |
 
 [HANDOVER.md](HANDOVER.md) has the state of the work: what is left to port, how the ports were checked and the bugs
@@ -90,7 +94,15 @@ AmbermoonPaletteChanger image.png Palettes/001 32 out.png   # the colors of pale
 AmbermoonImageConverter item.png Palettes/001 item.bin 5    # 5 bit planes (0: textures, 1: multi-tile, 3, 4)
 AmbermoonFontCreator font.json SmallGlyphs.png LargeGlyphs.png Extro_fonts
 AmbermoonFontProcessor SmallGlyphs.png [commands.txt]   # copy <index> | save [path] | exit
+AmbermoonReleaseCreator Czech 1.20                  # in the Ambermoon repository: Disks/Czech/ambermoon_czech_1.20_*
+AmbermoonAdvancedReleaseCreator D:\rel 1.20         # D:\rel\<lang>\ambermoon_advanced_<lang>_1.20_extracted.zip, ...
 ```
+
+AmbermoonReleaseCreator runs the tools AmbermoonTextManager, AmbermoonFontCreator, AmbermoonIntroPatcher and
+AmbermoonExtroPatcher (the ports, or the originals) from the folder of the environment variable `AMBERMOON_TOOLS`, or
+from the `PATH` (the original builds them with `dotnet publish` from the sources in the repository). With
+`SOURCE_DATE_EPOCH` (seconds since 1970) set, its date and times are that time instead of the current one (the texts,
+the ADF images, the times of the empty folders in the zip files), so that a release can be made again the same way.
 
 The image tools read and write PNG, BMP and PPM with `System.Image` of the standard library (the originals use
 `System.Drawing`, which reads more formats - GIF, JPEG, TIFF - but works on Windows only).
@@ -156,6 +168,18 @@ The image tools read and write PNG, BMP and PPM with `System.Image` of the stand
   of the names, defaults, errors, output folders): the same output, exit codes and files. `AmbermoonFontProcessor`:
   120 random sessions on the glyph atlases of the repository (copies that add rows, saves, invalid commands, command
   files): the same output and pixels as the original (with the call of its GlyphTool, see below).
+
+* **The release creators** (on Windows, like the originals, which run there in the pipeline of the repository):
+  `AmbermoonReleaseCreator` for English, Czech, Polish, French (each of 1.20 German) and German (1.19 with the
+  bugfixes): the same exit codes and output, and the same six archives: the same entries in the same order with the
+  same contents (all files of the game, the patched intro and extro, the fonts, the boot disk), the ADF images in them
+  byte for byte (also with dates, with `SOURCE_DATE_EPOCH` set for both), the LHA archives byte for byte except the
+  times; the error cases too (`tests/reference/scripts/releasecreator.py`; the original built with
+  `FRAMEWORK=net9.0` and against the sources of the Amiga.FileFormats packages in which `DateTime.Now` reads
+  `SOURCE_DATE_EPOCH`). The ADF writer gives the same images as the package for the ten disks of a release, the LHA
+  writer the same archives (with the same file times); the size sort of the ADF writer is .NET's introsort (the same
+  order of equal sizes, checked for 300 lists). `AmbermoonAdvancedReleaseCreator`: folders and versions, errors: the
+  same output, the same tar.gz and LHA files, the same zip entries.
 
 ## Different from the original
 
@@ -273,6 +297,20 @@ when it removes old matches. Packing is 60 to 300 times faster:
 * AmbermoonFontCreator: invalid JSON (and numbers that are no integers of the right size) gives the message for a
   specification that cannot be read, and images that cannot be read give an error message (the original ends with
   an exception).
+* AmbermoonReleaseCreator: the tools are not built with `dotnet publish` (their output is not there); they are taken
+  from `AMBERMOON_TOOLS` or the `PATH` and started by their full path (the original starts them from its temporary
+  folder, which Windows does not do when `NoDefaultCurrentDirectoryInExePath` is set). The German release does not
+  contain `AmbermoonTextManager.exe` (the original publishes it into the files of the release and does not delete it
+  again: the German archives of the repository contain it). Missing files and folders, a language whose boot disk
+  texts are missing (only German, French, Czech and Polish have them) and files that do not fit on a disk give an error
+  message (the original ends with an exception, or writes an empty ADF image for a full disk); the temporary folder is
+  always deleted. The zip files are deflated by System.Compression (not zlib-ng): the same entries and header fields,
+  other compressed bytes; the gzip data likewise.
+* AmbermoonAdvancedReleaseCreator: without arguments it shows the usage (the original's check of the number of
+  arguments is never true: it ends with an exception); a relative folder works (the LHA writer of the original ends with
+  an exception for it). The names in the tar.gz files are relative to the current folder also when the path is written
+  with `/` (the original compares the paths with the current folder character by character, so on Windows a path with
+  `/` stores the full path as a GNU long name).
 * AmbermoonFontProcessor: the original does nothing as it is: its program only declares functions, the call of
   `GlyphTool.Main(args)` is commented out. The port is that GlyphTool. `exit` ends it (in the original it does
   nothing), and so does the end of the input (the original asks again forever); `tests/reference/patches/` has these
