@@ -17,7 +17,8 @@
 //     snprintf) calls __cs_va_<name> with the fixed arguments and the address of the others, packed like on the stack
 //     of the 68000 (4 bytes for integers and pointers, 8 for int64 and double, unaligned).
 //   * A function without a body is imported: __wasi_X is X of wasi_snapshot_preview1, the others come from the
-//     module "env" (functions of the host, in JavaScript).
+//     module "env" (functions of the host, in JavaScript: web/cshift.js has GLFW and OpenGL). A call that can
+//     suspend the program (glfwPollEvents: a game's loop in the browser) is handled further below.
 //   * Function addresses are slots of the function table (0 is null).
 
 namespace CShift.Wasm;
@@ -51,6 +52,9 @@ struct WasmGen
     Dictionary<string, int> TableSlot;    // IR name -> slot
     Dictionary<string, int> GlobalAddr;   // IR global -> its address
     HashSet<string> Reached;              // the functions and globals the program uses
+    HashSet<string> AddressTaken;         // the functions whose address is used (they can be called indirectly)
+    HashSet<string> Suspending;           // the functions that can suspend the program (Suspend.csh)
+    List<string> Helpers;                 // the functions the backend writes itself (Suspend.csh), after the others
     List<string> Work;
     Bytes Data;                           // the memory from DataStart on (the data segment)
     int DataStart;
@@ -80,6 +84,10 @@ struct WasmGen
     int Depth;                            // wasm blocks opened inside its code (if/else)
     int Sret;                             // the local of the hidden result pointer (-1: none)
     bool HasLoop;
+    bool Suspends;                        // the function can suspend: its calls that can are followed by a check
+    int AsyncTmp;                         // a local for saving and restoring the locals
+    List<string> SegmentLabel;            // the IR block of each block of the function (blocks are split at calls that
+                                          // can suspend)
 
     static WasmGen Create(IrModule m)
     {
@@ -87,7 +95,8 @@ struct WasmGen
                          Warnings = List<string>.Create(), Types = List<Bytes>.Create(), TypeIndex = Dictionary<string, int>.Create(), Imports = List<string>.Create(),
                          Defined = List<string>.Create(), FuncIndex = Dictionary<string, int>.Create(), Table = List<int>.Create(),
                          TableSlot = Dictionary<string, int>.Create(), GlobalAddr = Dictionary<string, int>.Create(),
-                         Reached = HashSet<string>.Create(), Work = List<string>.Create(), Data = Bytes.Create(), FnName = "",
+                         Reached = HashSet<string>.Create(), AddressTaken = HashSet<string>.Create(),
+                         Suspending = HashSet<string>.Create(), Helpers = List<string>.Create(), SegmentLabel = List<string>.Create(), Work = List<string>.Create(), Data = Bytes.Create(), FnName = "",
                          Code = Bytes.Create(), LocalTypes = List<int>.Create(), SlotInits = List<SlotInit>.Create(),
                          Local = Dictionary<string, int>.Create(), PhiTmp = Dictionary<string, int>.Create(),
                          SplitFlag = Dictionary<string, int>.Create(), Uses = Dictionary<string, int>.Create(),
@@ -208,7 +217,10 @@ struct WasmGen
         if (v.Kind == ValKind.Global)
         {
             if (M.FuncIndex.ContainsKey(v.Name))
+            {
                 Reach(v.Name);
+                AddressTaken.Add(v.Name);
+            }
             else
                 Reach(GlobalName(v.Name));
         }
@@ -240,6 +252,9 @@ struct WasmGen
     void FindReached()
     {
         Reach("__cs_wasm_start");
+        // exported for the host, which puts strings and data into the memory (stdlib/wasm, web/cshift.js)
+        Reach("malloc");
+        Reach("free");
         int next = 0;
         while (next < Work.Count())
         {
@@ -889,7 +904,11 @@ struct WasmGen
         Def.Clear();
         BlockIndex.Clear();
         PosSlot.Clear();
-        Blocks = f.Blocks;
+        Suspends = Suspending.Contains(f.Name);
+        Blocks = Suspends ? SplitAtSuspends(f.Blocks) : f.Blocks;
+        SegmentLabel.Clear();
+        foreach (var block in Blocks.ToArray())
+            SegmentLabel.Add(block.Label.StartsWith("__resume.") ? SegmentLabel.Get(SegmentLabel.Count() - 1) : block.Label);
         FrameSize = 0;
         Depth = 0;
         Sret = -1;
@@ -906,11 +925,12 @@ struct WasmGen
         int paramCount = LocalTypes.Count();
         FramePointer = NewLocal(I32);
         Pc = NewLocal(I32);
+        AsyncTmp = Suspends ? NewLocal(I32) : -1;
 
         // the blocks, the uses of the values, the jumps back
         for (var b = 0; b < Blocks.Count(); b += 1)
             BlockIndex.Set(Blocks.Get(b).Label, b);
-        HasLoop = false;
+        HasLoop = Suspends; // a resumed function jumps to the call it was suspended in
         for (var b = 0; b < Blocks.Count(); b += 1)
         {
             foreach (var inst in Blocks.Get(b).Insts.ToArray())
@@ -1047,7 +1067,12 @@ struct WasmGen
 
         FrameSize = WasmAlignTo(FrameSize, 16);
 
-        // the code
+        // the code (in a block that a suspension leaves: its locals are saved after it)
+        if (Suspends)
+        {
+            Op(2);
+            Op(64);
+        }
         if (HasLoop)
         {
             Op(3);  // loop
@@ -1085,6 +1110,11 @@ struct WasmGen
         if (HasLoop)
             Op(11);  // the end of the loop
         Op(0);       // unreachable
+        if (Suspends)
+        {
+            Op(11);  // the end of the block: the program is suspended
+            SaveLocals(f);
+        }
         Op(11);      // the end of the function
 
         // the frame: the prologue allocates it on the shadow stack and sets the locals of the slots
@@ -1109,6 +1139,18 @@ struct WasmGen
         }
         var main = Code;
         Code = body;
+        if (Suspends)
+        {
+            // resumed: the locals come back (the frame is still on the shadow stack), $pc is the block of the call
+            Op(35);
+            Code.U32(2);
+            I32Const(2);
+            Op(70);
+            Op(4);
+            Op(64);
+            RestoreLocals();
+            Op(5);
+        }
         if (FrameSize > 0)
         {
             Op(35);      // global.get $sp
@@ -1129,6 +1171,8 @@ struct WasmGen
                 LocalSet(init.Local);
             }
         }
+        if (Suspends)
+            Op(11);
         body.Append(main);
         Code = main;
         return body;
@@ -1605,7 +1649,7 @@ struct WasmGen
 
     int Incoming(IrInst phi)
     {
-        string from = Blocks.Get(Current).Label;
+        string from = SegmentLabel.Get(Current);
         for (var i = 0; i < phi.Labels.Length; i += 1)
         {
             if (phi.Labels[i] == from)
@@ -1924,6 +1968,8 @@ struct WasmGen
         }
         CallFunction(target);
         CallResult(inst, sret ? 0 : ValType(f.Ret));
+        if (Suspends && Suspending.Contains(target))
+            CheckSuspended();
     }
 
     // After a call: the result (converted from the function's type) to the instruction's local, or dropped.
@@ -1968,6 +2014,8 @@ struct WasmGen
         Code.U32(FuncType(ps, results));
         Code.Byte(0);
         CallResult(inst, sret || T.Kind(inst.Type) == IrKind.Void ? 0 : ValType(inst.Type));
+        if (Suspends && IndirectCallsSuspend())
+            CheckSuspended();
     }
 
     // C functions that are instructions, and the builtins of the backend.
@@ -2310,7 +2358,8 @@ struct WasmGen
             {
                 // __wasi_X: X of WASI; anything else: a function of the host (JavaScript), from the module "env"
                 Imports.Add(f.Name);
-                if (!f.Name.StartsWith("__wasi_"))
+                // GLFW and OpenGL are what web/cshift.js gives a program: no warning
+                if (!f.Name.StartsWith("__wasi_") && !f.Name.StartsWith("gl"))
                     Warnings.Add("'" + f.Name + "' is not defined: it is imported from the module \"env\"");
             }
         }
@@ -2321,6 +2370,12 @@ struct WasmGen
             index += 1;
         }
         foreach (var name in Defined.ToArray())
+        {
+            FuncIndex.Set(name, index);
+            index += 1;
+        }
+        FindSuspending();
+        foreach (var name in Helpers.ToArray())
         {
             FuncIndex.Set(name, index);
             index += 1;
@@ -2336,6 +2391,8 @@ struct WasmGen
         var definedTypes = List<int>.Create();
         foreach (var name in Defined.ToArray())
             definedTypes.Add(SignatureOf(M.Funcs.Get(M.FuncIndex.Get(name))));
+        foreach (var name in Helpers.ToArray())
+            definedTypes.Add(HelperType(name));
 
         var out = Bytes.Create();
         out.Byte(0);
@@ -2365,7 +2422,7 @@ struct WasmGen
             out.Section(SecImport, imports);
 
         var functions = Bytes.Create();
-        functions.U32(Defined.Count());
+        functions.U32(definedTypes.Count());
         foreach (var t in definedTypes.ToArray())
             functions.U32(t);
         out.Section(SecFunction, functions);
@@ -2384,7 +2441,7 @@ struct WasmGen
         out.Section(SecMemory, memory);
 
         var globals = Bytes.Create();
-        globals.U32(2);
+        globals.U32(Helpers.Count() > 0 ? 4 : 2);
         globals.Byte(I32);
         globals.Byte(1);   // $sp: mutable
         globals.Byte(65);
@@ -2395,16 +2452,41 @@ struct WasmGen
         globals.Byte(65);
         globals.S64(HeapBase);
         globals.Byte(11);
+        for (var i = 0; i < 2 && Helpers.Count() > 0; i += 1)
+        {
+            globals.Byte(I32);
+            globals.Byte(1);   // $state, $data
+            globals.Byte(65);
+            globals.S64(0);
+            globals.Byte(11);
+        }
         out.Section(SecGlobal, globals);
 
         var exports = Bytes.Create();
-        exports.U32(2);
+        var exported = List<string>.Create();
+        foreach (var name in new string[] { "malloc", "free" })
+        {
+            if (FuncIndex.ContainsKey(name))
+                exported.Add(name);
+        }
+        foreach (var name in Helpers.ToArray())
+            exported.Add(name);
+        exports.U32(3 + exported.Count());
         exports.Name("memory");
         exports.Byte(2);
         exports.U32(0);
         exports.Name("_start");
         exports.Byte(0);
         exports.U32(FuncIndex.GetOrDefault("__cs_wasm_start", 0));
+        exports.Name("__indirect_function_table"); // the host calls callbacks (function pointers) through it
+        exports.Byte(1);
+        exports.U32(0);
+        foreach (var name in exported.ToArray())
+        {
+            exports.Name(name);
+            exports.Byte(0);
+            exports.U32(FuncIndex.Get(name));
+        }
         out.Section(SecExport, exports);
 
         if (Table.Count() > 0)
@@ -2421,6 +2503,8 @@ struct WasmGen
             out.Section(SecElement, elements);
         }
 
+        foreach (var name in Helpers.ToArray())
+            bodies.Add(HelperBody(name));
         var code = Bytes.Create();
         code.U32(bodies.Count());
         foreach (var body in bodies.ToArray())
@@ -2443,6 +2527,264 @@ struct WasmGen
             out.Section(SecData, data);
         }
         return out.ToArray();
+    }
+
+    // -----------------------------------------------------------------------
+    // Suspending the program (like Binaryen's Asyncify): a game's loop runs in the browser, which shows a frame only
+    // when the program returns. A call of glfwPollEvents (or glfwSwapBuffers, glfwWaitEvents) may suspend it: the
+    // host (JavaScript) calls __cs_wasm_start_unwind(data) and returns; every function on the way back saves its
+    // locals (and the block of the call it is in) to the data and returns. For the next frame the host calls
+    // __cs_wasm_start_rewind(data) and _start again: every function restores its locals and jumps to the call it was
+    // suspended in, until the call that suspended the program is made again, which calls __cs_wasm_stop_rewind and
+    // returns as if nothing had happened. The frames on the shadow stack stay where they are.
+    //
+    // Only the functions that can reach such a call are changed (directly, or through a call of a function pointer
+    // when a function whose address is taken can); other programs are not changed at all. $state (global 2) is
+    // 0 (running), 1 (unwinding) or 2 (rewinding); $data (global 3) points to { the next free byte, the end }.
+    // -----------------------------------------------------------------------
+
+    bool SuspendsAlways(string name)
+    {
+        return name == "glfwPollEvents" || name == "glfwWaitEvents" || name == "glfwWaitEventsTimeout" || name == "glfwSwapBuffers";
+    }
+
+    bool IndirectCallsSuspend()
+    {
+        foreach (var name in AddressTaken.ToArray())
+        {
+            if (Suspending.Contains(name))
+                return true;
+        }
+        return false;
+    }
+
+    // Which functions can suspend: the imports above, and the functions that call them (a fixpoint).
+    void FindSuspending()
+    {
+        foreach (var name in Imports.ToArray())
+        {
+            if (SuspendsAlways(name))
+                Suspending.Add(name);
+        }
+        if (Suspending.Count() == 0)
+            return;
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            bool indirect = IndirectCallsSuspend();
+            foreach (var name in Defined.ToArray())
+            {
+                if (Suspending.Contains(name))
+                    continue;
+                var f = M.Funcs.Get(M.FuncIndex.Get(name));
+                bool can = false;
+                foreach (var block in f.Blocks.ToArray())
+                {
+                    foreach (var inst in block.Insts.ToArray())
+                    {
+                        if (inst.Op == "call" && CallCanSuspend(inst, indirect))
+                            can = true;
+                    }
+                }
+                if (can)
+                {
+                    Suspending.Add(name);
+                    changed = true;
+                }
+            }
+        }
+        foreach (var name in new string[] { "__cs_wasm_start_unwind", "__cs_wasm_stop_unwind", "__cs_wasm_start_rewind", "__cs_wasm_stop_rewind" })
+            Helpers.Add(name);
+    }
+
+    bool CallCanSuspend(IrInst inst, bool indirect)
+    {
+        var callee = M.Vals.Get(inst.Callee);
+        if (callee.Kind != ValKind.Global)
+            return indirect;
+        string target = CallTarget(callee.Name);
+        return target.Length > 0 && Suspending.Contains(target);
+    }
+
+    // The blocks of a function that can suspend, split before each call that can: the call starts a block
+    // ("__resume.N"), which the function jumps to when it is resumed.
+    List<IrBlock> SplitAtSuspends(List<IrBlock> blocks)
+    {
+        bool indirect = IndirectCallsSuspend();
+        var result = List<IrBlock>.Create();
+        int counter = 0;
+        foreach (var block in blocks.ToArray())
+        {
+            var current = IrBlock { Label = block.Label, Insts = List<IrInst>.Create() };
+            foreach (var inst in block.Insts.ToArray())
+            {
+                if (inst.Op == "call" && CallCanSuspend(inst, indirect) && current.Insts.Count() > 0)
+                {
+                    counter += 1;
+                    string label = "__resume." + counter.ToString();
+                    current.Insts.Add(IrInst { Op = "br", Res = "", Type = T.Void, OpType = T.Void, Args = new int[0], Pred = "",
+                                               Labels = new string[] { label }, Cases = new int64[0], Callee = -1 });
+                    result.Add(current);
+                    current = IrBlock { Label = label, Insts = List<IrInst>.Create() };
+                }
+                current.Insts.Add(inst);
+            }
+            result.Add(current);
+        }
+        return result;
+    }
+
+    // After a call that can suspend: if it did, the block of the call goes to $pc and the code leaves to the saving of
+    // the locals (the block around the loop).
+    void CheckSuspended()
+    {
+        Op(35);
+        Code.U32(2);
+        I32Const(1);
+        Op(70);
+        Op(4);
+        Op(64);
+        I32Const(Current);
+        LocalSet(Pc);
+        Op(12);
+        Code.U32(Depth + 1 + Blocks.Count() - Current); // the loop is at Depth + 1 + (n - 1 - k), the block around it one further
+        Op(11);
+    }
+
+    int LocalBytes(int vt)
+    {
+        return vt == I64 || vt == F64 ? 8 : 4;
+    }
+
+    int SavedSize()
+    {
+        int size = 0;
+        foreach (var vt in LocalTypes.ToArray())
+            size += LocalBytes(vt);
+        return size;
+    }
+
+    void LocalLoad(int vt, int offset)
+    {
+        if (vt == I64)
+            MemOp(41, 0, offset);
+        else if (vt == F32)
+            MemOp(42, 0, offset);
+        else if (vt == F64)
+            MemOp(43, 0, offset);
+        else
+            MemOp(40, 0, offset);
+    }
+
+    void LocalStore(int vt, int offset)
+    {
+        if (vt == I64)
+            MemOp(55, 0, offset);
+        else if (vt == F32)
+            MemOp(56, 0, offset);
+        else if (vt == F64)
+            MemOp(57, 0, offset);
+        else
+            MemOp(54, 0, offset);
+    }
+
+    // Unwinding: all locals to the data (at its next free byte), then the function returns (any value).
+    void SaveLocals(IrFunc f)
+    {
+        int size = SavedSize();
+        Op(35);
+        Code.U32(3);
+        MemOp(40, 2, 0);
+        LocalSet(AsyncTmp);
+        // no room left: a trap rather than overwriting memory
+        LocalGet(AsyncTmp);
+        I32Const(size);
+        Op(106);
+        Op(35);
+        Code.U32(3);
+        MemOp(40, 2, 4);
+        Op(75); // gt_u
+        Op(4);
+        Op(64);
+        Op(0);
+        Op(11);
+        int offset = 0;
+        for (var i = 0; i < LocalTypes.Count(); i += 1)
+        {
+            int vt = LocalTypes.Get(i);
+            LocalGet(AsyncTmp);
+            LocalGet(i);
+            LocalStore(vt, offset);
+            offset += LocalBytes(vt);
+        }
+        Op(35);
+        Code.U32(3);
+        LocalGet(AsyncTmp);
+        I32Const(size);
+        Op(106);
+        MemOp(54, 2, 0);
+        if (!T.IsAggregate(f.Ret) && T.Kind(f.Ret) != IrKind.Void)
+            PushZero(f.Ret);
+    }
+
+    // Rewinding: the locals back from the data (the last record is this function's).
+    void RestoreLocals()
+    {
+        int size = SavedSize();
+        Op(35);
+        Code.U32(3);
+        MemOp(40, 2, 0);
+        I32Const(size);
+        Op(107);
+        LocalSet(AsyncTmp);
+        Op(35);
+        Code.U32(3);
+        LocalGet(AsyncTmp);
+        MemOp(54, 2, 0);
+        int offset = 0;
+        int tmp = AsyncTmp;
+        for (var i = 0; i < LocalTypes.Count(); i += 1)
+        {
+            int vt = LocalTypes.Get(i);
+            if (i != tmp)
+            {
+                LocalGet(tmp);
+                LocalLoad(vt, offset);
+                LocalSet(i);
+            }
+            offset += LocalBytes(vt);
+        }
+    }
+
+    // The bodies of the helpers: start/stop unwinding and rewinding.
+    Bytes HelperBody(string name)
+    {
+        var saved = Code;
+        Code = Bytes.Create();
+        Code.U32(0); // no locals
+        bool start = name.Contains("start");
+        if (start)
+        {
+            LocalGet(0);
+            Op(36);
+            Code.U32(3);
+        }
+        I32Const(!start ? 0 : name.Contains("unwind") ? 1 : 2);
+        Op(36);
+        Code.U32(2);
+        Op(11);
+        var body = Code;
+        Code = saved;
+        return body;
+    }
+
+    int HelperType(string name)
+    {
+        var ps = List<int>.Create();
+        if (name.Contains("start"))
+            ps.Add(I32);
+        return FuncType(ps, List<int>.Create());
     }
 
     // Restores the shadow stack before a return.

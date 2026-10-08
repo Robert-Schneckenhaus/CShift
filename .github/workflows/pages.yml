@@ -53,8 +53,9 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh "$LLVM_VERSION"
-          # the playground: the compiler as WebAssembly (site/scripts/playground.sh), with the sysroot of wasi-sdk
-          sudo apt-get install -y --no-install-recommends "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION"
+          # the playground: the compiler as WebAssembly (site/scripts/playground.sh), with the sysroot of wasi-sdk;
+          # the games page: libclang for the C headers of demo-opengl
+          sudo apt-get install -y --no-install-recommends "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION" "libclang-$LLVM_VERSION-dev"
           curl -sSfL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$WASI_SDK/wasi-sysroot-$WASI_SDK.0.tar.gz" | tar xz -C "$RUNNER_TEMP"
           echo "CSHIFT_WASI_SYSROOT=$RUNNER_TEMP/wasi-sysroot-$WASI_SDK.0" >> "$GITHUB_ENV"
           test -x "$LLVM_PREFIX/bin/clang"
@@ -95,8 +96,9 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh "$LLVM_VERSION"
-          # the playground: the compiler as WebAssembly (site/scripts/playground.sh), with the sysroot of wasi-sdk
-          sudo apt-get install -y --no-install-recommends "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION"
+          # the playground: the compiler as WebAssembly (site/scripts/playground.sh), with the sysroot of wasi-sdk;
+          # the games page: libclang for the C headers of demo-opengl
+          sudo apt-get install -y --no-install-recommends "libclang-rt-$LLVM_VERSION-dev-wasm32" "lld-$LLVM_VERSION" "libclang-$LLVM_VERSION-dev"
           curl -sSfL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$WASI_SDK/wasi-sysroot-$WASI_SDK.0.tar.gz" | tar xz -C "$RUNNER_TEMP"
           echo "CSHIFT_WASI_SYSROOT=$RUNNER_TEMP/wasi-sysroot-$WASI_SDK.0" >> "$GITHUB_ENV"
           test -x "$LLVM_PREFIX/bin/clang"

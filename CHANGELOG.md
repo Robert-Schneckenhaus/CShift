@@ -6,6 +6,23 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Targets
+- Games in the browser: a program with GLFW and OpenGL, compiled with `--backend wasm`, runs in the browser unchanged
+  with [web/cshift.js](web/cshift.js) (a JavaScript runtime without dependencies: WASI with an in-memory file system,
+  GLFW on a `<canvas>`, OpenGL 3.3 core and `glDrawPixels` of OpenGL 1.1 on WebGL 2) and [web/index.html](web/index.html).
+  The game loop stays a loop: the backend suspends the program in `glfwPollEvents` until the browser's next frame and
+  resumes it there (only the functions that can reach such a call are changed;
+  [docs/wasm.md](docs/wasm.md#games-in-the-browser)).
+- The wasm backend exports the function table and `malloc`/`free` (for the host), and does not warn about the GLFW and
+  OpenGL functions it imports.
+
+### Website
+- A games page (/games/): [demo-snake](demo-snake) (new: Snake with a software renderer and `glDrawPixels`) and
+  [demo-opengl](demo-opengl) (a cube with shaders), played in the browser.
+
+### Fixes
+- demo-opengl: the fragment shader lacked a semicolon.
+
 ### Tools
 - Building the compiler from source starts from cshiftc 0.28 (`selfhost/stage0.txt`): the compiler's own sources
   may use the language and the standard library of 0.28.

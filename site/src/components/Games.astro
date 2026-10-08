@@ -1,0 +1,140 @@
+---
+// The games page: CShift programs with GLFW and OpenGL (the demos of the repository), compiled with the wasm backend
+// by scripts/playground.sh into public/games/, run by web/cshift.js (copied to public/games/cshift.js).
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const games = [
+    { id: "snake", name: "Snake", file: "snake.wasm", source: "demo-snake", keys: "Arrow keys or WASD steer, Space starts again, Esc ends the game." },
+    { id: "cube", name: "OpenGL cube", file: "cube.wasm", source: "demo-opengl", keys: "OpenGL 3.3 with shaders, through WebGL 2. Esc ends the program." },
+];
+---
+
+<div class="gm not-content" data-base={`${base}/games/`}>
+    <div class="gm-bar">
+        {games.map((g, i) => (
+            <button type="button" class:list={["gm-pick", i === 0 && "gm-active"]} data-file={g.file} data-keys={g.keys}
+                data-source={`https://github.com/Robert-Schneckenhaus/CShift/tree/master/${g.source}`}>{g.name}</button>
+        ))}
+        <span class="gm-status" role="status">Loading…</span>
+    </div>
+    <canvas class="gm-screen" width="640" height="480" tabindex="0" aria-label="Game"></canvas>
+    <p class="gm-keys">{games[0].keys} <a class="gm-source" href={`https://github.com/Robert-Schneckenhaus/CShift/tree/master/${games[0].source}`}>Source</a></p>
+    <pre class="gm-output" aria-live="polite"></pre>
+</div>
+
+<script>
+    const root = document.querySelector<HTMLElement>(".gm")!;
+    const status = root.querySelector<HTMLElement>(".gm-status")!;
+    const output = root.querySelector<HTMLElement>(".gm-output")!;
+    const keys = root.querySelector<HTMLElement>(".gm-keys")!;
+    const base = root.dataset.base!;
+    let current: { stop(): void } | null = null;
+    let canvas = root.querySelector<HTMLCanvasElement>(".gm-screen")!;
+
+    function print(text: string, isError: boolean) {
+        const span = document.createElement("span");
+        if (isError) span.className = "gm-error";
+        span.textContent = text;
+        output.append(span);
+    }
+
+    async function start(button: HTMLButtonElement) {
+        current?.stop();
+        // a new canvas: the old one keeps its WebGL context and its event listeners
+        const fresh = canvas.cloneNode() as HTMLCanvasElement;
+        canvas.replaceWith(fresh);
+        canvas = fresh;
+        output.replaceChildren();
+        for (const b of root.querySelectorAll(".gm-pick")) b.classList.toggle("gm-active", b === button);
+        keys.firstChild!.textContent = button.dataset.keys + " ";
+        root.querySelector<HTMLAnchorElement>(".gm-source")!.href = button.dataset.source!;
+        status.textContent = "Loading…";
+        try {
+            const { run } = await import(/* @vite-ignore */ `${base}cshift.js`);
+            const program = await run(`${base}${button.dataset.file}`, { canvas, onOutput: print, setTitle: false, resizeCanvas: false });
+            current = program;
+            status.textContent = "Running: click the game for the keyboard";
+            canvas.focus();
+            const code = await program.exited;
+            if (current === program) status.textContent = code === null ? "Stopped" : `Ended (exit code ${code})`;
+        } catch (e) {
+            status.textContent = "Failed";
+            print(`${(e as Error).message ?? e}\n`, true);
+        }
+    }
+
+    for (const b of root.querySelectorAll<HTMLButtonElement>(".gm-pick")) b.addEventListener("click", () => start(b));
+    start(root.querySelector<HTMLButtonElement>(".gm-pick")!);
+</script>
+
+<style>
+    .gm {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .gm-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        width: min(100%, 640px);
+    }
+    .gm-bar button {
+        font: inherit;
+        font-size: var(--sl-text-sm);
+        height: 2rem;
+        padding: 0 0.75rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.375rem;
+        background: var(--sl-color-bg-nav);
+        color: var(--sl-color-text);
+        cursor: pointer;
+    }
+    .gm-bar button.gm-active {
+        background: var(--sl-color-accent);
+        border-color: var(--sl-color-accent);
+        color: var(--sl-color-black);
+        font-weight: 600;
+    }
+    .gm-status {
+        margin-left: auto;
+        font-size: var(--sl-text-sm);
+        color: var(--sl-color-gray-3);
+    }
+    .gm-screen {
+        width: min(100%, 640px);
+        aspect-ratio: 4 / 3;
+        height: auto;
+        background: #000;
+        border-radius: 0.5rem;
+        image-rendering: pixelated;
+        outline: none;
+    }
+    .gm-screen:focus-visible {
+        box-shadow: 0 0 0 2px var(--sl-color-accent);
+    }
+    .gm-keys {
+        margin: 0;
+        width: min(100%, 640px);
+        font-size: var(--sl-text-sm);
+        color: var(--sl-color-gray-2);
+    }
+    .gm-output {
+        margin: 0;
+        width: min(100%, 640px);
+        min-height: 2rem;
+        max-height: 12rem;
+        overflow: auto;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--sl-color-gray-5);
+        border-radius: 0.5rem;
+        background: var(--sl-color-gray-7, var(--sl-color-black));
+        font-family: var(--__sl-font-mono, ui-monospace, monospace);
+        font-size: var(--sl-text-xs);
+        white-space: pre-wrap;
+    }
+    .gm-error {
+        color: var(--sl-color-red, #e5484d);
+    }
+</style>
