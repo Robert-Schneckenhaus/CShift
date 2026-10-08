@@ -22,6 +22,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   [docs/wasm.md](docs/wasm.md#games-in-the-browser)).
 - The wasm backend exports the function table and `malloc`/`free` (for the host), and does not warn about the GLFW and
   OpenGL functions it imports.
+- C headers (`using X from "h.h"`) for a WebAssembly target are read with the sysroot of WASI in `CSHIFT_WASI_SYSROOT`,
+  like the build uses it; before, libclang looked for the C library's headers of the host and failed.
 
 ### Website
 - A games page (/games/): [demo-snake](demo-snake) (new: Snake with a software renderer and `glDrawPixels`) and
