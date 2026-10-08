@@ -6,6 +6,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Tools
+- Building the compiler from source starts from cshiftc 0.29 (`selfhost/stage0.txt`).
+
 ## [0.29] - 2026-10-08
 
 ### Language
