@@ -392,6 +392,15 @@ struct FfiGenerator
 
     // libclang does not know where the C library headers (stddef.h, ...) of the installation are, so ask the clang
     // driver, which does: "clang -E -x c -v -" lists its include search path on stderr.
+    // WebAssembly: the sysroot of WASI (its C headers) when clang does not find one by itself, like for the build
+    // (CSHIFT_WASI_SYSROOT, Build.csh)
+    string Sysroot()
+    {
+        if (Options.Target.ToLower().StartsWith("wasm") && Process.GetEnv("CSHIFT_WASI_SYSROOT") is string dir)
+            return dir;
+        return "";
+    }
+
     List<string> SystemIncludes()
     {
         if (SystemIncludesKnown)
@@ -403,6 +412,8 @@ struct FfiGenerator
         string command = "\"" + (windows ? Options.Clang.Replace("/", "\\") : Options.Clang) + "\" -E -x c -v";
         if (Options.Target.Length > 0)
             command += " -target " + Options.Target;
+        if (Sysroot().Length > 0)
+            command += " --sysroot \"" + Sysroot() + "\"";
         command += windows ? " - < nul 2>&1" : " - < /dev/null 2>&1";
         var output = Process.RunCapture(command); // (on Windows, RunCapture adds the outer quotes cmd.exe strips)
         if (output is string text)
@@ -438,6 +449,8 @@ struct FfiGenerator
             args.Add("-target");
             args.Add(Options.Target);
         }
+        if (Sysroot().Length > 0)
+            args.Add("--sysroot=" + Slashes(Sysroot()));
         foreach (var dir in SystemIncludes())
             args.Add("-isystem" + Slashes(dir));
         foreach (var f in FfiFlags(Options))
