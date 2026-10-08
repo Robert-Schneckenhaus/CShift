@@ -6,7 +6,7 @@
 # A successful release (release.yml) publishes the site again, and so does a manual run (workflow_dispatch). The
 # publishing runs after the release workflow (workflow_run) rather than on the push to release/vX.XX: it then runs in
 # the context of the default branch, which the github-pages environment allows to deploy. A pull request that touches
-# the site only builds it, from its own branch.
+# the site (or what its playground and games page are built from) only builds it, from its own branch.
 
 name: pages
 
@@ -21,6 +21,11 @@ on:
       - "stdlib/**"
       - "selfhost/src/Driver/Doc.csh"
       - "selfhost/native/**"
+      - "selfhost/src/Wasm/**"
+      - "selfhost/src/Driver/Ffi*.csh"
+      - "web/**"
+      - "demo-opengl/**"
+      - "demo-snake/**"
       - "vscode-extension/syntaxes/**"
       - ".github/workflows/pages.yml"
       - ".github/scripts/build-sites.sh"
