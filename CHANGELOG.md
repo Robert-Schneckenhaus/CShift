@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- A type, constant or global that two `using` namespaces declare is ambiguous, a compile error that names both
+  (`'JsonValue' is ambiguous: 'System.JsonValue' and 'Amber.Base.JsonValue'`): the full name chooses one. Before, the
+  first `using` won without a word, so a new type of the standard library (`System.JsonValue`, `System.Color`) could
+  replace a program's own type of the same name. A declaration of the file's own namespace still hides those of the
+  `using` namespaces, as in C#.
+
 ### Targets
 - Games in the browser: a program with GLFW and OpenGL, compiled with `--backend wasm`, runs in the browser unchanged
   with [web/cshift.js](web/cshift.js) (a JavaScript runtime without dependencies: WASI with an in-memory file system,

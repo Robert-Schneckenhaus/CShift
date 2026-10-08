@@ -136,12 +136,24 @@ Value CheckName(const ref Compiler cg, Expr e)
     int c = LookupConst(cg, cg.Fn[0].File, n.Name);
     if (c >= 0)
     {
+        string ambiguous = AmbiguousName(cg, cg.Fn[0].File, n.Name, 1);
+        if (ambiguous.Length > 0)
+        {
+            CheckError(cg, e.Loc, ambiguous);
+            return UnknownValue(cg);
+        }
         IndexConst(cg, e.Loc, n.Name.Length, c);
         return EmitConst(cg, c, e.Loc);
     }
     int g = LookupGlobal(cg, cg.Fn[0].File, n.Name);
     if (g >= 0)
     {
+        string ambiguous = AmbiguousName(cg, cg.Fn[0].File, n.Name, 2);
+        if (ambiguous.Length > 0)
+        {
+            CheckError(cg, e.Loc, ambiguous);
+            return UnknownValue(cg);
+        }
         IndexGlobal(cg, e.Loc, n.Name.Length, g);
         return GlobalUse(cg, g);
     }

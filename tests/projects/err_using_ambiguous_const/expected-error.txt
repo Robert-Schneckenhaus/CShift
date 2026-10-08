@@ -1,0 +1,1 @@
+main.csh:9:23: error: 'MaxPlayers' is ambiguous: 'Limits.MaxPlayers' and 'Rules.MaxPlayers' (their namespaces are both used; write the full name)
