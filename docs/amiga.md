@@ -209,8 +209,8 @@ for pointers; `d2`-`d7` and `a2`-`a6` are kept.
   custom chips.
 * **The test suite with the backend:** `CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_SKIP_SELFHOST=1
   tests/run_tests.sh` compiles the programs of the tests with the 68000 backend for m68k Linux and runs them under
-  `qemu-m68k` (Debian/Ubuntu: `qemu-user gcc-m68k-linux-gnu`); the CI does that too. The cases with threads are left
-  out (`// skip-target: m68k`): the backend has no atomic operations, AmigaOS has no threads.
+  `qemu-m68k` (Debian/Ubuntu: `qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross`); the CI does that too. The cases
+  with threads are left out (`// skip-target: m68k`): the backend has no atomic operations, AmigaOS has no threads.
 
 ### Where the time goes: tools/amiga/profile.py
 

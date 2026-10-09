@@ -84,7 +84,7 @@ libclang (only for `using X from "header.h"`) is looked for in `CSHIFT_LIBCLANG`
 | `--target wasm32-wasi` (WebAssembly through clang) | the C library of WASI, compiler-rt for wasm32, wasm-ld | `wasi-libc libclang-rt-<v>-dev-wasm32 lld-<v>` |
 | AmigaOS libraries from SFD files | the NDK 3.2 (`--ndk`, see [amiga.md](amiga.md)) | download from Hyperion |
 | running Amiga programs on the PC | vamos, FS-UAE or WinUAE | `pip install amitools`, `fs-uae` |
-| the tests of the m68k backend under Linux | qemu and the m68k cross C library | `qemu-user gcc-m68k-linux-gnu` |
+| the tests of the m68k backend under Linux | qemu and the m68k cross C library | `qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross` |
 | the VS Code extension | VS Code; `cshiftc` in `PATH` or `cshift.compilerPath` | |
 | debugging (`-g`, [debugging.md](debugging.md)) | gdb or lldb; in VS Code the CodeLLDB extension, which brings its own lldb | `gdb`, `lldb` |
 

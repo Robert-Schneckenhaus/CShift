@@ -109,7 +109,7 @@ jobs:
       # run under qemu-m68k
       - name: Run tests with the m68k backend
         run: |
-          sudo apt-get install -y --no-install-recommends qemu-user gcc-m68k-linux-gnu
+          sudo apt-get install -y --no-install-recommends qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross
           CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
   vscode:

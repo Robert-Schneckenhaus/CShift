@@ -13,7 +13,7 @@
 # CSHIFT_BACKEND=<backend> compiles with another backend (wasm: CShift's own WebAssembly backend, together with
 # CSHIFT_TARGET=wasm32-wasi; it needs neither clang nor wasi-libc. m68k: the 68000 backend, together with
 # CSHIFT_TARGET=m68k-linux-gnu: the programs are linked by m68k-linux-gnu-gcc and run under qemu-m68k; Debian/Ubuntu:
-# qemu-user gcc-m68k-linux-gnu).
+# qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross).
 #
 # What is tested:
 #   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
