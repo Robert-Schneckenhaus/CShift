@@ -60,6 +60,7 @@ cshiftc new <folder>           a new project (cshift.json, src/main.csh, .gitign
 cshiftc build [project]        build it
 cshiftc run   [project]        build and run it
 cshiftc publish [project]      the program for the browser: bin/<name>.html with everything in it (wasm.md)
+cshiftc serve [project]        the page on http://localhost:8080/, built again when a file changes
 cshiftc [options] a.csh b.csh  single files without a project (as before)
 ```
 

@@ -29,7 +29,7 @@
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
 #      VS Code extension (vscode-extension/test, if node is installed); tests/publish/*/: "cshiftc publish", the page
-#      run by node (tests/publish-run.mjs).
+#      run by node (tests/publish-run.mjs); "cshiftc serve" (tests/serve-check.mjs).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -453,6 +453,25 @@ elif [ -n "$NODE" ]; then
     done
 else
     echo "publish: skipped (node not found)"
+fi
+
+# cshiftc serve: the server of tests/publish/assets (a copy) on a port of its own; tests/serve-check.mjs changes a
+# source and breaks it, and waits for each build (the page and the number that the page asks for)
+if [ ${#RUNNER[@]} -eq 0 ] && [ -n "$NODE" ]; then
+    work="$TMP/serve_assets"
+    cp -r "$DIR/publish/assets" "$work"
+    port=$((20000 + $$ % 20000))
+    check=("$DIR/serve-check.mjs" "$port" "$work")
+    if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/serve-check.mjs")" "$port" "$(cygpath -w "$work")"); fi
+    "$COMPILER" serve "$work" --port "$port" > "$TMP/serve.out" 2>&1 &
+    serve_pid=$!
+    if "$NODE" "${check[@]}" > "$TMP/serve.check" 2>&1; then
+        report_ok "cshiftc serve"
+    else
+        report_fail "cshiftc serve" "$(tail -n 2 "$TMP/serve.check" | tr '\n' ' ') (server: $(tail -n 3 "$TMP/serve.out" | tr '\n' ' '))"
+    fi
+    kill "$serve_pid" 2> /dev/null
+    wait "$serve_pid" 2> /dev/null
 fi
 
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
