@@ -92,7 +92,8 @@ tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshi
 * `tests/projects/*`: projects built with `cshiftc build|run`, some with C code (`native/*.c`) for the header import.
 * The selfhost section builds the compiler with the compiler under test and checks: all cases pass with it
   (`selfhost/status.sh`, `passing.txt`), the projects build (`selfhost/projects.sh`), it rebuilds itself to the same
-  IR (`selfhost/bootstrap.sh`).
+  IR (`selfhost/bootstrap.sh`). `CSHIFT_SKIP_SELFHOST=1` skips it; the CI does, because its compiler under test is
+  stage 2 of `build-release.sh`, already built from these sources and checked to be a fixed point.
 * `CSHIFT_TARGET=i686-linux-gnu tests/run_tests.sh` runs everything as 32-bit code (needs the 32-bit C library, e.g.
   `gcc-multilib`); the selfhost section then also builds a 32-bit compiler. Output that depends on the size of pointers
   (`sizeof`) is checked with `// expect-stdout-64:` / `// expect-stdout-32:`.

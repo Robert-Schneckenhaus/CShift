@@ -14,6 +14,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Tools
 - Building the compiler from source starts from cshiftc 0.31 (`selfhost/stage0.txt`): the compiler's own sources
   may use `??` and `??=`.
+- `selfhost/build-release.sh` builds stage 2 once: `selfhost/bootstrap.sh --stage2 <file>` compares the stage 2 it is
+  given instead of building another one. The CI skips the selfhost section of `tests/run_tests.sh`
+  (`CSHIFT_SKIP_SELFHOST`), which repeated the other sections with the same compiler.
 
 ## [0.31] - 2026-10-09
 

@@ -1,6 +1,11 @@
 # Checks every pull request (and every push to master) on Windows and Linux: stage 0 (the release named in
 # selfhost/stage0.txt) builds cshc, cshc rebuilds itself to the same IR (selfhost/build-release.sh), and the test suite
 # passes with it. The release workflow (release.yml) does the same and then packages and publishes.
+#
+# The tests skip their section 4 (CSHIFT_SKIP_SELFHOST): it builds cshc from selfhost/ with the compiler under test and
+# runs the cases, the projects and the bootstrap with it. Here the compiler under test is that cshc already (stage 2,
+# built from these sources and checked to be a fixed point), so the section would only repeat sections 1 to 3 and the
+# bootstrap with the same compiler. The release workflow keeps it.
 
 name: ci
 
@@ -56,7 +61,7 @@ jobs:
 
       - name: Run tests
         shell: msys2 {0}
-        run: bash tests/run_tests.sh build/stage2/cshiftc.exe
+        run: CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc.exe
 
   linux:
     name: Linux x64 (Ubuntu)
@@ -83,7 +88,7 @@ jobs:
         run: PATH="$LLVM_PREFIX/bin:$PATH" bash selfhost/build-release.sh "$STAGE0" dev build/stage2
 
       - name: Run tests
-        run: PATH="$LLVM_PREFIX/bin:$PATH" bash tests/run_tests.sh build/stage2/cshiftc
+        run: PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
       # WebAssembly (wasm32-wasi): the same programs, run with node; needs the C library of WASI (the sysroot of
       # wasi-sdk: the wasi-libc package of Ubuntu 22.04 is from 2020 and fails a second rename), the builtins of
