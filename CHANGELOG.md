@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.30] - 2026-10-09
+
 ### Targets
 - `cshiftc publish` makes a program for the browser: one HTML file (`bin/<name>.html`, for single files
   `<name>.html`) with everything in it, the program (built with the wasm backend), the runtime `web/cshift.js` and the
