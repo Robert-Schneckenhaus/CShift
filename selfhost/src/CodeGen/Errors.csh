@@ -1,5 +1,4 @@
-// Error<T> and Optional<T>: construction, 'is' patterns, 'try' and the error literal (the result parts of
-// CodeGenExpr.cpp and CodeGenRuntime.cpp).
+// Error<T> and Optional<T>: construction, 'is' patterns, 'try' and the error literal.
 //
 // Error<T>     { i1 ok, T value, ptr message, i32 code }
 // Optional<T>  { i1 has value, T value }

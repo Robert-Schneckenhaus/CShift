@@ -1,5 +1,5 @@
-// Calls (port of CodeGenCall.cpp): argument handling, overload resolution, calls of functions and of the builtin
-// static functions (Console, Environment).
+// Calls: argument handling, overload resolution, calls of functions and of the builtin static functions (Console,
+// Environment).
 
 namespace CShift.CodeGen;
 

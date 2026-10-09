@@ -1,4 +1,4 @@
-// Importing C headers: "using Geo from "geo.h";" (port of the reading side of compiler/src/FfiImport.cpp).
+// Importing C headers: "using Geo from "geo.h";" (reading the .ffi file).
 //
 // A header is turned into a .ffi file (JSON with the functions, structs, enums and constants and their CShift types)
 // by libclang (FfiGenerator.csh); it is cached in obj/ffi and generated again when the header, the options or a header

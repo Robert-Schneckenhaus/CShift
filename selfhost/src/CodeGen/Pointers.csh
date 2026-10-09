@@ -1,4 +1,4 @@
-// Raw pointers (unsafe code): dereference, address-of, arithmetic and casts (the pointer parts of CodeGenExpr.cpp).
+// Raw pointers (unsafe code): dereference, address-of, arithmetic and casts.
 // A pointer is an LLVM 'ptr'; the type only tells what a load or store through it means.
 
 namespace CShift.CodeGen;

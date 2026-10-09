@@ -1,4 +1,4 @@
-// The command line of cshc: single files and projects (port of the driver part of compiler/src/main.cpp).
+// The command line of cshc: single files and projects.
 //
 //     cshc [options] file.csh [file2.csh ...]     compile single files
 //     cshc build [project] [options]              build a project (cshift.json)

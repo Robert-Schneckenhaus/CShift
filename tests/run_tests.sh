@@ -476,7 +476,8 @@ fi
 
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
 #   cshc (selfhost/) is built with the compiler under test; it must pass the test cases, build the projects and
-#   rebuild itself (bootstrap). CSHIFT_SKIP_SELFHOST=1 skips this section.
+#   rebuild itself (bootstrap). CSHIFT_SKIP_SELFHOST=1 skips this section: for a compiler under test that is built from
+#   these sources by selfhost/build-release.sh (as in ci.yml), it would repeat sections 1 to 3 with the same compiler.
 echo "== selfhost/"
 if [ -n "${CSHIFT_SKIP_SELFHOST:-}" ] || [ ! -d "$DIR/../selfhost" ]; then
     echo "skipped"

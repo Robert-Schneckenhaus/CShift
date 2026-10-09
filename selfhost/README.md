@@ -13,7 +13,9 @@ selfhost/
 │   ├── Driver/              command line: Build.csh (options, build/run/new, finding clang and the toolchain),
 │   │                        Project.csh (cshift.json), Json.csh, Ffi.csh (loading and caching .ffi files),
 │   │                        FfiGenerator.csh (C header -> .ffi with libclang), Sfd.csh (AmigaOS SFD file -> .ffi),
-│   │                        EmbeddedStdlib.csh (the stdlib, via embed), Doc.csh (doc comments, cshiftc doc)
+│   │                        EmbeddedStdlib.csh (the stdlib, via embed), Doc.csh (doc comments, cshiftc doc),
+│   │                        Publish.csh + publish.html (cshiftc publish: one HTML file), Serve.csh (cshiftc serve),
+│   │                        usage.txt (cshiftc --help)
 │   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
@@ -24,19 +26,29 @@ selfhost/
 │   ├── Sema/                namespace CShift.Sema
 │   │   └── Types.csh        the type table: types are integers (ids), interned types compare with ==
 │   ├── Emit/                namespace CShift.Emit
-│   │   └── IrWriter.csh     writes LLVM IR as text (blocks, instructions, constants, declarations)
+│   │   ├── IrWriter.csh     writes LLVM IR as text (blocks, instructions, constants, declarations)
+│   │   └── Target.csh       what the code depends on of the target: pointer size, alignments
 │   ├── Check/               namespace CShift.Check: the checker (docs/semantic-pass.md)
 │   │   ├── Checker.csh      checks every function body of the program before code generation, continues after errors
 │   │   ├── CheckStmt.csh    statements and scopes (the same scopes as code generation)
-│   │   └── CheckExpr.csh    expressions: Values without code; unknown type for what is not checked yet
+│   │   ├── CheckExpr.csh    expressions: Values without code; unknown type for what is not checked yet
+│   │   ├── CheckMembers.csh members and calls through them, indexing, slices, 'new', struct initializers
+│   │   ├── CheckCollections.csh  collection expressions [a, b, ..c]
+│   │   ├── CheckLambdas.csh the result type of a lambda body (type inference from lambdas)
+│   │   └── Index.csh        the symbol index for tooling: hover, go to definition (cshiftc query)
 │   ├── CodeGen/             namespace CShift.CodeGen
-│   │   ├── Compiler.csh     compiler state, declarations, type resolution, function instances (CodeGen.cpp)
+│   │   ├── Compiler.csh     compiler state, declarations, type resolution, function instances
 │   │   ├── Rules.csh        decisions shared by the checker and code generation (operator types, conditions, ...)
-│   │   ├── Values.csh       values, reference counting, conversions (the first half of CodeGenExpr.cpp)
-│   │   ├── Expr.csh         expressions (CodeGenExpr.cpp)
-│   │   ├── Call.csh         calls, overload resolution, Console/Environment (CodeGenCall.cpp)
+│   │   ├── Values.csh       values, reference counting, conversions
+│   │   ├── Moves.csh        moves: the last use of a local variable gives its reference away
+│   │   ├── Expr.csh         expressions
+│   │   ├── Call.csh         calls, overload resolution, Console/Environment
+│   │   ├── KeepsThis.csh    which methods leave 'this' unchanged (callable on read-only values)
 │   │   ├── Structs.csh      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
 │   │   ├── Arrays.csh       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
+│   │   ├── Slices.csh       Slice<T>, ReadOnlySlice<T>, StringSlice
+│   │   ├── Fixed.csh        Fixed<T, N>: elements stored inline
+│   │   ├── Collections.csh  collection expressions [a, b, ..c]
 │   │   ├── Errors.csh       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
 │   │   ├── Switch.csh       switch with constant and pattern labels
 │   │   ├── Enums.csh        enums and constant integer expressions
@@ -45,12 +57,14 @@ selfhost/
 │   │   ├── FuncPtrs.csh     function pointers: Action/Func, method groups, indirect calls
 │   │   ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
 │   │   ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
-│   │   ├── Stmt.csh         statements, scopes, function bodies (CodeGenStmt.cpp)
+│   │   ├── Stmt.csh         statements, scopes, function bodies
+│   │   ├── Globals.csh      global variables and constants, their initialization and release
 │   │   ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
 │   │   ├── Lambdas.csh      lambdas and closures: captures, environments
 │   │   ├── Interfaces.csh   interfaces as ref/const ref parameters: method tables, dispatch
 │   │   ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
-│   │   ├── Runtime.csh      the runtime as IR text: strings, ARC, panics (CodeGenRuntime.cpp)
+│   │   ├── Runtime.csh      the runtime as IR text: strings, ARC, panics
+│   │   ├── Debug.csh        debug information (-g): lines and functions for gdb/lldb
 │   │   └── Module.csh       compiling the whole program, the entry point
 │   ├── Wasm/                namespace CShift.Wasm: the WebAssembly backend (--backend wasm, docs/wasm.md)
 │   │   ├── Encoder.csh      the binary format: bytes, LEB128 numbers, sections

@@ -1,5 +1,5 @@
-// Standard library: paths, directories, File.Copy, string trimming/padding and Random. The program runs in a
-// temporary directory. Main returns the number of failed checks.
+// Standard library: paths, directories, File.Copy, string trimming/padding, the platform and Random. The program runs
+// in a temporary directory. Main returns the number of failed checks.
 // expect-exit: 0
 
 using System;
@@ -21,12 +21,18 @@ int Main()
     failed += Check("TrimEnd", "  a b \n".TrimEnd() == "  a b");
     failed += Check("TrimStart char", "007".TrimStart('0') == "7");
     failed += Check("TrimEnd char", "1.500".TrimEnd('0') == "1.5");
+    failed += Check("Trim char", "--a-b--".Trim('-') == "a-b");
+    failed += Check("Trim char only", "---".Trim('-') == "" && "".Trim('-') == "" && "a".Trim('-') == "a");
+    failed += Check("Trim char slice", "[x, y]"[1..^1].Trim('x') == ", y");
     failed += Check("PadLeft", "7".PadLeft(3) == "  7");
     failed += Check("PadLeft fill", "7".PadLeft(3, '0') == "007");
     failed += Check("PadLeft long", "1234".PadLeft(2) == "1234");
     failed += Check("PadRight", "ab".PadRight(4, '.') == "ab..");
     failed += Check("IndexOf char start", "a,b,c".IndexOf(',', 2) == 3);
     failed += Check("IndexOf char none", "a,b,c".IndexOf(',', 4) == -1);
+
+    // the platform
+    failed += Check("platform", !(Process.IsWindows() && Process.IsMacOS()));
 
     // paths and directories
     string cwd = Directory.GetCurrentDirectory();

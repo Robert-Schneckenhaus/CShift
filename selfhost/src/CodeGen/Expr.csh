@@ -1,4 +1,4 @@
-// Expressions (port of CodeGenExpr.cpp). Calls are in Call.csh.
+// Expressions. Calls are in Call.csh.
 //
 // Every emit function returns a Value: its type, the operand that holds it (or its address for an lvalue) and whether it
 // carries a +1 reference count. The instructions are appended to the function that is being written.
@@ -937,7 +937,7 @@ Value EmitUnary(const ref Compiler cg, Expr e)
         return v;
     }
     default:
-        Fail(cg, e.Loc, "cshc does not support pointers yet");
+        Fail(cg, e.Loc, "internal error: unknown unary operator " + u.Op.ToString());
         return Value { };
     }
 }

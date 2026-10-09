@@ -725,12 +725,6 @@ int SlotOf(Gen g, int vi)
     return 0;
 }
 
-bool IsAllocaVal(Gen g, int vi)
-{
-    var v = g.M.Vals.Get(vi);
-    return v.Kind == ValKind.Local && g.Alloca.ContainsKey(v.Name);
-}
-
 // A value of up to 32 bits into a data register (for i64: the low half).
 void Load32(Gen g, int vi, string reg)
 {

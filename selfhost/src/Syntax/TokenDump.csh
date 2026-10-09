@@ -1,5 +1,5 @@
-// Text dump of a token list. The format is the same as in the C++ compiler (cshiftc --dump-tokens), so that the
-// two lexers can be compared:
+// Text dump of a token list (cshiftc --tokens file.csh); the format is the one of the retired C++ compiler
+// (--dump-tokens):
 //     line:col kind [text] [value]
 
 namespace CShift.Syntax;
@@ -52,8 +52,8 @@ string DumpToken(Token t)
     switch (t.Kind)
     {
     case TokenKind.Ident:
-        // 'where' and 'thread' are contextual keywords (identifiers for the lexer); the frozen C++ lexer still has
-        // them as keywords, so the dump shows them like it does (selfhost/compare.sh).
+        // 'where' and 'thread' are contextual keywords (identifiers for the lexer); the C++ lexer had them as
+        // keywords, and the dump still shows them like it did.
         if (t.Text == "where")
             return t.Loc.Line.ToString() + ":" + t.Loc.Col.ToString() + " " + ((int)TokenKind.KwWhere).ToString() + " where";
         if (t.Text == "thread")

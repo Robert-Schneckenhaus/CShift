@@ -3,15 +3,15 @@
 #
 #   selfhost/build-release.sh <stage0> <version> <output-dir>
 #
-#   stage 0   the C++ compiler (build/cshiftc, frozen: it only has to be able to compile cshc)
+#   stage 0   an earlier release: the version in selfhost/stage0.txt (selfhost/fetch-stage0.sh provides it)
 #   stage 1   cshc built by stage 0
 #   stage 2   cshc built by stage 1: <output-dir>/cshiftc[.exe], the released compiler
 #
-# The bootstrap check (selfhost/bootstrap.sh) makes sure that stage 1 and stage 2 generate the same IR for the sources
-# of cshc. The version is written into selfhost/version/version.txt for the build and restored afterwards.
+# The bootstrap check (selfhost/bootstrap.sh, with this stage 2) makes sure that stage 1 and stage 2 generate the same
+# IR for the sources of cshc. The version is written into selfhost/version/version.txt for the build and restored afterwards.
 # clang has to be found ($CSHIFT_CC or PATH).
 set -euo pipefail
-STAGE0="${1:?path of the C++ compiler (stage 0)}"
+STAGE0="${1:?path of the stage 0 compiler (selfhost/fetch-stage0.sh)}"
 VERSION="${2:?version, e.g. 1.05 or dev}"
 OUT="${3:?output directory}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,5 +31,5 @@ echo "stage 1: cshc built by $STAGE0"
 "$STAGE0" build "$ROOT/selfhost" "${CC_ARGS[@]}" -o "$OUT/stage1/cshc$EXE"
 echo "stage 2: cshc built by stage 1"
 "$OUT/stage1/cshc$EXE" build "$ROOT/selfhost" "${CC_ARGS[@]}" -o "$OUT/cshiftc$EXE"
-bash "$ROOT/selfhost/bootstrap.sh" "$OUT/stage1/cshc$EXE"
+bash "$ROOT/selfhost/bootstrap.sh" "$OUT/stage1/cshc$EXE" --stage2 "$OUT/cshiftc$EXE"
 "$OUT/cshiftc$EXE" --version

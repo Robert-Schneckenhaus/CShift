@@ -1,5 +1,4 @@
-// The compile-time evaluator: the value of a constant expression is computed by the compiler, not by generated code
-// (port of compiler/src/ConstEval.cpp; both must give the same results).
+// The compile-time evaluator: the value of a constant expression is computed by the compiler, not by generated code.
 //
 // It follows the rules of the code that is generated for the same expression at run time (the type of literals, the
 // promotion of small integers, checked arithmetic, shifts, comparisons, conversions, string concatenation), but an

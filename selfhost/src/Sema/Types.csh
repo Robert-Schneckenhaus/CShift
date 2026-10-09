@@ -183,7 +183,6 @@ struct TypeContext
     bool IsReadOnlySlice(int t) { return Kind(t) == TypeKind.ReadOnlySlice; }
     bool IsUnknown(int t) { return t == Unknown; }
     bool IsStringSlice(int t) { return Kind(t) == TypeKind.StringSlice; }
-    bool IsRefLike(int t) { var k = Kind(t); return k == TypeKind.String || k == TypeKind.Array; }
 
     // The integer type with the given width.
     int IntType(int bits, bool isSigned)

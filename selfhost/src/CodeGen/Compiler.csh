@@ -1,8 +1,8 @@
 // The state of the compiler: declarations, types, function instances and the function being generated.
 //
-// This is a port of the class CodeGen (compiler/src/CodeGen.h/.cpp). CShift structs cannot be split over several
-// files, so the C++ member functions become free functions that take the Compiler; they live in Compiler.csh
-// (declarations, types, function instances), Convert.csh (conversions), Expr.csh, Call.csh, Stmt.csh and Module.csh.
+// CShift structs cannot be split over several files, so the code generator is made of free functions that take the
+// Compiler; they live in Compiler.csh (declarations, types, function instances), Convert.csh (conversions), Expr.csh,
+// Call.csh, Stmt.csh, Module.csh and the other files of CodeGen.
 // The Compiler is a handle: all mutable state is in lists, dictionaries and small arrays, so copies share it.
 //
 // Errors: the first error is printed and ends the compiler (Fail).
@@ -1047,7 +1047,7 @@ void EnsureSignature(const ref Compiler cg, int instance)
     cg.Instances.Set(instance, fi);
 }
 
-// The name of the function in the IR: Name(param types), like in the C++ compiler; extern functions keep their C name.
+// The name of the function in the IR: Name(param types); extern functions keep their C name.
 string FunctionSymbol(const ref Compiler cg, FuncInfo fi)
 {
     var d = cg.Funcs.Get(fi.Entry).Decl;

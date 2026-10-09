@@ -2,7 +2,7 @@
 # How much of the language does cshc handle? Runs tests/cases/*.csh with cshc and sorts the results:
 #   pass         the expectations of the file (// expect-error, expect-exit, expect-stdout, expect-stderr) hold
 #   unsupported  cshc stops with "cshc does not support ..." (a feature that is not ported yet)
-#   FAIL         everything else (a real difference to the C++ compiler)
+#   FAIL         everything else (a real failure)
 #
 #   selfhost/status.sh <cshc> [-v]      -v lists the files of every group
 #   selfhost/status.sh <cshc> --check   fails if a case listed in selfhost/passing.txt does not pass any more

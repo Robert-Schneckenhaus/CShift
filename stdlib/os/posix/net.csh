@@ -30,10 +30,10 @@ struct _Net
 {
     static bool Supported() { return true; }
 
-    // macOS (and the other BSDs)
+    // macOS: the BSD layout of the socket structures and constants
     static bool _Bsd()
     {
-        return File.Exists("/System/Library/CoreServices/SystemVersion.plist");
+        return Process.IsMacOS();
     }
 
     // A listening socket on address:port (the address as a << 24 | b << 16 | c << 8 | d), or -1

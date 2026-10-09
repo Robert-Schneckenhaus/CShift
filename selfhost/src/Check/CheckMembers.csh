@@ -393,13 +393,8 @@ Value CheckThreadUse(const ref Compiler cg, int instance, bool viaStart, string 
     return Rvalue(cg.Instances.Get(instance).Ret, "", false);
 }
 
-// A call of a function that was found by name: the overload and its result.
-Value CheckResolvedCall(const ref Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc)
-{
-    return CheckResolvedCallAt(cg, cands, args, known, typeArgs, name, loc, SourceLoc { });
-}
-
-// ... with the place of the function's name for the symbol index (Line 0: not indexed).
+// A call of a function that was found by name: the overload and its result. 'nameLoc' is the place of the function's
+// name for the symbol index (Line 0: not indexed).
 Value CheckResolvedCallAt(const ref Compiler cg, Candidate[] cands, Arg[] args, bool known, int[] typeArgs, string name, SourceLoc loc, SourceLoc nameLoc)
 {
     if (!known)

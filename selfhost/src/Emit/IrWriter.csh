@@ -619,19 +619,4 @@ struct IrWriter
         string info = MetaNode("!{i32 2, !\"Debug Info Version\", i32 3}");
         return "\n!llvm.dbg.cu = !{" + cu + "}\n!llvm.module.flags = !{" + version + ", " + info + "}\n" + Meta.ToString();
     }
-
-    // ---- the module ----
-
-    string ModuleText(string triple)
-    {
-        var sb = StringBuilder.Create();
-        sb.Append("; cshc\n");
-        if (triple.Length > 0)
-            sb.Append("target triple = \"" + triple + "\"\n\n");
-        sb.Append(Globals.ToString());
-        sb.Append('\n');
-        sb.Append(Functions.ToString());
-        sb.Append(Declares.ToString());
-        return sb.ToString();
-    }
 }

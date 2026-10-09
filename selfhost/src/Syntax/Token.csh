@@ -26,10 +26,10 @@ enum TokenKind : int32
     AmpAssign, PipeAssign, CaretAssign, ShlAssign,
     // '>>' and '>>=' are not single tokens (generics use '>'); the parser joins adjacent '>' tokens.
 
-    // 'thread' comes last, like in the C++ lexer (the token dumps compare the numbers of the kinds).
+    // 'thread' comes last, as in the retired C++ lexer (the token dumps show the numbers of the kinds).
     KwThread,
 
-    // Only in the self-hosted compiler (after the C++ compiler was frozen):
+    // Added after the C++ compiler was retired:
     InterpStart,  // $"text{   the text up to the first hole of an interpolated string
     InterpMid,    // }text{    the text between two holes
     InterpEnd,    // }text"    the text after the last hole

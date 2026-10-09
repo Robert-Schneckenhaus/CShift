@@ -1,13 +1,8 @@
-// cshc: the CShift compiler, written in CShift.
+// cshc: the CShift compiler, written in CShift, released as cshiftc. The commands and options are in
+// Driver/usage.txt (cshiftc --help) and Driver/Build.csh; two more are for looking at the front end:
 //
-//     cshc [options] file.csh [file2.csh ...]     compile (needs clang for the last steps)
-//         -o <file>       output file
-//         --emit-llvm     write the LLVM IR (.ll) and stop
-//         -O0 .. -O3      optimization level (default -O2)
-//         --cc <program>  clang program to use
-//         --run           run the program after building
-//     cshc --tokens file.csh     token dump (compare with: cshiftc --dump-tokens file.csh)
-//     cshc --ast file.csh        syntax tree dump (compare with: cshiftc --dump-ast file.csh)
+//     cshiftc --tokens file.csh     the tokens of a file (Syntax/TokenDump.csh)
+//     cshiftc --ast file.csh        the syntax tree of a file (Syntax/AstDump.csh)
 
 using System;
 using CShift.Syntax;

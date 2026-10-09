@@ -1,4 +1,4 @@
-// Projects: the file cshift.json (port of compiler/src/Project.cpp).
+// Projects: the file cshift.json.
 //
 //   { "name": "demo", "version": "0.1.0", "type": "executable", "sources": ["src"], "output": "bin/demo",
 //     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "",
