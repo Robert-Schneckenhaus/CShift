@@ -708,11 +708,6 @@ struct Ast
 
     // ---- expressions ----
 
-    Expr NoExpr()
-    {
-        return Expr { };
-    }
-
     Expr AddIntLit(SourceLoc loc, IntLitExpr n)
     {
         IntLits.Add(n);

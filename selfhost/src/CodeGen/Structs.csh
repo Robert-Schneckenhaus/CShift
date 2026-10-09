@@ -1,5 +1,4 @@
-// Structs: layout, fields, methods, initializers and the per-type reference counting (the struct parts of CodeGen.cpp,
-// CodeGenExpr.cpp and CodeGenRuntime.cpp).
+// Structs: layout, fields, methods, initializers and the per-type reference counting.
 
 namespace CShift.CodeGen;
 

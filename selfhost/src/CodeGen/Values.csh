@@ -1,4 +1,4 @@
-// Values and ownership, and conversions between types (port of the first half of CodeGenExpr.cpp).
+// Values and ownership, and conversions between types.
 //
 // ARC rules used throughout the code generator:
 //  * A variable, field or array slot of an ARC type owns one reference.

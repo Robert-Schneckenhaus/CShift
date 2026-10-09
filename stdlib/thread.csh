@@ -9,8 +9,9 @@
 //     }
 //
 // A 'thread' function may only see its own parameters and return a value: the compiler rejects any read or
-// write of a global variable, transitively through every function it calls. Its parameters must be plain value
-// types or SharedPtr<T> - no 'ref'/'const ref', no raw pointers, no Action/Func (see docs/language/threading.md).
+// write of a global variable, transitively through every function it calls. Its parameters are restricted to what can
+// safely go to another thread: plain values, strings and ReadOnlySlice<T> (the thread gets its own copy), SharedPtr<T>
+// of thread-safe values - no 'ref'/'const ref', no raw pointers, no Action/Func (see docs/language/threading.md).
 // It is only called with 'start': 'start F(...)' runs it on a new OS thread and immediately returns a handle:
 // Thread for a 'void' result, Thread<T> otherwise.
 //
@@ -24,10 +25,10 @@
 //  - Thread / Thread<T> themselves: Join, Cancel, CancelAndWait, IsCompleted, IsCancelled, and the private
 //    '_TryGetResult' that backs the 'thread is T result' pattern. ('Thread', the plain non-generic handle, is
 //    actually named '_ThreadVoid' below - the compiler maps the bare spelling 'Thread' to it, see
-//    CodeGenThread.cpp, because this codebase's structs cannot be overloaded by type-argument count.)
+//    selfhost/src/CodeGen/Threads.csh, because this codebase's structs cannot be overloaded by type-argument count.)
 //
-// The code generator (CodeGenThread.cpp) calls a handful of these methods directly - by name, through a raw
-// pointer, exactly like CShift code calling them through '->' - when it spawns a thread and when it emits
+// The code generator (selfhost/src/CodeGen/Threads.csh) calls a handful of these methods directly - by name, through
+// a raw pointer, exactly like CShift code calling them through '->' - when it spawns a thread and when it emits
 // 'Thread.Cancelled'.
 
 namespace System;
@@ -144,8 +145,9 @@ struct _ThreadControl<T>
 }
 
 // The handle returned by calling a 'thread void' function. Written to the language as bare 'Thread' - the
-// compiler resolves that spelling to this struct (see CodeGenThread.cpp); 'Thread<T>' below is a separate,
-// ordinary generic struct that this codebase's type system cannot give the very same name at a different arity.
+// compiler resolves that spelling to this struct (see selfhost/src/CodeGen/Threads.csh); 'Thread<T>' below is a
+// separate, ordinary generic struct that this codebase's type system cannot give the very same name at a different
+// arity.
 struct _ThreadVoid
 {
     SharedPtr<_ThreadCore> _core;

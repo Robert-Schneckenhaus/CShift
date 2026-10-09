@@ -1,5 +1,5 @@
-// Global variables and constants (port of the global parts of CodeGen: lookupGlobal, globalValue, emitGlobalsInit,
-// emitGlobalsRelease, checkGlobalInitOrder and checkConstants).
+// Global variables and constants: looking them up, their values, initializing and releasing them at the start and the
+// end of the program, the order of their initializers, constants.
 //
 //     int Counter;                                   starts with 0
 //     List<string> Names = List<string>.Create();    any expression

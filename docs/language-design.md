@@ -819,11 +819,11 @@ namespace Example;
 
 Error<string> LoadFile(string path)
 {
-    using file = try File.Open(path);
-    return try file.ReadAllText();
+    using var reader = try StreamReader.Open(path);
+    return reader.ReadToEnd();
 }
 
-int Main()
+Error<int> Main()
 {
     var text = try LoadFile("hello.txt");
 

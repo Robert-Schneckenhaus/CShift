@@ -1,5 +1,4 @@
-// Arrays and strings as sequences: creation, indexing, foreach, Array.Copy, Clone and the per-type release of arrays
-// (the array parts of CodeGenExpr.cpp, CodeGenStmt.cpp and CodeGenRuntime.cpp).
+// Arrays and strings as sequences: creation, indexing, foreach, Array.Copy, Clone and the per-type release of arrays.
 //
 // An array is a heap block { size refcount, size length, elements... } like a string; a null array has length 0.
 

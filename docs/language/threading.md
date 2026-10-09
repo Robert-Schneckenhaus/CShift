@@ -7,6 +7,8 @@ does not run `f` there and then: it starts the thread and immediately returns a 
 that returns `void`, `Thread<T>` for a function that returns `T`.
 
 ```csharp
+using System;
+
 thread int Square(int x)
 {
     return x * x;
@@ -135,7 +137,7 @@ atomic). Its value must itself be thread-safe (no strings, arrays or containers 
 thread:
 
 ```csharp
-var box = SharedPtr<int>.Create(41);
+using System;
 
 thread int ReadIt(SharedPtr<int> shared)
 {
@@ -144,6 +146,7 @@ thread int ReadIt(SharedPtr<int> shared)
 
 void Main()
 {
+    var box = SharedPtr<int>.Create(41);
     Thread<int> t = start ReadIt(box);
     Console.WriteLine(t.Join());   // 42
 }
@@ -163,6 +166,8 @@ A `Mutex<T>` is a value that several threads share, guarded by a lock. Like `Sha
 share the value and the lock) and can be passed to `thread` functions:
 
 ```csharp
+using System;
+
 thread void Count(Mutex<int> counter, int times)
 {
     for (var i = 0; i < times; i += 1)
@@ -172,12 +177,15 @@ thread void Count(Mutex<int> counter, int times)
     }
 }
 
-var counter = Mutex<int>.Create(0);
-var a = start Count(counter, 1000);
-var b = start Count(counter, 1000);
-a.Join();
-b.Join();
-Console.WriteLine(counter.Get());   // 2000
+void Main()
+{
+    var counter = Mutex<int>.Create(0);
+    var a = start Count(counter, 1000);
+    var b = start Count(counter, 1000);
+    a.Join();
+    b.Join();
+    Console.WriteLine(counter.Get());   // 2000
+}
 ```
 
 * `Mutex<T>.Create(value)`, `.Lock()` returns a `MutexGuard<T>` that holds the lock until `Dispose()` (`using`).

@@ -1,5 +1,5 @@
 // The runtime of the generated programs, written as LLVM IR text and put into every module. There is no runtime
-// library: strings, reference counting and panics are IR helpers (like in the C++ compiler, CodeGenRuntime.cpp).
+// library: strings, reference counting and panics are IR helpers.
 //
 // A heap block (string or array) is { size refcount, size length, payload... } (size: i64, or i32 on a 32-bit target,
 // see Emit/Target.csh). String literals start with a huge reference count and are never freed.

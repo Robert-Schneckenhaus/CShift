@@ -1,5 +1,6 @@
-// Text dump of the syntax tree. The format is the same as in the C++ compiler (cshiftc --dump-ast), so that the two
-// parsers can be compared. One node per line, children indented by two spaces and prefixed with their role:
+// Text dump of the syntax tree (cshiftc --ast file.csh), for looking at what the parser made of a file; the format is
+// the one of the retired C++ compiler (--dump-ast). One node per line, children indented by two spaces and prefixed
+// with their role:
 //
 //     Call@5:9
 //       callee: Name@5:9 name=foo

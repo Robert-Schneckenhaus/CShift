@@ -1,8 +1,7 @@
 // The parser: a recursive descent parser with a little backtracking (for generics, casts and declarations).
 //
-// It is a port of compiler/src/Parser.cpp. The C++ parser throws CompileError; here every parse function returns an
-// Error<T> and propagates failures with 'try'. Backtracking restores Pos. The position of an error travels in the
-// error code (SourceLoc.Pack).
+// Every parse function returns an Error<T> and propagates failures with 'try'. Backtracking restores Pos. The position
+// of an error travels in the error code (SourceLoc.Pack).
 
 namespace CShift.Syntax;
 

@@ -1,4 +1,4 @@
-// Generating a .ffi file from a C header with libclang (port of compiler/src/FfiGenerator.cpp).
+// Generating a .ffi file from a C header with libclang.
 //
 // libclang is loaded at run time (selfhost/native/host.c, next to clang or from CSHIFT_LIBCLANG). The header is
 // parsed once; its functions, structs, unions, enums and simple macros become the JSON description that

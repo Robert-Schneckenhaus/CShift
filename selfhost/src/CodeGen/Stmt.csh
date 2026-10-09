@@ -1,4 +1,4 @@
-// Statements, scopes and function bodies (port of CodeGenStmt.cpp).
+// Statements, scopes and function bodies.
 
 namespace CShift.CodeGen;
 

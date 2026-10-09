@@ -1,4 +1,4 @@
-// Real OS threads: 'thread' functions, 'start f(...)' and Thread / Thread<T> (port of CodeGenThread.cpp).
+// Real OS threads: 'thread' functions, 'start f(...)' and Thread / Thread<T>.
 //
 //     thread int Square(int x) { return x * x; }
 //

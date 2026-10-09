@@ -1,5 +1,5 @@
-// The generic bodies here are only compiled when Mutex<T> is used, which the frozen C++ compiler never does (it does
-// not know Memory.CopyForThread).
+// Mutex<T>: a value that several threads share, guarded by a lock (see docs/language/threading.md). The generic bodies
+// here are only compiled when Mutex<T> is used.
 
 namespace System;
 
