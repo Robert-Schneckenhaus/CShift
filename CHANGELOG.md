@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.31] - 2026-10-09
+
 ### Language
 - `a ?? b` gives the value of the `Optional<T>` `a`, or `b` when it has none; `b` is only evaluated then. The result
   is a `T` when `b` is a `T` (`name ?? "guest"`, `counts.TryGet(word) ?? 0`) and an `Optional<T>` when `b` is one
