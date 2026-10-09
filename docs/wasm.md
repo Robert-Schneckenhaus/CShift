@@ -46,9 +46,38 @@ The tests run with `CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm bash tests/run
 of the backend itself ([tests/wasm](../tests/wasm): suspending and resuming a program), and build the compiler as
 WebAssembly with the backend: that compiler (under node) must build itself again, byte for byte.
 
+## A program for the browser: `cshiftc publish`
+
+```
+cshiftc publish              # the project in this folder -> bin/<name>.html
+cshiftc publish demo-snake   # -> demo-snake/bin/demo-snake.html
+cshiftc publish hello.csh    # single files -> hello.html (-o names the page)
+```
+
+`publish` builds the program with the wasm backend and writes one HTML file that holds everything it needs: the
+program (as Base64), the runtime [web/cshift.js](../web/cshift.js) and the files the program reads. The page loads
+nothing, so it opens with a double click (as `file://`), and it can be put on any web server as it is. It shows the
+program's console; a program with a window (GLFW) gets the `<canvas>` above it, with the keyboard and the mouse.
+Programs and games run unchanged, game loop and all (see the next section).
+
+The files that the program reads at run time (levels, pictures, texts) are listed in `cshift.json`:
+
+```json
+{
+	"name": "game",
+	"assets": ["data", "readme.txt"]
+}
+```
+
+`assets` names files and folders (with everything below them) inside of the project. In the browser they are in the
+program's file system at the same paths, relative to the current directory: `File.ReadAllText("data/level1.txt")`
+reads the same file as in a native program that runs in the project folder. Files the program writes stay in memory
+until the page is closed. (`embed("file")` is the other way: the file becomes a part of the program itself.)
+
 ## Games in the browser
 
-A program with a window (GLFW) and OpenGL runs in the browser unchanged, game loop and all:
+A program with a window (GLFW) and OpenGL runs in the browser unchanged, game loop and all: `cshiftc publish` makes
+a page of it (above). To build the page yourself, the `.wasm` goes next to the runtime and a page:
 
 ```
 cshiftc build demo-snake --backend wasm -o program.wasm
@@ -60,7 +89,7 @@ python3 -m http.server                    # open http://localhost:8000/
 
 | | In the browser |
 |---|---|
-| WASI | the console goes to the page (and to `console`), the clock, arguments, an in-memory file system with the files given to `run()` (`files: { "/data/map.json": "data/map.json" }`: fetched before the start) |
+| WASI | the console goes to the page (and to `console`), the clock, arguments, an in-memory file system with the files given to `run()` (`files: { "/data/map.json": "data/map.json" }`: fetched before the start; `publish` puts the `assets` there) |
 | GLFW | the window is the `<canvas>`; keyboard, mouse, wheel and character callbacks; `glfwGetKey`, `glfwGetCursorPos`, `glfwGetTime`, the framebuffer size. Esc and `glfwSetWindowShouldClose` end the loop as on the desktop. |
 | OpenGL | WebGL 2: the functions of OpenGL 3.3 core that WebGL 2 has, called directly (`extern "C" void glClear(uint32 mask);`) or through `glfwGetProcAddress`; GLSL `#version 330 core` becomes `#version 300 es`. From OpenGL 1.1: `glDrawPixels`, `glPixelZoom`, `glRasterPos2f` (a software renderer's picture, drawn as a texture). |
 | the loop | `glfwPollEvents` (and `glfwWaitEvents`) suspends the program until the browser's next frame |
@@ -98,6 +127,7 @@ indexes inside the runtime. The differences are those of the platform:
 |---|---|
 | Threads | none: `start` is a compile error. `Mutex<T>` works (there is nothing to lock against). |
 | Other programs | none: `Process.Run` returns -1, `Process.RunCapture` returns nothing. |
+| Network | none: `TcpListener` and `TcpConnection` (`System.Net`) return `NetError.NotSupported`. |
 | Files and directories | through WASI: the runtime decides what the program sees (wasmtime `--dir`, node's `preopens`). The program starts in the directory in the environment variable `PWD` if the host sets it (otherwise in `/`). |
 | Time | `DateTime.Now` is UTC: WASI has no time zones. |
 | Panics, exit codes | as on other targets (a panic exits with 101). |

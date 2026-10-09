@@ -47,6 +47,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `ndk` | the AmigaOS NDK folder, relative to `cshift.json` (like `--ndk`; `CSHIFT_NDK` is used if it is not set): SFD files for `using X from "lib.sfd";`, `Include_H` for C headers | – |
 | `debug` | `true`: debug information for gdb and lldb (like `-g`, see [debugging.md](debugging.md)) | `false` |
 | `unchecked` | `true`: integer overflow wraps around instead of a panic in the whole project (like `--unchecked`; division by zero and index checks stay; `--checked` on the command line overrides it) | `false` |
+| `assets` | files and folders that the program reads at run time, relative to `cshift.json` and inside of the project: `cshiftc publish` puts them into the page, where the program finds them at the same paths ([wasm.md](wasm.md#a-program-for-the-browser-cshiftc-publish)) | `[]` |
 | `platforms` | additions per platform: `{ "windows": {...}, "linux": {...}, "macos": {...} }`, each with `links`, `includePaths`, `libraryPaths` and/or `defines`, appended to the common lists when building for that platform (e.g. `"windows": { "links": ["opengl32"] }, "linux": { "links": ["GL"] }`) | none |
 
 Unknown keys produce a warning, invalid values an error naming the file. `$schema` is allowed; the VS Code extension
@@ -58,6 +59,7 @@ ships a schema that validates and auto-completes `cshift.json`.
 cshiftc new <folder>           a new project (cshift.json, src/main.csh, .gitignore)
 cshiftc build [project]        build it
 cshiftc run   [project]        build and run it
+cshiftc publish [project]      the program for the browser: bin/<name>.html with everything in it (wasm.md)
 cshiftc [options] a.csh b.csh  single files without a project (as before)
 ```
 

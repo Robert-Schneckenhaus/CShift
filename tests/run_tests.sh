@@ -28,7 +28,8 @@
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
-#      VS Code extension (vscode-extension/test, if node is installed).
+#      VS Code extension (vscode-extension/test, if node is installed); tests/publish/*/: "cshiftc publish", the page
+#      run by node (tests/publish-run.mjs).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -416,6 +417,44 @@ else
     echo "vscode extension: skipped (node not found)"
 fi
 
+# cshiftc publish (tests/publish/<name>/): the page of a project, run by node with the program, the files and the
+# runtime that the page holds (tests/publish-run.mjs). The output must be expected.txt, the exit code the number in
+# expected-exit.txt (default 0); the program is not left next to the page. Like the extension it does not depend on
+# CSHIFT_TARGET (a page is always WebAssembly), so a pass for WebAssembly leaves it to the native one.
+if [ ${#RUNNER[@]} -gt 0 ]; then
+    echo "publish: skipped for ${CSHIFT_TARGET} (done by the native pass)"
+elif [ -n "$NODE" ]; then
+    echo "== publish/"
+    for dir in "$DIR"/publish/*/; do
+        project="$(basename "$dir")"
+        name="publish $project"
+        work="$TMP/publish_$project"
+        cp -r "$dir" "$work"
+        page="$work/bin/$project.html"
+        run_page=("$DIR/publish-run.mjs" "$page")
+        if command -v cygpath > /dev/null 2>&1; then run_page=("$(cygpath -w "$DIR/publish-run.mjs")" "$(cygpath -w "$page")"); fi
+        want_exit=0
+        [ -f "$work/expected-exit.txt" ] && want_exit="$(tr -d '\r\n ' < "$work/expected-exit.txt")"
+        if ! "$COMPILER" publish "$work" > "$TMP/publish.out" 2> "$TMP/publish.err"; then
+            report_fail "$name" "publish failed: $(head -n 3 "$TMP/publish.err" | tr '\n' ' ')"
+        elif ! grep -q "Published" "$TMP/publish.out" || [ ! -f "$page" ] || [ -f "$page.wasm" ]; then
+            report_fail "$name" "no page at bin/$project.html (or the .wasm was left next to it): $(head -n 2 "$TMP/publish.out" | tr '\n' ' ')"
+        else
+            "$NODE" "${run_page[@]}" > "$TMP/publish.run" 2> "$TMP/publish.run.err"
+            code=$?
+            if [ "$code" != "$want_exit" ]; then
+                report_fail "$name" "exit code $code instead of $want_exit: $(head -n 3 "$TMP/publish.run.err" | tr '\n' ' ')"
+            elif [ "$(tr -d '\r' < "$TMP/publish.run")" != "$(tr -d '\r' < "$work/expected.txt")" ]; then
+                report_fail "$name" "output differs: $(tr -d '\r' < "$TMP/publish.run" | tr '\n' '|')"
+            else
+                report_ok "$name"
+            fi
+        fi
+    done
+else
+    echo "publish: skipped (node not found)"
+fi
+
 # --- 4. the front end written in CShift (selfhost/) ------------------------------------------------------------
 #   cshc (selfhost/) is built with the compiler under test; it must pass the test cases, build the projects and
 #   rebuild itself (bootstrap). CSHIFT_SKIP_SELFHOST=1 skips this section.
@@ -427,6 +466,7 @@ else
     cp -r "$DIR/../selfhost" "$work"
     cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by embed (../../../stdlib from selfhost/src/Driver)
     mkdir -p "$TMP/tools" && cp -r "$DIR/../tools/debug" "$TMP/tools/debug" # the gdb pretty printers (CodeGen/Debug.csh)
+    mkdir -p "$TMP/web" && cp "$DIR/../web/cshift.js" "$TMP/web/cshift.js" # the runtime of 'publish' (Driver/Publish.csh)
     if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
         report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
     else

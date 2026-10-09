@@ -28,6 +28,11 @@
 			"items": { "type": "string" },
 			"description": "Libraries this project uses: folders (or cshift.json files) of projects with \"type\": \"library\", relative to this file. Their sources, links, include paths, defines and ffiApi entries become a part of this project; a library may have dependencies itself."
 		},
+		"assets": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "Files and folders that the program reads at run time, relative to this file and inside of the project. cshiftc publish puts them into the page, where the program finds them at the same paths."
+		},
 		"sources": {
 			"type": "array",
 			"items": { "type": "string" },

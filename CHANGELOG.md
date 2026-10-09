@@ -6,8 +6,26 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Targets
+- `cshiftc publish` makes a program for the browser: one HTML file (`bin/<name>.html`, for single files
+  `<name>.html`) with everything in it, the program (built with the wasm backend), the runtime `web/cshift.js` and the
+  files of the new project key `"assets"`. The page loads nothing: it opens with a double click (`file://`) and works
+  on any web server. It shows the console of the program, and the `<canvas>` when the program opens a window (GLFW and
+  OpenGL, games with their loop). `"assets": ["data", "readme.txt"]` lists files and folders inside of the project; in
+  the browser the program finds them at the same paths ([docs/wasm.md](docs/wasm.md#a-program-for-the-browser-cshiftc-publish)).
+- `web/cshift.js`: the option `onWindow(width, height, title)` of `run()`, called when the program opens its window.
+
+### Standard library
+- `System.Net`: TCP connections over IPv4 on Windows, Linux and macOS. `TcpListener` (`Start(address, port)`, port 0
+  for a free one, `Pending(milliseconds)`, `Accept()`, `Stop()`) and `TcpConnection` (`Connect(host, port)` with a
+  name or an address, `Read`, `Write`, `WriteText`, `WaitForData(milliseconds)`, `Close()`), errors as `NetError`
+  (`CannotResolve`, `CannotConnect`, `CannotListen`, `ConnectionLost`, `NotSupported`). Sending to a connection that
+  the other side closed is an error, not the end of the program (no `SIGPIPE`), and the sockets are not inherited by
+  the programs that `Process.Run` starts. WebAssembly and AmigaOS report `NotSupported`.
+
 ### Tools
 - Building the compiler from source starts from cshiftc 0.29 (`selfhost/stage0.txt`).
+- VS Code: the schema of `cshift.json` knows `"assets"`.
 
 ## [0.29] - 2026-10-08
 
