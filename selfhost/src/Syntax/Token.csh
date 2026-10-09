@@ -34,7 +34,9 @@ enum TokenKind : int32
     InterpMid,    // }text{    the text between two holes
     InterpEnd,    // }text"    the text after the last hole
     FatArrow,     // =>        lambdas
-    InterpFormat  // ,8:F2     the alignment (IntValue as int64, 0 = none) and format (Text) at the end of a hole
+    InterpFormat, // ,8:F2     the alignment (IntValue as int64, 0 = none) and format (Text) at the end of a hole
+    QuestionQuestion,       // ??   the value of an Optional<T> or a fallback
+    QuestionQuestionAssign  // ??=  assigns to an Optional<T> that has no value
 }
 
 struct Token

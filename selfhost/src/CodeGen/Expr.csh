@@ -424,6 +424,7 @@ string BinOpText(BinOp op)
     case BinOp.BitXor: return "^";
     case BinOp.Shl: return "<<";
     case BinOp.Shr: return ">>";
+    case BinOp.Coalesce: return "??";
     default: return "?";
     }
 }
@@ -865,12 +866,14 @@ Value EmitBinary(const ref Compiler cg, Expr e)
     var b = cg.Tree.GetBinary(e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
         return EmitLogical(cg, e);
+    if (b.Op == BinOp.Coalesce)
+        return EmitCoalesce(cg, e);
     var chain = List<Expr>.Create(); // e and the binary expressions on its left side, outermost first
     Expr leftmost = e;
     while (leftmost.Kind == ExprKind.Binary)
     {
         var lb = cg.Tree.GetBinary(leftmost);
-        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr)
+        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr || lb.Op == BinOp.Coalesce)
             break;
         chain.Add(leftmost);
         leftmost = lb.Lhs;
@@ -1115,6 +1118,8 @@ Value EmitAssign(const ref Compiler cg, Expr e)
             keyValue.Owned = false;
             var key = Arg { V = keyValue, Source = ix.Index };
             Value newValue;
+            if (a.HasOp && a.Op == BinOp.Coalesce)
+                Fail(cg, e.Loc, "'??=' does not work with an indexer (x[k] of a struct): read the value, then set it if it has none");
             if (a.HasOp)
             {
                 var getArgs = new Arg[1];
@@ -1160,6 +1165,9 @@ Value EmitAssign(const ref Compiler cg, Expr e)
                                 "it uses (return the new value instead)");
         Fail(cg, e.Loc, "cannot assign to a read-only value (a constant or a 'const ref' parameter)");
     }
+
+    if (a.HasOp && a.Op == BinOp.Coalesce)
+        return EmitCoalesceAssign(cg, e, target, a.Value);
 
     // text += e (and text = text + e1 + e2 ...) on a local variable: its old text is given to __cs_append, which writes
     // behind it in place when the variable holds the only reference, with room to spare (a loop of appends is linear)
@@ -1250,6 +1258,96 @@ Value EmitConditionalIn(const ref Compiler cg, Expr e, int frame)
     ir.SetBlock(endLabel);
     string incoming = "[ " + av + ", %" + thenFinal + " ], [ " + bv + ", %" + elseFinal + " ]";
     return Rvalue(t, ir.Phi(LlvmType(cg, t), incoming), NeedsArc(cg, t));
+}
+
+// a ?? b: the value of the Optional<T> a if it has one, otherwise b, which is only evaluated then. The result is a T if
+// b converts to T, otherwise an Optional<T> (CoalesceType). Like cond ? a : b, both branches end with an owned value.
+Value EmitCoalesce(const ref Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var b = cg.Tree.GetBinary(e);
+    Value l = EmitRValue(cg, b.Lhs);
+    string why = "";
+    if (!types.IsOptional(l.Type))
+    {
+        CoalesceType(cg, l, l, "??", ref why);
+        Fail(cg, e.Loc, why);
+    }
+    // a lives to the end of the statement (its value is taken in one of the branches)
+    HoldTemp(cg, l);
+    l.Owned = false;
+    string optional = LlvmType(cg, l.Type);
+    string hasLabel = ir.NewLabel("coalesce.has");
+    string elseLabel = ir.NewLabel("coalesce.else");
+    string endLabel = ir.NewLabel("coalesce.end");
+    ir.CondBr(ir.ExtractValue(optional, l.V, "0"), hasLabel, elseLabel);
+
+    // b first: its type decides the type of the result
+    var temps = cg.Fn[0].Temps;
+    int baseCount = temps.Count();
+    int elseMark = ir.Mark();
+    ir.SetBlock(elseLabel);
+    Value r = EmitFallback(cg, l.Type, b.Rhs);
+    string elseEnd = ir.CurrentBlock();
+    string elseCode = ir.TakeSince(elseMark);
+    var elseTemps = TakeTemps(cg, baseCount);
+    int t = CoalesceType(cg, l, r, "??", ref why);
+    if (t == 0)
+        Fail(cg, e.Loc, why);
+
+    ir.SetBlock(hasLabel);
+    Value kept = t == l.Type ? l : Rvalue(t, ir.ExtractValue(optional, l.V, "1"), false);
+    string av = Consume(cg, kept);
+    string hasFinal = ir.CurrentBlock();
+    ir.Br(endLabel);
+
+    ir.AppendCode(elseCode);
+    ir.ResumeBlock(elseEnd);
+    string bv = Consume(cg, ConvertValue(cg, r, t, b.Rhs.Loc));
+    ReleaseTemps(cg, TakeTemps(cg, baseCount));
+    ReleaseTemps(cg, elseTemps);
+    string elseFinal = ir.CurrentBlock();
+    ir.Br(endLabel);
+
+    ir.SetBlock(endLabel);
+    string incoming = "[ " + av + ", %" + hasFinal + " ], [ " + bv + ", %" + elseFinal + " ]";
+    return Rvalue(t, ir.Phi(LlvmType(cg, t), incoming), NeedsArc(cg, t));
+}
+
+// The right side of 'a ?? b' and 'a ??= b': a value of the T of the Optional<T> 'optional' (a typeless new,
+// target-typed arithmetic), or of its own type (see CheckFallback).
+Value EmitFallback(const ref Compiler cg, int optional, Expr e)
+{
+    var types = cg.Types;
+    return ToRValue(cg, types.IsOptional(optional) ? EmitExprAs(cg, e, types.Elem(optional)) : EmitExpr(cg, e));
+}
+
+// x ??= v: v is evaluated and stored only if the Optional<T> x has no value; x is evaluated once.
+Value EmitCoalesceAssign(const ref Compiler cg, Expr e, Value target, Expr value)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    Value cur = ToRValue(cg, target);
+    string why = "";
+    if (!types.IsOptional(target.Type))
+    {
+        CoalesceType(cg, cur, cur, "??=", ref why);
+        Fail(cg, e.Loc, why);
+    }
+    string setLabel = ir.NewLabel("coalesce.set");
+    string endLabel = ir.NewLabel("coalesce.end");
+    ir.CondBr(ir.ExtractValue(LlvmType(cg, target.Type), cur.V, "0"), endLabel, setLabel);
+    ir.SetBlock(setLabel);
+    int mark = cg.Fn[0].Temps.Count();
+    Value r = EmitFallback(cg, target.Type, value);
+    if (CoalesceType(cg, cur, r, "??=", ref why) == 0)
+        Fail(cg, e.Loc, why);
+    StoreSlot(cg, target.Type, target.V, Consume(cg, ConvertValue(cg, r, target.Type, value.Loc)), true);
+    FlushTemps(cg, mark, true);
+    ir.Br(endLabel);
+    ir.SetBlock(endLabel);
+    return Lvalue(target.Type, target.V, false);
 }
 
 // Removes the temporaries above 'baseCount' from the list and returns them.

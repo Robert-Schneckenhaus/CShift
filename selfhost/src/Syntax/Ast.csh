@@ -17,7 +17,8 @@ enum BinOp : int32
     Add, Sub, Mul, Div, Rem,
     BitAnd, BitOr, BitXor, Shl, Shr,
     LogAnd, LogOr,
-    Eq, Ne, Lt, Gt, Le, Ge
+    Eq, Ne, Lt, Gt, Le, Ge,
+    Coalesce // a ?? b: the value of the Optional<T> a, or b if it has none
 }
 
 enum UnOp : int32 { Neg, Plus, Not, BitNot, Deref, AddrOf }

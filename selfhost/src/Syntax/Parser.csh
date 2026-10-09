@@ -1190,6 +1190,9 @@ struct Parser
         case TokenKind.ShlAssign:
             info.Op = BinOp.Shl;
             return info;
+        case TokenKind.QuestionQuestionAssign:
+            info.Op = BinOp.Coalesce;
+            return info;
         case TokenKind.Gt:
             if (PeekKind(1) == TokenKind.GtEq && Adjacent(Cur(), PeekTok(1)))
             {
@@ -1220,7 +1223,7 @@ struct Parser
 
     Error<Expr> ParseConditional()
     {
-        Expr cond = try ParseBinary(1);
+        Expr cond = try ParseCoalesce();
         if (Check(TokenKind.Question))
         {
             SourceLoc loc = Advance().Loc;
@@ -1231,6 +1234,20 @@ struct Parser
             return Tree.AddCond(loc, c);
         }
         return cond;
+    }
+
+    // a ?? b: below || and above ?:, and right-associative like in C# (a ?? b ?? c is a ?? (b ?? c))
+    Error<Expr> ParseCoalesce()
+    {
+        Expr lhs = try ParseBinary(1);
+        if (Check(TokenKind.QuestionQuestion))
+        {
+            SourceLoc loc = Advance().Loc;
+            var b = BinaryExpr { Op = BinOp.Coalesce, Lhs = lhs };
+            b.Rhs = try ParseCoalesce();
+            return Tree.AddBinary(loc, b);
+        }
+        return lhs;
     }
 
     static BinOpInfo Op(BinOp op, int prec, int count)

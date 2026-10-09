@@ -311,6 +311,30 @@ int ConditionalType(const ref Compiler cg, Value a, Value b, ref string why)
     return t;
 }
 
+// The type of 'a ?? b' (a an Optional<T>): T if b converts to T (the value is always there), Optional<T> if b is one
+// (or null); 0 with the message. 'op' is "??" or "??=" (for the message).
+int CoalesceType(const ref Compiler cg, Value a, Value b, string op, ref string why)
+{
+    var types = cg.Types;
+    if (AnyUnknown(cg, a, b))
+        return types.Unknown;
+    if (!types.IsOptional(a.Type))
+    {
+        why = "the left side of '" + op + "' must be an Optional<T>, not '" + types.Name(a.Type) + "'";
+        if (types.IsError(a.Type))
+            why += " (an Error<T> says why it has no value: 'x is T v' or a 'switch' handles it)";
+        return 0;
+    }
+    int t = types.Elem(a.Type);
+    if (ConversionCost(cg, b, t) >= 0)
+        return t;
+    if (ConversionCost(cg, b, a.Type) >= 0)
+        return a.Type;
+    why = "the right side of '" + op + "' must be of type '" + types.Name(t) + "' or '" + types.Name(a.Type) + "', not '" +
+          types.Name(b.Type) + "'";
+    return 0;
+}
+
 // The type of 'var name = init' (see EmitVarDecl; collection expressions are settled before), 0 with the message, or
 // unknown.
 int VarTypeFromInit(const ref Compiler cg, Value init, string name, ref string why)

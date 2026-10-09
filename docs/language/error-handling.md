@@ -129,6 +129,21 @@ if (found is User user)
 `Optional<T>` is not a condition either (`if (found)` and `!found` are compile errors): test it with `is T v` or
 compare it with `null` (`found == null`, `found != null`). `try` must not be used with `Optional<T>`.
 
+`??` gives the value or a fallback, which is only evaluated when there is no value; `??=` fills an empty `Optional<T>`:
+
+```csharp
+Optional<string> nickname = FindNickname(user);
+string shown = nickname ?? user.Name;               // a string: the nickname, or the name
+int count = counts.TryGet(word) ?? 0;               // Dictionary.TryGet gives an Optional<int>
+Optional<User> any = FindUser(42) ?? FindUser(7);   // an Optional<User>: the first that has a value
+
+Optional<string> title = null;
+title ??= LoadTitle();                              // LoadTitle() runs only because title is empty
+```
+
+The result is a `T` when the right side is a `T`, and an `Optional<T>` when it is one. `??` only takes an
+`Optional<T>`: an `Error<T>` carries the reason why it has no value, and `is error e` or a `switch` deals with it.
+
 ## Error enums: typed error codes
 
 An error enum declares the codes a function can fail with:

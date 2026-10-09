@@ -691,7 +691,12 @@ struct Lexer
         case ';': t.Kind = TokenKind.Semi; break;
         case ',': t.Kind = TokenKind.Comma; break;
         case ':': t.Kind = TokenKind.Colon; break;
-        case '?': t.Kind = TokenKind.Question; break;
+        case '?':
+            if (Match('?'))
+                t.Kind = Match('=') ? TokenKind.QuestionQuestionAssign : TokenKind.QuestionQuestion;
+            else
+                t.Kind = TokenKind.Question;
+            break;
         case '~': t.Kind = TokenKind.Tilde; break;
         case '.':
             if (Peek(0) == '.' && Peek(1) == '.')
