@@ -3,6 +3,8 @@ cshiftc - CShift compiler
 usage: cshiftc [options] file.csh [file2.csh ...]     compile single files
        cshiftc build [project] [options]              build a project (cshift.json)
        cshiftc run   [project] [options]              build and run a project
+       cshiftc publish [project | files] [options]    the program for the browser: one HTML file with everything
+                                                      (bin/<name>.html; WebAssembly, "assets" of cshift.json)
        cshiftc new   <directory>                      create a new project
        cshiftc check [project | files] [options]      report the errors, generate nothing
        cshiftc query --at <file> <line> <col> [--references] [--members] [project | files] [--overlay <file> <text file>]

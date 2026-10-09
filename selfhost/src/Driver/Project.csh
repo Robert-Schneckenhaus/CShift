@@ -2,7 +2,7 @@
 //
 //   { "name": "demo", "version": "0.1.0", "type": "executable", "sources": ["src"], "output": "bin/demo",
 //     "optimize": 2, "links": [], "includePaths": [], "libraryPaths": [], "defines": [], "ffiApi": [], "target": "",
-//     "unchecked": false, "debug": false, "dependencies": ["../mylib"] }
+//     "unchecked": false, "debug": false, "dependencies": ["../mylib"], "assets": ["data"] }
 //
 // Only "name" is required. Paths are relative to the project file. A dependency is a project with "type": "library";
 // its sources, libraries, include paths, defines and ffiApi entries become a part of the project that uses it.
@@ -33,6 +33,7 @@ struct Project
     bool Debug;                  // debug information (-g)
     string Backend;              // "llvm", "m68k", "wasm" or "" (the target's default)
     string Ndk;                  // the AmigaOS NDK (a path relative to the project)
+    List<string> Assets;         // files and folders that "cshiftc publish" puts into the page (relative to the project)
 }
 
 bool ValidProjectName(string name)
@@ -225,7 +226,7 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
                                     "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk", "debug",
-                                    "dependencies" };
+                                    "dependencies", "assets" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
     {
@@ -322,6 +323,17 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
             p.LinkFiles.Add(InProject(p.Dir, l));
         else
             p.Links.Add(l);
+    }
+
+    // the files a program reads at run time, for 'publish': inside of the project, where they are found at the same
+    // relative paths in the browser
+    present = false;
+    p.Assets = try ReadStringList(json, root, "assets", file, ref present);
+    foreach (var asset in p.Assets)
+    {
+        string normal = asset.Replace("\\", "/");
+        if (IsAbsolutePath(asset) || normal == ".." || normal.StartsWith("../") || normal.Contains("/../") || normal.EndsWith("/.."))
+            return error(file + ": the asset '" + asset + "' is not inside of the project (\"assets\" are relative paths in it)");
     }
 
     present = false;

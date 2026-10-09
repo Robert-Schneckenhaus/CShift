@@ -523,6 +523,7 @@ class Program {
                 if (self.options.resizeCanvas !== false && !self.canvas.style.width) self.canvas.style.width = width + "px";
                 if (self.options.setTitle !== false && title) document.title = self.cstring(title);
                 listen();
+                self.options.onWindow?.(width, height, title ? self.cstring(title) : "");
                 return 1;
             },
             glfwDestroyWindow() {},
@@ -988,7 +989,8 @@ class Program {
  * Runs a program: the URL or the bytes of its .wasm. Options: canvas (for GLFW and OpenGL), args, env, files
  * ({ path: URL string | Uint8Array | ArrayBuffer }, fetched before the start), onOutput(text, isError), imports
  * (more functions of "env"), pixelRatio, setTitle (false: the window title does not become the page's title),
- * resizeCanvas (false: the canvas keeps its size on the page; glfwCreateWindow sets only its pixels).
+ * resizeCanvas (false: the canvas keeps its size on the page; glfwCreateWindow sets only its pixels), onWindow(width,
+ * height, title) (called when the program opens its window, e.g. to show the canvas).
  * @returns the program: program.exited is a promise of the exit code, program.stop() ends it.
  */
 export async function run(wasm, options = {}) {

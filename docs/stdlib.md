@@ -24,7 +24,8 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System` | `regex.csh` | `Regex`, `RegexMatch`, `RegexError` |
 | `System.Compression` | `compression.csh` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
 | `System.Image` | `image.csh`, `image_png.csh`, `image_bmp.csh`, `image_ppm.csh` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
-| `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking); the compiler adds the one of the target |
+| `System.Net` | `net.csh` | `TcpListener`, `TcpConnection`, `NetError`: TCP connections over IPv4 (`using System.Net;`) |
+| `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
 
@@ -111,9 +112,30 @@ Error<string> Load(string path)
 | `IoError` | `CannotOpen` (1), `CannotWrite` (2), `CannotDelete` (3), `AlreadyExists` (4), `InvalidText` (5), `CannotCreate` (6), `CannotMove` (7) | `File.*`, `Directory.Delete/Move`, the streams |
 | `ParseError` | `Invalid` (1), `OutOfRange` (2) | `ParseInt`, `ParseInt64`, `ParseDouble` |
 | `EncodingError` | `OutOfBounds` (1), `NotAscii` (2), `InvalidUtf8` (3) | `Encoding.GetString` |
+| `NetError` (`System.Net`) | `CannotResolve` (1), `CannotConnect` (2), `CannotListen` (3), `ConnectionLost` (4), `NotSupported` (5) | `TcpListener`, `TcpConnection` |
 
 A caller can match a code (`case IoError.CannotOpen:`, `if (r is IoError code)`); a typed result converts to a
 plain `Error<T>`, and `try` passes it on from a function returning `Error<T>` or the same typed result.
+
+**`TcpListener`, `TcpConnection`** (`System.Net`) — TCP over IPv4 on Windows, Linux and macOS (WebAssembly and AmigaOS
+report `NetError.NotSupported`). A server: `TcpListener.Start("127.0.0.1", port)` (`"0.0.0.0"` for every network;
+port 0 takes a free one, `Port()` says which), `Pending(milliseconds)` (a client is waiting), `Accept()`, `Stop()`. A
+client: `TcpConnection.Connect(host, port)` (a name or an address). A connection: `Read(buffer, offset, count)` (what
+has arrived; 0 when the other side closed it), `Write(bytes)`, `WriteText(text)`, `WaitForData(milliseconds)`,
+`Close()`. Waiting with a time limit (-1: none) lets one thread serve several connections. Both are `IDisposable`
+handles: copies share the socket. Errors are `NetError`s; sending to a connection that the other side closed is an
+error, not the end of the program.
+
+```csharp
+using System;
+using System.Net;
+
+using var listener = try TcpListener.Start("127.0.0.1", 8080);
+using var client = try listener.Accept();
+var request = new uint8[4096];
+int got = try client.Read(request, 0, request.Length);
+try client.WriteText("HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nHello\n");
+```
 
 **`Encoding`** — `Encoding.UTF8()` and `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])`
 (`EncodingError<string>`: invalid UTF-8, or bytes above 127 for ASCII, are errors), `GetByteCount`, `Name()`. Strings are

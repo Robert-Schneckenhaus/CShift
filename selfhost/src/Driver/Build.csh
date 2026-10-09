@@ -3,6 +3,7 @@
 //     cshc [options] file.csh [file2.csh ...]     compile single files
 //     cshc build [project] [options]              build a project (cshift.json)
 //     cshc run   [project] [options]              build and run a project
+//     cshc publish [project | files] [options]    the program as one HTML file for the browser (Publish.csh)
 //     cshc new   <directory>                      create a new project
 //     cshc check [project | files] [options]      report the errors, generate nothing
 //     cshc query --at <file> <line> <col> [...]   the name at a position, as JSON (for the VS Code extension)
@@ -228,7 +229,7 @@ int Cshc(string[] args)
     string command = "compile";
     int first = 0;
     if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query" ||
-        args[0] == "doc")
+        args[0] == "doc" || args[0] == "publish")
     {
         command = args[0];
         first = 1;
@@ -326,40 +327,16 @@ int Cshc(string[] args)
         return Build(o);
     }
 
+    if (command == "publish")
+        return Publish(o);
+
     if (command == "build" || command == "run")
     {
         string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : "";
         var loaded = LoadProject(location, o.Target);
         if (loaded is Project project)
         {
-            o.FromProject = true;
-            o.ProjectName = project.Name;
-            o.ProjectDir = project.Dir;
-            o.Inputs = project.Sources;
-            o.Unchecked = o.Unchecked || (project.Unchecked && !o.Checked);
-            o.Debug = o.Debug || project.Debug;
-            if (o.Output.Length == 0)
-                o.Output = project.Output;
-            if (!o.OptimizeGiven && project.HasOptimize)
-                o.Optimize = project.Optimize;
-            if (o.Target.Length == 0)
-                o.Target = project.Target;
-            if (o.Backend.Length == 0)
-                o.Backend = project.Backend;
-            if (o.Ndk.Length == 0)
-                o.Ndk = project.Ndk;
-            foreach (var l in project.Links)
-                o.Libs.Insert(0, l);
-            foreach (var l in project.LinkFiles)
-                o.LibFiles.Insert(0, l);
-            foreach (var l in project.LibraryPaths)
-                o.LibPaths.Insert(0, l);
-            foreach (var l in project.IncludePaths)
-                o.IncludePaths.Insert(0, l);
-            foreach (var l in project.Defines)
-                o.Defines.Insert(0, l);
-            foreach (var l in project.ApiPaths)
-                o.ApiPaths.Insert(0, l);
+            ApplyProject(ref o, project);
             if (project.Type == "object")
                 o.ObjectOnly = true;
             if (command == "run")
@@ -394,6 +371,39 @@ int Cshc(string[] args)
         return 2;
     }
     return Build(o);
+}
+
+// The settings of a project file for build, run and publish; the options of the command line win.
+void ApplyProject(ref BuildOptions o, Project project)
+{
+    o.FromProject = true;
+    o.ProjectName = project.Name;
+    o.ProjectDir = project.Dir;
+    o.Inputs = project.Sources;
+    o.Unchecked = o.Unchecked || (project.Unchecked && !o.Checked);
+    o.Debug = o.Debug || project.Debug;
+    if (o.Output.Length == 0)
+        o.Output = project.Output;
+    if (!o.OptimizeGiven && project.HasOptimize)
+        o.Optimize = project.Optimize;
+    if (o.Target.Length == 0)
+        o.Target = project.Target;
+    if (o.Backend.Length == 0)
+        o.Backend = project.Backend;
+    if (o.Ndk.Length == 0)
+        o.Ndk = project.Ndk;
+    foreach (var l in project.Links)
+        o.Libs.Insert(0, l);
+    foreach (var l in project.LinkFiles)
+        o.LibFiles.Insert(0, l);
+    foreach (var l in project.LibraryPaths)
+        o.LibPaths.Insert(0, l);
+    foreach (var l in project.IncludePaths)
+        o.IncludePaths.Insert(0, l);
+    foreach (var l in project.Defines)
+        o.Defines.Insert(0, l);
+    foreach (var l in project.ApiPaths)
+        o.ApiPaths.Insert(0, l);
 }
 
 // The version: selfhost/version/version.txt, read when cshc is compiled (the release workflow writes it).

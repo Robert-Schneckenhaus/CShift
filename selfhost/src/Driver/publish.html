@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- {{name}}: a CShift program, made with "cshiftc publish". Everything it needs is in this file: the program as
+     WebAssembly, the files of "assets" and the runtime of CShift (web/cshift.js). Open it in a browser, also as a
+     file (file://), or put it on any web server. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{name}}</title>
+<style>
+    :root { color-scheme: dark; }
+    body {
+        margin: 0; min-height: 100vh; box-sizing: border-box; padding: 16px;
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        background: #15171c; color: #d8dbe2; font: 14px/1.4 system-ui, sans-serif;
+    }
+    header { width: min(100%, 960px); display: flex; align-items: baseline; gap: 12px; }
+    h1 { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+    #status { margin-left: auto; color: #8a90a0; font-size: 13px; white-space: nowrap; }
+    canvas {
+        display: none; max-width: 100%; height: auto; background: #000; border-radius: 4px; outline: none;
+        image-rendering: pixelated;
+    }
+    canvas.shown { display: block; }
+    canvas:focus-visible { box-shadow: 0 0 0 1px #3d4a66; }
+    pre {
+        margin: 0; width: min(100%, 960px); box-sizing: border-box; max-height: 70vh; overflow: auto;
+        padding: 10px 12px; background: #0d0e12; border: 1px solid #2a2e38; border-radius: 6px;
+        font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    pre:empty { display: none; }
+    canvas.shown ~ pre { max-height: 25vh; }
+    .error { color: #ff7b7b; }
+</style>
+</head>
+<body>
+<header><h1 id="title">{{name}}</h1><span id="status" role="status">Loading…</span></header>
+<canvas id="screen" tabindex="0" aria-label="{{name}}"></canvas>
+<pre id="output" aria-live="polite"></pre>
+<script type="application/octet-stream" id="program">{{wasm}}</script>
+{{assets}}
+<script type="module">
+{{runtime}}
+
+// ---- the page: decodes the program and the files, runs it, shows its output ----
+{
+    const output = document.getElementById("output");
+    const canvas = document.getElementById("screen");
+    const status = document.getElementById("status");
+    const print = (text, isError) => {
+        const span = document.createElement("span");
+        if (isError) span.className = "error";
+        span.textContent = text;
+        output.append(span);
+        output.scrollTop = output.scrollHeight;
+    };
+    const decode = (base64) => {
+        const text = atob(base64.trim());
+        const bytes = new Uint8Array(text.length);
+        for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+        return bytes;
+    };
+    const files = {};
+    for (const asset of document.querySelectorAll("script[data-asset]")) files["/" + asset.dataset.asset] = decode(asset.textContent);
+    try {
+        const program = await run(decode(document.getElementById("program").textContent), {
+            canvas, files, onOutput: print,
+            onWindow: (width, height, title) => {
+                if (title) document.getElementById("title").textContent = title;
+                canvas.classList.add("shown");
+                canvas.focus();
+            },
+        });
+        status.textContent = "Running";
+        const code = await program.exited;
+        status.textContent = code === 0 ? "Finished" : code === null ? "Stopped" : `Ended with exit code ${code}`;
+    } catch (e) {
+        status.textContent = "Failed";
+        print(`${e.message ?? e}\n`, true);
+    }
+}
+</script>
+</body>
+</html>
