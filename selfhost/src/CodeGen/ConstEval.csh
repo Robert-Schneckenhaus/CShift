@@ -940,6 +940,8 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
     case ExprKind.Binary:
     {
         var b = tree.GetBinary(e);
+        if (b.Op == BinOp.Coalesce)
+            return ConstNotConstant(cg, sc); // there are no constant Optional<T> values
         if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
         {
             // the right side is only evaluated if it can change the result

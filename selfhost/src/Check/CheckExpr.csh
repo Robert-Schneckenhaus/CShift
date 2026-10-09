@@ -383,6 +383,8 @@ Value CheckBinary(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var b = cg.Tree.GetBinary(e);
+    if (b.Op == BinOp.Coalesce)
+        return CheckCoalesce(cg, e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
     {
         Expr leftmost = e;
@@ -402,7 +404,7 @@ Value CheckBinary(const ref Compiler cg, Expr e)
     while (first.Kind == ExprKind.Binary)
     {
         var lb = cg.Tree.GetBinary(first);
-        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr)
+        if (lb.Op == BinOp.LogAnd || lb.Op == BinOp.LogOr || lb.Op == BinOp.Coalesce)
             break;
         chain.Add(first);
         first = lb.Lhs;
@@ -424,6 +426,35 @@ Value CheckBinary(const ref Compiler cg, Expr e)
         l = Rvalue(t, "", false);
     }
     return l;
+}
+
+// a ?? b (see EmitCoalesce): b is used as a value of the T of the Optional<T> a.
+Value CheckCoalesce(const ref Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var b = cg.Tree.GetBinary(e);
+    Value l = CheckRValue(cg, b.Lhs);
+    Value r = CheckFallback(cg, l.Type, b.Rhs);
+    string why = "";
+    int t = CoalesceType(cg, l, r, "??", ref why);
+    if (t == 0)
+    {
+        CheckError(cg, e.Loc, why);
+        return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
+// The right side of 'a ?? b' and 'a ??= b': a value of the T of the Optional<T> 'optional' (a typeless new, a lambda,
+// target-typed arithmetic), or of its own type.
+Value CheckFallback(const ref Compiler cg, int optional, Expr e)
+{
+    var types = cg.Types;
+    Value v = types.IsOptional(optional) ? CheckExprAs(cg, e, types.Elem(optional)) : CheckExpr(cg, e);
+    v.IsLValue = false;
+    v.IsConst = false;
+    v.IsRefArg = false;
+    return v;
 }
 
 // ---------------------------------------------------------------------------
@@ -603,7 +634,17 @@ Value CheckAssign(const ref Compiler cg, Expr e)
         CheckExpr(cg, a.Value);
         return UnknownValue(cg);
     }
-    if (a.HasOp)
+    if (a.HasOp && a.Op == BinOp.Coalesce)
+    {
+        // x ??= v (see EmitCoalesceAssign)
+        Value cur = target;
+        cur.IsLValue = false;
+        cur.IsConst = false;
+        string why = "";
+        if (CoalesceType(cg, cur, CheckFallback(cg, target.Type, a.Value), "??=", ref why) == 0)
+            CheckError(cg, e.Loc, why);
+    }
+    else if (a.HasOp)
     {
         // see EmitCompound
         Value cur = target;

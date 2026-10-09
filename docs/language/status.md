@@ -33,6 +33,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | ARC for strings and arrays (reference semantics, `Clone()`), including inside structs/`Error`/`Optional` | ✔ |
 | Strings: UTF-8, immutable, `+`, `==`, `[i]`, `Length`, `Substring`, `CStr()` | ✔ |
 | `Error<T>` / `Optional<T>` (never a bare condition), `is T x`, `is error e`, `is not`, `is null`, `switch` patterns, `try`; nesting only as `Error<Optional<T>>` | ✔ ([error handling](error-handling.md)) |
+| `a ?? b` and `x ??= v` for `Optional<T>` | ✔ ([error handling](error-handling.md#optionalt)) |
 | `IDisposable` + `using` (declaration and block form; also on `return`/`break`/`continue`/`try`) | ✔ |
 | `ref` / `const ref` (value, read-only alias, alias) | ✔ |
 | Primitive types with aliases (`int`=`int32`, …), `bool`, `char` (= `uint8`), `nint`/`nuint` (pointer-sized) | ✔ |

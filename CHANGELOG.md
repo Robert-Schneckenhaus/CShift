@@ -6,6 +6,15 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- `a ?? b` gives the value of the `Optional<T>` `a`, or `b` when it has none; `b` is only evaluated then. The result
+  is a `T` when `b` is a `T` (`name ?? "guest"`, `counts.TryGet(word) ?? 0`) and an `Optional<T>` when `b` is one
+  (`first ?? second`). `??` binds less tightly than `||` and more tightly than `?:`, and is right-associative, as in
+  C#. An `Error<T>` on the left is a compile error (it says why it has no value: `is error e` handles it).
+- `x ??= v` assigns `v` to the `Optional<T>` `x` only when `x` has no value (variables, parameters, fields, elements
+  of arrays and slices; `x` is evaluated once).
+- VS Code highlights `??` and `??=`.
+
 ### Targets
 - `cshiftc serve [project] [--port <n>] [--host <address>] [--open]`: `publish` that keeps going, like `ng serve` or
   `vite`. It serves the page on `http://localhost:8080/` (or the next free port), watches the files of the project and

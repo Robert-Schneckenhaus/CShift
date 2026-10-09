@@ -140,8 +140,9 @@ See [expressions](expressions.md). Each level binds tighter than the one before 
 ```ebnf
 Expression     = Assignment ;
 Assignment     = Conditional [ AssignOp Assignment ] ;
-AssignOp       = '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=' ;
-Conditional    = LogicalOr [ '?' Assignment ':' Assignment ] ;
+AssignOp       = '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=' | '??=' ;
+Conditional    = Coalesce [ '?' Assignment ':' Assignment ] ;
+Coalesce       = LogicalOr [ '??' Coalesce ] ;
 LogicalOr      = LogicalAnd { '||' LogicalAnd } ;
 LogicalAnd     = BitOr { '&&' BitOr } ;
 BitOr          = BitXor { '|' BitXor } ;

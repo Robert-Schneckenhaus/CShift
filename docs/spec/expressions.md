@@ -6,23 +6,24 @@ From the lowest to the highest precedence:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | right |
+| 1 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` `??=` | right |
 | 2 | `? :` | right |
-| 3 | `\|\|` | left |
-| 4 | `&&` | left |
-| 5 | `\|` | left |
-| 6 | `^` | left |
-| 7 | `&` | left |
-| 8 | `==` `!=` | left |
-| 9 | `<` `>` `<=` `>=` `is` | left |
-| 10 | `<<` `>>` | left |
-| 11 | `+` `-` | left |
-| 12 | `*` `/` `%` | left |
-| 13 | unary `-` `+` `!` `~` `*` `&`, cast `(T)x`, `try`, `ref`, `start` | right |
-| 14 | `.` `->` `()` `[]` `[..]`, initializer `T { ... }` | left |
+| 3 | `??` | right |
+| 4 | `\|\|` | left |
+| 5 | `&&` | left |
+| 6 | `\|` | left |
+| 7 | `^` | left |
+| 8 | `&` | left |
+| 9 | `==` `!=` | left |
+| 10 | `<` `>` `<=` `>=` `is` | left |
+| 11 | `<<` `>>` | left |
+| 12 | `+` `-` | left |
+| 13 | `*` `/` `%` | left |
+| 14 | unary `-` `+` `!` `~` `*` `&`, cast `(T)x`, `try`, `ref`, `start` | right |
+| 15 | `.` `->` `()` `[]` `[..]`, initializer `T { ... }` | left |
 
 The order is that of C#. The operands of a binary operator are evaluated from left to right, and so are the arguments
-of a call. There is no `++`, `--`, `??`, `?.`, `as`, `typeof` or `checked`.
+of a call. There is no `++`, `--`, `?.`, `as`, `typeof` or `checked`.
 
 ## Primary expressions
 
@@ -116,6 +117,16 @@ compared with `==` (compare fields, or implement `Equals`). The result is `bool`
 
 `!`, `&&` and `||` take `bool` only; `&&` and `||` evaluate the right operand only if it can change the result.
 
+## The `??` operator
+
+`a ?? b` is the value of the `Optional<T>` `a` if it has one, otherwise `b`; `b` is only evaluated when `a` has no
+value. If `b` converts to `T`, the result is a `T` (`name ?? "guest"` is a `string`, `counts.TryGet(k) ?? 0` an
+`int`); if `b` is an `Optional<T>` (or `null`), the result is an `Optional<T>` (`first ?? second`). `b` is used as a
+value of `T` (a typeless `new { ... }`, a collection expression, `T`'s arithmetic for an integer `T`). `??` is
+right-associative (`a ?? b ?? 0` is `a ?? (b ?? 0)`) and binds less tightly than `||` and more tightly than `?:`
+(`a ?? 1 + 2` is `a ?? (1 + 2)`). The left side must be an `Optional<T>`: an `Error<T>` says why it has no value, and
+`is` or a `switch` handles that.
+
 ## Conditional operator
 
 `c ? a : b` takes a `bool` condition and evaluates one of the branches. The type is the type of `a` if `b` converts to
@@ -129,6 +140,10 @@ target type, both branches convert to it.
 value of an assignment is the stored value (`a = b = 5`). `x op= v` is `x = x op v` with `x` evaluated once. A
 constant, a `const ref` parameter, a read-only slice element, a string's byte and a pattern variable cannot be
 assigned.
+
+`x ??= v` assigns `v` to the `Optional<T>` `x` only if `x` has no value; then `v` (a `T` or an `Optional<T>`, like the
+right side of `??`) is evaluated, otherwise not. `x` is a variable, a parameter, a field or an element of an array or
+slice, evaluated once; the indexer of a struct (`x[k]` with `Get` and `Set`) cannot be the target.
 
 ## Patterns: `is`
 

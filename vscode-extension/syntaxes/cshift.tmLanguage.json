@@ -327,6 +327,14 @@
 				},
 				{
 					"name": "keyword.operator.assignment.cshift",
+					"match": "\\?\\?="
+				},
+				{
+					"name": "keyword.operator.null-coalescing.cshift",
+					"match": "\\?\\?"
+				},
+				{
+					"name": "keyword.operator.assignment.cshift",
 					"match": "(?:<<|>>|[-+*/%&|^])?=(?!=)"
 				},
 				{

@@ -149,7 +149,8 @@ An error enum (`error IoError { ... }`) is an enum with base type `int32` whose 
 ## Optional
 
 `Optional<T>` is a `T` or nothing (`null`). A `T` and `null` convert to it implicitly. It is not a condition: test it
-with `x is T v`, `x == null` / `x != null` or `switch`. Its default value is `null`. `T` cannot be an `Optional`, an
+with `x is T v`, `x == null` / `x != null` or `switch`; `x ?? fallback` gives the value or a fallback, `x ??= v` fills
+it (see [expressions](expressions.md#the--operator)). Its default value is `null`. `T` cannot be an `Optional`, an
 `Error` or `void`.
 
 ## Error
