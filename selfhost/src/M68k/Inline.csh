@@ -7,10 +7,11 @@ namespace CShift.M68k;
 
 using System;
 
-const int InlineLimit = 80;     // the most instructions a function may have to be inlined in a loop
-const int InlineSmall = 6;     // ... anywhere (not more code than the call itself)
+const int InlineLimit = 24;     // the most a function may cost (InlineCost) to be inlined in a loop
+const int InlineSmall = 6;      // the most instructions of a function inlined anywhere (not more code than the call)
 const int InlineBudget = 40;    // inlined calls per function
-const int InlineGrowth = 160;   // instructions that inlining in loops may add to a function
+const int InlineGrowth = 240;   // instructions that inlining in loops may add to a function
+const int InlineCallCost = 6;   // what a call costs in a function that is inlined: arguments, jsr, cleanup
 
 // -O0: nothing is inlined; -O1 (small code): only functions that are not larger than their call; -O2/-O3: also
 // larger ones in loops.
@@ -47,10 +48,8 @@ void InlineCalls(Gen g, IrFunc f)
                 if (index < 0)
                     continue;
                 var fn = g.M.Funcs.Get(index);
-                int limit = depth[bi] > 0 && level >= 2 ? (growth < InlineLimit ? growth : InlineLimit) : 0;
-                if (limit < InlineSmall)
-                    limit = InlineSmall;
-                if (!Inlinable(g, fn, limit) || fn.Params.Length != inst.Args.Length)
+                bool inLoop = depth[bi] > 0 && level >= 2;
+                if (!Inlinable(g, fn, inLoop ? growth : 0) || fn.Params.Length != inst.Args.Length)
                     continue;
                 bestBlock = bi;
                 bestInst = k;
@@ -78,6 +77,58 @@ int InstCount(IrFunc fn)
     return count;
 }
 
+// What inlining a function in a loop costs: its instructions that become code on the path that runs. Not counted: the
+// blocks that end in 'unreachable' (a panic: an overflow, an index out of range), and what costs no code of its own
+// once it is inlined - variables (alloca, their loads and stores: registers or folded), addresses (getelementptr:
+// addressing modes), phis, unconditional branches and the parts of the result of an overflow check (extractvalue). A
+// call costs more: its arguments, the jsr and the cleanup.
+int InlineCost(Gen g, IrFunc fn)
+{
+    var variables = HashSet<string>.Create();
+    foreach (var b in fn.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "alloca")
+                variables.Add(inst.Res);
+        }
+    }
+    int count = 0;
+    foreach (var b in fn.Blocks.ToArray())
+    {
+        var insts = b.Insts.ToArray();
+        if (insts.Length > 0 && insts[insts.Length - 1].Op == "unreachable")
+            continue;
+        foreach (var inst in insts)
+        {
+            string op = inst.Op;
+            if (op == "alloca" || op == "getelementptr" || op == "phi" || op == "extractvalue" ||
+                (op == "br" && inst.Args.Length == 0))
+                continue;
+            if ((op == "load" && IsVariable(g, inst.Args[0], variables)) ||
+                (op == "store" && IsVariable(g, inst.Args[1], variables)))
+                continue;
+            count += op == "call" && !IsCheapCall(g, inst) ? InlineCallCost : 1;
+        }
+    }
+    return count;
+}
+
+// a call that the code generator writes inline: __cs_len, the intrinsics (llvm.*)
+bool IsCheapCall(Gen g, IrInst inst)
+{
+    if (inst.Callee < 0)
+        return false;
+    var c = g.M.Vals.Get(inst.Callee);
+    return c.Kind == ValKind.Global && (c.Name == "__cs_len" || c.Name.StartsWith("llvm."));
+}
+
+bool IsVariable(Gen g, int vi, HashSet<string> variables)
+{
+    var v = g.M.Vals.Get(vi);
+    return v.Kind == ValKind.Local && variables.Contains(v.Name);
+}
+
 // how many loops each block is in: a branch to an earlier (or the same) block closes one
 int[] LoopDepth(IrFunc f)
 {
@@ -103,7 +154,10 @@ int[] LoopDepth(IrFunc f)
     return depth;
 }
 
-bool Inlinable(Gen g, IrFunc fn, int limit)
+// Whether a function can be inlined: anywhere if it is not larger than its call (InlineSmall instructions); in a loop
+// ('growth': the instructions the caller may still grow by, 0 outside of loops) also if what runs of it is small
+// (InlineCost) and all of it fits into the growth.
+bool Inlinable(Gen g, IrFunc fn, int growth)
 {
     if (!fn.Defined || fn.Varargs || fn.Blocks.Count() == 0)
         return false;
@@ -111,17 +165,16 @@ bool Inlinable(Gen g, IrFunc fn, int limit)
         return false; // written inline by the code generator (better than its IR)
     if (fn.Ret != g.T.Void && g.T.IsAggregate(fn.Ret))
         return false;
-    int count = 0;
+    int size = InstCount(fn);
+    if (size > InlineSmall && (size > growth || InlineCost(g, fn) > InlineLimit))
+        return false;
     bool returns = false;
     foreach (var b in fn.Blocks.ToArray())
     {
         foreach (var inst in b.Insts.ToArray())
         {
-            count += 1;
             if (inst.Op == "ret")
                 returns = true;
-            if (count > limit)
-                return false;
             if (inst.Op == "call" && inst.Callee >= 0)
             {
                 var c = g.M.Vals.Get(inst.Callee);

@@ -11,6 +11,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   and profilers; the code stays the same. `--emit-asm` names every function in a comment (`| function: Name(params)`).
 - `tools/amiga/profile.py`: where an AmigaOS program spends its time. It runs the program under vamos and counts the
   instructions of every function ([docs/amiga.md](docs/amiga.md#where-the-time-goes-toolsamigaprofilepy)).
+- The 68000 backend (AmigaOS) inlines the small functions that loops call by the code that runs of them, not
+  counting the panics of failed checks: `reader.ReadByte()` in the loop of a decompressor is no call any more.
+  AmbermoonPack unpacks the `Floors.amb` of Ambermoon 16 % faster (35.0 instead of 41.6 million cycles on a 68000),
+  and the program is 1.4 % smaller.
 - The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
   `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
 
