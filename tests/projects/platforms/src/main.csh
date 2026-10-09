@@ -4,7 +4,7 @@ using Plat from "../native/platform.h";
 
 int Main()
 {
-    int expected = Process.IsWindows() ? 1 : (File.Exists("/System/Library/CoreServices/SystemVersion.plist") ? 3 : 2);
+    int expected = Process.IsWindows() ? 1 : (Process.IsMacOS() ? 3 : 2);
     if (Plat.CURRENT_PLATFORM == expected)
         Console.WriteLine("platform ok");
     else

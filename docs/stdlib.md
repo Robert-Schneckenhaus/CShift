@@ -66,7 +66,7 @@ with up to two digits, see [number formats](language/arrays-strings-collections.
 **`Process.Run("command")`** runs a command line through the shell and returns its exit code (what the program wrote
 before is written out first, so the output of the command comes after it); `RunCapture("command")`
 also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` reads an environment variable
-(`Optional<string>`); `IsWindows()` reports the platform.
+(`Optional<string>`); `IsWindows()` and `IsMacOS()` report the platform.
 **`Directory`** — `Exists(path)`, `Create(path)` (including parent directories), `GetEntries(path)` (names, sorted),
 `FindFiles(path, extension)` (recursive, sorted), `GetCurrentDirectory()` (C library calls, no shell),
 `Delete(path [, recursive])` (an empty directory, or everything in it), `Move(source, target)` (`IoError<void>`).
@@ -159,7 +159,7 @@ raycaster's grid walk. `Atan2(y, x)` returns the angle of a vector (0..1023, wit
 [slices](language/arrays-strings-collections.md#slices): they take `StringSlice` (a `string` converts for free), can
 be called on a string or a slice, and the ones that return a part of the text return a **view** (nothing is copied):
 
-| Returns a view (`StringSlice`) | `Trim`, `TrimStart`/`TrimEnd` (white space, or a given character), `Substring` on a slice, `Split` (`StringSlice[]`, by character or string) |
+| Returns a view (`StringSlice`) | `Trim`/`TrimStart`/`TrimEnd` (white space, or a given character), `Substring` on a slice, `Split` (`StringSlice[]`, by character or string) |
 |---|---|
 | Queries | `IsNullOrEmpty`, `Contains`, `IndexOf` (also `IndexOf(char, start)`), `LastIndexOf`, `StartsWith`, `EndsWith` |
 | New strings | `PadLeft`/`PadRight`, `ToUpper`/`ToLower` (ASCII only), `Replace`, `Repeat`, `Join` (of `string[]` or `StringSlice[]`) |

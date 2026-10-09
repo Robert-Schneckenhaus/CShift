@@ -235,6 +235,18 @@ StringSlice TrimEnd(StringSlice s)
     return s[..end];
 }
 
+/// `s` without the character `c` at both ends (a view): `"--a-b--".Trim('-')` is `"a-b"`.
+StringSlice Trim(StringSlice s, char c)
+{
+    int start = 0;
+    int end = s.Length;
+    while (start < end && s[start] == c)
+        start += 1;
+    while (end > start && s[end - 1] == c)
+        end -= 1;
+    return s[start..end];
+}
+
 /// `s` without the character `c` at the start (a view): `"007".TrimStart('0')` is `"7"`.
 StringSlice TrimStart(StringSlice s, char c)
 {

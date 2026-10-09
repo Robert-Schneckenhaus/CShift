@@ -48,6 +48,13 @@ struct Process
         return File.Exists("C:\\Windows\\System32\\cmd.exe");
     }
 
+    /// True on macOS: the file that names the version of the system exists
+    /// (/System/Library/CoreServices/SystemVersion.plist). False on Windows, Linux, WebAssembly and AmigaOS.
+    static bool IsMacOS()
+    {
+        return File.Exists("/System/Library/CoreServices/SystemVersion.plist");
+    }
+
     /// Runs a command line through the system shell and returns everything the program writes to stdout.
     /// @returns nothing (`null`) if the program could not be started.
     static Optional<string> RunCapture(StringSlice command)

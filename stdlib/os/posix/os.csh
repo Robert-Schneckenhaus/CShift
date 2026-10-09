@@ -167,7 +167,7 @@ struct _Os
     // where readdir puts the name in a struct dirent
     static int DirentNameOffset()
     {
-        if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
+        if (Process.IsMacOS())
             return 21; // macOS: d_ino, d_seekoff, d_reclen, d_namlen, d_type, d_name
         // Linux (glibc, musl): long d_ino, long d_off, unsigned short d_reclen, unsigned char d_type, char d_name[]
         return sizeof(nint) == 8 ? 19 : 11;

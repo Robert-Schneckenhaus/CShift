@@ -6,6 +6,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `s.Trim(c)` removes the character `c` at both ends, like `TrimStart(c)` and `TrimEnd(c)` at one: `"--a-b--".Trim('-')`
+  is `"a-b"`.
+- `Process.IsMacOS()`, next to `Process.IsWindows()`.
+
 ### Tools
 - Building the compiler from source starts from cshiftc 0.31 (`selfhost/stage0.txt`): the compiler's own sources
   may use `??` and `??=`.
