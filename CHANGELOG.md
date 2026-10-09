@@ -6,6 +6,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Tools
+- Building the compiler from source starts from cshiftc 0.30 (`selfhost/stage0.txt`): the compiler's own sources
+  may use `System.Net` (for `cshiftc serve`).
+
 ## [0.30] - 2026-10-09
 
 ### Targets
