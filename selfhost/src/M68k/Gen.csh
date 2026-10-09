@@ -568,6 +568,7 @@ void GenFunction(Gen g, IrFunc f)
     }
 
     string name = Sym(g, f.Name);
+    g.Out.Append("| function: " + f.Name + "\n"); // its CShift name (internal functions are _cs<n>), see FunctionNames
     if (!f.Internal)
         g.Out.Append("\t.globl\t" + name + "\n");
     AllocateRegisters(g, f);

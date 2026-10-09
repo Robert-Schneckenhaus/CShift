@@ -29,14 +29,16 @@ window, written against the NDK 3.2).
 | `--backend llvm` | `"backend": "llvm"` | LLVM IR, compiled and linked by clang (the default for all targets but AmigaOS) |
 | `--backend m68k` | `"backend": "m68k"` | CShift's own 68000 code generator (the default for `m68k-amigaos`) |
 | `--ndk <dir>` | `"ndk": "<dir>"` | the AmigaOS NDK (also the environment variable `CSHIFT_NDK`); a path in cshift.json is relative to it |
-| `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable |
+| `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable; a comment before every function names it (`\| function: Name(params)`) |
+| `-g` | `"debug": true` | write the names of the functions and globals into the executable (HUNK_SYMBOL), for debuggers and the profiler; the code stays the same |
 | `-O0` … `-O3` | `"optimize": 0` … `3` | `-O2` (the default) and `-O3` inline larger functions in loops: faster, but bigger; `-O1` only inlines functions that are not larger than their call (smaller programs, e.g. for floppy disks); `-O0` inlines nothing |
 
 The m68k backend accepts m68k targets only:
 
 * `m68k-amigaos`: an AmigaOS executable (hunk format), with its own startup code and C library.
-* `m68k-linux-gnu`: an ELF object (`-c`), linked with a cross `gcc` and run under `qemu-m68k`. This is how the
-  backend is tested: the same program runs on x86 and under qemu, and the outputs are compared.
+* `m68k-linux-gnu`: a program for m68k Linux, linked statically by a cross `gcc` (`m68k-linux-gnu-gcc`, or `--cc`),
+  or an ELF object (`-c`). It runs under `qemu-m68k`. This is how the backend is tested: the test suite runs with it
+  (`CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k tests/run_tests.sh`, see *Testing Amiga programs*).
 
 ## What a program can use
 
@@ -205,3 +207,30 @@ for pointers; `d2`-`d7` and `a2`-`a6` are kept.
   installed, `tests/run_tests.sh` runs [tests/amiga/memory.csh](../tests/amiga/memory.csh) with it.
 * **FS-UAE** (or WinUAE) with an A500 configuration and a Kickstart ROM (or the free AROS ROM) for graphics and the
   custom chips.
+* **The test suite with the backend:** `CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_SKIP_SELFHOST=1
+  tests/run_tests.sh` compiles the programs of the tests with the 68000 backend for m68k Linux and runs them under
+  `qemu-m68k` (Debian/Ubuntu: `qemu-user gcc-m68k-linux-gnu`); the CI does that too. The cases with threads are left
+  out (`// skip-target: m68k`): the backend has no atomic operations, AmigaOS has no threads.
+
+### Where the time goes: tools/amiga/profile.py
+
+[tools/amiga/profile.py](../tools/amiga/profile.py) runs a program under vamos with the instruction trace and counts
+the executed instructions of every function. Build the program with `-g` (the names of the functions):
+
+```
+cshiftc build AmbermoonPack --target m68k-amigaos -g -o AmbermoonPack
+python3 tools/amiga/profile.py AmbermoonPack UNPACK Floors.amb out
+python3 tools/amiga/profile.py --annotate Lob.Decompress AmbermoonPack UNPACK Floors.amb out
+```
+
+```
+4216290 instructions, 41572088 cycles (5.86 s on an A500)
+instructions  share   entries  function
+     1457505  34.6%        14  Ambermoon.Data.Legacy.Compression.Lob.Decompress(ref ...DataReader,uint32)
+     1453547  34.5%        17  Ambermoon.Data.Legacy.Compression.JH.Crypt(uint8[],uint16,int32)
+      731387  17.3%     17009  Ambermoon.Data.Legacy.Serialization.DataReader.ReadByte()
+```
+
+*entries* counts how often the function was entered (its calls). `--annotate NAME` lists the instructions of the
+functions whose name contains NAME with how often each ran: the loops that matter, in the code the backend wrote. The
+trace is slow (about 30,000 instructions per second); `vamos -v` alone gives the cycles quickly.

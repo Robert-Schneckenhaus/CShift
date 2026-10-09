@@ -1,5 +1,6 @@
 // A ReadOnlySlice<T> can be passed to a thread: the thread gets its own copy of the elements (strings in them copied
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // as well), so later changes of the array are not seen by the thread and no reference count is shared. Arrays and
 // slices convert to ReadOnlySlice<T> for free, so 'start Sum(a)' works with an int[].
 // expect-exit: 0

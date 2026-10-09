@@ -105,6 +105,13 @@ jobs:
       - name: Run tests with the wasm backend
         run: CSHIFT_TARGET=wasm32-wasi CSHIFT_BACKEND=wasm CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
+      # CShift's own 68000 backend (the one for the Amiga): the same programs for m68k Linux, linked by the cross gcc and
+      # run under qemu-m68k
+      - name: Run tests with the m68k backend
+        run: |
+          sudo apt-get install -y --no-install-recommends qemu-user gcc-m68k-linux-gnu
+          CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
+
   vscode:
     name: VS Code extension (package)
     runs-on: ubuntu-latest

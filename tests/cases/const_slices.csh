@@ -1,5 +1,6 @@
 // Constant slices: 'const ReadOnlySlice<T>' holds constant elements (numbers, bool, char, string, enums), written as a
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // collection expression that may spread other constant slices. The elements live in static memory (nothing is
 // allocated or freed); indexing, ^n, slicing and Length also work inside other constants. A thread function may read
 // global constants.

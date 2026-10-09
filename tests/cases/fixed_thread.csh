@@ -1,5 +1,6 @@
 // A Fixed of plain values is copied into a thread like any value.
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // expect-exit: 0
 // expect-stdout: thread 5
 
