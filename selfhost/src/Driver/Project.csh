@@ -34,6 +34,7 @@ struct Project
     string Backend;              // "llvm", "m68k", "wasm" or "" (the target's default)
     string Ndk;                  // the AmigaOS NDK (a path relative to the project)
     List<string> Assets;         // files and folders that "cshiftc publish" puts into the page (relative to the project)
+    List<string> DependencyDirs; // the folders of the libraries in "dependencies" (also theirs), for "cshiftc serve"
 }
 
 bool ValidProjectName(string name)
@@ -223,6 +224,7 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
     p.LinkFiles = List<string>.Create();
     p.IncludePaths = List<string>.Create();
     p.LibraryPaths = List<string>.Create();
+    p.DependencyDirs = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
                                     "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "ndk", "debug",
@@ -371,6 +373,8 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
             {
                 if (dep.Type != "library")
                     return error(file + ": the dependency '" + entry + "' is not a library (its cshift.json needs \"type\": \"library\")");
+                p.DependencyDirs.Add(dep.Dir.Length > 0 ? dep.Dir : ".");
+                AppendAll(p.DependencyDirs, dep.DependencyDirs);
                 foreach (var s in dep.Sources)
                 {
                     if (!p.Sources.Contains(s))

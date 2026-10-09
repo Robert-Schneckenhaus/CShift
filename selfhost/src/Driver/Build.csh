@@ -4,6 +4,7 @@
 //     cshc build [project] [options]              build a project (cshift.json)
 //     cshc run   [project] [options]              build and run a project
 //     cshc publish [project | files] [options]    the program as one HTML file for the browser (Publish.csh)
+//     cshc serve [project | files] [options]      a server for the page that builds it again on changes (Serve.csh)
 //     cshc new   <directory>                      create a new project
 //     cshc check [project | files] [options]      report the errors, generate nothing
 //     cshc query --at <file> <line> <col> [...]   the name at a position, as JSON (for the VS Code extension)
@@ -60,11 +61,14 @@ struct BuildOptions
     bool RequireDocs;           // doc: every public declaration needs a doc comment
     string OutlineFile;         // query: the declarations of this file instead of a position
     Dictionary<string, string> Overlays; // the full path of a source -> a file with its current (unsaved) text
+    int ServePort;              // serve: --port (0: the first free one from 8080 on)
+    string ServeHost;           // serve: --host (default 127.0.0.1)
+    bool ServeOpen;             // serve: --open, the page in the browser
 
     static BuildOptions Create()
     {
         var o = BuildOptions { Output = "", Target = "", Backend = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
-                               AtFile = "", OutlineFile = "" };
+                               AtFile = "", OutlineFile = "", ServeHost = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
@@ -118,6 +122,23 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             i += 1;
             o.Target = args[i];
         }
+        else if (a == "--port" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.ServePort = (int)ParseNumber(args[i]);
+            if (o.ServePort <= 0 || o.ServePort > 65535)
+            {
+                Console.WriteErrorLine("error: --port needs a number from 1 to 65535, not '" + args[i] + "'");
+                return false;
+            }
+        }
+        else if (a == "--host" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.ServeHost = args[i];
+        }
+        else if (a == "--open")
+            o.ServeOpen = true;
         else if (a == "--no-stdlib")
             o.Stdlib = "-";
         else if (a == "--at" && i + 3 < args.Length)
@@ -229,7 +250,7 @@ int Cshc(string[] args)
     string command = "compile";
     int first = 0;
     if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query" ||
-        args[0] == "doc" || args[0] == "publish")
+        args[0] == "doc" || args[0] == "publish" || args[0] == "serve")
     {
         command = args[0];
         first = 1;
@@ -329,6 +350,8 @@ int Cshc(string[] args)
 
     if (command == "publish")
         return Publish(o);
+    if (command == "serve")
+        return Serve(args, o);
 
     if (command == "build" || command == "run")
     {

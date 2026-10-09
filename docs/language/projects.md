@@ -10,6 +10,7 @@ cshiftc new hello       # creates hello/cshift.json and hello/src/main.csh
 cshiftc run hello        # builds and runs it
 cshiftc build             # builds only -> bin/<name>[.exe]
 cshiftc publish           # for the browser -> bin/<name>.html (one file with everything)
+cshiftc serve             # the page on http://localhost:8080/, rebuilt and reloaded on every change
 ```
 
 ```json
@@ -30,7 +31,7 @@ pulls in libraries, and `includePaths`/`defines`/`libraryPaths`/`ffiApi` configu
 can be put on any web server. The files the program reads at run time are listed in `assets` (`"assets": ["data"]`);
 in the browser they are found at the same paths ([WebAssembly](../wasm.md#a-program-for-the-browser-cshiftc-publish)).
 
-`cshiftc build`/`run`/`publish` look for `cshift.json` in the current folder and its parents, so they also work from inside
+`cshiftc build`/`run`/`publish`/`serve` look for `cshift.json` in the current folder and its parents, so they also work from inside
 `src/`. Command-line options (`-O2`, `--target`, `-o`, …) override the file's settings.
 
 ## Libraries

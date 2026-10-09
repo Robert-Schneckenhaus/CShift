@@ -74,6 +74,21 @@ program's file system at the same paths, relative to the current directory: `Fil
 reads the same file as in a native program that runs in the project folder. Files the program writes stay in memory
 until the page is closed. (`embed("file")` is the other way: the file becomes a part of the program itself.)
 
+### While working on it: `cshiftc serve`
+
+```
+cshiftc serve                # http://localhost:8080/ (or the next free port)
+cshiftc serve demo-snake --open --port 3000
+```
+
+`serve` is `publish` that keeps going, like `ng serve` or `vite`: it builds the page, serves it on
+`http://localhost:<port>/`, watches the files of the project (and of its `dependencies`) and builds again when one
+changes; the page in the browser reloads itself. A build that fails shows the errors of the compiler on the page (and
+in the terminal) until the next one works. `--open` opens the page in the browser, `--host 0.0.0.0` makes it reachable
+from other devices of the network (by default only this computer can reach it), Ctrl+C ends the server. The output
+folder (`bin/`), folders that start with `.` and `node_modules` are not watched. The server is written in CShift, on
+`System.Net` ([Serve.csh](../selfhost/src/Driver/Serve.csh)).
+
 ## Games in the browser
 
 A program with a window (GLFW) and OpenGL runs in the browser unchanged, game loop and all: `cshiftc publish` makes

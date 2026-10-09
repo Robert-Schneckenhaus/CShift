@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Targets
+- `cshiftc serve [project] [--port <n>] [--host <address>] [--open]`: `publish` that keeps going, like `ng serve` or
+  `vite`. It serves the page on `http://localhost:8080/` (or the next free port), watches the files of the project and
+  its dependencies, builds again when one changes, and the page reloads itself; a failed build shows its errors on the
+  page and in the terminal ([docs/wasm.md](docs/wasm.md#while-working-on-it-cshiftc-serve)). The server is written in
+  CShift, on `System.Net`.
+
 ### Tools
 - Building the compiler from source starts from cshiftc 0.30 (`selfhost/stage0.txt`): the compiler's own sources
   may use `System.Net` (for `cshiftc serve`).
