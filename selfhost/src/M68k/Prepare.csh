@@ -2,8 +2,11 @@
 //
 //   * Constant folding: comparisons of two constants, and/or/xor of constants (the division checks of CShift compare
 //     the divisor with -1 even when it is a constant) - the uses get the constant, the instruction is skipped.
-//   * Variables written once: a scalar variable stored once in the entry block (a parameter's copy, mostly) and
-//     otherwise only read is replaced by the stored value.
+//   * Variables written once: a scalar variable stored once (a parameter's copy, mostly, or a local variable that is
+//     never assigned again) and otherwise only read, where the store comes before every load (it dominates them), is
+//     replaced by the stored value.
+//   * Lengths: the length of an array or string (__cs_len) is computed once per value, right after the value: a block
+//     never changes its length, so every bounds check of the same array uses the same length (also in loops).
 //   * Address folding: a getelementptr whose only use is the load or store right after it (in its block) is not
 //     computed on its own: the access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
 
@@ -26,6 +29,8 @@ void PrepareFunction(Gen g, IrFunc f)
     g.Skip.Clear();
     PromoteSingleStores(g, f);
     InlineCalls(g, f);
+    PromoteSingleStores(g, f); // (the variables of the inlined functions)
+    ShareLengths(g, f);
     FoldConstants(g, f);
     RemoveDeadCode(g, f);
     FoldAddresses(g, f);
@@ -229,6 +234,9 @@ void PromoteSingleStores(Gen g, IrFunc f)
     var state = Dictionary<string, int>.Create();   // alloca -> 0 not stored yet, 1 stored once, -1 not promotable
     var stored = Dictionary<string, int>.Create();  // alloca -> the stored value
     var storeType = Dictionary<string, int>.Create();
+    var storeAt = Dictionary<string, int[]>.Create(); // alloca -> { block, instruction } of the store
+    var loadsOf = List<string>.Create();             // the loads: the variable, and where they are
+    var loadAt = List<int[]>.Create();
     foreach (var b in blocks)
     {
         foreach (var inst in b.Insts.ToArray())
@@ -241,8 +249,10 @@ void PromoteSingleStores(Gen g, IrFunc f)
         return;
     for (var j = 0; j < blocks.Length; j += 1)
     {
-        foreach (var inst in blocks[j].Insts.ToArray())
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
         {
+            var inst = insts[k];
             if (inst.Callee >= 0)
                 Disqualify(g, state, inst.Callee);
             for (var a = 0; a < inst.Args.Length; a += 1)
@@ -255,12 +265,13 @@ void PromoteSingleStores(Gen g, IrFunc f)
                     continue;
                 if (inst.Op == "store" && a == 1)
                 {
-                    // once, in the entry block (which comes before every other block)
-                    if (j == 0 && st == 0 && g.L.Size(inst.OpType) == 4)
+                    // once (before every load: checked below)
+                    if (st == 0 && g.L.Size(inst.OpType) == 4)
                     {
                         state.Set(v.Name, 1);
                         stored.Set(v.Name, inst.Args[0]);
                         storeType.Set(v.Name, inst.OpType);
+                        storeAt.Set(v.Name, [j, k]);
                     }
                     else
                         state.Set(v.Name, -1);
@@ -270,11 +281,29 @@ void PromoteSingleStores(Gen g, IrFunc f)
                     // read after the store, as what was stored
                     if (st != 1 || inst.Type != storeType.Get(v.Name))
                         state.Set(v.Name, -1);
+                    else
+                    {
+                        loadsOf.Add(v.Name);
+                        loadAt.Add([j, k]);
+                    }
                 }
                 else
                     state.Set(v.Name, -1);
             }
         }
+    }
+    // the store must dominate every load: earlier in the same block, or in a block that dominates the load's block
+    var idom = Dominators(f);
+    for (var i = 0; i < loadsOf.Count(); i += 1)
+    {
+        string name = loadsOf.Get(i);
+        if (state.GetOrDefault(name, -1) != 1)
+            continue;
+        var s = storeAt.Get(name);
+        var l = loadAt.Get(i);
+        bool before = s[0] == l[0] ? s[1] < l[1] : Dominates(idom, s[0], l[0]);
+        if (!before)
+            state.Set(name, -1);
     }
     // the loads become the stored value
     var value = Dictionary<string, int>.Create();
@@ -329,6 +358,304 @@ int Promoted(Gen g, Dictionary<string, int> value, int vi)
         at = n;
     }
     return at;
+}
+
+// The immediate dominator of every block (Cooper, Harvey and Kennedy, "A Simple, Fast Dominance Algorithm"): -1 for
+// the entry block and for the blocks that cannot be reached.
+int[] Dominators(IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    int n = blocks.Length;
+    var index = Dictionary<string, int>.Create();
+    for (var i = 0; i < n; i += 1)
+        index.Set(blocks[i].Label, i);
+    var succs = new List<int>[n];
+    var preds = new List<int>[n];
+    for (var i = 0; i < n; i += 1)
+    {
+        succs[i] = List<int>.Create();
+        preds[i] = List<int>.Create();
+    }
+    for (var i = 0; i < n; i += 1)
+    {
+        foreach (var inst in blocks[i].Insts.ToArray())
+        {
+            if (inst.Op != "br" && inst.Op != "switch")
+                continue;
+            foreach (var label in inst.Labels)
+            {
+                if (index.TryGet(label) is int t && !succs[i].Contains(t))
+                {
+                    succs[i].Add(t);
+                    preds[t].Add(i);
+                }
+            }
+        }
+    }
+    // the reverse postorder of a depth-first search from the entry
+    var order = new int[n];   // block -> its number in reverse postorder (-1: not reached)
+    var post = List<int>.Create();
+    var visited = new bool[n];
+    var stack = List<int>.Create();
+    var next = new int[n];    // the next successor to visit
+    for (var i = 0; i < n; i += 1)
+        order[i] = -1;
+    if (n > 0)
+    {
+        stack.Add(0);
+        visited[0] = true;
+    }
+    while (stack.Count() > 0)
+    {
+        int b = stack.Get(stack.Count() - 1);
+        if (next[b] < succs[b].Count())
+        {
+            int s = succs[b].Get(next[b]);
+            next[b] += 1;
+            if (!visited[s])
+            {
+                visited[s] = true;
+                stack.Add(s);
+            }
+        }
+        else
+        {
+            stack.RemoveAt(stack.Count() - 1);
+            post.Add(b);
+        }
+    }
+    int reached = post.Count();
+    var rpo = new int[reached];
+    for (var i = 0; i < reached; i += 1)
+    {
+        rpo[i] = post.Get(reached - 1 - i);
+        order[rpo[i]] = i;
+    }
+    var idom = new int[n];
+    for (var i = 0; i < n; i += 1)
+        idom[i] = -1;
+    if (n == 0)
+        return idom;
+    idom[0] = 0;
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (var r = 1; r < reached; r += 1)
+        {
+            int b = rpo[r];
+            int found = -1;
+            foreach (var p in preds[b].ToArray())
+            {
+                if (idom[p] < 0)
+                    continue;
+                if (found < 0)
+                    found = p;
+                else
+                {
+                    // the nearest common dominator of p and found
+                    int x = p;
+                    int y = found;
+                    while (x != y)
+                    {
+                        while (order[x] > order[y])
+                            x = idom[x];
+                        while (order[y] > order[x])
+                            y = idom[y];
+                    }
+                    found = x;
+                }
+            }
+            if (found >= 0 && idom[b] != found)
+            {
+                idom[b] = found;
+                changed = true;
+            }
+        }
+    }
+    idom[0] = -1;
+    return idom;
+}
+
+// whether block a dominates block b (a block dominates itself)
+bool Dominates(int[] idom, int a, int b)
+{
+    int x = b;
+    for (var guard = 0; guard <= idom.Length; guard += 1)
+    {
+        if (x == a)
+            return true;
+        if (x <= 0)
+            return false; // the entry, or a block that cannot be reached
+        x = idom[x];
+    }
+    return false;
+}
+
+// The length of an array or string (__cs_len), computed once per value instead of at every bounds check:
+//   1. a call that an earlier one of the same value dominates becomes that one's result (the program read the length
+//      there already);
+//   2. the calls in a loop that the value comes from outside of become one right after the value - if it is surely a
+//      whole block there: a parameter, a loaded value, a phi or what a function returned (not the raw memory of an
+//      allocation, whose length is written after it: an inlined __cs_alloc). A block never changes its length, and that
+//      of null is 0.
+void ShareLengths(Gen g, IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    bool any = false;
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+            any = any || IsLengthCall(g, inst);
+    }
+    if (!any)
+        return;
+    var idom = Dominators(f);
+    var depth = LoopDepth(f);
+    var replaced = Dictionary<string, int>.Create();   // a call's result -> the value that replaces it
+
+    // 1. calls dominated by an earlier call of the same value
+    var keptName = List<string>.Create();   // the calls that stay: the value, where, the result
+    var keptAt = List<int[]>.Create();
+    var keptRes = List<int>.Create();
+    var resultOf = Dictionary<string, int>.Create();
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            if (!IsLengthCall(g, inst))
+                continue;
+            string name = g.M.Vals.Get(inst.Args[0]).Name;
+            int by = -1;
+            for (var i = 0; i < keptName.Count() && by < 0; i += 1)
+            {
+                var at = keptAt.Get(i);
+                if (keptName.Get(i) == name && (at[0] == j ? at[1] < k : Dominates(idom, at[0], j)))
+                    by = keptRes.Get(i);
+            }
+            if (by >= 0)
+                replaced.Set(inst.Res, by);
+            else
+            {
+                keptName.Add(name);
+                keptAt.Add([j, k]);
+                keptRes.Add(ResultValue(g, inst));
+            }
+        }
+    }
+
+    // 2. the definitions of the values that are whole blocks where they are defined
+    var defBlock = Dictionary<string, int>.Create();
+    var defAfter = Dictionary<string, int>.Create();   // -1: at the start of the block (after its phis and allocas)
+    foreach (var p in f.Params)
+    {
+        defBlock.Set(p.Name, 0);
+        defAfter.Set(p.Name, -1);
+    }
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            if (inst.Res.Length == 0)
+                continue;
+            if (inst.Op == "phi")
+            {
+                defBlock.Set(inst.Res, j);
+                defAfter.Set(inst.Res, -1);
+            }
+            else if (inst.Op == "load" || (inst.Op == "call" && !IsRawAllocation(g, inst)))
+            {
+                defBlock.Set(inst.Res, j);
+                defAfter.Set(inst.Res, k);
+            }
+        }
+    }
+    var shared = Dictionary<string, int>.Create();   // value -> its length, computed after it
+    var argOf = Dictionary<string, int>.Create();
+    int callee = -1;
+    int lengthType = 0;
+    for (var i = 0; i < keptName.Count(); i += 1)
+    {
+        string name = keptName.Get(i);
+        int j = keptAt.Get(i)[0];
+        if (!defBlock.ContainsKey(name) || depth[j] <= depth[defBlock.Get(name)])
+            continue;
+        var call = blocks[j].Insts.Get(keptAt.Get(i)[1]);
+        if (!shared.ContainsKey(name))
+        {
+            shared.Set(name, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = call.Type, Name = name + ".len" }));
+            argOf.Set(name, call.Args[0]);
+            callee = call.Callee;
+            lengthType = call.Type;
+        }
+        replaced.Set(call.Res, shared.Get(name));
+    }
+    if (replaced.Count() == 0)
+        return;
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var kept = List<IrInst>.Create();
+        var insts = blocks[j].Insts.ToArray();
+        int start = 0;
+        while (start < insts.Length && (insts[start].Op == "phi" || insts[start].Op == "alloca"))
+            start += 1;
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            if (k == start)
+                AddLengths(g, kept, shared, argOf, defBlock, defAfter, j, -1, callee, lengthType);
+            var inst = insts[k];
+            if (inst.Res.Length > 0 && replaced.ContainsKey(inst.Res))
+                continue;
+            kept.Add(inst);
+            if (k >= start)
+                AddLengths(g, kept, shared, argOf, defBlock, defAfter, j, k, callee, lengthType);
+        }
+        f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
+    }
+    foreach (var entry in replaced.Entries())
+        ReplaceUses(g, f, entry.Key, entry.Value);
+}
+
+// the value an instruction defines (a new value that names its result)
+int ResultValue(Gen g, IrInst inst)
+{
+    return g.M.AddVal(IrVal { Kind = ValKind.Local, Type = inst.Type, Name = inst.Res });
+}
+
+// a call that returns raw memory: what it points to is filled in after it (the header of a block)
+bool IsRawAllocation(Gen g, IrInst inst)
+{
+    if (inst.Callee < 0)
+        return true;
+    var c = g.M.Vals.Get(inst.Callee);
+    return c.Kind != ValKind.Global || c.Name == "calloc" || c.Name == "malloc" || c.Name == "realloc";
+}
+
+// the shared lengths of the values defined at this place (after instruction k of block j; k = -1: its start)
+void AddLengths(Gen g, List<IrInst> kept, Dictionary<string, int> shared, Dictionary<string, int> argOf,
+                Dictionary<string, int> defBlock, Dictionary<string, int> defAfter, int j, int k, int callee,
+                int lengthType)
+{
+    foreach (var entry in shared.Entries())
+    {
+        if (defBlock.Get(entry.Key) != j || defAfter.Get(entry.Key) != k)
+            continue;
+        kept.Add(IrInst { Op = "call", Res = g.M.Vals.Get(entry.Value).Name, Type = lengthType, OpType = lengthType,
+                          Args = [argOf.Get(entry.Key)], Pred = "", Labels = new string[0], Cases = new int64[0],
+                          Callee = callee, Volatile = false });
+    }
+}
+
+bool IsLengthCall(Gen g, IrInst inst)
+{
+    if (inst.Op != "call" || inst.Callee < 0 || inst.Args.Length != 1 || inst.Res.Length == 0)
+        return false;
+    var c = g.M.Vals.Get(inst.Callee);
+    return c.Kind == ValKind.Global && c.Name == "__cs_len" && IsLocal(g, inst.Args[0]);
 }
 
 void Disqualify(Gen g, Dictionary<string, int> state, int vi)

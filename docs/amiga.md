@@ -179,10 +179,12 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 * **Prepare.csh, Inline.csh**: small functions are inlined: up to 6 instructions everywhere; with `-O2`/`-O3` in loops
   also those whose code that runs is small (what costs nothing once inlined is not counted: the panics of failed
   checks, variables, addresses), the deepest loops first, while the function grows by at most 240 instructions.
-  Variables written once become their value; constants are folded; dead code is removed; a pointer that is only used
+  Variables written once become their value (where the store dominates every load); the length of an array or string
+  is read once per value (a check that an earlier one dominates uses its length; in a loop, the length of an array
+  from outside of it is read before the loop); constants are folded; dead code is removed; a pointer that is only used
   by one load or store becomes an addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
-* **Regalloc.csh**: a linear scan over live intervals; values and variables get `d4`-`d7` and `a2`-`a5` by their uses,
-  weighted by loop depth; a value loaded from a variable shares its register.
+* **Regalloc.csh**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
+  their uses, weighted by loop depth; a value loaded from a variable shares its register.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
   fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
   pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by
