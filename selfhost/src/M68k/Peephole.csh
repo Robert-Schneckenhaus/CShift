@@ -124,6 +124,31 @@ bool DeadAfter(List<string> lines, int from, string reg)
     return false;
 }
 
+// Does the instruction read the condition codes (a conditional branch or set, an operation with the X flag)?
+bool ReadsFlags(string line)
+{
+    string mn = Mnemonic(line);
+    if (mn.Length == 0)
+        return false;
+    int dot = mn.IndexOf('.');
+    if (dot > 0)
+        mn = mn.Substring(0, dot).ToString(); // beq.s, dbra.w, ...
+    if (mn == "bra" || mn == "bsr")
+        return false;
+    if ((mn.StartsWith("b") && mn.Length == 3) || (mn.StartsWith("db") && mn.Length == 4))
+        return true;
+    if (mn.StartsWith("s") && (mn.Length == 3 || mn == "st" || mn == "sf") && Negate(mn.Substring(1).ToString()).Length > 0)
+        return true;
+    return mn.StartsWith("addx") || mn.StartsWith("subx") || mn.StartsWith("negx") || mn.StartsWith("rox") ||
+           mn.StartsWith("abcd") || mn.StartsWith("sbcd") || Operands(line).Length > 0 && Mentions(line, "%sr") ||
+           Mentions(line, "%ccr");
+}
+
+bool IsRegister(string operand)
+{
+    return operand.Length == 3 && (operand.StartsWith("%d") || operand.StartsWith("%a"));
+}
+
 // "(d,%a6)" -> the same place plus 'plus' bytes; "" if the operand is not of that form
 string OffsetOperand(string operand, int plus)
 {
@@ -293,6 +318,28 @@ bool PeepholePass(List<string> lines)
             string next = lines.Get(i + 1);
             string mn2 = Mnemonic(next);
             var ops2 = Operands(next);
+
+            // move.l %X,%Y / move.l %Y,%X -> the second is not needed (X still has the value; the flags of the second,
+            // if Y is an address register and the first set none, only matter for an instruction that reads them)
+            if (mn == "move.l" && mn2 == "move.l" && ops.Length == 2 && ops2.Length == 2 && IsRegister(ops[0]) &&
+                IsRegister(ops[1]) && ops2[0] == ops[1] && ops2[1] == ops[0] &&
+                (ops[1].StartsWith("%d") || !ops[0].StartsWith("%d") || i + 2 >= lines.Count() || !ReadsFlags(lines.Get(i + 2))))
+            {
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+
+            // move.b M,%dX / and.l #255,%dX -> moveq #0,%dX / move.b M,%dX (the same for move.w and #65535)
+            if ((mn == "move.b" || mn == "move.w") && mn2 == "and.l" && ops.Length == 2 && ops2.Length == 2 &&
+                ops[1].StartsWith("%d") && ops2[1] == ops[1] && ops2[0] == (mn == "move.b" ? "#255" : "#65535") &&
+                !Mentions(ops[0], ops[1]) && (i + 2 >= lines.Count() || !ReadsFlags(lines.Get(i + 2))))
+            {
+                lines.Set(i, Instr("moveq", "#0," + ops[1]));
+                lines.Set(i + 1, line);
+                changed = true;
+                continue;
+            }
 
             // move.l %dX,M / move.l M,%dX -> the second is not needed
             if (mn == "move.l" && mn2 == "move.l" && ops.Length == 2 && ops2.Length == 2 && ops[0].StartsWith("%d") &&

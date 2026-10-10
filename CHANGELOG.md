@@ -18,6 +18,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - The 68000 backend reads the length of an array once instead of at every bounds check (in a loop, before the loop),
   keeps parameters in registers, and treats a variable that is assigned once as its value also when the assignment is
   not at the start of the function: unpacking `Floors.amb` takes another 10 % less (31.5 million cycles).
+- The 68000 backend branches on the parts of `&&` and `||` instead of making a `bool` of them, branches on `c` the
+  other way round for `!c`, uses the register of a 32-bit index in the addressing mode as it is, and copies fewer
+  registers back and forth: unpacking `Floors.amb` takes another 12 % less (27.9 million cycles), and AmbermoonPack is
+  2.6 % smaller.
 - The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
   `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
 
