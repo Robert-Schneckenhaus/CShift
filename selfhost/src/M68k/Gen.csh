@@ -576,6 +576,13 @@ void GenFunction(Gen g, IrFunc f)
     g.Label(name);
     g.Line("link.w\t%a6,#-" + frame.ToString());
     g.Line("movem.l\t@SAVE@,-(%sp)"); // the registers the function uses (FinishSaves)
+    // the parameters that live in registers
+    foreach (var p in f.Params)
+    {
+        var home = g.Home.TryGet(p.Name);
+        if (home is string reg && reg.StartsWith("%"))
+            g.Line("move.l\t" + Frame(g.Slot.Get(p.Name)) + "," + reg);
+    }
     foreach (var b in BlockOrder(f))
     {
         g.Fn[1] = b.Label;

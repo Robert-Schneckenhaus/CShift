@@ -15,6 +15,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   counting the panics of failed checks: `reader.ReadByte()` in the loop of a decompressor is no call any more.
   AmbermoonPack unpacks the `Floors.amb` of Ambermoon 16 % faster (35.0 instead of 41.6 million cycles on a 68000),
   and the program is 1.4 % smaller.
+- The 68000 backend reads the length of an array once instead of at every bounds check (in a loop, before the loop),
+  keeps parameters in registers, and treats a variable that is assigned once as its value also when the assignment is
+  not at the start of the function: unpacking `Floors.amb` takes another 10 % less (31.5 million cycles).
 - The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
   `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
 

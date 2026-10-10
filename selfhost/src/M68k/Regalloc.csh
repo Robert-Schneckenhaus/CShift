@@ -1,6 +1,7 @@
-// Register allocation of the 68000 backend (linear scan): the scalar values of a function (up to 32 bits) and its
-// scalar variables (allocas whose address is only loaded from and stored to) get the registers d4-d7 and a2-a5 for
-// their whole lifetime, if they fit; the others stay in their stack slots. There is no spill code: a value lives either
+// Register allocation of the 68000 backend (linear scan): the scalar values of a function (up to 32 bits: its
+// parameters as well, which the prologue then loads from their slots) and its scalar variables (allocas whose address
+// is only loaded from and stored to) get the registers d4-d7 and a2-a5 for their whole lifetime, if they fit; the
+// others stay in their stack slots. There is no spill code: a value lives either
 // in a register or in its slot, everywhere.
 //
 //   1. Liveness: a data flow analysis over the blocks (a load of a variable uses it, a store defines it; the arguments
@@ -40,7 +41,12 @@ void AllocateRegisters(Gen g, IrFunc f)
     var isPointer = Dictionary<string, bool>.Create();
     var excluded = HashSet<string>.Create();
     foreach (var p in f.Params)
-        excluded.Add(p.Name);
+    {
+        if (IsScalar4(g, p.Type))
+            isPointer.Set(p.Name, g.T.Kind(p.Type) == IrKind.Ptr);
+        else
+            excluded.Add(p.Name);
+    }
     foreach (var b in blocks)
     {
         foreach (var inst in b.Insts.ToArray())
@@ -259,6 +265,12 @@ void AllocateRegisters(Gen g, IrFunc f)
             Touch(u, blockEnd[j], w, weight, lo, hi);
     }
 
+    // a parameter has its value from the start
+    foreach (var p in f.Params)
+    {
+        if (IsCandidate(p.Name, isPointer, excluded))
+            Touch(p.Name, 0, 0, weight, lo, hi);
+    }
     for (var i = 0; i < phiEnds.Count(); i += 1)
     {
         int end = blockEnd[phiFrom.Get(i)];
