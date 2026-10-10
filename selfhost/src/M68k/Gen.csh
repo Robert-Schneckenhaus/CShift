@@ -1150,6 +1150,35 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         Load32(g, inst.Args[0], HomeOf(g, inst.Args[1]));
         return;
     }
+    // a variable in its slot: the frame address as the operand (no lea)
+    if ((op == "load" || op == "store") && IsLocal(g, inst.Args[op == "load" ? 0 : 1]) &&
+        g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name) &&
+        IsScalar4(g, op == "load" ? inst.Type : inst.OpType))
+    {
+        int aoff = g.Alloca.Get(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name);
+        int size = g.L.Size(op == "load" ? inst.Type : inst.OpType);
+        string suffix = SizeSuffix(size);
+        if (op == "load")
+        {
+            string target = size == 4 ? ResultRegister(g, inst.Res) : "";
+            if (target.Length > 0)
+            {
+                g.Line("move.l\t" + Frame(aoff) + "," + target);
+                return;
+            }
+            g.Line("move" + suffix + "\t" + Frame(aoff) + ",%d0");
+            StoreResult(g, inst);
+            return;
+        }
+        string src = SourceOperand(g, inst.Args[0], size * 8);
+        if (src.Length == 0 || (src.StartsWith("#") && size < 4))
+        {
+            Load32(g, inst.Args[0], "%d0");
+            src = "%d0";
+        }
+        g.Line("move" + suffix + "\t" + src + "," + Frame(aoff));
+        return;
+    }
     if (op == "load")
     {
         LoadAddr(g, inst.Args[0], "%a0");
@@ -1521,6 +1550,33 @@ void GenBinary32(Gen g, IrInst inst)
                     return;
                 }
             }
+        }
+        // by a constant c = ch * 65536 + cl: the low 32 bits of x * c are x_lo * cl + ((x_hi * cl + x_lo * ch) << 16),
+        // three mulu.w (two if ch is 0) instead of the helper
+        for (var side = 1; side >= 0; side -= 1)
+        {
+            var cv = g.M.Vals.Get(inst.Args[side]);
+            if (cv.Kind != ValKind.Int || bits != 32)
+                continue;
+            int64 c = cv.Int & 4294967295;
+            int64 cl = c & 65535;
+            int64 ch = (c >> 16) & 65535;
+            Load32(g, inst.Args[1 - side], "%d0");
+            g.Line("move.l\t%d0,%d1");
+            g.Line("swap\t%d1");
+            g.Line("mulu.w\t#" + cl.ToString() + ",%d1");
+            if (ch != 0)
+            {
+                g.Line("move.w\t%d0,%d2");
+                g.Line("mulu.w\t#" + ch.ToString() + ",%d2");
+                g.Line("add.w\t%d2,%d1");
+            }
+            g.Line("swap\t%d1");
+            g.Line("clr.w\t%d1");
+            g.Line("mulu.w\t#" + cl.ToString() + ",%d0");
+            g.Line("add.l\t%d1,%d0");
+            StoreResult(g, inst);
+            return;
         }
         // both factors in 16 bits: muls.w gives the exact product, else the helper
         Load32(g, inst.Args[0], "%d0");

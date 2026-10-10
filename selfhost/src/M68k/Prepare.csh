@@ -11,8 +11,8 @@
 //     goes away), and a branch on '!c' branches on c the other way round.
 //   * What is known (Facts.csh): loads of variables whose value is known, computations made twice, comparisons whose
 //     outcome is known, checked arithmetic that cannot overflow, branches on constants, unreachable and joinable blocks.
-//   * Address folding: a getelementptr whose only use is the load or store right after it (in its block) is not
-//     computed on its own: the access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
+//   * Address folding: a getelementptr whose only uses are loads and stores (one, or the load and the store of
+//     'a[i] ^= x') is not computed on its own: each access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
 
 namespace CShift.M68k;
 
@@ -37,6 +37,7 @@ void PrepareFunction(Gen g, IrFunc f)
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
     ForwardLoads(g, f);
     ShareLengths(g, f);
+    FoldConstants(g, f); // (constant shift counts and masks for the ranges)
     CommonValues(g, f);
     KnownConditions(g, f);
     CommonValues(g, f);  // (the checked operations that became plain ones)
@@ -45,7 +46,9 @@ void PrepareFunction(Gen g, IrFunc f)
     FoldConstants(g, f);
     SimplifyBranches(g, f);
     ThreadConditions(g, f);
+    FreeTruncations(g, f);
     RemoveDeadCode(g, f);
+    OrderOperands(g, f);
     FoldAddresses(g, f);
 }
 
@@ -871,6 +874,7 @@ bool IsPure(IrInst inst)
 void FoldAddresses(Gen g, IrFunc f)
 {
     var uses = Dictionary<string, int>.Create();
+    var accesses = Dictionary<string, int>.Create();   // the uses as the address of a scalar load or store
     var allocas = HashSet<string>.Create();
     foreach (var b in f.Blocks.ToArray())
     {
@@ -878,6 +882,12 @@ void FoldAddresses(Gen g, IrFunc f)
         {
             if (inst.Op == "alloca")
                 allocas.Add(inst.Res);
+            if ((inst.Op == "load" || inst.Op == "store") && IsScalar4(g, inst.Op == "load" ? inst.Type : inst.OpType))
+            {
+                var ptr = g.M.Vals.Get(inst.Args[inst.Op == "load" ? 0 : 1]);
+                if (ptr.Kind == ValKind.Local)
+                    accesses.Set(ptr.Name, accesses.GetOrDefault(ptr.Name, 0) + 1);
+            }
             foreach (var a in inst.Args)
             {
                 var v = g.M.Vals.Get(a);
@@ -914,7 +924,8 @@ void FoldAddresses(Gen g, IrFunc f)
                 continue;
             int pi = inst.Op == "load" ? inst.Args[0] : inst.Args[1];
             var p = g.M.Vals.Get(pi);
-            if (p.Kind != ValKind.Local || uses.GetOrDefault(p.Name, 0) != 1)
+            // (all uses of the address are loads and stores: each one uses the addressing mode, as in 'a[i] ^= x')
+            if (p.Kind != ValKind.Local || uses.GetOrDefault(p.Name, 0) != accesses.GetOrDefault(p.Name, 0))
                 continue;
             var at = gepAt.TryGet(p.Name);
             int gk = at is int found ? found : -1;

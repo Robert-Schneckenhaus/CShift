@@ -35,6 +35,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   before, on every way to a read, is not read again; a value that only the next instruction needs stays in `d0`.
   Unpacking `Floors.amb` takes another 12 % less (24.4 instead of 27.9 million cycles), packing 5 % less, and
   AmbermoonPack is 11 % smaller (the panics that cannot happen are gone); the Amiga demos are 8 to 11 % smaller.
+- The 68000 backend multiplies by a constant with three `mulu.w` instead of a call (hashes like `h * 2654435769u`),
+  folds the address of `a[i]` into both the load and the store of `a[i] ^= x`, needs no instruction for a `trunc`,
+  orders the computations of an expression so that they go through `d0`, and reads and writes variables in the stack
+  frame directly: packing takes 7 % less (295.4 instead of 318.0 million cycles), unpacking 4 % less.
 - The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
   `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
 
