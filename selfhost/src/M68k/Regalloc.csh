@@ -626,8 +626,9 @@ bool ReadsFirstOperandFirst(Gen g, IrInst[] insts, int k)
         }
         return true;
     }
+    // (not into a variable: a value only stored into a variable is computed in the variable's register)
     if (inst.Op == "store")
-        return IsScalar4(g, inst.OpType);
+        return IsScalar4(g, inst.OpType) && !(IsLocal(g, inst.Args[1]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[1]).Name));
     if (inst.Op == "load")
         return true;
     if (inst.Op == "call" && inst.Callee >= 0)

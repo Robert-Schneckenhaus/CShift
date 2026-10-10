@@ -1084,3 +1084,159 @@ void JoinBlocks(Gen g, IrFunc f)
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The order of the computations in a block
+// ---------------------------------------------------------------------------
+
+// A pure computation (or a load, if nothing writes memory before its use) that only one later instruction of its block
+// uses moves right before that instruction, with the computation of the first operand last: the value then goes
+// through d0 (Regalloc.csh, ForwardedValues) instead of a register of its own. 'x = load; s = d >> 8; x ^ s' becomes
+// 's = d >> 8; x = load; x ^ s'.
+void OrderOperands(Gen g, IrFunc f)
+{
+    var uses = LocalUses(g, f);
+    var blocks = f.Blocks.ToArray();
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var insts = blocks[j].Insts.ToArray();
+        int n = insts.Length;
+        // the index of each result's instruction and of its only user in the block
+        var at = Dictionary<string, int>.Create();
+        for (var k = 0; k < n; k += 1)
+        {
+            if (insts[k].Res.Length > 0)
+                at.Set(insts[k].Res, k);
+        }
+        var user = new int[n];
+        for (var k = 0; k < n; k += 1)
+            user[k] = -1;
+        for (var k = 0; k < n; k += 1)
+        {
+            var inst = insts[k];
+            if (inst.Op == "phi")
+                continue;
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local && at.TryGet(v.Name) is int d && d < k)
+                    user[d] = user[d] == -1 ? k : -2; // (-2: more than one use here)
+            }
+        }
+        // which instructions move: single use later in the block; loads only when nothing between writes memory and
+        // the user stays where it is
+        var moves = new bool[n];
+        for (var k = 0; k < n; k += 1)
+        {
+            var inst = insts[k];
+            int u = user[k];
+            if (u < 0 || inst.Res.Length == 0 || g.Skip.Contains(inst.Res) || uses.GetOrDefault(inst.Res, 0) != 1)
+                continue;
+            if (insts[u].Op == "phi")
+                continue;
+            if (IsCommonOp(inst.Op))
+                moves[k] = true;
+        }
+        for (var k = 0; k < n; k += 1)
+        {
+            var inst = insts[k];
+            int u = user[k];
+            if (u < 0 || inst.Op != "load" || inst.Volatile || g.T.IsAggregate(inst.Type) || g.Skip.Contains(inst.Res) ||
+                uses.GetOrDefault(inst.Res, 0) != 1 || insts[u].Op == "phi")
+                continue;
+            // it ends up right before the computation that its users lead to (the first that does not move): nothing
+            // up to there may write memory
+            int root = u;
+            while (moves[root] && user[root] >= 0)
+                root = user[root];
+            bool clear = true;
+            for (var m = k + 1; m < root && clear; m += 1)
+                clear = !WritesMemory(insts[m]);
+            moves[k] = clear;
+        }
+        bool any = false;
+        for (var k = 0; k < n && !any; k += 1)
+            any = moves[k];
+        if (!any)
+            continue;
+        var order = List<IrInst>.Create();
+        var done = new bool[n];
+        for (var k = 0; k < n; k += 1)
+        {
+            if (!moves[k])
+                EmitWithOperands(g, insts, at, user, moves, done, order, k);
+        }
+        // (an instruction that moves but whose user was already written cannot happen: users come later)
+        f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = order });
+    }
+}
+
+// writes instruction k, after the moved computations of its operands (the first operand's last)
+void EmitWithOperands(Gen g, IrInst[] insts, Dictionary<string, int> at, int[] user, bool[] moves, bool[] done,
+                      List<IrInst> order, int k)
+{
+    if (done[k])
+        return;
+    done[k] = true;
+    var inst = insts[k];
+    if (inst.Op != "phi")
+    {
+        for (var a = inst.Args.Length - 1; a >= 0; a -= 1)
+        {
+            var v = g.M.Vals.Get(inst.Args[a]);
+            if (v.Kind == ValKind.Local && at.TryGet(v.Name) is int d && moves[d] && user[d] == k)
+                EmitWithOperands(g, insts, at, user, moves, done, order, d);
+        }
+    }
+    order.Add(inst);
+}
+
+// whether an instruction may write memory (a load must not move past it)
+bool WritesMemory(IrInst inst)
+{
+    return inst.Op == "store" || inst.Op == "call" || inst.Op == "atomicrmw" || inst.Op == "cmpxchg" || inst.Op == "fence" ||
+           inst.Volatile;
+}
+
+// ---------------------------------------------------------------------------
+// Truncations
+// ---------------------------------------------------------------------------
+
+// A trunc changes nothing in a 68000 register (an 8- or 16-bit value is its low bits; what reads it as such reads only
+// those): the arithmetic, comparisons, casts and stores that use it take the wider value itself. Uses where the wider
+// type would matter (calls, returns, phis, selects, aggregates, addresses) keep the trunc.
+void FreeTruncations(Gen g, IrFunc f)
+{
+    var source = Dictionary<string, int>.Create();   // a trunc's result -> its operand
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "trunc" && inst.Res.Length > 0 && !g.Skip.Contains(inst.Res) && IsScalar4(g, inst.Type) &&
+                IsScalar4(g, inst.OpType) && g.T.Kind(inst.OpType) == IrKind.Int)
+                source.Set(inst.Res, inst.Args[0]);
+        }
+    }
+    if (source.Count() == 0)
+        return;
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            bool lowBits = IsArithmetic32(g, inst) && inst.Op != "lshr" && inst.Op != "ashr" && inst.Op != "sdiv" &&
+                           inst.Op != "udiv" && inst.Op != "srem" && inst.Op != "urem";
+            lowBits = lowBits || inst.Op == "icmp" || IsIntCast(inst.Op);
+            for (var a = 0; a < inst.Args.Length; a += 1)
+            {
+                var v = g.M.Vals.Get(inst.Args[a]);
+                if (v.Kind != ValKind.Local || !source.ContainsKey(v.Name))
+                    continue;
+                // a store: only its value (not its address); a shift: only what is shifted (the count is read whole)
+                if ((lowBits && !(inst.Op == "shl" && a == 1)) || (inst.Op == "store" && a == 0 && IsScalar4(g, inst.OpType)))
+                    inst.Args[a] = source.Get(v.Name);
+            }
+        }
+    }
+}
