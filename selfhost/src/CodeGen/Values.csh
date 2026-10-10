@@ -582,6 +582,14 @@ int PromoteTypesOrError(const ref Compiler cg, int a, int b, ref string why)
             return native;
         return r;
     }
+    // A small type without a sign (uint8, uint16, char) meets uint32 and uint64 as that type, like in C#: it is not
+    // widened to int32 first (uint32 + uint8 is uint32, not int64; uint64 + uint8 is uint64, not an error).
+    bool smallA = types.IsIntegral(a) && !types.IsSigned(a) && (types.IsChar(a) || types.Bits(a) < 32);
+    bool smallB = types.IsIntegral(b) && !types.IsSigned(b) && (types.IsChar(b) || types.Bits(b) < 32);
+    if ((a == types.U32 || a == types.U64) && smallB)
+        return a;
+    if ((b == types.U32 || b == types.U64) && smallA)
+        return b;
     int x = (types.IsChar(a) || types.Bits(a) < 32) ? types.I32 : a;
     int y = (types.IsChar(b) || types.Bits(b) < 32) ? types.I32 : b;
     if (x == y)

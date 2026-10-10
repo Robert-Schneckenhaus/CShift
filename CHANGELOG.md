@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- `uint32` and `uint64` meet a `uint8`, `uint16` or `char` as in C#: `someUInt32 + someUInt8` is `uint32` (it was
+  `int64`, because the small operand was widened to a signed `int32` first), and `someUInt64 + someUInt8` is `uint64`
+  (it was an error). Without a target type (`var`, a comparison, the operand of a cast) such a sum is computed and
+  checked in 32 bits now: a hash like `(int)((h * 256u + key) * 2654435769u >> shift)` wraps around as intended, and
+  on the 68000 no 64-bit arithmetic is made of it.
+
 ### Targets
 - AmigaOS: `-g` writes the names of the functions and globals into the executable (HUNK_SYMBOL), for Amiga debuggers
   and profilers; the code stays the same. `--emit-asm` names every function in a comment (`| function: Name(params)`).

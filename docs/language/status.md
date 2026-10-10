@@ -76,7 +76,8 @@ The design document leaves a number of things open; these are the decisions that
   `x is null` / `x is not null` mean `x == null` / `x != null`.
 * **`try` in `int Main()`:** in the design's target picture, `try` is used in an `int` function. There, an error
   prints `error: <text>` to stderr and ends the program with exit code 1.
-* **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int`; a literal adapts to the
+* **Integer arithmetic** works like in C#: types smaller than 32 bits are widened to `int` (a `uint8`, `uint16` or
+  `char` that meets a `uint32` or `uint64` takes on that type, as in C#); a literal adapts to the
   other operand (`uint8 x = 200; int y = x * 3;` gives 600). Explicit casts never abort (they wrap/saturate); only
   `+ - * / %` are checked.
 * **Interfaces are not value types** (a value would need a hidden allocation): they are generic constraints and the
