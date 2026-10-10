@@ -181,8 +181,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   checks, variables, addresses), the deepest loops first, while the function grows by at most 240 instructions.
   Variables written once become their value (where the store dominates every load); the length of an array or string
   is read once per value (a check that an earlier one dominates uses its length; in a loop, the length of an array
-  from outside of it is read before the loop); constants are folded; dead code is removed; a pointer that is only used
-  by one load or store becomes an addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
+  from outside of it is read before the loop); constants are folded; `&&` and `||` in a condition become branches (no
+  `bool` is made) and a branch on `!c` branches on `c` with its targets swapped; dead code is removed; a pointer that is
+  only used by one load or store becomes an addressing mode (`(d16,An)`, `(d8,An,Dn.l)`, with the register of a 32-bit
+  index as it is).
 * **Regalloc.csh**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
   their uses, weighted by loop depth; a value loaded from a variable shares its register.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
@@ -190,7 +192,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by
   powers of two, the length of a string or array for its bounds check without a call, only the registers that are
   used are saved.
-* **Peephole.csh** simplifies the assembly; **Asm.csh** encodes it (68000 only, branches made short where they fit);
+* **Peephole.csh** simplifies the assembly (for example a register copied back right after it was copied, or
+  `moveq #0` before loading a byte or word instead of masking it afterwards); **Asm.csh** encodes it (68000 only, branches made short where they fit);
   **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
 * **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
   32/64-bit multiplication and division. `memcpy`, `memmove` and `memset` go through *jump towers*: the move is

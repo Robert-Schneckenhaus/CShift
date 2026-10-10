@@ -7,6 +7,8 @@
 //     replaced by the stored value.
 //   * Lengths: the length of an array or string (__cs_len) is computed once per value, right after the value: a block
 //     never changes its length, so every bounds check of the same array uses the same length (also in loops).
+//   * Conditions: '&&' and '||' in a condition become branches (no bool is made: the block of the phi that joins them
+//     goes away), and a branch on '!c' branches on c the other way round.
 //   * Address folding: a getelementptr whose only use is the load or store right after it (in its block) is not
 //     computed on its own: the access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
 
@@ -32,6 +34,7 @@ void PrepareFunction(Gen g, IrFunc f)
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
     ShareLengths(g, f);
     FoldConstants(g, f);
+    ThreadConditions(g, f);
     RemoveDeadCode(g, f);
     FoldAddresses(g, f);
 }
@@ -620,6 +623,164 @@ void ShareLengths(Gen g, IrFunc f)
         ReplaceUses(g, f, entry.Key, entry.Value);
 }
 
+// A block that only joins the parts of '&&' or '||' - a phi of i1 and a branch on it - is left out: a predecessor
+// whose part is a constant branches straight to where that constant leads, one that ends in 'br label %join' branches
+// on its value (a compare that the code generator then writes with its branch). A branch on 'xor i1 %c, true' (a '!'
+// used only there) branches on %c with its targets swapped.
+void ThreadConditions(Gen g, IrFunc f)
+{
+    bool changed = true;
+    for (var guard = 0; changed && guard < 1000; guard += 1)
+    {
+        changed = false;
+        var uses = LocalUses(g, f);
+        var blocks = f.Blocks.ToArray();
+        var index = Dictionary<string, int>.Create();
+        for (var i = 0; i < blocks.Length; i += 1)
+            index.Set(blocks[i].Label, i);
+        // '!c' before a branch
+        for (var j = 0; j < blocks.Length; j += 1)
+        {
+            var insts = blocks[j].Insts.ToArray();
+            int n = insts.Length;
+            if (n < 2)
+                continue;
+            var br = insts[n - 1];
+            var not = insts[n - 2];
+            if (br.Op != "br" || br.Labels.Length != 2 || not.Op != "xor" || not.Res.Length == 0 || g.Skip.Contains(not.Res) ||
+                g.T.Bits(not.Type) != 1 || !IsLocal(g, br.Args[0]) || g.M.Vals.Get(br.Args[0]).Name != not.Res ||
+                uses.GetOrDefault(not.Res, 0) != 1)
+                continue;
+            int c = -1;
+            if (IsTrue(g, not.Args[1]))
+                c = not.Args[0];
+            else if (IsTrue(g, not.Args[0]))
+                c = not.Args[1];
+            if (c < 0)
+                continue;
+            var kept = List<IrInst>.Create();
+            for (var k = 0; k < n - 2; k += 1)
+                kept.Add(insts[k]);
+            kept.Add(IrInst { Op = "br", Res = "", Type = 0, OpType = br.OpType, Args = [c], Pred = "",
+                              Labels = [br.Labels[1], br.Labels[0]], Cases = new int64[0], Callee = -1, Volatile = false });
+            f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
+            changed = true;
+        }
+        if (changed)
+            continue;
+        // the join of '&&' / '||'
+        for (var j = 1; j < blocks.Length && !changed; j += 1)
+        {
+            var insts = blocks[j].Insts.ToArray();
+            if (insts.Length != 2 || insts[0].Op != "phi" || insts[1].Op != "br" || insts[1].Labels.Length != 2)
+                continue;
+            var phi = insts[0];
+            var br = insts[1];
+            if (g.T.Bits(phi.Type) != 1 || !IsLocal(g, br.Args[0]) || g.M.Vals.Get(br.Args[0]).Name != phi.Res ||
+                uses.GetOrDefault(phi.Res, 0) != 1)
+                continue;
+            string join = blocks[j].Label;
+            string yes = br.Labels[0];
+            string no = br.Labels[1];
+            if (yes == join || no == join || HasPhiFrom(f, yes, join) || HasPhiFrom(f, no, join))
+                continue;
+            bool can = true;
+            for (var a = 0; a < phi.Args.Length && can; a += 1)
+            {
+                int p = index.GetOrDefault(phi.Labels[a], -1);
+                if (p < 0 || p == j)
+                {
+                    can = false;
+                    continue;
+                }
+                var pinsts = blocks[p].Insts.ToArray();
+                var term = pinsts[pinsts.Length - 1];
+                bool constant = g.M.Vals.Get(phi.Args[a]).Kind == ValKind.Int;
+                if (term.Op != "br" || (!constant && term.Labels.Length != 1))
+                    can = false;
+            }
+            if (!can)
+                continue;
+            for (var a = 0; a < phi.Args.Length; a += 1)
+            {
+                int p = index.Get(phi.Labels[a]);
+                var pinsts = blocks[p].Insts.ToArray();
+                var term = pinsts[pinsts.Length - 1];
+                var v = g.M.Vals.Get(phi.Args[a]);
+                IrInst next;
+                if (v.Kind == ValKind.Int)
+                {
+                    var labels = new string[term.Labels.Length];
+                    for (var l = 0; l < labels.Length; l += 1)
+                        labels[l] = term.Labels[l] == join ? (v.Int != 0 ? yes : no) : term.Labels[l];
+                    next = IrInst { Op = "br", Res = "", Type = 0, OpType = term.OpType, Args = term.Args, Pred = "",
+                                    Labels = labels, Cases = new int64[0], Callee = -1, Volatile = false };
+                }
+                else
+                    next = IrInst { Op = "br", Res = "", Type = 0, OpType = phi.Type, Args = [phi.Args[a]], Pred = "",
+                                    Labels = [yes, no], Cases = new int64[0], Callee = -1, Volatile = false };
+                var kept = List<IrInst>.Create();
+                for (var k = 0; k < pinsts.Length - 1; k += 1)
+                    kept.Add(pinsts[k]);
+                kept.Add(next);
+                f.Blocks.Set(p, IrBlock { Label = blocks[p].Label, Insts = kept });
+            }
+            f.Blocks.RemoveAt(j);
+            changed = true;
+        }
+    }
+}
+
+bool IsTrue(Gen g, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    return v.Kind == ValKind.Int && v.Int != 0;
+}
+
+// whether a block has a phi that takes a value from the block 'from'
+bool HasPhiFrom(IrFunc f, string label, string from)
+{
+    foreach (var b in f.Blocks.ToArray())
+    {
+        if (b.Label != label)
+            continue;
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op != "phi")
+                continue;
+            foreach (var l in inst.Labels)
+            {
+                if (l == from)
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+// how often each local value is used (the skipped instructions not counted)
+Dictionary<string, int> LocalUses(Gen g, IrFunc f)
+{
+    var uses = Dictionary<string, int>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local)
+                    uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+            }
+            if (inst.Callee >= 0 && g.M.Vals.Get(inst.Callee).Kind == ValKind.Local)
+                uses.Set(g.M.Vals.Get(inst.Callee).Name, uses.GetOrDefault(g.M.Vals.Get(inst.Callee).Name, 0) + 1);
+        }
+    }
+    return uses;
+}
+
 // the value an instruction defines (a new value that names its result)
 int ResultValue(Gen g, IrInst inst)
 {
@@ -637,8 +798,7 @@ bool IsRawAllocation(Gen g, IrInst inst)
 
 // the shared lengths of the values defined at this place (after instruction k of block j; k = -1: its start)
 void AddLengths(Gen g, List<IrInst> kept, Dictionary<string, int> shared, Dictionary<string, int> argOf,
-                Dictionary<string, int> defBlock, Dictionary<string, int> defAfter, int j, int k, int callee,
-                int lengthType)
+                Dictionary<string, int> defBlock, Dictionary<string, int> defAfter, int j, int k, int callee, int lengthType)
 {
     foreach (var entry in shared.Entries())
     {
@@ -843,6 +1003,11 @@ string FoldedOperand(Gen g, AddrFold fold)
         LoadAddr(g, fold.Base, "%a0");
     if (fold.Index < 0)
         return fold.Offset == 0 ? "(" + baseReg + ")" : "(" + fold.Offset.ToString() + "," + baseReg + ")";
+    // an index of 32 bits that is not scaled: straight from its register
+    var iv = g.M.Vals.Get(fold.Index);
+    if (fold.IndexBits == 32 && fold.Stride == 1 && iv.Kind == ValKind.Local && g.Home.TryGet(iv.Name) is string ir &&
+        (ir.StartsWith("%d") || ir.StartsWith("%a")))
+        return "(" + fold.Offset.ToString() + "," + baseReg + "," + ir + ".l)";
     Load32(g, fold.Index, "%d1");
     if (fold.IndexBits < 32)
         Extend(g, "%d1", fold.IndexBits, true);
