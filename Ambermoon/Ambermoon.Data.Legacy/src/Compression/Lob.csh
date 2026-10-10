@@ -77,39 +77,91 @@ struct Lob
     {
         int size = (int)decodedSize;
         var decoded = new uint8[size];
+        var src = reader.ToArray();
         int decodeIndex = 0;
 
         while (decodeIndex < size)
         {
-            int header = reader.ReadByte();
+            int p = reader.Position;
+            if (p < 0 || p > src.Length - 17)
+            {
+                // the last groups: through the reader, which reads zeros past the end and remembers that
+                decodeIndex = _DecompressGroup(ref reader, decoded, decodeIndex);
+                if (decodeIndex < 0 || reader.Overrun())
+                    return error(_OutOfBounds);
+                continue;
+            }
+            // a whole group (a header and 8 entries: at most 17 bytes) is there: straight from the bytes
+            int header = src[p];
+            p += 1;
             for (var i = 0; i < 8; i += 1)
             {
                 if ((header & 0x80) == 0) // a match
                 {
-                    int first = reader.ReadByte();
+                    int first = src[p];
                     int matchLength = (first & 0x0f) + 3;
-                    int matchOffset = ((first << 4) & 0xff00) | reader.ReadByte();
-                    int matchIndex = decodeIndex - matchOffset;
-                    if (matchIndex < 0 || decodeIndex + matchLength > size)
+                    int from = decodeIndex - (((first << 4) & 0xff00) | src[p + 1]);
+                    p += 2;
+                    int to = decodeIndex;
+                    int stop = to + matchLength;
+                    if (from < 0 || stop > size)
+                    {
+                        reader.Position = p;
                         return error(_OutOfBounds);
-                    for (var n = 0; n < matchLength; n += 1)
-                        decoded[decodeIndex + n] = decoded[matchIndex + n];
-                    decodeIndex += matchLength;
+                    }
+                    while (to < stop)
+                    {
+                        decoded[to] = decoded[from];
+                        to += 1;
+                        from += 1;
+                    }
+                    decodeIndex = stop;
                 }
                 else // a literal byte
                 {
-                    decoded[decodeIndex] = reader.ReadByte();
+                    decoded[decodeIndex] = src[p];
+                    p += 1;
                     decodeIndex += 1;
                 }
                 if (decodeIndex == size)
                     break;
                 header <<= 1;
             }
-            if (reader.Overrun())
-                return error(_OutOfBounds);
+            reader.Position = p;
         }
 
         return DataReader.FromData(decoded);
+    }
+
+    // one group (a header and up to 8 entries) through the reader: the new decode index, -1 if a match is out of bounds
+    static int _DecompressGroup(ref DataReader reader, uint8[] decoded, int decodeIndex)
+    {
+        int size = decoded.Length;
+        int header = reader.ReadByte();
+        for (var i = 0; i < 8; i += 1)
+        {
+            if ((header & 0x80) == 0) // a match
+            {
+                int first = reader.ReadByte();
+                int matchLength = (first & 0x0f) + 3;
+                int matchOffset = ((first << 4) & 0xff00) | reader.ReadByte();
+                int matchIndex = decodeIndex - matchOffset;
+                if (matchIndex < 0 || decodeIndex + matchLength > size)
+                    return -1;
+                for (var n = 0; n < matchLength; n += 1)
+                    decoded[decodeIndex + n] = decoded[matchIndex + n];
+                decodeIndex += matchLength;
+            }
+            else // a literal byte
+            {
+                decoded[decodeIndex] = reader.ReadByte();
+                decodeIndex += 1;
+            }
+            if (decodeIndex == size)
+                break;
+            header <<= 1;
+        }
+        return decodeIndex;
     }
 }
 
