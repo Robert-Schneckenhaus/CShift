@@ -136,7 +136,7 @@ contains such functions — even if you never call them.
 ### Callbacks (function pointers)
 
 C function pointers become the built-in types `Action<...>` (no result) and `Func<..., R>` (with a result, the last
-type argument being the result) — up to 8 parameters, no closures. You pass the name of a CShift function, or `null`:
+type argument being the result) — up to 16 parameters, no closures. You pass the name of a CShift function, or `null`:
 
 ```csharp
 using Mfb from "MiniFB.h";
@@ -172,7 +172,7 @@ name"):
 * global variables of the header, `long double`, `__int128`
 * accessing union fields, bit fields and arrays inside structs (the layout is still correct)
 * packed structs (`#pragma pack`): the import aborts with a layout error
-* callbacks with struct values as a parameter or result, variadic function pointers, more than 8 parameters: these
+* callbacks with struct values as a parameter or result, variadic function pointers, more than 16 parameters: these
   stay `void*`
 * variadic functions with struct values (variadic functions with plain values, like `printf`, work)
 * C only, no C++ (namespaces, classes, templates)

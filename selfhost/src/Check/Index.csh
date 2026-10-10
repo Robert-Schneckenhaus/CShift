@@ -140,9 +140,11 @@ void IndexConst(const ref Compiler cg, SourceLoc at, int length, int c)
 }
 
 // The value of a constant in a hover: " = 42", " = \"text\"", or for a longer string (an embedded file) its size and
-// its first lines below the declaration.
+// its first lines below the declaration; for the bytes of an embedded file their number.
 string ConstValueHover(const ref Compiler cg, ConstVal v)
 {
+    if (v.Kind == ConstKind.Slice && v.Bytes.Length > 0)
+        return " // " + v.Bytes.Length.ToString() + " bytes";
     if (v.Kind == ConstKind.Slice || v.Kind == ConstKind.Unknown)
         return "";
     string s = ConstToText(cg, v);

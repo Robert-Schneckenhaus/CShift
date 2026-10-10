@@ -6,7 +6,24 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `System.Ui`: user interfaces in immediate mode. The program describes its window for every frame from its own state,
+  and widgets report what the user did as their result: labels, buttons, check boxes, radio buttons, sliders, text
+  boxes (selection, clipboard), progress bars, lists, images; rows, grids, panels and scroll areas as `using` blocks;
+  keyboard focus with Tab; light and dark themes. Drawn by its own software renderer (`Canvas`: anti-aliased rounded
+  rectangles, circles, lines; bitmap fonts from the public domain fixed fonts of X11) into an `Image`, so it needs no
+  library and also works without a window. `Window` shows the frames: Win32 on Windows (per-monitor DPI aware), X11
+  on Linux (libX11 is loaded at run time). See [docs/ui.md](docs/ui.md) and [demo-ui](demo-ui/README.md).
+
 ### Language
+- `embed("file")` embeds files of any kind: declared as `const ReadOnlySlice<uint8>`, the constant holds the bytes of
+  the file exactly as they are (fonts, images, sounds; `Image.Decode(Logo)` decodes an embedded PNG). They are written
+  into the program as one block, like a string literal
+  ([constants](docs/language/constants-and-globals.md#embedded-files-embed-embed_filenames-and-embed_lines)).
+- `using (expr) { ... }` without a variable, as in C#: the value is disposed at the end of the block
+  ([resources](docs/language/resources.md#using)).
+- `Action` and `Func` take up to 16 parameters (were 8), as in C#: C functions such as `XPutImage` (10 parameters)
+  can be called through a pointer.
 - `uint32` and `uint64` meet a `uint8`, `uint16` or `char` as in C#: `someUInt32 + someUInt8` is `uint32` (it was
   `int64`, because the small operand was widened to a signed `int32` first), and `someUInt64 + someUInt8` is `uint64`
   (it was an error). Without a target type (`var`, a comparison, the operand of a cast) such a sum is computed and

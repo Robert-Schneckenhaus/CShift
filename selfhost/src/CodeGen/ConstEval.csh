@@ -32,6 +32,7 @@ struct ConstVal
     bool B;            // Bool
     string S;          // String
     ConstVal[] Items;  // Slice: the elements (Type is ReadOnlySlice<T>, or Collection before it gets its type)
+    uint8[] Bytes;     // Slice: the elements of a ReadOnlySlice<uint8> from embed("file"), as bytes; Items is empty then
     bool HasLit;       // an unsuffixed literal: adapts to the type of the value it is combined with
 }
 
@@ -428,14 +429,22 @@ Value ConstSliceValue(const ref Compiler cg, ConstVal v)
         Fail(cg, SourceLoc { }, "internal error: a constant slice without a type");
     int elem = types.Elem(v.Type);
     string elemIr = LlvmType(cg, elem);
-    var items = new string[v.Items.Length];
-    for (var i = 0; i < items.Length; i += 1)
-        items[i] = elemIr + " " + ConstToValue(cg, v.Items[i]).V;
-    string block = ir.ConstArrayBlock(elemIr, items);
+    string block = "";
+    int length = v.Bytes.Length;
+    if (length > 0)
+        block = ir.ConstByteBlock(v.Bytes);
+    else
+    {
+        var items = new string[v.Items.Length];
+        for (var i = 0; i < items.Length; i += 1)
+            items[i] = elemIr + " " + ConstToValue(cg, v.Items[i]).V;
+        block = ir.ConstArrayBlock(elemIr, items);
+        length = items.Length;
+    }
     string ty = LlvmType(cg, v.Type);
     string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", block, "0");
     agg = ir.InsertValue(ty, agg, "ptr", DataPtr(cg, block), "1");
-    agg = ir.InsertValue(ty, agg, SizeIr(cg), items.Length.ToString(), "2");
+    agg = ir.InsertValue(ty, agg, SizeIr(cg), length.ToString(), "2");
     return Rvalue(v.Type, agg, false);
 }
 
@@ -830,7 +839,7 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
             }
             if (item.Kind != ConstKind.Slice)
                 return ConstError(cg, n.Items[i].Loc, "'..' in a constant spreads a constant slice, not '" + types.Name(item.Type) + "'");
-            items.AddRange(item.Items);
+            items.AddRange(ConstItems(cg, item));
         }
         return ConstVal { Kind = ConstKind.Slice, Type = types.Collection, Items = items.ToArray() };
     }
@@ -845,11 +854,14 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
         ConstVal index = ConstEval(cg, ix.Index, sc);
         if (index.Kind == ConstKind.Unknown)
             return index;
-        int i = ConstIndex(cg, index, ix.FromEnd, obj.Items.Length, ix.Index.Loc);
+        int count = ConstSliceLength(obj);
+        int i = ConstIndex(cg, index, ix.FromEnd, count, ix.Index.Loc);
         if (i == ConstBadIndex())
             return ConstUnknown(cg);
-        if (i < 0 || i >= obj.Items.Length)
-            return ConstError(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + obj.Items.Length.ToString() + " elements)");
+        if (i < 0 || i >= count)
+            return ConstError(cg, e.Loc, "index " + i.ToString() + " is out of range (the constant slice has " + count.ToString() + " elements)");
+        if (obj.Bytes.Length > 0)
+            return ConstMakeInt(types.U8, false, (uint64)obj.Bytes[i], false);
         return obj.Items[i];
     }
     case ExprKind.Slice:
@@ -860,7 +872,7 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
             return obj;
         if (obj.Kind != ConstKind.Slice)
             return ConstNotConstant(cg, sc);
-        int length = obj.Items.Length;
+        int length = ConstSliceLength(obj);
         ConstVal startValue = n.Start.IsNull() ? ConstMakeInt(types.I32, false, 0ul, false) : ConstEval(cg, n.Start, sc);
         ConstVal endValue = n.End.IsNull() ? ConstMakeInt(types.I32, false, (uint64)length, false) : ConstEval(cg, n.End, sc);
         if (startValue.Kind == ConstKind.Unknown || endValue.Kind == ConstKind.Unknown)
@@ -872,6 +884,13 @@ ConstVal ConstEval(const ref Compiler cg, Expr e, ConstScope sc)
         if (start < 0 || start > end || end > length)
             return ConstError(cg, e.Loc, "slice range " + start.ToString() + ".." + end.ToString() + " is out of bounds (the constant slice has " +
                             length.ToString() + " elements)");
+        if (obj.Bytes.Length > 0)
+        {
+            var bytes = new uint8[end - start];
+            for (var i = start; i < end; i += 1)
+                bytes[i - start] = obj.Bytes[i];
+            return ConstVal { Kind = ConstKind.Slice, Type = obj.Type, Bytes = bytes };
+        }
         var part = new ConstVal[end - start];
         for (var i = start; i < end; i += 1)
             part[i - start] = obj.Items[i];
@@ -1045,11 +1064,28 @@ ConstVal ConstLength(const ref Compiler cg, ConstVal v, SourceLoc loc)
     if (v.Kind == ConstKind.Unknown)
         return v;
     if (v.Kind == ConstKind.Slice)
-        return ConstMakeInt(types.I32, false, (uint64)v.Items.Length, false);
+        return ConstMakeInt(types.I32, false, (uint64)ConstSliceLength(v), false);
     if (v.Kind == ConstKind.String)
         return ConstMakeInt(types.I32, false, (uint64)v.S.Length, false);
     return ConstError(cg, loc, "'" + types.Name(v.Type) + "' has no member 'Length'");
     return v;
+}
+
+// The number of elements of a constant slice.
+int ConstSliceLength(ConstVal v)
+{
+    return v.Bytes.Length > 0 ? v.Bytes.Length : v.Items.Length;
+}
+
+// The elements of a constant slice, also of one that holds bytes (embed("file") as ReadOnlySlice<uint8>).
+ConstVal[] ConstItems(const ref Compiler cg, ConstVal v)
+{
+    if (v.Bytes.Length == 0)
+        return v.Items;
+    var items = new ConstVal[v.Bytes.Length];
+    for (var i = 0; i < items.Length; i += 1)
+        items[i] = ConstMakeInt(cg.Types.U8, false, (uint64)v.Bytes[i], false);
+    return items;
 }
 
 // A collection or constant slice as ReadOnlySlice<T>: every element converts to T.
@@ -1062,9 +1098,10 @@ ConstVal ConstConvertSlice(const ref Compiler cg, ConstVal v, int to, SourceLoc 
         return ConstError(cg, loc, "cannot implicitly convert '" + types.Name(v.Type) + "' to '" + types.Name(to) + "'" + hint);
     }
     int elem = types.Elem(to);
-    var items = new ConstVal[v.Items.Length];
+    var from = ConstItems(cg, v);
+    var items = new ConstVal[from.Length];
     for (var i = 0; i < items.Length; i += 1)
-        items[i] = ConstConvert(cg, v.Items[i], elem, loc, false);
+        items[i] = ConstConvert(cg, from[i], elem, loc, false);
     return ConstVal { Kind = ConstKind.Slice, Type = to, Items = items };
 }
 
@@ -1152,7 +1189,8 @@ void FailEmbedPlace(const ref Compiler cg, SourceLoc loc)
 string EmbedPlaceError()
 {
     return "embed(...), embed_filenames(...) and embed_lines(...) can only be the whole initializer of a constant: " +
-           "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\");";
+           "const string Text = embed(\"file.txt\"); const ReadOnlySlice<string> Texts = embed(\"*.txt\"); " +
+           "const ReadOnlySlice<uint8> Data = embed(\"file.bin\");";
 }
 
 // True if the name has a wildcard ('*': any characters, '?': one character).
@@ -1275,12 +1313,24 @@ string EmbedRead(const ref Compiler cg, string word, string path, SourceLoc loc)
     return "";
 }
 
+// The bytes of a file for embed("file") as ReadOnlySlice<uint8>: exactly as they are, a byte order mark included.
+uint8[] EmbedReadBytes(const ref Compiler cg, string path, SourceLoc loc)
+{
+    var read = File.ReadAllBytes(path);
+    if (read is uint8[] bytes)
+        return bytes;
+    if (read is error e)
+        Fail(cg, loc, "embed: cannot read '" + path + "': " + e.Message);
+    return new uint8[0];
+}
+
 // const string X = embed("file"): the content of the file, read now. Line ends, quotes and everything else stay as they
 // are; only a byte order mark is dropped. The text must be UTF-8 like every string.
 // const ReadOnlySlice<string> X = embed("dir/*.txt"): the contents of the matching files, sorted by name.
 // embed_filenames gives the file names (without the folder) instead: a string without wildcards (the file must
 // exist), a ReadOnlySlice<string> with them (in the same order as embed).
 // const ReadOnlySlice<string> X = embed_lines("file"): the lines of one file (see EmbedLines).
+// const ReadOnlySlice<uint8> X = embed("file"): the bytes of a file of any kind (fonts, images, sounds), unchanged.
 ConstVal ConstEmbed(const ref Compiler cg, Expr init, int t)
 {
     var types = cg.Types;
@@ -1289,11 +1339,21 @@ ConstVal ConstEmbed(const ref Compiler cg, Expr init, int t)
     string pattern = cg.Tree.GetEmbed(init).Value;
     if (init.Kind == ExprKind.EmbedLines)
         return ConstEmbedLines(cg, init, t, pattern);
+    int byteSlice = types.ReadOnlySliceOf(types.U8);
+    if (!wantNames && t == byteSlice)
+    {
+        if (HasWildcard(pattern))
+            return ConstError(cg, init.Loc, "embed(\"" + pattern + "\") as 'ReadOnlySlice<uint8>' reads one file, without '*' or '?' (a constant slice cannot contain slices)");
+        return ConstVal { Kind = ConstKind.Slice, Type = byteSlice, Bytes = EmbedReadBytes(cg, EmbedPath(cg, word, pattern, init.Loc), init.Loc) };
+    }
     if (!HasWildcard(pattern))
     {
         if (!types.IsString(t))
-            return ConstError(cg, init.Loc, word + "(\"" + pattern + "\") gives a string, so the constant must be 'const string', not '" + types.Name(t) +
-                "' (a pattern with '*' or '?' gives a ReadOnlySlice<string>)");
+        {
+            string bytesHint = wantNames ? "" : " (or 'const ReadOnlySlice<uint8>' for its bytes)";
+            return ConstError(cg, init.Loc, word + "(\"" + pattern + "\") gives a string, so the constant must be 'const string'" + bytesHint + ", not '" +
+                types.Name(t) + "' (a pattern with '*' or '?' gives a ReadOnlySlice<string>)");
+        }
         string path = EmbedPath(cg, word, pattern, init.Loc);
         string value = wantNames ? Path.GetFileName(path) : EmbedRead(cg, word, path, init.Loc);
         return ConstVal { Kind = ConstKind.String, Type = types.String, S = value };

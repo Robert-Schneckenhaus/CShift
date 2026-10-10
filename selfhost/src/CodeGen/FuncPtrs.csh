@@ -129,7 +129,7 @@ int GroupFunctionType(const ref Compiler cg, Value g)
         if (fi.ParamRefs[i] != 0 || d.Params[i].CString)
             return 0;
     }
-    if (fi.ParamTypes.Length > 8)
+    if (fi.ParamTypes.Length > 16)
         return 0;
     return cg.Types.FunctionOf(fi.ParamTypes, fi.Ret);
 }

@@ -90,6 +90,13 @@ jobs:
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
+      # System.Ui with a real window: X11 (libX11 is loaded at run time) under a virtual X server
+      - name: Open a window (X11, Xvfb)
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb libx11-6
+          PATH="$LLVM_PREFIX/bin:$PATH" build/stage2/cshiftc tests/ui/window_smoke.csh -o "$RUNNER_TEMP/window_smoke"
+          xvfb-run -a "$RUNNER_TEMP/window_smoke"
+
       # WebAssembly (wasm32-wasi): the same programs, run with node; needs the C library of WASI (the sysroot of
       # wasi-sdk: the wasi-libc package of Ubuntu 22.04 is from 2020 and fails a second rename), the builtins of
       # compiler-rt for wasm32, and wasm-ld (lld)

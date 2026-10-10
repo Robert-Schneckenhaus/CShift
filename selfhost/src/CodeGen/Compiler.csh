@@ -865,8 +865,8 @@ int ResolveFunctionType(const ref Compiler cg, TypeRefNode node, string dotted, 
             return RecoverType(cg, node.Loc, "a function parameter cannot have type 'void'");
         parameters.Add(t);
     }
-    if (parameters.Count() > 8)
-        return RecoverType(cg, node.Loc, "'" + dotted + "' supports at most 8 parameters");
+    if (parameters.Count() > 16)
+        return RecoverType(cg, node.Loc, "'" + dotted + "' supports at most 16 parameters");
     return types.FunctionOf(parameters.ToArray(), ret);
 }
 

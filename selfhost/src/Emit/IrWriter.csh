@@ -169,6 +169,34 @@ struct IrWriter
         return name;
     }
 
+    // The elements of a constant ReadOnlySlice<uint8> (embed("file")): an array block like ConstArrayBlock's, with the
+    // bytes written as c"..." (a file of a megabyte stays a line of the IR, not a million "i8 n").
+    string ConstByteBlock(uint8[] bytes)
+    {
+        var sb = StringBuilder.Create();
+        for (var i = 0; i < bytes.Length; i += 1)
+        {
+            char c = (char)bytes[i];
+            if (c >= 32 && c < 127 && c != '"' && c != '\\')
+                sb.Append(c);
+            else
+                sb.Append("\\" + Hex2((int)bytes[i]));
+        }
+        string arr = "[" + bytes.Length.ToString() + " x i8]";
+        string init = "c\"" + sb.ToString() + "\"";
+        string key = "b:" + init;
+        var found = Literals.TryGet(key);
+        if (found is string existing)
+            return existing;
+        string name = NewGlobal("carr");
+        string size = Target.SizeIr;
+        Globals.Append(name + " = private global { " + size + ", " + size + ", " + arr + " } { " + size + " " + Target.ImmortalCount() + ", " +
+                       size + " " + bytes.Length.ToString() +
+                       ", " + arr + " " + init + " }\n");
+        Literals.Set(key, name);
+        return name;
+    }
+
     // ---- declarations ----
 
     // Adds a declaration once ("declare i32 @printf(ptr, ...)").

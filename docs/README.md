@@ -7,6 +7,7 @@
 | [Language reference](spec/README.md) | the precise rules of the language: syntax, types, conversions, semantics, the grammar |
 | [Language status](language/status.md) | what is implemented, and the decisions the design leaves open |
 | [Standard library](stdlib.md) | `List`, `Dictionary`, `File`, `Path`, `Math`, `Random`, threads, `Mutex`, ... |
+| [User interfaces: System.Ui](ui.md) | windows with buttons, text boxes, sliders and lists in immediate mode: widgets, layout, ids, themes, drawing |
 | [C interop: importing headers](ffi.md) | `using X from "header.h"`, type mapping, callbacks, structs by value |
 | [WebAssembly](wasm.md) | `--backend wasm` and `--target wasm32-wasi`: programs for node, wasmtime and the browser, games with GLFW and OpenGL in the browser; what is needed, what differs |
 | [The Amiga: the m68k backend](amiga.md) | AmigaOS programs: `--target m68k-amigaos`, libraries from SFD files, the NDK, `Amiga.Hardware` |

@@ -32,7 +32,7 @@ There is no `out` parameter — a function that needs to report success/failure 
 
 ## Function pointers: `Action` and `Func`
 
-`Action<...>` (no result) and `Func<..., R>` (the last type argument is the result) are built-in types, up to 8
+`Action<...>` (no result) and `Func<..., R>` (the last type argument is the result) are built-in types, up to 16
 parameters, holding a function (or a lambda, below):
 
 ```csharp

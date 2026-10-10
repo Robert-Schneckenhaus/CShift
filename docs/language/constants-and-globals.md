@@ -79,6 +79,21 @@ for (var i = 0; i < Levels.Length; i += 1)
     Console.WriteLine(LevelNames[i] + ": " + Levels[i].Length.ToString() + " characters");
 ```
 
+Declared as `const ReadOnlySlice<uint8>`, `embed("file")` gives the **bytes** of a file of any kind - fonts, images,
+sounds, compressed data - exactly as they are on disk (a byte order mark, NUL bytes and bytes that are not UTF-8
+included):
+
+```csharp
+const ReadOnlySlice<uint8> Logo = embed("assets/logo.png");
+const ReadOnlySlice<uint8> Font = embed("assets/ui.ttf");
+
+var logo = try Image.Decode(Logo);      // decoded at run time, from the program's own data
+```
+
+The bytes are written into the program as one block (no copy, no allocation at run time), like a string literal. The
+constant is an ordinary constant slice: `Logo.Length`, `Logo[0]` and `Logo[..8]` are constants too. It reads one file:
+a wildcard is an error, since a constant slice cannot contain slices.
+
 `embed_lines` reads one file and gives its lines as a constant `ReadOnlySlice<string>` - word lists, maps of a level,
 the rows of a sprite:
 
@@ -94,8 +109,9 @@ lines); a line end at the end of the file does not start another, empty line, an
 wildcard is an error: for several files use `embed("*.txt")`.
 
 * **Result type:** with a wildcard it is always `const ReadOnlySlice<string>` (empty if no file matches); without one
-  it is `const string` (`embed_filenames("x.txt")` gives `"x.txt"` and checks that the file exists). `embed_lines` is
-  always `const ReadOnlySlice<string>`. The constant must be declared with exactly this type.
+  it is `const string` (`embed_filenames("x.txt")` gives `"x.txt"` and checks that the file exists), or
+  `const ReadOnlySlice<uint8>` for the bytes of the file. `embed_lines` is always `const ReadOnlySlice<string>`. The
+  constant must be declared with exactly this type.
 * **Wildcards only in the file name:** `embed("data/*.json")` is fine, `embed("*/a.json")` is an error. Folders never
   match, and subfolders are not searched.
 * **Only like this:** `embed(...)`/`embed_filenames(...)`/`embed_lines(...)` is the whole initializer of a constant (top level or local).
@@ -103,7 +119,7 @@ wildcard is an error: for several files use `embed("*.txt")`.
   The constants are ordinary constants afterwards: `[..LevelNames, "extra.txt"]` is a constant slice too.
 * **Exact content:** the constant holds the file's text unchanged - quotes, backslashes, `\r\n` and `\n` stay as they
   are (only a UTF-8 byte order mark is dropped), so `File.WriteAllText(path, Shader)` writes the same content. The file
-  must be UTF-8 text.
+  must be UTF-8 text; for any other file use `const ReadOnlySlice<uint8>`, which keeps every byte.
 * **Where the file is searched:** an absolute path is used as it is. Otherwise the path is relative to the source file
   that contains `embed`, and if the file is not there, relative to the project folder (the folder of `cshift.json`).
   A missing file is a compile error that lists where it was looked for. For a wildcard the folder is searched the same
