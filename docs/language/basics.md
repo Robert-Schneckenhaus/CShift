@@ -148,6 +148,12 @@ uint8 alsoBad = a + n;      // error: uint8 + int8 needs int16
 int64 mixed = someUInt64 + someInt64;    // error: uint64 and a signed type need a cast
 ```
 
+When two different integer types meet, the result type follows C#'s rules. A small type without a sign (`uint8`,
+`uint16`, `char`) takes on the type of a `uint32` or `uint64` it meets: `someUInt32 + someUInt8` is `uint32`,
+`someUInt64 + someUInt8` is `uint64`. A small signed type is widened to `int32` first, so with a `uint32` both
+operands become `int64` (`someUInt32 + someInt8`), and with a `uint64` a cast is needed. Computed in `uint32`, the sum
+is checked there as well: `uint32.MaxValue + someUInt8` with a `someUInt8` of 1 is an overflow panic, not 4294967296.
+
 The computation is checked in T like all integer arithmetic: `uint8 r = a + b;` with `a = 200, b = 100` ends the
 program with an overflow panic (see above; `--unchecked` makes it wrap around). A compound assignment whose value is
 wider than the target (`int16 x; x += someInt32;`) narrows the result, which is checked as well.
