@@ -6,6 +6,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Targets
+- AmigaOS: `-g` writes the names of the functions and globals into the executable (HUNK_SYMBOL), for Amiga debuggers
+  and profilers; the code stays the same. `--emit-asm` names every function in a comment (`| function: Name(params)`).
+- `tools/amiga/profile.py`: where an AmigaOS program spends its time. It runs the program under vamos and counts the
+  instructions of every function ([docs/amiga.md](docs/amiga.md#where-the-time-goes-toolsamigaprofilepy)).
+- The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
+  `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
+
 ### Standard library
 - `s.Trim(c)` removes the character `c` at both ends, like `TrimStart(c)` and `TrimEnd(c)` at one: `"--a-b--".Trim('-')`
   is `"a-b"`.

@@ -1,5 +1,6 @@
 // Standard library: paths, directories, File.Copy, string trimming/padding, the platform and Random. The program runs
 // in a temporary directory. Main returns the number of failed checks.
+// skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
 // expect-exit: 0
 
 using System;

@@ -1,4 +1,5 @@
 // FileStream, StreamReader, StreamWriter; File.Move, File.GetLastWriteTimeUtc; Directory.Delete, Directory.Move
+// skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
 // expect-stdout: [line one]
 // expect-stdout: [zwei]
 // expect-stdout: []

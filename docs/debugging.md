@@ -95,4 +95,5 @@ elements.
   are not in Windows programs (that needs an ELF section); load them with `source`.
 * **Global variables** are found by their name (`print Counter`, `info variables Counter`); constants are not
   variables and have no debug information.
-* The m68k backend (AmigaOS) ignores `-g`.
+* The m68k backend (AmigaOS) writes no line information: with `-g` an executable has the names of its functions and
+  globals (HUNK_SYMBOL), for Amiga debuggers and [tools/amiga/profile.py](amiga.md#where-the-time-goes-toolsamigaprofilepy).

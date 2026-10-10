@@ -1,5 +1,6 @@
 // The output of the assembler as an AmigaOS executable (the hunk format of LoadSeg): a code hunk and a data hunk,
-// each with its 32-bit relocations. Every symbol must be defined: there is no linker after this.
+// each with its 32-bit relocations and, with -g, its symbols (the names of the functions and globals, for debuggers
+// and profilers). Every symbol must be defined: there is no linker after this.
 
 namespace CShift.M68k;
 
@@ -9,9 +10,12 @@ const int HunkHeader = 1011;  // 0x3F3
 const int HunkCode = 1001;    // 0x3E9
 const int HunkData = 1002;    // 0x3EA
 const int HunkReloc32 = 1004; // 0x3EC
+const int HunkSymbol = 1008;  // 0x3F0
 const int HunkEnd = 1010;     // 0x3F2
 
-Error<uint8[]> WriteHunkExecutable(AsmObject obj)
+// 'symbols': with HUNK_SYMBOL, under the names in 'names' where it has one (CShift's names of the functions, see
+// FunctionNames).
+Error<uint8[]> WriteHunkExecutable(AsmObject obj, bool symbols, Dictionary<string, string> names)
 {
     if (obj.Externals.Count() > 0)
     {
@@ -71,7 +75,55 @@ Error<uint8[]> WriteHunkExecutable(AsmObject obj)
             }
             Put32(f, 0);
         }
+        if (symbols)
+            WriteHunkSymbols(f, obj, s, names);
         Put32(f, HunkEnd);
     }
     return f.ToArray();
+}
+
+// HUNK_SYMBOL: the symbols of section 's' (not the local labels .L...), each as its name in longs, the name (padded
+// with zeros) and its offset in the hunk
+void WriteHunkSymbols(List<uint8> f, AsmObject obj, int s, Dictionary<string, string> names)
+{
+    var written = 0;
+    foreach (var name in obj.Symbols.Keys())
+    {
+        var sym = obj.Symbols.Get(name);
+        if (sym.Section != s || name.StartsWith(".L"))
+            continue;
+        if (written == 0)
+            Put32(f, HunkSymbol);
+        written += 1;
+        var shown = names.TryGet(name);
+        var bytes = (shown is string known ? known : name).AsBytes();
+        int length = bytes.Length > 1020 ? 1020 : bytes.Length;
+        int longs = (length + 3) / 4;
+        Put32(f, longs);
+        for (var i = 0; i < longs * 4; i += 1)
+            f.Add(i < length ? bytes[i] : (uint8)0);
+        Put32(f, sym.Offset);
+    }
+    if (written > 0)
+        Put32(f, 0);
+}
+
+// The CShift names of the functions in the assembly of the backend: the comment line before a function's label
+// ("| function: Name(params)", see GenFunction) names it.
+Dictionary<string, string> FunctionNames(string asm)
+{
+    const string Marker = "| function: ";
+    var names = Dictionary<string, string>.Create();
+    string pending = "";
+    foreach (var line in asm.Split('\n'))
+    {
+        if (line.StartsWith(Marker))
+            pending = line[Marker.Length..].ToString();
+        else if (pending.Length > 0 && line.Length > 1 && line[line.Length - 1] == ':' && line[0] != '\t')
+        {
+            names.Set(line[..^1].ToString(), pending);
+            pending = "";
+        }
+    }
+    return names;
 }

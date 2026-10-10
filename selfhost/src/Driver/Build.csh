@@ -660,13 +660,14 @@ int Build(BuildOptions o)
         Console.WriteErrorLine("error: the wasm backend generates code for wasm32 targets, not '" + o.Target + "'");
         return 1;
     }
-    // the backends of CShift read the IR themselves and have no use for debug information
+    // the backends of CShift read the IR themselves and have no use for its debug information; the m68k backend writes
+    // the names of the functions into an AmigaOS executable instead (HUNK_SYMBOL)
     bool ownBackend = o.Backend == "m68k" || o.Backend == "wasm";
     var cg = Compiler.Create(tree, diag, windows, o.Target, o.Backend);
     cg.St[0].ArcStats = o.ArcStats;
     cg.Ir.Debug = o.Debug && !ownBackend;
-    if (o.Debug && ownBackend)
-        Console.WriteErrorLine("warning: -g has no effect with the " + o.Backend + " backend");
+    if (o.Debug && o.Backend == "wasm")
+        Console.WriteErrorLine("warning: -g has no effect with the wasm backend");
     cg.St[0].Unchecked = o.Unchecked;
     if (o.FromProject)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
@@ -1185,11 +1186,8 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
             return WriteBytesOutput(path, WriteElfObject(obj));
         }
         if (!amiga)
-        {
-            Console.WriteErrorLine("error: the m68k backend writes executables for AmigaOS only (for '" + o.Target + "': use -c or --emit-asm)");
-            return 1;
-        }
-        var exe = WriteHunkExecutable(obj);
+            return LinkM68kLinux(o, WriteElfObject(obj), o.Output.Length > 0 ? o.Output : baseName);
+        var exe = WriteHunkExecutable(obj, o.Debug, o.Debug ? FunctionNames(asm) : Dictionary<string, string>.Create());
         if (exe is error exeError)
         {
             Console.WriteErrorLine("error: " + exeError.Message);
@@ -1200,6 +1198,42 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
         return 1;
     }
     return 1;
+}
+
+// A program of the m68k backend for m68k Linux (how the backend is tested: under qemu-m68k): the ELF object is linked
+// statically with the C library of the cross gcc (--cc or CSHIFT_CC, default m68k-linux-gnu-gcc).
+int LinkM68kLinux(BuildOptions o, uint8[] elf, string exePath)
+{
+    if (!o.Target.Contains("linux"))
+    {
+        Console.WriteErrorLine("error: the m68k backend writes executables for AmigaOS and m68k Linux only (for '" + o.Target + "': use -c or --emit-asm)");
+        return 1;
+    }
+    string objPath = exePath + ".o";
+    if (WriteBytesOutput(objPath, elf) != 0)
+        return 1;
+    string cc = o.Cc.Length > 0 ? o.Cc : "m68k-linux-gnu-gcc";
+    var command = StringBuilder.Create();
+    command.Append("\"" + cc + "\" -static \"" + objPath + "\" -o \"" + exePath + "\"");
+    foreach (var f in o.LibFiles)
+        command.Append(" \"" + f + "\"");
+    foreach (var p in o.LibPaths)
+        command.Append(" -L\"" + p + "\"");
+    foreach (var lib in o.Libs)
+        command.Append(" -l" + lib);
+    command.Append(" -lm -lpthread");
+    if (o.Verbose)
+        Console.WriteErrorLine(command.ToString());
+    int code = Process.Run(command.ToString());
+    File.Delete(objPath);
+    if (code != 0)
+    {
+        Console.WriteErrorLine("error: linking with '" + cc + "' failed (exit code " + code.ToString() + ")");
+        return 1;
+    }
+    if (o.FromProject && !o.Run)
+        Console.WriteLine("Built " + exePath);
+    return 0;
 }
 
 // The wasm backend (selfhost/src/Wasm): the IR becomes a WebAssembly module, without clang.

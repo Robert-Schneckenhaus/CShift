@@ -1,5 +1,6 @@
 // 'start' is a contextual keyword: it must still work as an ordinary identifier (variable, parameter, field)
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // everywhere it isn't immediately followed by another identifier.
 // expect-exit: 0
 // expect-stdout: 7

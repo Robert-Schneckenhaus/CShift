@@ -1,5 +1,6 @@
 // 'start', Cancel / CancelAndWait / IsCancelled / IsCompleted / Thread.Cancelled, and SharedPtr<T> as a
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // thread parameter.
 // expect-exit: 0
 // expect-stdout: cancelled=true

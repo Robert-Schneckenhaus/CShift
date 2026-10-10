@@ -1,5 +1,6 @@
 // The 'thread' keyword and Thread / Thread<T>: 'start', Join, and the 'is' pattern.
 // skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // expect-exit: 0
 // expect-stdout: 5
 // expect-stdout: 3
