@@ -185,8 +185,18 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   `bool` is made) and a branch on `!c` branches on `c` with its targets swapped; dead code is removed; a pointer that is
   only used by one load or store becomes an addressing mode (`(d16,An)`, `(d8,An,Dn.l)`, with the register of a 32-bit
   index as it is).
+* **Facts.csh**: what the IR knows at a place. A load of a variable that was stored or loaded before on every way to it
+  (no store on the ways from there) is that value; the same computation of the same values twice is computed once; a
+  block whose only predecessor branched on a comparison knows its outcome (so does every block it dominates), so the
+  same comparison there is a constant: the bounds check of `data[i] ^= x` is made once. Checked additions and
+  subtractions that cannot overflow become plain ones and lose their panics: `i + 1` where `i < n` or `i < length` is
+  known, `length - 1`, and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`).
+  Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
+  to is joined to it.
 * **Regalloc.csh**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
-  their uses, weighted by loop depth; a value loaded from a variable shares its register.
+  their uses, weighted by loop depth; a value loaded from a variable shares its register (also when the variable is
+  written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
+  first operand, stays in `d0` and needs neither a register nor its slot.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
   fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
   pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by

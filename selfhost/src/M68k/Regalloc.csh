@@ -91,6 +91,10 @@ void AllocateRegisters(Gen g, IrFunc f)
             }
         }
     }
+    // values that only the next instruction uses: they stay in d0 (no register, no slot)
+    var forwarded = ForwardedValues(g, f);
+    foreach (var name in forwarded)
+        excluded.Add(name);
 
     // ---- loop nesting (for the weights): a branch back to an earlier block ----
     var depth = new int[n];
@@ -137,6 +141,7 @@ void AllocateRegisters(Gen g, IrFunc f)
     var storeBlock = List<int>.Create();
     var lo = Dictionary<string, int>.Create();
     var hi = Dictionary<string, int>.Create();
+    var lastUse = Dictionary<string, int>.Create();   // "block|value" -> the last position in the block that uses it
     var phiEnds = List<string>.Create();        // phi results and their predecessors: the predecessor writes the
     var phiFrom = List<int>.Create();           // result's register before its branch (and its compare)
     int pos = 0;
@@ -177,6 +182,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                         if (!kill[j].Contains(v.Name))
                             gen[j].Add(v.Name);
                         Touch(v.Name, pos, w, weight, lo, hi);
+                        lastUse.Set(j.ToString() + "|" + v.Name, pos);
                     }
                 }
             }
@@ -228,6 +234,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                 if (!kill[j].Contains(v.Name))
                     gen[j].Add(v.Name);
                 Touch(v.Name, pos, w, weight, lo, hi);
+                lastUse.Set(j.ToString() + "|" + v.Name, pos);
             }
             if (inst.Op == "store" && inst.Args.Length > 1)
             {
@@ -248,6 +255,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                     if (!kill[j].Contains(cv.Name))
                         gen[j].Add(cv.Name);
                     Touch(cv.Name, pos, w, weight, lo, hi);
+                    lastUse.Set(j.ToString() + "|" + cv.Name, pos);
                 }
             }
             if (inst.Res.Length > 0 && inst.Op != "alloca" && IsCandidate(inst.Res, isPointer, excluded))
@@ -374,8 +382,9 @@ void AllocateRegisters(Gen g, IrFunc f)
                 if (sp > from && (sp <= until || liveOut[home].Contains(t)))
                     written = true;
             }
-            else if (liveIn[sb].Contains(t) || liveOut[sb].Contains(t))
-                written = true;
+            else if (liveOut[sb].Contains(t) || phiUses[sb].Contains(t) ||
+                     (liveIn[sb].Contains(t) && sp <= lastUse.GetOrDefault(sb.ToString() + "|" + t, 2147483647)))
+                written = true; // (a store after the last use in a block where the value ends is no conflict)
         }
         // (a loaded value that lives into a loop that also contains the load: not shared)
         if (!written && liveIn[home].Contains(t))
@@ -517,6 +526,121 @@ void AllocateRegisters(Gen g, IrFunc f)
         if (used[r])
             g.Saved.Add(regs[r]);
     }
+    foreach (var name in forwarded)
+        g.Home.Set(name, "%d0");
+}
+
+// The values that go from their instruction straight to the next one in d0: the next instruction is their only use and
+// takes them as its first operand. Their instructions are ones whose code leaves the result in d0 at its end
+// (StoreResult, or the result register: then d0), and the next instruction is one whose code reads its first operand
+// before it changes d0. Such a value needs neither a register of its own nor its slot.
+List<string> ForwardedValues(Gen g, IrFunc f)
+{
+    var uses = Dictionary<string, int>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local)
+                    uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+            }
+            if (inst.Callee >= 0 && g.M.Vals.Get(inst.Callee).Kind == ValKind.Local)
+                uses.Set(g.M.Vals.Get(inst.Callee).Name, uses.GetOrDefault(g.M.Vals.Get(inst.Callee).Name, 0) + 1);
+        }
+    }
+    var result = List<string>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        // the instructions in the order their code is written (phis, allocas and folded instructions write none)
+        var code = List<IrInst>.Create();
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op != "phi" && inst.Op != "alloca" && !(inst.Res.Length > 0 && g.Skip.Contains(inst.Res)))
+                code.Add(inst);
+        }
+        var insts = code.ToArray();
+        for (var k = 0; k + 1 < insts.Length; k += 1)
+        {
+            var def = insts[k];
+            var user = insts[k + 1];
+            if (def.Res.Length == 0 || uses.GetOrDefault(def.Res, 0) != 1 || !IsScalar4(g, def.Type) || !LeavesInD0(g, def))
+                continue;
+            if (user.Args.Length == 0 || !IsLocal(g, user.Args[0]) || g.M.Vals.Get(user.Args[0]).Name != def.Res)
+                continue;
+            if (ReadsFirstOperandFirst(g, insts, k + 1))
+                result.Add(def.Res);
+        }
+    }
+    return result;
+}
+
+bool IsArithmetic32(Gen g, IrInst inst)
+{
+    string op = inst.Op;
+    bool arithmetic = op == "add" || op == "sub" || op == "mul" || op == "and" || op == "or" || op == "xor" ||
+                      op == "shl" || op == "lshr" || op == "ashr" || op == "sdiv" || op == "udiv" || op == "srem" ||
+                      op == "urem";
+    return arithmetic && g.T.Kind(inst.OpType) == IrKind.Int && g.T.Bits(inst.OpType) <= 32;
+}
+
+bool IsIntCast(string op)
+{
+    return op == "sext" || op == "zext" || op == "trunc" || op == "bitcast" || op == "ptrtoint" || op == "inttoptr";
+}
+
+// whether the code of an instruction has its result in d0 at its end (GenBinary32, GenIcmp, GenIntCast, loads)
+bool LeavesInD0(Gen g, IrInst inst)
+{
+    if (IsArithmetic32(g, inst) || IsIntCast(inst.Op))
+        return true;
+    if (inst.Op == "icmp")
+        return !(g.T.Kind(inst.OpType) == IrKind.Int && g.T.Bits(inst.OpType) == 64);
+    // a load, but not one of a variable (that shares the variable's register)
+    if (inst.Op == "load")
+        return !(IsLocal(g, inst.Args[0]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[0]).Name)) &&
+               !g.T.IsAggregate(inst.Type);
+    return false;
+}
+
+// whether the code of insts[k] reads its first operand before it writes d0
+bool ReadsFirstOperandFirst(Gen g, IrInst[] insts, int k)
+{
+    var inst = insts[k];
+    if (IsArithmetic32(g, inst) || IsIntCast(inst.Op))
+        return true;
+    if (inst.Op == "icmp")
+    {
+        if (g.T.Kind(inst.OpType) == IrKind.Int && g.T.Bits(inst.OpType) == 64)
+            return false;
+        // compared and branched together (GenCompareBranch): the phi copies of the branch come first
+        if (k + 1 < insts.Length && insts[k + 1].Op == "br")
+        {
+            foreach (var label in insts[k + 1].Labels)
+            {
+                if (g.Phis.ContainsKey(label))
+                    return false;
+            }
+        }
+        return true;
+    }
+    if (inst.Op == "store")
+        return IsScalar4(g, inst.OpType);
+    if (inst.Op == "load")
+        return true;
+    if (inst.Op == "call" && inst.Callee >= 0)
+    {
+        // checked addition and subtraction (GenOverflowBranch, GenOverflow)
+        var callee = g.M.Vals.Get(inst.Callee);
+        if (callee.Kind != ValKind.Global || !callee.Name.StartsWith("llvm.") || !callee.Name.Contains(".with.overflow.") ||
+            callee.Name.Contains("mul"))
+            return false;
+        int t = g.M.Vals.Get(inst.Args[0]).Type;
+        return g.T.Kind(t) == IrKind.Int && g.T.Bits(t) <= 32;
+    }
+    return false;
 }
 
 // the block that contains a position
