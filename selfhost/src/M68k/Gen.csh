@@ -42,6 +42,7 @@ struct Gen
     List<string> Saved;                   // the registers the function keeps (movem)
     Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.csh)
     HashSet<string> Skip;                 // instructions that are not written (folded)
+    HashSet<string> NoWrap;               // plain adds that were checked ones (Facts.csh): they do not wrap around
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
     int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
@@ -51,6 +52,7 @@ struct Gen
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
                       Saved = List<string>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
+                      NoWrap = HashSet<string>.Create(),
                       Counters = new int[3], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
@@ -985,7 +987,8 @@ void StoreResult(Gen g, IrInst inst)
     var home = g.Home.TryGet(inst.Res);
     if (home is string reg)
     {
-        g.Line("move.l\t%d0," + reg);
+        if (reg != "%d0") // (a value that the next instruction takes from d0: Regalloc.csh, ForwardedValues)
+            g.Line("move.l\t%d0," + reg);
         return;
     }
     int off = g.Slot.Get(inst.Res);

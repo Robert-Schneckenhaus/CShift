@@ -9,6 +9,8 @@
 //     never changes its length, so every bounds check of the same array uses the same length (also in loops).
 //   * Conditions: '&&' and '||' in a condition become branches (no bool is made: the block of the phi that joins them
 //     goes away), and a branch on '!c' branches on c the other way round.
+//   * What is known (Facts.csh): loads of variables whose value is known, computations made twice, comparisons whose
+//     outcome is known, checked arithmetic that cannot overflow, branches on constants, unreachable and joinable blocks.
 //   * Address folding: a getelementptr whose only use is the load or store right after it (in its block) is not
 //     computed on its own: the access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).
 
@@ -29,11 +31,19 @@ void PrepareFunction(Gen g, IrFunc f)
 {
     g.Folds.Clear();
     g.Skip.Clear();
+    g.NoWrap.Clear();
     PromoteSingleStores(g, f);
     InlineCalls(g, f);
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
+    ForwardLoads(g, f);
     ShareLengths(g, f);
+    CommonValues(g, f);
+    KnownConditions(g, f);
+    CommonValues(g, f);  // (the checked operations that became plain ones)
+    KnownConditions(g, f);
+    SimplifyBranches(g, f);
     FoldConstants(g, f);
+    SimplifyBranches(g, f);
     ThreadConditions(g, f);
     RemoveDeadCode(g, f);
     FoldAddresses(g, f);

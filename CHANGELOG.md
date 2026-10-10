@@ -29,6 +29,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   other way round for `!c`, uses the register of a 32-bit index in the addressing mode as it is, and copies fewer
   registers back and forth: unpacking `Floors.amb` takes another 12 % less (27.9 million cycles), and AmbermoonPack is
   2.6 % smaller.
+- The 68000 backend knows what the program checked before: a bounds check that an earlier one of the same index makes
+  needless (`data[i] ^= x`) is left out, and so are the overflow checks of `i + 1` after `i < n`, of `length - 1` and
+  of sums whose operands are small (`(d << 4) + d + 87` with `d = x & 0xffff`). A variable that was read or written
+  before, on every way to a read, is not read again; a value that only the next instruction needs stays in `d0`.
+  Unpacking `Floors.amb` takes another 12 % less (24.4 instead of 27.9 million cycles), packing 5 % less, and
+  AmbermoonPack is 11 % smaller (the panics that cannot happen are gone); the Amiga demos are 8 to 11 % smaller.
 - The 68000 backend builds programs for m68k Linux (`--target m68k-linux-gnu --backend m68k`, linked by
   `m68k-linux-gnu-gcc`), and the test suite runs with it under qemu-m68k, also in the CI.
 
