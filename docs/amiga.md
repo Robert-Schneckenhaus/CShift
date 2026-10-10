@@ -176,10 +176,11 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
 ```
 
 * **IrReader.csh** reads the LLVM IR the front end writes (types, constants, functions, instructions).
-* **Prepare.csh, Inline.csh**: small functions are inlined (up to 6 instructions everywhere; with `-O2`/`-O3` up to 80
-  in loops, the deepest loops first, while the function grows by at most 160 instructions); variables written once become their
-  value; constants are folded; dead code is removed; a pointer that is only used by one load or store becomes an
-  addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
+* **Prepare.csh, Inline.csh**: small functions are inlined: up to 6 instructions everywhere; with `-O2`/`-O3` in loops
+  also those whose code that runs is small (what costs nothing once inlined is not counted: the panics of failed
+  checks, variables, addresses), the deepest loops first, while the function grows by at most 240 instructions.
+  Variables written once become their value; constants are folded; dead code is removed; a pointer that is only used
+  by one load or store becomes an addressing mode (`(d16,An)`, `(d8,An,Dn.l)`).
 * **Regalloc.csh**: a linear scan over live intervals; values and variables get `d4`-`d7` and `a2`-`a5` by their uses,
   weighted by loop depth; a value loaded from a variable shares its register.
 * **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
