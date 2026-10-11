@@ -4,6 +4,7 @@
 	"scopeName": "source.cshift",
 	"patterns": [
 		{ "include": "#comments" },
+		{ "include": "#interpolated-strings" },
 		{ "include": "#strings" },
 		{ "include": "#directives" },
 		{ "include": "#type-declarations" },
@@ -25,6 +26,12 @@
 					"end": "\\*/",
 					"beginCaptures": { "0": { "name": "punctuation.definition.comment.cshift" } },
 					"endCaptures": { "0": { "name": "punctuation.definition.comment.cshift" } }
+				},
+				{
+					"comment": "/// and //!: doc comments (of a declaration, of a file)",
+					"name": "comment.line.documentation.cshift",
+					"match": "(///|//!).*$",
+					"captures": { "1": { "name": "punctuation.definition.comment.cshift" } }
 				},
 				{
 					"name": "comment.line.double-slash.cshift",
@@ -51,6 +58,36 @@
 					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.cshift" } },
 					"endCaptures": { "0": { "name": "punctuation.definition.string.end.cshift" } },
 					"patterns": [{ "include": "#escapes" }]
+				}
+			]
+		},
+
+		"interpolated-strings": {
+			"comment": "$\"text {expression} text\": {{ and }} are braces; {x,8:F2} has an alignment and a format",
+			"name": "string.interpolated.cshift",
+			"begin": "\\$\"",
+			"end": "\"|$",
+			"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.cshift" } },
+			"endCaptures": { "0": { "name": "punctuation.definition.string.end.cshift" } },
+			"patterns": [
+				{ "include": "#escapes" },
+				{ "name": "constant.character.escape.cshift", "match": "\\{\\{|\\}\\}" },
+				{
+					"name": "meta.interpolation.cshift",
+					"begin": "\\{",
+					"end": "\\}",
+					"beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.cshift" } },
+					"endCaptures": { "0": { "name": "punctuation.section.interpolation.end.cshift" } },
+					"patterns": [
+						{ "comment": "the alignment and the format: {x,8}, {x:F2}", "name": "constant.other.format-spec.cshift", "match": "(?:,\\s*-?\\d+(?::[^}\"]*)?|:[A-Za-z][A-Za-z0-9]*)(?=\\})" },
+						{ "include": "#strings" },
+						{ "include": "#numbers" },
+						{ "include": "#keywords" },
+						{ "include": "#builtins" },
+						{ "include": "#function-calls" },
+						{ "include": "#members" },
+						{ "include": "#operators" }
+					]
 				}
 			]
 		},

@@ -1,0 +1,18 @@
+# The rule for lib/linguist/heuristics.yml of github-linguist: ".csh" is the extension of Tcsh (the C shell) and of
+# CShift. A file with a shebang (#!/bin/csh) is decided before the heuristics, by its interpreter. A file without one is
+# CShift if a line starts like a declaration of a C#-like language, which the C shell does not have: "namespace X;",
+# "using X;", "using X from "h.h"", a struct/interface/union/enum/error declaration, a constant, Main, or a function
+# definition alone on its line. Everything else stays Tcsh. See README.md for how reliable it is.
+disambiguations:
+- extensions: ['.csh']
+  rules:
+  - language: CShift
+    pattern:
+    - '^[ \t]*namespace[ \t]+[A-Za-z_][\w.]*[ \t]*;'
+    - '^[ \t]*using[ \t]+[A-Za-z_][\w.]*[ \t]*;'
+    - '^[ \t]*using[ \t]+\w+[ \t]+from[ \t]+"'
+    - '^[ \t]*(?:(?:public|static|unsafe|extern)[ \t]+)*(?:struct|interface|union|enum|error)[ \t]+[A-Z]\w*(?:<[\w, ]+>)?[ \t]*(?::[^\n{;]*)?(?:\{|$)'
+    - '^[ \t]*const[ \t]+[A-Za-z_][\w.]*(?:<[\w, <>]+>)?[ \t]+[A-Za-z_]\w*[ \t]*='
+    - '^[ \t]*(?:int|void|Error<int>)[ \t]+Main[ \t]*\('
+    - '^[ \t]*(?:static[ \t]+)?(?:void|int|bool|string|double|float|char|u?int(?:8|16|32|64)|[A-Z]\w*(?:<[\w, ]+>)?)[ \t]+[A-Za-z_]\w*[ \t]*\([^)\n]*\)[ \t]*$'
+  - language: Tcsh

@@ -1,0 +1,13 @@
+# The entry of CShift for lib/linguist/languages.yml of github-linguist (in alphabetical order, ignoring case: before "CSON").
+# language_id is assigned by Linguist's script/update-ids when the pull request is made; the color must not be
+# too close to the colors of other languages (Linguist's tests check it).
+CShift:
+  type: programming
+  color: "#391ab2" # violet like C#, at least 43 (RGB distance) from every color in Linguist (2026-10)
+  extensions:
+  - ".csh"
+  tm_scope: source.cshift
+  ace_mode: csharp
+  codemirror_mode: clike
+  codemirror_mime_type: text/x-csharp
+  language_id: 0 # assigned by script/update-ids

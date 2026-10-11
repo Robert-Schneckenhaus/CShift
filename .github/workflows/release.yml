@@ -1,6 +1,6 @@
 # Builds cshiftc for Windows (x64) and Linux (Ubuntu, x64) and publishes a GitHub release.
 #
-# Trigger: a push to a branch named release/vX.XX (e.g. release/v1.05 -> version 1.05, tag v1.05).
+# Trigger: a push to a branch named release/vX.XX (e.g. release/v0.32 -> version 0.32, tag v0.32).
 # Every push to such a branch rebuilds the release and replaces it (the tag then points to the pushed commit).
 #
 # The released cshiftc is the self-hosted compiler (selfhost/, written in CShift). Stage 0 of the bootstrap is an earlier
@@ -51,7 +51,7 @@ jobs:
         run: |
           branch="${GITHUB_REF_NAME}"
           if [[ ! "$branch" =~ ^release/v([0-9]+(\.[0-9]+)+)$ ]]; then
-            echo "::error::'$branch' is not a release branch. Expected release/vX.XX, e.g. release/v1.05"
+            echo "::error::'$branch' is not a release branch. Expected release/vX.XX, e.g. release/v0.32"
             exit 1
           fi
           echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"

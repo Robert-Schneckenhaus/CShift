@@ -1,0 +1,42 @@
+# Builds and runs the program with the latest release of CShift, on Linux and Windows.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: cshift-*-linux-x64-standalone
+            compiler: ./cshiftc
+            program: ./bin/app
+          - os: windows-latest
+            asset: cshift-*-windows-x64-standalone.exe
+            compiler: ./cshiftc.exe
+            program: ./bin/app.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # the compiler of the latest release: one file with clang and the C library (Windows) inside
+      - name: Download CShift
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo Robert-Schneckenhaus/CShift --pattern "${{ matrix.asset }}" --output "${{ matrix.compiler }}"
+          chmod +x "${{ matrix.compiler }}"
+          "${{ matrix.compiler }}" --version
+
+      - name: Build
+        shell: bash
+        run: ${{ matrix.compiler }} build
+
+      - name: Run
+        shell: bash
+        run: ${{ matrix.program }}

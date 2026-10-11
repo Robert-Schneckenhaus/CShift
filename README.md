@@ -1,5 +1,8 @@
 # CShift
 
+**[Try it in the browser](https://robert-schneckenhaus.github.io/CShift/v0/playground/)** (the compiler runs as
+WebAssembly in the page) · [Documentation](https://robert-schneckenhaus.github.io/CShift/)
+
 CShift is a native, C#-like systems language: structs instead of classes, no GC (ARC), no headers, generics via
 monomorphization, errors as values, lambdas, sum types, interfaces without boxing, real OS threads, and direct C interop (C headers are
 imported as they are).
@@ -65,8 +68,8 @@ compiler and a matching toolchain (clang, libclang, and on Windows also lld plus
 libraries).
 
 ```
-Windows:  cshift-1.05-windows-x64.zip       unpack it, add the folder to PATH
-Linux:    cshift-1.05-linux-x64.tar.xz      tar -xf ... -C ~ ; add to PATH; sudo apt install build-essential
+Windows:  cshift-0.31-windows-x64.zip       unpack it, add the folder to PATH
+Linux:    cshift-0.31-linux-x64.tar.xz      tar -xf ... -C ~ ; add to PATH; sudo apt install build-essential
 ```
 
 ```
@@ -79,13 +82,13 @@ cshiftc run hello
 not needed. On Linux, the C library and linker come from the system (`build-essential`); which packages exactly, for
 other distributions too, is in [docs/install.md](docs/install.md).
 
-**Standalone executable:** each release also has a single, self-contained file - `cshift-1.05-windows-x64-standalone.exe`
-/ `cshift-1.05-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:
+**Standalone executable:** each release also has a single, self-contained file - `cshift-0.31-windows-x64-standalone.exe`
+/ `cshift-0.31-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:
 run it, and the first time it actually needs the toolchain (linking, or `using X from "header.h";`) it unpacks
 itself once into a per-user cache directory (`cshiftc --clear-cache` deletes it, all versions). See
 [packaging/make-standalone.sh](packaging/make-standalone.sh).
 
-**Publishing a release:** push a `release/vX.XX` branch (e.g. `release/v1.05` → version `1.05`, tag `v1.05`). The
+**Publishing a release:** push a `release/vX.XX` branch (e.g. `release/v0.32` → version `0.32`, tag `v0.32`). The
 workflow [.github/workflows/release.yml](.github/workflows/release.yml) builds the compiler for both platforms, runs
 the tests (including once more against the fully assembled archive), and publishes the release. Pushing to the same
 branch again replaces the release. The branch has to contain the workflow file, so branch off from a commit at or
