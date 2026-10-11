@@ -1,6 +1,6 @@
-// The assembler of the 68000 backend: turns the assembly text of Gen.csh (GNU as syntax, the subset that Gen and
-// Runtime.csh write) into machine code, in two sections (code and data) with 32-bit absolute relocations. Written out
-// as an AmigaOS executable (Hunk.csh) or, for tests on Linux, as an ELF object (Elf.csh).
+// The assembler of the 68000 backend: turns the assembly text of Gen.cshift (GNU as syntax, the subset that Gen and
+// Runtime.cshift write) into machine code, in two sections (code and data) with 32-bit absolute relocations. Written out
+// as an AmigaOS executable (Hunk.cshift) or, for tests on Linux, as an ELF object (Elf.cshift).
 //
 // Choices of its own (like GNU as): add/sub #1..8 become addq/subq, move.l #-128..127 to a data register moveq,
 // (0,An) is (An); branches to labels are short (8-bit) where the distance allows, otherwise 16-bit.

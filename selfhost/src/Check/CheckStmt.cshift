@@ -1,4 +1,4 @@
-// The checker for statements. The scopes open and close where code generation opens and closes them (CodeGen/Stmt.csh),
+// The checker for statements. The scopes open and close where code generation opens and closes them (CodeGen/Stmt.cshift),
 // so that a name means the same in both.
 
 namespace CShift.Check;

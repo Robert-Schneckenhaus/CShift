@@ -1,5 +1,5 @@
-// The WebAssembly code generator: translates the IR module (M68k/IrReader.csh, the same reader as the 68000 backend)
-// into a WebAssembly module (Encoder.csh) that runs on WASI, with the C library of stdlib/wasm (written in CShift).
+// The WebAssembly code generator: translates the IR module (M68k/IrReader.cshift, the same reader as the 68000 backend)
+// into a WebAssembly module (Encoder.cshift) that runs on WASI, with the C library of stdlib/wasm (written in CShift).
 //
 // Simple and correct first:
 //
@@ -26,7 +26,7 @@ namespace CShift.Wasm;
 using System;
 using CShift.M68k;
 
-const int StackSize = 8388608; // 8 MB, like the stack of the clang build (Driver/Build.csh)
+const int StackSize = 8388608; // 8 MB, like the stack of the clang build (Driver/Build.cshift)
 
 struct SlotInit
 {
@@ -53,8 +53,8 @@ struct WasmGen
     Dictionary<string, int> GlobalAddr;   // IR global -> its address
     HashSet<string> Reached;              // the functions and globals the program uses
     HashSet<string> AddressTaken;         // the functions whose address is used (they can be called indirectly)
-    HashSet<string> Suspending;           // the functions that can suspend the program (Suspend.csh)
-    List<string> Helpers;                 // the functions the backend writes itself (Suspend.csh), after the others
+    HashSet<string> Suspending;           // the functions that can suspend the program (Suspend.cshift)
+    List<string> Helpers;                 // the functions the backend writes itself (Suspend.cshift), after the others
     List<string> Work;
     Bytes Data;                           // the memory from DataStart on (the data segment)
     int DataStart;

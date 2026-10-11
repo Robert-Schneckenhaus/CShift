@@ -1,4 +1,4 @@
-// Collection expressions [a, b, ..c] (see CodeGen/Collections.csh). Like in code generation the expression has no type
+// Collection expressions [a, b, ..c] (see CodeGen/Collections.cshift). Like in code generation the expression has no type
 // of its own; its items are checked once where it stands, and the rest (the element type, spreads, the target type)
 // where it is converted to the type it is used as, or settled to an array without one.
 

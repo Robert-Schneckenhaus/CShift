@@ -1,4 +1,4 @@
-// A peephole optimizer for the assembly of one function (Gen.csh writes simple, regular code): copies through
+// A peephole optimizer for the assembly of one function (Gen.cshift writes simple, regular code): copies through
 // a0/a1 become direct moves, stores that are loaded again right away keep the register, arguments are pushed
 // directly, branches over branches are inverted. It only changes a pattern when the scratch registers it removes
 // (d0/d1/a0/a1) are not read afterwards.

@@ -8,7 +8,7 @@
 //     glfwGetProcAddress), GLSL 330 shaders (rewritten to GLSL ES 300), and glDrawPixels/glPixelZoom/glRasterPos of
 //     OpenGL 1.1 (drawn as a texture);
 //   * the game loop: glfwPollEvents (and glfwWaitEvents) suspends the program until the next frame of the browser
-//     (requestAnimationFrame), the backend saves and restores the functions on the way (selfhost/src/Wasm/Gen.csh);
+//     (requestAnimationFrame), the backend saves and restores the functions on the way (selfhost/src/Wasm/Gen.cshift);
 //   * the window of System.Ui (cshift_ui_*, see stdlib/os/wasi/ui.cshift): its frames are drawn on the canvas, the input
 //     of the mouse and the keyboard goes to the program, and cshift_ui_wait suspends it until there is input.
 //

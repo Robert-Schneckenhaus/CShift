@@ -1,4 +1,4 @@
-// Reads the LLVM IR that CShift's code generator writes (CodeGen/, Emit/IrWriter.csh) into a module the 68000 backend
+// Reads the LLVM IR that CShift's code generator writes (CodeGen/, Emit/IrWriter.cshift) into a module the 68000 backend
 // translates. Only the subset CShift produces is understood: one instruction per line (a switch spans several), named
 // struct types, globals with constant initializers, internal and external functions.
 //

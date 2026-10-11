@@ -66,7 +66,7 @@ cshiftc [options] a.cshift b.cshift   single files without a project (as before)
 ```
 
 Source files end in `.cshift`. `.csh`, the extension until 0.31, is still read (in projects, folders and on the command
-line), so older projects build unchanged; the compiler's own sources still use it (see [compiler.md](compiler.md)).
+line), so older projects build unchanged.
 
 `project` is a folder containing `cshift.json`, or the path to the file. Without it, `cshift.json` is looked up in
 the current folder and its parent folders. Command-line options (`-O2`, `--target`, `-o`, `--cc`, `-l…`, `-v`)

@@ -433,7 +433,7 @@ string InProject(string dir, string p)
     return Path.Combine(dir, p);
 }
 
-// cshc new <path>: a new project directory with cshift.json and src/main.csh.
+// cshc new <path>: a new project directory with cshift.json and src/main.cshift.
 Error<void> CreateProject(string projectPath)
 {
     if (Directory.Exists(projectPath) || File.Exists(projectPath))

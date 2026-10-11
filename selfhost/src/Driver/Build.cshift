@@ -3,12 +3,12 @@
 //     cshc [options] file.cshift [file2.cshift ...]     compile single files
 //     cshc build [project] [options]              build a project (cshift.json)
 //     cshc run   [project] [options]              build and run a project
-//     cshc publish [project | files] [options]    the program as one HTML file for the browser (Publish.csh)
-//     cshc serve [project | files] [options]      a server for the page that builds it again on changes (Serve.csh)
+//     cshc publish [project | files] [options]    the program as one HTML file for the browser (Publish.cshift)
+//     cshc serve [project | files] [options]      a server for the page that builds it again on changes (Serve.cshift)
 //     cshc new   <directory>                      create a new project
 //     cshc check [project | files] [options]      report the errors, generate nothing
 //     cshc query --at <file> <line> <col> [...]   the name at a position, as JSON (for the VS Code extension)
-//     cshc doc [project | files]                  the documentation of the doc comments, as JSON (Doc.csh)
+//     cshc doc [project | files]                  the documentation of the doc comments, as JSON (Doc.cshift)
 //
 // The code generator writes LLVM IR as text; clang optimizes it, generates the object code and links.
 
@@ -645,7 +645,7 @@ int Build(BuildOptions o)
         o.Backend = TargetInfo.DefaultBackend(o.Target);
     if (o.Backend == "m68k" && o.Target.Length == 0)
         o.Target = "m68k-amigaos";
-    // the AmigaOS NDK: its SFD files (Ffi.csh) and C headers
+    // the AmigaOS NDK: its SFD files (Ffi.cshift) and C headers
     if (o.Ndk.Length == 0 && Process.GetEnv("CSHIFT_NDK") is string envNdk)
         o.Ndk = envNdk;
     if (o.Ndk.Length > 0 && o.Target.Contains("amigaos"))
@@ -682,7 +682,7 @@ int Build(BuildOptions o)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
 
     // The standard library (stdlib/*.cshift) is parsed as a prelude: its functions are only compiled when they are used.
-    // Without --stdlib the copy that is embedded in cshc is used (src/Driver/EmbeddedStdlib.csh).
+    // Without --stdlib the copy that is embedded in cshc is used (src/Driver/EmbeddedStdlib.cshift).
     if (o.Stdlib.Length == 0)
     {
         for (var i = 0; i < EmbeddedStdlibNames.Length; i += 1)

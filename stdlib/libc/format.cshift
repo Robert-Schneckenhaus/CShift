@@ -13,7 +13,7 @@ extern "C" void __cs_libc_write(void* file, void* data, int length);
 
 // ---------------------------------------------------------------------------
 // printf, fprintf, snprintf: %d %i %u %x %X %c %s %p %% %e %f %g with flags (- 0 + space #), width, precision
-// (also *), and the lengths l, ll, h, z. Called by the entries of the platform (AmigaRuntime.csh, stdlib/wasm).
+// (also *), and the lengths l, ll, h, z. Called by the entries of the platform (AmigaRuntime.cshift, stdlib/wasm).
 // ---------------------------------------------------------------------------
 
 // Where the text goes: kind 0 stdout, 1 a FILE, 2 a buffer of 'size' bytes.

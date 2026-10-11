@@ -20,7 +20,7 @@ The same pass later allows what the one-walk design cannot do:
 
 ## Design
 
-**Where it runs.** `CompileProgram` (CodeGen/Module.csh) first registers and checks the declarations (constants,
+**Where it runs.** `CompileProgram` (CodeGen/Module.cshift) first registers and checks the declarations (constants,
 globals, struct layouts) as before, then calls `CheckProgram` (`selfhost/src/Check`), which walks the body of every
 function and method of the program. If the checker reported errors, the compiler stops there; otherwise code generation
 runs as before.
@@ -82,7 +82,7 @@ message of the failed inference names it.
 
 **Tooling.** `cshiftc check` runs the front end (declarations and the checker, `CgState.FrontEndOnly`) and reports the
 errors without generating anything. `cshiftc query --at <file> <line> <col>` does the same with the symbol index
-(`CgState.Indexing`, `Check/Index.csh`): every name the checker resolves (locals, parameters, fields, constants,
+(`CgState.Indexing`, `Check/Index.cshift`): every name the checker resolves (locals, parameters, fields, constants,
 globals, functions and methods, the functions the language provides, types, enum members; variables, parameters and
 functions also where they are declared) is recorded with its place, the place of its declaration and a hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
 "col"}}`). `--references` adds every place where the name is written (`"references"`: the entries with the same

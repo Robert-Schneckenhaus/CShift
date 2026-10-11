@@ -5,11 +5,10 @@ the git log.
 
 ## Compiler
 
-- [ ] When stage 0 reads `.cshift` (0.32): rename the compiler's sources (`selfhost/src/**/*.csh`, the references to
-      them in comments, docs and scripts such as `selfhost/bootstrap.sh`), the template (`templates/app`,
-      cshift-app-template), and later warn about `.csh` files.
-- [ ] When stage 0 has `Process.IsMacOS()` (0.32): use it in `selfhost/src/CodeGen/Runtime.csh`,
-      `selfhost/src/Driver/Project.csh` and `selfhost/src/Driver/Serve.csh` instead of looking for
+- [ ] A warning for `.csh` files (the extension before 0.32), once most code has moved to `.cshift`; later, stop reading
+      them.
+- [ ] When stage 0 has `Process.IsMacOS()` (0.32): use it in `selfhost/src/CodeGen/Runtime.cshift`,
+      `selfhost/src/Driver/Project.cshift` and `selfhost/src/Driver/Serve.cshift` instead of looking for
       `/System/Library/CoreServices/SystemVersion.plist`.
 - [ ] Closures capture read-only copies. Capturing by reference (shared, mutable boxes, like C#) would need boxed
       locals; decide whether that is wanted.

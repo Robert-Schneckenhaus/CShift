@@ -1,4 +1,4 @@
-// Expressions. Calls are in Call.csh.
+// Expressions. Calls are in Call.cshift.
 //
 // Every emit function returns a Value: its type, the operand that holds it (or its address for an lvalue) and whether it
 // carries a +1 reference count. The instructions are appended to the function that is being written.
@@ -85,7 +85,7 @@ Value EmitExprKind(const ref Compiler cg, Expr e)
     }
     case ExprKind.Collection:
     {
-        Value collection = Rvalue(cg.Types.Collection, "", false); // built when it is converted (Collections.csh)
+        Value collection = Rvalue(cg.Types.Collection, "", false); // built when it is converted (Collections.cshift)
         collection.CollectionNode = e;
         return collection;
     }
@@ -218,7 +218,7 @@ bool IsLocalName(const ref Compiler cg, string name)
 Value EmitName(const ref Compiler cg, Expr e)
 {
     var n = cg.Tree.GetName(e);
-    Value moved = MoveLocal(cg, e); // the last use of a local variable: its reference is given away (Moves.csh)
+    Value moved = MoveLocal(cg, e); // the last use of a local variable: its reference is given away (Moves.cshift)
     if (!moved.IsNone())
         return moved;
     Value v = LookupVariable(cg, n.Name);
@@ -254,7 +254,7 @@ Value EmitName(const ref Compiler cg, Expr e)
     return Value { };
 }
 
-// A constant is inlined at every use: its value was computed by the compile-time evaluator (ConstEval.csh).
+// A constant is inlined at every use: its value was computed by the compile-time evaluator (ConstEval.cshift).
 Value EmitConst(const ref Compiler cg, int index, SourceLoc loc)
 {
     return ConstToValue(cg, ConstEvalDecl(cg, index));
@@ -976,7 +976,7 @@ Value EmitUnaryOn(const ref Compiler cg, UnOp op, Value v, SourceLoc loc)
 }
 
 // ---------------------------------------------------------------------------
-// Target-typed integer arithmetic (see ArithmeticFrame in Rules.csh)
+// Target-typed integer arithmetic (see ArithmeticFrame in Rules.cshift)
 // ---------------------------------------------------------------------------
 
 // An expression used as a value of 'target': integer arithmetic is computed in the target type where its operands

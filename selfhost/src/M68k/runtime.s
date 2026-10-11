@@ -1,4 +1,4 @@
-| The helpers of the 68000 backend (see Runtime.csh): what the 68000 cannot do in one instruction (32-bit
+| The helpers of the 68000 backend (see Runtime.cshift): what the 68000 cannot do in one instruction (32-bit
 | multiplication and division, 64-bit multiplication and division, overflow checks of multiplications). They use the
 | C calling convention (arguments on the stack, results in d0 or d0:d1) and keep d2-d7/a2-a6.
 | Comments start with '|' (as in GNU as for m68k).

@@ -1,4 +1,4 @@
-// What the 68000 backend's Prepare knows (Facts.csh) must never change a result: loads of variables that a store on
+// What the 68000 backend's Prepare knows (Facts.cshift) must never change a result: loads of variables that a store on
 // some way changes, bounds checks of elements that are written, checked sums that stay checked.
 // expect-stdout: known facts ok
 using System;

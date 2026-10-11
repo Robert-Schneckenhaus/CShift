@@ -76,7 +76,7 @@ struct List<T>
     }
 
     // Where the element at `index` is. 'list.Get(i).Name' (and 'list[i].Name') read the field there instead of copying
-    // the whole element first: the compiler calls this (ElementField in selfhost/src/CodeGen/Structs.csh).
+    // the whole element first: the compiler calls this (ElementField in selfhost/src/CodeGen/Structs.cshift).
     unsafe T* _At(int index)
     {
         if (index < 0 || index >= Count())

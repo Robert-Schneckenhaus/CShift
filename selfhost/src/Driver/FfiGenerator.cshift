@@ -393,7 +393,7 @@ struct FfiGenerator
     // libclang does not know where the C library headers (stddef.h, ...) of the installation are, so ask the clang
     // driver, which does: "clang -E -x c -v -" lists its include search path on stderr.
     // WebAssembly: the sysroot of WASI (its C headers) when clang does not find one by itself, like for the build
-    // (CSHIFT_WASI_SYSROOT, Build.csh)
+    // (CSHIFT_WASI_SYSROOT, Build.cshift)
     string Sysroot()
     {
         if (Options.Target.ToLower().StartsWith("wasm") && Process.GetEnv("CSHIFT_WASI_SYSROOT") is string dir)

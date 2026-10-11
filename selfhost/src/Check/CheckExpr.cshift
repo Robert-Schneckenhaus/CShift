@@ -458,7 +458,7 @@ Value CheckFallback(const ref Compiler cg, int optional, Expr e)
 }
 
 // ---------------------------------------------------------------------------
-// Target-typed integer arithmetic (see ArithmeticFrame in CodeGen/Rules.csh and EmitExprAs)
+// Target-typed integer arithmetic (see ArithmeticFrame in CodeGen/Rules.cshift and EmitExprAs)
 // ---------------------------------------------------------------------------
 
 // An expression used as a value of 'target'.

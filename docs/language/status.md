@@ -104,7 +104,7 @@ The design document leaves a number of things open; these are the decisions that
   their declaration and are always checked, even if nothing uses them; they can also be accessed qualified
   (`Math.PI`). Local constants have no storage (assigning to one is an error) and may shadow a name from an
   enclosing block. **The compiler computes constants at compile time**
-  (`selfhost/src/CodeGen/ConstEval.csh`), following the same rules as the code that would be
+  (`selfhost/src/CodeGen/ConstEval.cshift`), following the same rules as the code that would be
   generated for the expression at run time (the type of literals, promotion of small integers, shifts, comparisons,
   casts that saturate floating-point values, string concatenation with numbers, `sizeof(T)`), but it reports
   overflow (`2147483647 + 1`), division by zero, and `MIN / -1` as compile errors. The same expressions are allowed

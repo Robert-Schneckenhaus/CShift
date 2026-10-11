@@ -181,8 +181,8 @@ reads it back:
 IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─▶ Gen (68000 assembly) ─▶ Peephole ─▶ Asm ─▶ Hunk / Elf
 ```
 
-* **IrReader.csh** reads the LLVM IR the front end writes (types, constants, functions, instructions).
-* **Prepare.csh, Inline.csh**: small functions are inlined: up to 6 instructions everywhere; with `-O2`/`-O3` in loops
+* **IrReader.cshift** reads the LLVM IR the front end writes (types, constants, functions, instructions).
+* **Prepare.cshift, Inline.cshift**: small functions are inlined: up to 6 instructions everywhere; with `-O2`/`-O3` in loops
   also those whose code that runs is small (what costs nothing once inlined is not counted: the panics of failed
   checks, variables, addresses), the deepest loops first, while the function grows by at most 240 instructions.
   Variables written once become their value (where the store dominates every load); the length of an array or string
@@ -191,7 +191,7 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   `bool` is made) and a branch on `!c` branches on `c` with its targets swapped; dead code is removed; a pointer that is
   only used by loads and stores (one, or the load and the store of `a[i] ^= x`) becomes an addressing mode
   (`(d16,An)`, `(d8,An,Dn.l)`, with the register of a 32-bit index as it is).
-* **Facts.csh**: what the IR knows at a place. A load of a variable that was stored or loaded before on every way to it
+* **Facts.cshift**: what the IR knows at a place. A load of a variable that was stored or loaded before on every way to it
   (no store on the ways from there) is that value; the same computation of the same values twice is computed once; a
   block whose only predecessor branched on a comparison knows its outcome (so does every block it dominates), so the
   same comparison there is a constant: the bounds check of `data[i] ^= x` is made once. Checked additions and
@@ -201,24 +201,24 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
   goes through `d0`.
-* **Regalloc.csh**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
+* **Regalloc.cshift**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
   their uses, weighted by loop depth; a value loaded from a variable shares its register (also when the variable is
   written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
   first operand, stays in `d0` and needs neither a register nor its slot.
-* **Gen.csh** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
+* **Gen.cshift** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
   fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
   pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by
   powers of two, products by other constants as three `mulu.w` of the 16-bit halves (no call), variables in their slots
   as frame operands (`(-8,a6)`), the length of a string or array for its bounds check without a call, only the
   registers that are used are saved.
-* **Peephole.csh** simplifies the assembly (for example a register copied back right after it was copied, or
-  `moveq #0` before loading a byte or word instead of masking it afterwards); **Asm.csh** encodes it (68000 only, branches made short where they fit);
-  **Hunk.csh** writes the AmigaOS executable, **Elf.csh** an ELF object.
-* **AmigaRuntime.csh, Runtime.csh**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
+* **Peephole.cshift** simplifies the assembly (for example a register copied back right after it was copied, or
+  `moveq #0` before loading a byte or word instead of masking it afterwards); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
+  **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
+* **AmigaRuntime.cshift, Runtime.cshift**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
   32/64-bit multiplication and division. `memcpy`, `memmove` and `memset` go through *jump towers*: the move is
   unrolled 16 times and the loop jumps into the middle of it, so that the first pass does the remainder and every
   further pass 16 moves for one `subq`/`bcc` - longs where the addresses allow it (both even, or both odd after one
-  byte), bytes otherwise. A copy of 64 KB takes about 6 cycles per byte instead of 44, a fill 3.4 instead of 38. **Chunks.csh** cuts them into pieces at their labels; only the pieces that
+  byte), bytes otherwise. A copy of 64 KB takes about 6 cycles per byte instead of 44, a fill 3.4 instead of 38. **Chunks.cshift** cuts them into pieces at their labels; only the pieces that
   the program reaches are written.
 
 The calling convention is the one of GCC for m68k: arguments on the stack, results in `d0` (and `d1`), `a0` as well

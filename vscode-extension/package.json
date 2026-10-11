@@ -1,7 +1,7 @@
 {
 	"name": "cshift",
 	"displayName": "CShift",
-	"description": "CShift (.csh): syntax highlighting, snippets, the errors of the program, hover, go to definition, find all references, the outline, completion after '.' (with cshiftc), and debugging with F5 (with CodeLLDB).",
+	"description": "CShift (.cshift): syntax highlighting, snippets, the errors of the program, hover, go to definition, find all references, the outline, completion after '.' (with cshiftc), and debugging with F5 (with CodeLLDB).",
 	"version": "0.13.0",
 	"publisher": "Robert-Schneckenhaus",
 	"license": "MIT",
@@ -127,7 +127,7 @@
 						"properties": {
 							"project": {
 								"type": "string",
-								"description": "The project to debug: a cshift.json or its folder. Without it: the project of the active .csh file, or the file alone.",
+								"description": "The project to debug: a cshift.json or its folder. Without it: the project of the active .cshift file, or the file alone.",
 								"default": "${workspaceFolder}"
 							},
 							"args": {
