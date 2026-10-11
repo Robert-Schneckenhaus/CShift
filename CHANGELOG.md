@@ -65,6 +65,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - `Process.IsMacOS()`, next to `Process.IsWindows()`.
 
 ### Tools
+- `cshiftc run [project] -- arguments` (and `file.csh --run -- arguments`): the arguments after `--` go to the program,
+  unchanged (quoted for the shell of the system). Before, `cshiftc run` passed none.
 - Building the compiler from source starts from cshiftc 0.31 (`selfhost/stage0.txt`): the compiler's own sources
   may use `??` and `??=`.
 - `selfhost/build-release.sh` builds stage 2 once: `selfhost/bootstrap.sh --stage2 <file>` compares the stage 2 it is
