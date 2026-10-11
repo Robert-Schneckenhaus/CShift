@@ -58,7 +58,8 @@ ships a schema that validates and auto-completes `cshift.json`.
 ```
 cshiftc new <folder>           a new project (cshift.json, src/main.csh, .gitignore)
 cshiftc build [project]        build it
-cshiftc run   [project]        build and run it
+cshiftc run   [project]        build and run it; the arguments after -- go to the program:
+                               cshiftc run -- input.txt --verbose
 cshiftc publish [project]      the program for the browser: bin/<name>.html with everything in it (wasm.md)
 cshiftc serve [project]        the page on http://localhost:8080/, built again when a file changes
 cshiftc [options] a.csh b.csh  single files without a project (as before)

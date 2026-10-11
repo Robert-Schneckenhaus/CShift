@@ -39,6 +39,7 @@ struct BuildOptions
     string Backend;             // --backend: "llvm", "m68k" or "wasm" ("" = the project's, else the target's default)
     string Ndk;                 // --ndk: the AmigaOS NDK (SFD files for "using X from "lib.sfd";")
     bool Run;
+    List<string> RunArgs;       // after "--": the arguments of the program that run / --run starts
     bool Verbose;
     bool ArcStats;
     bool Debug;              // -g: debug information
@@ -72,6 +73,7 @@ struct BuildOptions
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
+        o.RunArgs = List<string>.Create();
         o.Libs = List<string>.Create();
         o.LibFiles = List<string>.Create();
         o.LibPaths = List<string>.Create();
@@ -102,6 +104,13 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
     for (var i = first; i < args.Length; i += 1)
     {
         string a = args[i];
+        if (a == "--")
+        {
+            // the rest belongs to the program: cshiftc run [project] -- arguments
+            for (var k = i + 1; k < args.Length; k += 1)
+                o.RunArgs.Add(args[k]);
+            break;
+        }
         if (a == "-o" && i + 1 < args.Length)
         {
             i += 1;
@@ -968,9 +977,42 @@ int Build(BuildOptions o)
         string runPath = NativePath(exePath, windows);
         if (!windows && runPath.IndexOf('/') < 0)
             runPath = "./" + runPath;
-        return Process.Run("\"" + runPath + "\"");
+        var command = StringBuilder.Create();
+        command.Append("\"" + runPath + "\"");
+        foreach (var arg in o.RunArgs)
+            command.Append(" " + ShellArgument(arg, windows));
+        return Process.Run(command.ToString());
     }
     return 0;
+}
+
+// An argument for the command line of Process.Run (system()): on Windows in double quotes by the rules of the C
+// runtime (a quote as \", the backslashes before a quote doubled), elsewhere in single quotes for sh.
+string ShellArgument(string arg, bool windows)
+{
+    if (!windows)
+        return "'" + arg.Replace("'", "'\\''") + "'";
+    var sb = StringBuilder.Create();
+    sb.Append('"');
+    int backslashes = 0;
+    for (var i = 0; i < arg.Length; i += 1)
+    {
+        char c = arg[i];
+        if (c == '\\')
+        {
+            backslashes += 1;
+            continue;
+        }
+        // backslashes before a quote are doubled, the quote escaped; others stay as they are
+        for (var b = 0; b < (c == '"' ? 2 * backslashes + 1 : backslashes); b += 1)
+            sb.Append('\\');
+        backslashes = 0;
+        sb.Append(c);
+    }
+    for (var b = 0; b < 2 * backslashes; b += 1)
+        sb.Append('\\'); // before the closing quote
+    sb.Append('"');
+    return sb.ToString();
 }
 
 // Parses a source file and adds it to the compiler. Returns false after printing an error.

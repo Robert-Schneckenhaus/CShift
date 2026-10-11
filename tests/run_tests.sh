@@ -230,6 +230,18 @@ else
         fi
     done
 
+    # cshiftc run <project> -- <arguments>, and file.csh --run -- <arguments>: they reach the program unchanged (spaces,
+    # quotes, backslashes, an empty one, things that look like options)
+    want=$'6\n[one]\n[two words]\n[a"b]\n[back\slash\]\n[]\n[-O0]'
+    "$COMPILER" run "$DIR/projects/args" $OPT "${CC_ARGS[@]}" -o "$TMP/args_run" -- one "two words" 'a"b' 'back\slash\' "" -O0 > "$TMP/args.out" 2> "$TMP/args.err"
+    if [ "$(tr -d '\r' < "$TMP/args.out")" != "$want" ]; then
+        report_fail "cshiftc run -- arguments" "got: $(tr -d '\r' < "$TMP/args.out" | tr '\n' '|') $(head -n 2 "$TMP/args.err" | tr '\n' ' ')"
+    elif [ "$("$COMPILER" "$DIR/projects/args/src/main.csh" $OPT "${CC_ARGS[@]}" -o "$TMP/args_file" --run -- x 2> /dev/null | tr -d '\r' | tr '\n' '|')" != "1|[x]|" ]; then
+        report_fail "cshiftc run -- arguments" "file.csh --run -- x did not pass x"
+    else
+        report_ok "cshiftc run -- arguments"
+    fi
+
     # --checked overrides "unchecked": true of a project
     if "$COMPILER" run --checked "$DIR/projects/unchecked" $OPT "${CC_ARGS[@]}" -o "$TMP/checked_override" > /dev/null 2> "$TMP/proj.err"; then
         report_fail "cshiftc --checked" "the overflow did not panic"
