@@ -213,30 +213,6 @@ int _UiXCharOf(nuint keysym)
     return 0;
 }
 
-void _UiXAppend(StringBuilder sb, int code)
-{
-    if (code < 0x80)
-        sb.Append((char)code);
-    else if (code < 0x800)
-    {
-        sb.Append((char)(0xC0 | (code >> 6)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-    else if (code < 0x10000)
-    {
-        sb.Append((char)(0xE0 | (code >> 12)));
-        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-    else
-    {
-        sb.Append((char)(0xF0 | (code >> 18)));
-        sb.Append((char)(0x80 | ((code >> 12) & 0x3F)));
-        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-}
-
 // Handles one event (an XEvent of 24 longs).
 void _UiXEvent(int64[] buffer)
 {
@@ -273,7 +249,7 @@ void _UiXEvent(int64[] buffer)
                 _UiXw.Keys.Add(key);
             int code = _UiXCharOf(keysym);
             if (code != 0 && !_UiXw.Ctrl)
-                _UiXAppend(_UiXw.Text, code);
+                _UiAppendUtf8(_UiXw.Text, code);
             break;
         }
         case 4: // ButtonPress
@@ -324,6 +300,13 @@ void _UiXEvent(int64[] buffer)
 struct _UiOs
 {
     static bool Supported() { return true; }
+
+    // the window draws the frames of a Ui itself, from its commands (AmigaOS), not from their pixels
+    static bool DrawsCommands() { return false; }
+    static Font UiFont() { return Font.Fixed7x13(); }
+    static void PresentCommands(List<UiCommand> commands) { }
+    // the window can wake the program for the blinking text cursor
+    static bool Blinks() { return true; }
 
     // 0: open, 2: no display (or no libX11), 3: failed, 4: a window is already open
     static int Open(string title, int width, int height)

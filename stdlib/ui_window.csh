@@ -5,13 +5,14 @@ using System.Image;
 
 //! A window on the screen for System.Ui: it collects the input of the mouse and the keyboard for a frame and shows
 //! the image of a frame. Windows has it with Win32 (stdlib/os/windows/ui.csh), Linux with X11 (stdlib/os/posix/ui.csh,
-//! libX11 is loaded when the first window opens, so programs without windows do not need it); other targets report
-//! UiError.NotSupported.
+//! libX11 is loaded when the first window opens, so programs without windows do not need it), the browser with a
+//! <canvas> (stdlib/os/wasi/ui.csh and web/cshift.js, --backend wasm), AmigaOS with Intuition and graphics.library
+//! (stdlib/amiga/ui.csh: the frames are drawn from their commands).
 
 /// The errors of opening a window.
 error UiError
 {
-    /// The target has no windows (WebAssembly, AmigaOS, macOS for now).
+    /// The target has no windows: macOS for now, WebAssembly outside of a browser, AmigaOS before 3.0.
     NotSupported = 1,
     /// There is no screen to show a window on (Linux: no X server, or libX11 is missing).
     NoDisplay = 2,
@@ -50,6 +51,8 @@ struct Window : IDisposable
             return error("cannot open a window: no display (is an X server running, and libX11 installed?)", UiError.NoDisplay);
         case 4:
             return error("only one window can be open at a time", UiError.CannotCreate);
+        case 5:
+            return error("windows need AmigaOS 3.0 or later", UiError.NotSupported);
         default:
             return error("the system refused to create the window", UiError.CannotCreate);
         }
@@ -68,7 +71,8 @@ struct Window : IDisposable
     UiInput Input()
     {
         var input = _UiOs.TakeInput();
-        input.Time = (double)_Os.MonotonicTicks() / 10000000.0;
+        // a window that cannot wake the program for the blinking of the text cursor: no time, the cursor stays on
+        input.Time = _UiOs.Blinks() ? (double)_Os.MonotonicTicks() / 10000000.0 : 0.0;
         return input;
     }
 
@@ -85,7 +89,10 @@ struct Window : IDisposable
     void Show(Ui ui)
     {
         var frame = ui.End();
-        _UiOs.Present(frame);
+        if (_UiOs.DrawsCommands())
+            _UiOs.PresentCommands(ui.Commands());
+        else
+            _UiOs.Present(frame);
         _UiOs.SetPointer(ui.Cursor());
         _Wait = ui.WaitMilliseconds();
     }
@@ -114,4 +121,59 @@ struct Clipboard
 
     /// Puts a text on the clipboard.
     static void SetText(string text) { _UiOs.SetClipboard(text); }
+}
+
+// The Key of a virtual key code of Windows (the browser's KeyboardEvent.keyCode has the same values), or Key.None.
+Key _UiKeyOfVk(int vk)
+{
+    if (vk >= 0x41 && vk <= 0x5A)
+        return (Key)((int)Key.A + vk - 0x41);
+    if (vk >= 0x30 && vk <= 0x39)
+        return (Key)((int)Key.D0 + vk - 0x30);
+    if (vk >= 0x70 && vk <= 0x7B)
+        return (Key)((int)Key.F1 + vk - 0x70);
+    switch (vk)
+    {
+    case 0x0D: return Key.Enter;
+    case 0x1B: return Key.Escape;
+    case 0x08: return Key.Backspace;
+    case 0x2E: return Key.Delete;
+    case 0x09: return Key.Tab;
+    case 0x20: return Key.Space;
+    case 0x2D: return Key.Insert;
+    case 0x25: return Key.Left;
+    case 0x26: return Key.Up;
+    case 0x27: return Key.Right;
+    case 0x28: return Key.Down;
+    case 0x24: return Key.Home;
+    case 0x23: return Key.End;
+    case 0x21: return Key.PageUp;
+    case 0x22: return Key.PageDown;
+    default: return Key.None;
+    }
+}
+
+// Appends a character (a code point) as UTF-8.
+void _UiAppendUtf8(StringBuilder sb, int code)
+{
+    if (code < 0x80)
+        sb.Append((char)code);
+    else if (code < 0x800)
+    {
+        sb.Append((char)(0xC0 | (code >> 6)));
+        sb.Append((char)(0x80 | (code & 0x3F)));
+    }
+    else if (code < 0x10000)
+    {
+        sb.Append((char)(0xE0 | (code >> 12)));
+        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
+        sb.Append((char)(0x80 | (code & 0x3F)));
+    }
+    else
+    {
+        sb.Append((char)(0xF0 | (code >> 18)));
+        sb.Append((char)(0x80 | ((code >> 12) & 0x3F)));
+        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
+        sb.Append((char)(0x80 | (code & 0x3F)));
+    }
 }

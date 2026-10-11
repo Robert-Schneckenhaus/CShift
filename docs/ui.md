@@ -54,7 +54,9 @@ sync: the next frame shows the new state. A complete example with lists, scrolli
 |---|---|---|
 | Windows | Win32 and GDI | per-monitor DPI aware; the system clipboard |
 | Linux | X11 | libX11 is loaded when the first window opens (`libx11-6`, present on every desktop); programs without a window do not need it. The clipboard stays inside the program for now |
-| WebAssembly, AmigaOS | none yet | `Window.Open` fails with `UiError.NotSupported`; a `Ui` still draws into images |
+| The browser | a `<canvas>` | `--backend wasm`, with [web/cshift.js](../web/cshift.js) (`cshiftc publish`, `cshiftc serve`): see [in the browser](#in-the-browser) |
+| AmigaOS 3.0 and later | an Intuition window | drawn with graphics.library from the commands of the frames: see [on the Amiga](#on-the-amiga) |
+| WASI without a browser | none | `Window.Open` fails with `UiError.NotSupported`; a `Ui` still draws into images |
 
 The Ui draws with its own software renderer into an `Image` ([Canvas](#drawing-canvas-and-font)), so a program
 needs no graphics library, and the same frames can be drawn without a window: for tests and screenshots
@@ -201,6 +203,52 @@ for a scale (`font.Zoomed(2)` doubles the pixels). Every character has the same 
 number of characters times `font.CharWidth()`. The font data in `stdlib/ui_fonts.csh` is made from the BDF files by
 [tools/ui/bdf2csh.py](../tools/ui/bdf2csh.py).
 
+## In the browser
+
+With the wasm backend the same program runs in a web page: the window is a `<canvas>`, given to the program by
+[web/cshift.js](../web/cshift.js) (`run(program, { canvas })`). `cshiftc publish` makes a page of a project that
+holds everything, `cshiftc serve` shows it while you edit ([wasm.md](wasm.md)):
+
+```
+cshiftc publish demo-ui        # bin/demo-ui.html: open it in a browser
+```
+
+`window.Update()` suspends the program until there is input, as in a desktop window, so an idle page costs nothing.
+The scale is the page's `devicePixelRatio` (the canvas has that many pixels per CSS pixel; the option `pixelRatio`
+of `run` sets another). Ctrl+C and Ctrl+X put the selected text on the system clipboard; Ctrl+V pastes from it (the
+browser gives the text with its paste event). The page cannot be closed by the program; `window.Dispose()` stops
+the input.
+
+This needs `--backend wasm`, which can suspend a program; with `--target wasm32-wasi` (LLVM) a program that opens a
+window does not link. Under node or wasmtime there is no canvas: `Window.Open` reports `UiError.NotSupported`.
+
+## On the Amiga
+
+A 68000 cannot paint every pixel of a frame in 32 bits, so on AmigaOS the Ui does not draw into an image: it records
+the frame as drawing commands, and the window draws them with graphics.library. Rectangles are `RectFill`s (rounded
+corners and circles as a few runs of rows), lines `Move`/`Draw`, text the system font (Topaz 8, or the font of the
+preferences; the Ui takes its size for the layout), and the colors of the theme become the nearest pens of the
+Workbench screen (`ObtainBestPenA`). The frame is drawn into a bitmap of its own and copied into the window in one blit,
+so nothing flickers. The same program runs on the Amiga and on the desktop:
+
+```
+cshiftc build demo-ui --target m68k-amigaos -o demo-ui
+```
+
+The window is on the Workbench screen and can be moved, resized and closed. It needs AmigaOS 3.0 (graphics.library and
+intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the text cursor does
+not blink (the program sleeps until there is input), images (`ui.Image`) are not drawn, the mouse pointer keeps its
+shape, and the clipboard stays inside the program. The keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys,
+F1 to F10, Ctrl with a letter, and the wheel of NewMouse.
+
+## Drawing with commands
+
+`ui.BeginCommands(input, width, height, scale, font)` starts a frame that is not drawn but recorded: after `ui.End()`,
+`ui.Commands()` holds the drawing operations of the frame in order (`UiCommand`: `Clear`, `FillRect`,
+`FillRoundRect`, `StrokeRoundRect`, `FillCircle`, `Line`, `Text`, `Image`, `Clip`). That is how the window of AmigaOS
+works, and how a renderer of your own gets the frames (a terminal, a display without pixels to spare, a test).
+`font` gives the sizes of the text; `Font.Metrics(width, height, ascent)` is a font of which only the sizes are known.
+
 ## How it works
 
 A `Ui` keeps what has to last from one frame to the next: which widget is under the mouse ("hot"), which one the
@@ -210,4 +258,5 @@ again for each frame. A copy of a `Ui` shares this state (it is held in a one-el
 functions by value, and `using (ui.Row())` can end the row it began.
 
 The window layer is the operating system part of the standard library (`stdlib/os/<layer>/ui.csh`): Win32 on
-Windows, X11 on Linux, and a stub on the other targets. One window can be open at a time.
+Windows, X11 on Linux, the canvas of web/cshift.js for WebAssembly, Intuition and graphics.library on AmigaOS (from
+drawing commands). One window can be open at a time.

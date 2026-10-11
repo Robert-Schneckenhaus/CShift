@@ -87,6 +87,12 @@ Gfx.Draw(rastPort, 100, 50);
 * C headers of the NDK: for amigaos targets `<ndk>/Include_H` is searched, and structs are laid out as on the Amiga
   (packed to 2 bytes).
 
+## Windows with buttons: System.Ui
+
+[System.Ui](ui.md) opens an Intuition window on the Workbench screen and draws its widgets with graphics.library, from
+drawing commands instead of pixels (AmigaOS 3.0 and later, see [ui.md](ui.md#on-the-amiga)). The same program runs on
+Windows, Linux and in the browser.
+
 ## The custom chips: `Amiga.Hardware`
 
 For demos and games that bypass the operating system (`stdlib/amiga/hardware.csh`, only for amigaos targets):

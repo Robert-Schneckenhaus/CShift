@@ -41,6 +41,8 @@ const suspend = () => {
 };
 for (const name of ['glfwPollEvents', 'glfwWaitEvents', 'glfwWaitEventsTimeout'])
     if (name in host) host[name] = suspend;
+// System.Ui: there is no canvas, so Window.Open reports UiError.NotSupported
+if ('cshift_ui_open' in host) host.cshift_ui_open = () => 1;
 class Exit {
     constructor(code) { this.code = code; }
 }

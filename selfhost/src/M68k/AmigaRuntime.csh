@@ -57,7 +57,24 @@ const ReadOnlySlice<string> AmigaStubs = [
     "__gfx_WaitTOF|__cs_GfxBase|-270|",
     "__gfx_WaitBlit|__cs_GfxBase|-228|",
     "__gfx_OwnBlitter|__cs_GfxBase|-456|",
-    "__gfx_DisownBlitter|__cs_GfxBase|-462|"];
+    "__gfx_DisownBlitter|__cs_GfxBase|-462|",
+    // graphics.library and intuition.library (for the window of System.Ui: stdlib/amiga/ui.csh)
+    "__gfx_Text|__cs_GfxBase|-60|a1,a0,d0",
+    "__gfx_SetFont|__cs_GfxBase|-66|a1,a0",
+    "__gfx_InitRastPort|__cs_GfxBase|-198|a1",
+    "__gfx_Move|__cs_GfxBase|-240|a1,d0,d1",
+    "__gfx_Draw|__cs_GfxBase|-246|a1,d0,d1",
+    "__gfx_RectFill|__cs_GfxBase|-306|a1,d0,d1,d2,d3",
+    "__gfx_SetAPen|__cs_GfxBase|-342|a1,d0",
+    "__gfx_SetDrMd|__cs_GfxBase|-354|a1,d0",
+    "__gfx_BltBitMapRastPort|__cs_GfxBase|-606|a0,d0,d1,a1,d2,d3,d4,d5,d6",
+    "__gfx_ObtainBestPenA|__cs_GfxBase|-840|a0,d1,d2,d3,a1",
+    "__gfx_AllocBitMap|__cs_GfxBase|-918|d0,d1,d2,d3,a0",
+    "__gfx_FreeBitMap|__cs_GfxBase|-924|a0",
+    "__gfx_ReleasePen|__cs_GfxBase|-948|a0,d0",
+    "__intuition_CloseWindow|__cs_IntuitionBase|-72|a0",
+    "__intuition_SetWindowTitles|__cs_IntuitionBase|-276|a0,a1,a2",
+    "__intuition_OpenWindowTagList|__cs_IntuitionBase|-606|a0,a1"];
 
 // The registers a stub has to keep (the C convention keeps d2-d7/a2-a6).
 string StubAsm(string name, string libBase, int offset, string regs)
@@ -87,20 +104,23 @@ string StubAsm(string name, string libBase, int offset, string regs)
 }
 
 // The startup code (amiga-startup.s, embedded when cshc is compiled): it must be the first code of the program.
-// stackSize: the size of the program's own stack.
+// stackSize: the size of the program's own stack; ir: the program (only the stubs it calls are added).
 const string AmigaStartupText = embed("amiga-startup.s");
 
-string AmigaStartupAsm(int stackSize)
+string AmigaStartupAsm(int stackSize, string ir)
 {
-    return AmigaStartupText.Replace("@STACK@", stackSize.ToString()).Replace("@STUBS@", AmigaStubsAsm());
+    return AmigaStartupText.Replace("@STACK@", stackSize.ToString()).Replace("@STUBS@", AmigaStubsAsm(ir));
 }
 
-string AmigaStubsAsm()
+// The stubs of the library functions that the program calls (it declares them: "@name(" is in its IR).
+string AmigaStubsAsm(string ir)
 {
     var sb = StringBuilder.Create();
     foreach (var line in AmigaStubs)
     {
         var parts = line.Split('|');
+        if (!ir.Contains("@" + parts[0].ToString() + "("))
+            continue;
         sb.Append(StubAsm(parts[0].ToString(), parts[1].ToString(), (int)AsmNumber(parts[2].ToString()), parts[3].ToString()));
     }
     return sb.ToString();

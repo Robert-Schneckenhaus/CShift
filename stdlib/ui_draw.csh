@@ -109,6 +109,13 @@ struct Font
         return Fixed10x20().Zoomed(2);
     }
 
+    /// A font of which only the sizes are known: for a Ui that is drawn with commands ([Ui.BeginCommands]) by a
+    /// renderer with its own font (AmigaOS: the system font). It draws nothing itself.
+    static Font Metrics(int width, int height, int ascent)
+    {
+        return Font { Width = width, Height = height, Ascent = ascent, Zoom = 1, _Codes = new int[0], _Rows = new uint16[0], _Fallback = -1 };
+    }
+
     static Font _Make(int width, int height, int ascent, ReadOnlySlice<int> codes, string bits)
     {
         int rowBytes = (width + 7) / 8;

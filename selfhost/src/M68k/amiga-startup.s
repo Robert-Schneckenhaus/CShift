@@ -404,4 +404,5 @@ __cs_SavedSP:	.long	0
 stdout:	.long	0
 stderr:	.long	0
 __cs_GfxBase:	.long	0
+__cs_IntuitionBase:	.long	0
 	.text

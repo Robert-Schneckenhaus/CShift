@@ -13,7 +13,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   keyboard focus with Tab; light and dark themes. Drawn by its own software renderer (`Canvas`: anti-aliased rounded
   rectangles, circles, lines; bitmap fonts from the public domain fixed fonts of X11) into an `Image`, so it needs no
   library and also works without a window. `Window` shows the frames: Win32 on Windows (per-monitor DPI aware), X11
-  on Linux (libX11 is loaded at run time). See [docs/ui.md](docs/ui.md) and [demo-ui](demo-ui/README.md).
+  on Linux (libX11 is loaded at run time), a `<canvas>` in the browser (`--backend wasm` with web/cshift.js, also in
+  the pages of `cshiftc publish` and `cshiftc serve`), an Intuition window on AmigaOS 3.0 (the Ui records its frames as
+  drawing commands, `Ui.BeginCommands`/`Ui.Commands`, and graphics.library draws them). See [docs/ui.md](docs/ui.md)
+  and [demo-ui](demo-ui/README.md).
 
 ### Language
 - `embed("file")` embeds files of any kind: declared as `const ReadOnlySlice<uint8>`, the constant holds the bytes of
@@ -31,6 +34,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   on the 68000 no 64-bit arithmetic is made of it.
 
 ### Targets
+- AmigaOS: a program gets only the stubs of the library functions it calls (a hello world is 7248 bytes instead of 8000).
+- `--backend wasm` without `--target` on Windows: the program got the operating system layer of Windows instead of the
+  one of WASI, and did not build.
 - AmigaOS: `-g` writes the names of the functions and globals into the executable (HUNK_SYMBOL), for Amiga debuggers
   and profilers; the code stays the same. `--emit-asm` names every function in a comment (`| function: Name(params)`).
 - `tools/amiga/profile.py`: where an AmigaOS program spends its time. It runs the program under vamos and counts the
