@@ -783,7 +783,7 @@ struct FfiGenerator
         if (Host.ClangIsVariadic(function) != 0)
             return "void*";
         int count = Host.ClangNumArgTypes(function);
-        if (count < 0 || count > 8)
+        if (count < 0 || count > 16)
             return "void*";
         var parts = List<string>.Create();
         for (var i = 0; i < count; i += 1)

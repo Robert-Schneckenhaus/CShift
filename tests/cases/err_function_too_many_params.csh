@@ -1,6 +1,6 @@
-// expect-error: 'Action' supports at most 8 parameters
+// expect-error: 'Action' supports at most 16 parameters
 int Main()
 {
-    Action<int, int, int, int, int, int, int, int, int> a = null;
+    Action<int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int> a = null;
     return 0;
 }

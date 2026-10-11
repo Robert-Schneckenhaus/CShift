@@ -25,6 +25,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System.Compression` | `compression.csh` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
 | `System.Image` | `image.csh`, `image_png.csh`, `image_bmp.csh`, `image_ppm.csh` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
 | `System.Net` | `net.csh` | `TcpListener`, `TcpConnection`, `NetError`: TCP connections over IPv4 (`using System.Net;`) |
+| `System.Ui` | `ui.csh`, `ui_draw.csh`, `ui_window.csh`, `ui_fonts.csh` | `Ui`, `Window`, `Theme`, `UiInput`, `Key`, `Canvas`, `Font`, `Rect`, `Clipboard`, `UiError`: user interfaces in immediate mode, drawn by a software renderer; windows on Windows (Win32) and Linux (X11), see [ui.md](ui.md) |
 | `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |

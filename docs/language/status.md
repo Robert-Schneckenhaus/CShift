@@ -124,7 +124,7 @@ The design document leaves a number of things open; these are the decisions that
 * **Name resolution** works like in C#: the current file's namespaces and the global namespace win over `using`
   namespaces.
 * **Function values:** `Action`, `Action<T1, …>` (no result) and `Func<R>`, `Func<T1, …, R>` (the last type is the
-  result) are built-in types like in C#, with up to 8 parameters. They hold a function or a lambda
+  result) are built-in types like in C#, with up to 16 parameters. They hold a function or a lambda
   ([closures](functions-and-delegates.md#lambdas-and-closures)); you can assign the name of a free function or a `static` method
   (`Func<int, int> f = Square;`, `var g = Add;`, `Handlers.Triple`). The signature must match exactly; for overloads
   and generic functions (`Identity<int>`, or inferred from the target type), the target type picks the match. Call

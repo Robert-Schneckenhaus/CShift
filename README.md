@@ -54,7 +54,7 @@ int Main()
 ```
 
 **Documentation:** [docs/](docs/README.md) — the [language guide](docs/language/README.md), the
-[standard library](docs/stdlib.md), [C interop](docs/ffi.md), [projects](docs/build.md) and
+[standard library](docs/stdlib.md), [user interfaces](docs/ui.md), [C interop](docs/ffi.md), [projects](docs/build.md) and
 [the compiler](docs/compiler.md). What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## Ready-made releases

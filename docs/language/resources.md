@@ -41,6 +41,17 @@ using (var file = File.Open("test.txt"))
 }   // Dispose() runs here
 ```
 
+The value of `using (...)` does not need a name: `using (expr) { ... }` disposes the value of `expr` at the end of the
+block. That suits begin/end pairs, such as the rows and panels of a user interface:
+
+```csharp
+using (ui.Row())
+{
+    if (ui.Button("-")) count -= 1;
+    if (ui.Button("+")) count += 1;
+}   // the row ends here
+```
+
 With several nested `using` declarations, cleanup runs in reverse order — last acquired, first released.
 
 Next: [Functions and function pointers](functions-and-delegates.md).

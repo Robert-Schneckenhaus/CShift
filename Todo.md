@@ -43,6 +43,16 @@ the git log.
 
 ## Standard library
 
+- [ ] **`System.Ui`, the next steps** ([docs/ui.md](docs/ui.md)), most useful first:
+      - the window in the browser (`--backend wasm`): a canvas in [web/cshift.js](web/cshift.js), like its GLFW part;
+      - the clipboard on Linux (X11 selections: `SelectionRequest` events answered by the window);
+      - text from TrueType fonts (proportional, smooth): a rasterizer in CShift and a font with a free license embedded
+        with `embed` (`ReadOnlySlice<uint8>`); the bitmap fonts stay for small targets;
+      - popups that are drawn over the rest (drop-down lists, menus, tooltips): drawing in layers, the input for the top
+        one first;
+      - repainting while Windows resizes the window (in its modal loop WM_PAINT shows the last frame; the
+        new area stays empty until the drag ends), several windows, multi-line text boxes, input methods (dead keys and compose on X11: XIM).
+
 - [ ] **UTF-8 on Windows:** `Main(string[] args)` gets the arguments in the ANSI code page (`NOVÁK` arrives as
       `4E 4F 56 C1 4B`, not UTF-8), and the file functions (`fopen`, `GetFileAttributesExA`, `MoveFileExA`, ...) take
       ANSI paths too, so a non-ASCII argument works as a path but is not UTF-8 text. Converting only the arguments
@@ -78,3 +88,11 @@ the git log.
   layouts; a real C front end is a project of its own (Zig's Aro).
 - **A build written in CShift** (`build.csh`, like Zig), see [docs/build.md](docs/build.md).
 - **lld instead of the clang driver** on Windows (smaller toolchain).
+- **Hot reload for `System.Ui` programs** ([docs/ui.md](docs/ui.md)). The state of the program lives in one struct
+  (`App`), the UI is drawn every frame by `Draw(Ui ui, ref App app)`; `cshiftc run --hot` builds a small host (window, `Ui`, the `App` value, watches the
+  sources like `cshiftc serve`) and the program's code as a shared library, and on a change loads the new library and
+  calls its `Frame` from the next frame on - the window keeps its state. A failed build keeps the old code and shows
+  the error in the window. Needs: a shared-library output (`type`), one runtime (ARC allocator) in the host for both;
+  old libraries are never unloaded (`App` can hold string literals, `Action`/`Func` and interface values that point
+  into them); a hash of `App`'s layout exported with `Frame` tells when the state has to be reset (or carried over
+  through `System.Json`); globals of the library start fresh on every reload.

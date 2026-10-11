@@ -1105,6 +1105,16 @@ struct Parser
         return Tree.AddSwitch(loc, s);
     }
 
+    // After 'using (': 'Type name = ...' or 'var name = ...' (otherwise an expression: using (ui.Row()) { ... }).
+    bool LooksLikeUsingDecl()
+    {
+        int save = Pos;
+        TypeRef t = TryParseType();
+        bool decl = !t.IsNull() && Check(TokenKind.Ident) && PeekKind(1) == TokenKind.Assign;
+        Pos = save;
+        return decl;
+    }
+
     Error<Stmt> ParseUsing()
     {
         SourceLoc loc = Advance().Loc; // using
@@ -1112,6 +1122,19 @@ struct Parser
         {
             var decl = VarDeclStmt { IsUsing = true };
             SourceLoc declLoc = Cur().Loc;
+            if (!LooksLikeUsingDecl())
+            {
+                // using (expr) { ... }: the value is disposed at the end like a declared one; its variable has a name
+                // that a program cannot write
+                decl.NameLoc = declLoc;
+                decl.Name = "$using" + Pos.ToString();
+                decl.Init = try ParseExpr();
+                try Expect(TokenKind.RParen, "')'");
+                var e = UsingBlockStmt { };
+                e.Decl = Tree.AddVarDecl(declLoc, decl);
+                e.Body = try ParseBody("using");
+                return Tree.AddUsingBlock(loc, e);
+            }
             TypeRef t = try ParseType();
             if (!IsVarType(t))
                 decl.Type = t;
