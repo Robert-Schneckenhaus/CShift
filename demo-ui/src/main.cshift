@@ -124,7 +124,7 @@ int Main(string[] args)
     int count = 0;
     while (window.Update())
     {
-        ui.Begin(window.Input(), window.Width(), window.Height(), window.Scale() * app.Zoom);
+        ui.Begin(window, app.Zoom);
         Draw(ui, ref app);
         if (frames > 0)
             window.Show(ui.End()); // as an image: the next Update does not wait for input

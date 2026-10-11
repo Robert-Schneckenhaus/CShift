@@ -401,10 +401,19 @@ struct Ui
     /// Starts a frame for a window: its input, size and scale (and with commands if the window draws them itself).
     void Begin(Window window)
     {
+        Begin(window, 1.0);
+    }
+
+    /// The same with the scale of the window multiplied by `zoom` (1.25: everything a quarter larger). For a window,
+    /// use this rather than [Ui.Begin] with the window's input and size: that one always draws pixels, which a window
+    /// that draws commands (AmigaOS) does not show.
+    void Begin(Window window, double zoom)
+    {
+        double scale = window.Scale() * (zoom > 0 ? zoom : 1.0);
         if (_UiOs.DrawsCommands())
-            _S[0].BeginCommands(window.Input(), window.Width(), window.Height(), window.Scale(), _UiOs.UiFont());
+            _S[0].BeginCommands(window.Input(), window.Width(), window.Height(), scale, _UiOs.UiFont());
         else
-            _S[0].Begin(window.Input(), window.Width(), window.Height(), window.Scale());
+            _S[0].Begin(window.Input(), window.Width(), window.Height(), scale);
     }
 
     /// Starts a frame of the given size in pixels; `scale` is 1 at 96 dpi.
