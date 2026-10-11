@@ -116,8 +116,7 @@ a panel learn their size while they are drawn, so when it changes (the first fra
 second frame at once; `Window.Update` does that without waiting.
 
 Sizes are pixels at a scale of 1 (96 dpi). The Ui scales them, and picks its font, for the scale of the screen
-(`Window.Scale`: 1.5 at 144 dpi). `ui.Begin(window.Input(), window.Width(), window.Height(), window.Scale() * 1.25)`
-makes everything a quarter larger.
+(`Window.Scale`: 1.5 at 144 dpi). `ui.Begin(window, 1.25)` makes everything a quarter larger.
 
 ## Ids
 
