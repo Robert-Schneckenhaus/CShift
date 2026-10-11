@@ -2358,8 +2358,8 @@ struct WasmGen
             {
                 // __wasi_X: X of WASI; anything else: a function of the host (JavaScript), from the module "env"
                 Imports.Add(f.Name);
-                // GLFW and OpenGL are what web/cshift.js gives a program: no warning
-                if (!f.Name.StartsWith("__wasi_") && !f.Name.StartsWith("gl"))
+                // GLFW, OpenGL and the window of System.Ui are what web/cshift.js gives a program: no warning
+                if (!f.Name.StartsWith("__wasi_") && !f.Name.StartsWith("gl") && !f.Name.StartsWith("cshift_ui_"))
                     Warnings.Add("'" + f.Name + "' is not defined: it is imported from the module \"env\"");
             }
         }
@@ -2531,12 +2531,12 @@ struct WasmGen
 
     // -----------------------------------------------------------------------
     // Suspending the program (like Binaryen's Asyncify): a game's loop runs in the browser, which shows a frame only
-    // when the program returns. A call of glfwPollEvents (or glfwSwapBuffers, glfwWaitEvents) may suspend it: the
-    // host (JavaScript) calls __cs_wasm_start_unwind(data) and returns; every function on the way back saves its
-    // locals (and the block of the call it is in) to the data and returns. For the next frame the host calls
-    // __cs_wasm_start_rewind(data) and _start again: every function restores its locals and jumps to the call it was
-    // suspended in, until the call that suspended the program is made again, which calls __cs_wasm_stop_rewind and
-    // returns as if nothing had happened. The frames on the shadow stack stay where they are.
+    // when the program returns. A call of glfwPollEvents (or glfwSwapBuffers, glfwWaitEvents, and cshift_ui_wait of
+    // System.Ui) may suspend it: the host (JavaScript) calls __cs_wasm_start_unwind(data) and returns; every function
+    // on the way back saves its locals (and the block of the call it is in) to the data and returns. For the next
+    // frame the host calls __cs_wasm_start_rewind(data) and _start again: every function restores its locals and jumps
+    // to the call it was suspended in, until the call that suspended the program is made again, which calls
+    // __cs_wasm_stop_rewind and returns as if nothing had happened. The frames on the shadow stack stay where they are.
     //
     // Only the functions that can reach such a call are changed (directly, or through a call of a function pointer
     // when a function whose address is taken can); other programs are not changed at all. $state (global 2) is
@@ -2545,7 +2545,8 @@ struct WasmGen
 
     bool SuspendsAlways(string name)
     {
-        return name == "glfwPollEvents" || name == "glfwWaitEvents" || name == "glfwWaitEventsTimeout" || name == "glfwSwapBuffers";
+        return name == "glfwPollEvents" || name == "glfwWaitEvents" || name == "glfwWaitEventsTimeout" || name == "glfwSwapBuffers" ||
+               name == "cshift_ui_wait"; // System.Ui: waits for input (stdlib/os/wasi/ui.csh)
     }
 
     bool IndirectCallsSuspend()

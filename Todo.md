@@ -44,14 +44,17 @@ the git log.
 ## Standard library
 
 - [ ] **`System.Ui`, the next steps** ([docs/ui.md](docs/ui.md)), most useful first:
-      - the window in the browser (`--backend wasm`): a canvas in [web/cshift.js](web/cshift.js), like its GLFW part;
-      - the clipboard on Linux (X11 selections: `SelectionRequest` events answered by the window);
+      - the clipboard on Linux (X11 selections: `SelectionRequest` events answered by the window) and on AmigaOS
+        (clipboard.device, IFF FTXT);
+      - AmigaOS: images (remapped to the pens of the screen, `WriteChunkyPixels`), a blinking text cursor
+        (timer.device in the wait), the shape of the mouse pointer, AmigaOS 2.x (fixed pens, no `AllocBitMap`);
       - text from TrueType fonts (proportional, smooth): a rasterizer in CShift and a font with a free license embedded
         with `embed` (`ReadOnlySlice<uint8>`); the bitmap fonts stay for small targets;
       - popups that are drawn over the rest (drop-down lists, menus, tooltips): drawing in layers, the input for the top
         one first;
-      - repainting while Windows resizes the window (in its modal loop WM_PAINT shows the last frame; the
-        new area stays empty until the drag ends), several windows, multi-line text boxes, input methods (dead keys and compose on X11: XIM).
+      - repainting while Windows resizes the window (in its modal loop WM_PAINT shows the last frame; the new area
+        stays empty until the drag ends), several windows, multi-line text boxes, input methods (dead keys and compose
+        on X11: XIM).
 
 - [ ] **UTF-8 on Windows:** `Main(string[] args)` gets the arguments in the ANSI code page (`NOVÁK` arrives as
       `4E 4F 56 C1 4B`, not UTF-8), and the file functions (`fopen`, `GetFileAttributesExA`, `MoveFileExA`, ...) take

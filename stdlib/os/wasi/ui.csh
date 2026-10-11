@@ -1,26 +1,171 @@
-// The window part of the operating system layer on WebAssembly (see stdlib/os/windows/ui.csh): WASI has no windows,
-// so Window.Open reports UiError.NotSupported. The clipboard is kept inside the program.
+// The window part of the operating system layer on WebAssembly for System.Ui (stdlib/ui_window.csh; see
+// stdlib/os/windows/ui.csh for the same struct with Win32). In the browser the window is a <canvas> of the page: the
+// functions below are imported from "env" and given by web/cshift.js (run(program, { canvas })). cshift_ui_wait
+// suspends the program until there is input or the time is up (the wasm backend saves and restores the functions on
+// the way, like for glfwWaitEvents), so this needs --backend wasm. Without a browser (node, wasmtime) the host has no
+// canvas: cshift_ui_open fails and Window.Open reports UiError.NotSupported (a host without these imports cannot
+// start a program that opens a window at all).
+//
+// The functions of the host:
+//   int cshift_ui_open(char* title, int width, int height)   0: the canvas has the size (pixels at scale 1), 1: none
+//   void cshift_ui_wait(int milliseconds)                    suspends until input, or the time (-1: no limit)
+//   int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity)
+//       the input since the last call (see _UiOs.TakeInput); returns the number of keys
+//   int cshift_ui_width(), int cshift_ui_height()            the canvas in its pixels
+//   double cshift_ui_scale()                                 devicePixelRatio (or the option pixelRatio)
+//   void cshift_ui_present(void* pixels, int width, int height)   ARGB pixels (uint32, little endian)
+//   void cshift_ui_cursor(int kind), void cshift_ui_title(char* title), void cshift_ui_close()
+//   void cshift_ui_clipboard_set(char* text, int length)
+//   int cshift_ui_clipboard_get(char* buffer, int capacity)  the length of the text (it is cut at the capacity)
 
 namespace System.Ui;
 
 using System;
 using System.Image;
 
-string _UiClipboardText;
+extern "C" int cshift_ui_open(char* title, int width, int height);
+extern "C" void cshift_ui_wait(int milliseconds);
+extern "C" int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity);
+extern "C" int cshift_ui_width();
+extern "C" int cshift_ui_height();
+extern "C" double cshift_ui_scale();
+extern "C" void cshift_ui_present(void* pixels, int width, int height);
+extern "C" void cshift_ui_cursor(int kind);
+extern "C" void cshift_ui_title(char* title);
+extern "C" void cshift_ui_close();
+extern "C" void cshift_ui_clipboard_set(char* text, int length);
+extern "C" int cshift_ui_clipboard_get(char* buffer, int capacity);
+
+bool _UiWebOpen;
 
 struct _UiOs
 {
-    static bool Supported() { return false; }
-    static int Open(string title, int width, int height) { return 1; }
-    static bool Pump(int waitMs) { return false; }
-    static UiInput TakeInput() { return UiInput.Create(); }
-    static int Width() { return 0; }
-    static int Height() { return 0; }
-    static double Scale() { return 1.0; }
-    static void Present(Image image) { }
-    static void SetPointer(Cursor cursor) { }
-    static void SetTitle(string title) { }
-    static void Close() { }
-    static string GetClipboard() { return _UiClipboardText; }
-    static void SetClipboard(string text) { _UiClipboardText = text; }
+    static bool Supported() { return true; }
+
+    // the window draws the frames of a Ui itself, from its commands (AmigaOS), not from their pixels
+    static bool DrawsCommands() { return false; }
+    static Font UiFont() { return Font.Fixed7x13(); }
+    static void PresentCommands(List<UiCommand> commands) { }
+    // the window can wake the program for the blinking text cursor
+    static bool Blinks() { return true; }
+
+    // 0: open, 1: no canvas (no browser), 4: a window is already open
+    static int Open(string title, int width, int height)
+    {
+        if (_UiWebOpen)
+            return 4;
+        unsafe
+        {
+            if (cshift_ui_open(title.CStr(), width, height) != 0)
+                return 1;
+        }
+        _UiWebOpen = true;
+        return 0;
+    }
+
+    static bool Pump(int waitMs)
+    {
+        if (!_UiWebOpen)
+            return false;
+        cshift_ui_wait(waitMs);
+        return _UiWebOpen;
+    }
+
+    static UiInput TakeInput()
+    {
+        var input = UiInput.Create();
+        if (!_UiWebOpen)
+            return input;
+        unsafe
+        {
+            // mouse x, y, down, pressed, released, wheel, ctrl, shift, alt, the length of the text
+            var state = new int32[10];
+            var keys = new int32[64];
+            var text = new uint8[1024];
+            int count = cshift_ui_take(&state[0], &keys[0], keys.Length, (char*)&text[0], text.Length);
+            input.MouseX = state[0];
+            input.MouseY = state[1];
+            input.MouseDown = state[2] != 0;
+            input.MousePressed = state[3] != 0;
+            input.MouseReleased = state[4] != 0;
+            input.Wheel = state[5];
+            input.Ctrl = state[6] != 0;
+            input.Shift = state[7] != 0;
+            input.Alt = state[8] != 0;
+            for (var i = 0; i < Math.Min(count, keys.Length); i += 1)
+            {
+                var key = _UiKeyOfVk(keys[i]);
+                if (key != Key.None)
+                    input.Keys.Add(key);
+            }
+            int length = Math.Clamp(state[9], 0, text.Length);
+            input.Text = string.FromBytes(text[..length].ToArray());
+        }
+        return input;
+    }
+
+    static int Width() { return _UiWebOpen ? cshift_ui_width() : 0; }
+    static int Height() { return _UiWebOpen ? cshift_ui_height() : 0; }
+    static double Scale() { return _UiWebOpen ? cshift_ui_scale() : 1.0; }
+
+    static void Present(Image image)
+    {
+        if (!_UiWebOpen || image.Width <= 0 || image.Height <= 0)
+            return;
+        unsafe
+        {
+            cshift_ui_present(&image.Pixels[0], image.Width, image.Height);
+        }
+    }
+
+    static void SetPointer(Cursor cursor)
+    {
+        if (_UiWebOpen)
+            cshift_ui_cursor((int)cursor);
+    }
+
+    static void SetTitle(string title)
+    {
+        if (!_UiWebOpen)
+            return;
+        unsafe
+        {
+            cshift_ui_title(title.CStr());
+        }
+    }
+
+    static void Close()
+    {
+        if (!_UiWebOpen)
+            return;
+        cshift_ui_close();
+        _UiWebOpen = false;
+    }
+
+    static string GetClipboard()
+    {
+        if (!_UiWebOpen)
+            return "";
+        unsafe
+        {
+            var buffer = new uint8[4096];
+            int length = cshift_ui_clipboard_get((char*)&buffer[0], buffer.Length);
+            if (length > buffer.Length)
+            {
+                buffer = new uint8[length];
+                length = cshift_ui_clipboard_get((char*)&buffer[0], buffer.Length);
+            }
+            return string.FromBytes(buffer[..Math.Clamp(length, 0, buffer.Length)].ToArray());
+        }
+    }
+
+    static void SetClipboard(string text)
+    {
+        if (!_UiWebOpen)
+            return;
+        unsafe
+        {
+            cshift_ui_clipboard_set(text.CStr(), text.Length);
+        }
+    }
 }

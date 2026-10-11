@@ -31,7 +31,8 @@
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
 #   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
 #      VS Code extension (vscode-extension/test, if node is installed); tests/publish/*/: "cshiftc publish", the page
-#      run by node (tests/publish-run.mjs); "cshiftc serve" (tests/serve-check.mjs).
+#      run by node (tests/publish-run.mjs); "cshiftc serve" (tests/serve-check.mjs); System.Ui in the browser
+#      (tests/ui/web.csh, run by tests/ui-web-check.mjs).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -466,6 +467,17 @@ elif [ -n "$NODE" ]; then
             fi
         fi
     done
+    # System.Ui in the browser: tests/ui/web.csh from the wasm backend, with web/cshift.js and a canvas that only
+    # pretends (tests/ui-web-check.mjs sends it the input)
+    check=("$DIR/ui-web-check.mjs" "$TMP/ui-web.wasm")
+    if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/ui-web-check.mjs")" "$(cygpath -w "$TMP/ui-web.wasm")"); fi
+    if ! "$COMPILER" --backend wasm "$DIR/ui/web.csh" -o "$TMP/ui-web.wasm" > /dev/null 2> "$TMP/ui-web.err"; then
+        report_fail "ui in the browser" "compilation failed: $(head -n 3 "$TMP/ui-web.err" | tr '\n' ' ')"
+    elif ! "$NODE" --no-warnings "${check[@]}" > "$TMP/ui-web.out" 2>&1; then
+        report_fail "ui in the browser" "$(head -n 3 "$TMP/ui-web.out" | tr '\n' ' ')"
+    else
+        report_ok "ui in the browser"
+    fi
 else
     echo "publish: skipped (node not found)"
 fi

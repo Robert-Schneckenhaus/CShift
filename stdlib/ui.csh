@@ -323,6 +323,60 @@ struct UiScope : IDisposable
     }
 }
 
+/// What a [UiCommand] draws.
+enum UiCommandKind : int32
+{
+    /// The whole frame in `Color`.
+    Clear,
+    /// `Rect` in `Color`.
+    FillRect,
+    /// `Rect` with corners of `Radius` in `Color`.
+    FillRoundRect,
+    /// The outline of `Rect` with corners of `Radius`, `Width` pixels thick, inside of it, in `Color`.
+    StrokeRoundRect,
+    /// A circle around (`X0`, `Y0`) with the radius `Size`, in `Color`.
+    FillCircle,
+    /// A line from (`X0`, `Y0`) to (`X1`, `Y1`), `Size` pixels thick, in `Color`.
+    Line,
+    /// `Text` in `Color`, the top left corner of its first character at (`Rect.X`, `Rect.Y`).
+    Text,
+    /// `Image` with its top left corner at (`Rect.X`, `Rect.Y`).
+    Image,
+    /// From now on only `Rect` is drawn into.
+    Clip
+}
+
+/// One drawing operation of a frame, recorded when a Ui draws with commands instead of pixels ([Ui.BeginCommands],
+/// [Ui.Commands]): for windows that draw themselves (the one of AmigaOS draws with graphics.library). Which fields
+/// count depends on `Kind`.
+struct UiCommand
+{
+    /// What it draws.
+    UiCommandKind Kind;
+    /// The rectangle (or the position) of it.
+    Rect Rect;
+    /// The radius of the corners.
+    int Radius;
+    /// The thickness of an outline.
+    int Width;
+    /// The color.
+    Color Color;
+    /// The center of a circle, the start of a line.
+    double X0;
+    /// The center of a circle, the start of a line.
+    double Y0;
+    /// The end of a line.
+    double X1;
+    /// The end of a line.
+    double Y1;
+    /// The radius of a circle, the thickness of a line.
+    double Size;
+    /// The text (UTF-8).
+    string Text;
+    /// The image.
+    Image Image;
+}
+
 /// The user interface: one value for the whole program, created once and given every frame to the code that draws
 /// it. Copies share the same state (it is held by reference), so a Ui can be passed to functions by value.
 ///
@@ -344,10 +398,13 @@ struct Ui
 
     // ---- frames ----
 
-    /// Starts a frame for a window: its input, size and scale.
+    /// Starts a frame for a window: its input, size and scale (and with commands if the window draws them itself).
     void Begin(Window window)
     {
-        _S[0].Begin(window.Input(), window.Width(), window.Height(), window.Scale());
+        if (_UiOs.DrawsCommands())
+            _S[0].BeginCommands(window.Input(), window.Width(), window.Height(), window.Scale(), _UiOs.UiFont());
+        else
+            _S[0].Begin(window.Input(), window.Width(), window.Height(), window.Scale());
     }
 
     /// Starts a frame of the given size in pixels; `scale` is 1 at 96 dpi.
@@ -355,6 +412,16 @@ struct Ui
     {
         _S[0].Begin(input, width, height, scale);
     }
+
+    /// Starts a frame that is not drawn into an image but recorded as commands ([Ui.Commands]), for a renderer of
+    /// your own; `font` gives the sizes of the text (see [Font.Metrics]).
+    void BeginCommands(UiInput input, int width, int height, double scale, Font font)
+    {
+        _S[0].BeginCommands(input, width, height, scale, font);
+    }
+
+    /// The drawing commands of the last frame begun with [Ui.BeginCommands] (the list is used again by the next one).
+    List<UiCommand> Commands() { return _S[0].Commands; }
 
     /// Ends the frame and gives the image it drew (the same image every frame, as long as the size stays).
     Image End()
@@ -388,7 +455,8 @@ struct Ui
     /// The input of the current frame.
     UiInput Input() { return _S[0].In; }
 
-    /// The canvas that the current frame draws on, for drawing of your own (see [Ui.Area]).
+    /// The canvas that the current frame draws on, for drawing of your own (see [Ui.Area]); with commands
+    /// ([Ui.BeginCommands]) it draws into an empty image.
     Canvas Canvas() { return _S[0].Canvas; }
 
     /// Takes a rectangle of the layout for drawing of your own: `width` (0: as wide as there is room) x `height`
@@ -540,6 +608,11 @@ struct _UiState
 {
     Image Frame;
     Canvas Canvas;
+    bool Record;                // draws with commands (Commands), not into Frame
+    List<UiCommand> Commands;
+    Rect Clip;                  // only this part is drawn into (and the mouse counts only there)
+    Rect Bounds;                // the frame
+    Font FixedFont;             // the font of a frame with commands
     Theme Theme;
     Font Font;
     double Scale;
@@ -594,6 +667,7 @@ struct _UiState
             Scale = 0.0,
             In = UiInput.Create(),
             Layouts = List<_UiLayout>.Create(),
+            Commands = List<UiCommand>.Create(),
             FocusOrder = List<uint32>.Create(),
             PanelHeights = Dictionary<uint32, int>.Create(),
             Scrolls = Dictionary<uint32, _UiScroll>.Create(),
@@ -613,24 +687,54 @@ struct _UiState
     void Begin(UiInput input, int width, int height, double scale)
     {
         double s = scale > 0 ? scale : 1.0;
-        if (s != Scale)
+        if (s != Scale || Record)
         {
-            Scale = s;
-            Font = Font.ForScale(s);
-            int lh = Font.LineHeight();
-            Pad = Px(4);
-            ControlHeight = lh + 2 * Px(5);
-            Spacing = Px(6);
-            Margin = Px(10);
-            Radius = Px(4);
-            Line = Math.Max(1, Px(1));
+            Record = false;
+            Metrics(s, Font.ForScale(s));
         }
         int w = Math.Max(1, width);
         int h = Math.Max(1, height);
         if (Frame.Width != w || Frame.Height != h)
             Frame = Image.Create(w, h);
         Canvas = Canvas.Create(Frame);
-        Canvas.Clear(Theme.Background);
+        Start(input, w, h);
+    }
+
+    void BeginCommands(UiInput input, int width, int height, double scale, Font font)
+    {
+        double s = scale > 0 ? scale : 1.0;
+        if (s != Scale || !Record || font.Width != FixedFont.Width || font.Height != FixedFont.Height)
+        {
+            Record = true;
+            FixedFont = font;
+            Metrics(s, font);
+        }
+        Commands.Clear();
+        Frame = Image.Create(0, 0);
+        Canvas = Canvas.Create(Frame);
+        Start(input, Math.Max(1, width), Math.Max(1, height));
+    }
+
+    // the sizes for a scale and a font
+    void Metrics(double scale, Font font)
+    {
+        Scale = scale;
+        Font = font;
+        int lh = Font.LineHeight();
+        Pad = Px(4);
+        ControlHeight = lh + 2 * Px(5);
+        Spacing = Px(6);
+        Margin = Px(10);
+        Radius = Px(4);
+        Line = Math.Max(1, Px(1));
+    }
+
+    // the rest of Begin: the background, the state of the frame, the root of the layout
+    void Start(UiInput input, int w, int h)
+    {
+        Bounds = Rect.Create(0, 0, w, h);
+        Clip = Bounds;
+        ClearFrame(Theme.Background);
         In = input;
         InFrame = true;
         if (!In.Keys.IsCreated())
@@ -655,7 +759,7 @@ struct _UiState
         root.Y = root.Area.Y;
         root.Right = root.X;
         root.Bottom = root.Y;
-        root.SavedClip = Canvas.Clip;
+        root.SavedClip = Clip;
         Layouts.Add(root);
     }
 
@@ -686,6 +790,87 @@ struct _UiState
         PrevMouseDown = In.MouseDown;
         if (Again)
             WaitMs = 0;
+    }
+
+    // ---- drawing: into the image, or as commands ----
+
+    void Add(UiCommand command)
+    {
+        Commands.Add(command);
+    }
+
+    void ClearFrame(Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.Clear, Color = color, Rect = Clip });
+        else
+            Canvas.Clear(color);
+    }
+
+    // only this part from now on (within the frame)
+    void SetClip(Rect clip)
+    {
+        Clip = clip.Intersect(Bounds);
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.Clip, Rect = Clip });
+        else
+            Canvas.SetClip(Clip);
+    }
+
+    void FillRect(Rect r, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.FillRect, Rect = r, Color = color });
+        else
+            Canvas.FillRect(r, color);
+    }
+
+    void FillRoundRect(Rect r, int radius, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.FillRoundRect, Rect = r, Radius = radius, Color = color });
+        else
+            Canvas.FillRoundRect(r, radius, color);
+    }
+
+    void StrokeRoundRect(Rect r, int radius, int width, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.StrokeRoundRect, Rect = r, Radius = radius, Width = width, Color = color });
+        else
+            Canvas.StrokeRoundRect(r, radius, width, color);
+    }
+
+    void FillCircle(double cx, double cy, double radius, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.FillCircle, X0 = cx, Y0 = cy, Size = radius, Color = color });
+        else
+            Canvas.FillCircle(cx, cy, radius, color);
+    }
+
+    void DrawLine(double x0, double y0, double x1, double y1, double width, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.Line, X0 = x0, Y0 = y0, X1 = x1, Y1 = y1, Size = width, Color = color });
+        else
+            Canvas.Line(x0, y0, x1, y1, width, color);
+    }
+
+    void DrawText(int x, int y, string text, Color color)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.Text, Rect = Rect.Create(x, y, Font.Measure(text), Font.LineHeight()), Text = text, Color = color });
+        else
+            Canvas.Text(Font, x, y, text, color);
+    }
+
+    void DrawImage(Image image, int x, int y)
+    {
+        if (Record)
+            Add(UiCommand { Kind = UiCommandKind.Image, Rect = Rect.Create(x, y, image.Width, image.Height), Image = image });
+        else
+            Canvas.DrawImage(image, x, y);
     }
 
     // ---- ids ----
@@ -798,7 +983,7 @@ struct _UiState
         l.Y = slot.Y;
         l.Right = slot.X;
         l.Bottom = slot.Y;
-        l.SavedClip = Canvas.Clip;
+        l.SavedClip = Clip;
         if (kind == 1)
         {
             l.RowKey = unchecked(Seed() * 31u + (uint32)RowCount * 2654435761u + 7u);
@@ -817,7 +1002,7 @@ struct _UiState
         var l = top;
         l.Scope = 3;
         l.Id = id;
-        l.SavedClip = Canvas.Clip;
+        l.SavedClip = Clip;
         Layouts.Add(l);
     }
 
@@ -827,11 +1012,11 @@ struct _UiState
         var slot = Slot();
         int cached = PanelHeights.GetOrDefault(id, 0);
         var outer = Rect.Create(slot.X, slot.Y, slot.Width, cached);
-        Canvas.FillRoundRect(outer, Radius, Theme.Panel);
+        FillRoundRect(outer, Radius, Theme.Panel);
         int top = outer.Y + Margin;
         if (title.Length > 0)
         {
-            Canvas.Text(Font, outer.X + Margin, top, title, Theme.TextMuted);
+            DrawText(outer.X + Margin, top, title, Theme.TextMuted);
             top += Font.LineHeight() + Spacing;
         }
         var l = _UiLayout { Kind = 0, Area = Rect.Create(outer.X + Margin, top, Math.Max(0, outer.Width - 2 * Margin), 0), Scope = 1, Id = id, Outer = outer };
@@ -839,7 +1024,7 @@ struct _UiState
         l.Y = top;
         l.Right = l.X;
         l.Bottom = top;
-        l.SavedClip = Canvas.Clip;
+        l.SavedClip = Clip;
         Layouts.Add(l);
     }
 
@@ -849,7 +1034,7 @@ struct _UiState
         var slot = Slot();
         var outer = Rect.Create(slot.X, slot.Y, slot.Width, Px(height));
         var state = Scrolls.GetOrDefault(id, _UiScroll { });
-        Canvas.FillRoundRect(outer, Radius, Theme.Input);
+        FillRoundRect(outer, Radius, Theme.Input);
         int bar = Px(10);
         int top = outer.Y + Pad - state.Offset;
         var l = _UiLayout { Kind = 0, Area = Rect.Create(outer.X + Pad, top, Math.Max(0, outer.Width - 2 * Pad - bar), 0), Scope = 2, Id = id, Outer = outer };
@@ -857,10 +1042,10 @@ struct _UiState
         l.Y = top;
         l.Right = l.X;
         l.Bottom = top;
-        l.SavedClip = Canvas.Clip;
+        l.SavedClip = Clip;
         l.ScrollOffset = state.Offset;
         Layouts.Add(l);
-        Canvas.SetClip(outer.Shrink(Line).Intersect(l.SavedClip));
+        SetClip(outer.Shrink(Line).Intersect(l.SavedClip));
     }
 
     void EndScope()
@@ -869,7 +1054,7 @@ struct _UiState
             return; // more ends than beginnings
         var l = Top();
         Layouts.RemoveAt(Layouts.Count() - 1);
-        Canvas.Clip = l.SavedClip;
+        SetClip(l.SavedClip);
         switch (l.Scope)
         {
         case 1:
@@ -883,7 +1068,7 @@ struct _UiState
                 Again = true;
             }
             var outer = Rect.Create(l.Outer.X, l.Outer.Y, l.Outer.Width, height);
-            Canvas.StrokeRoundRect(outer, Radius, Line, Theme.Border);
+            StrokeRoundRect(outer, Radius, Line, Theme.Border);
             Commit(outer.Width, outer.Height);
             Last = outer;
             break;
@@ -929,7 +1114,7 @@ struct _UiState
         int view = outer.Height;
         int maxOffset = Math.Max(0, content - view);
         int offset = l.ScrollOffset;
-        var mouseInside = outer.Contains(In.MouseX, In.MouseY) && Canvas.Clip.Contains(In.MouseX, In.MouseY);
+        var mouseInside = outer.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY);
         if (mouseInside && In.Wheel != 0 && !WheelUsed && maxOffset > 0)
         {
             offset -= In.Wheel * Font.LineHeight() * 3;
@@ -956,13 +1141,13 @@ struct _UiState
             thumbY = track.Y + (int)((int64)room * offset / maxOffset);
             thumb.Y = thumbY;
             Color color = Active == barId ? Theme.TextMuted : Hot == barId ? Theme.TextMuted : Theme.Border;
-            Canvas.FillRoundRect(thumb, thumb.Width / 2, color);
+            FillRoundRect(thumb, thumb.Width / 2, color);
         }
         offset = Math.Clamp(offset, 0, maxOffset);
         if (offset != l.ScrollOffset)
             Again = true;
         Scrolls.Set(l.Id, _UiScroll { Offset = offset, ContentHeight = content });
-        Canvas.StrokeRoundRect(outer, Radius, Line, Theme.Border);
+        StrokeRoundRect(outer, Radius, Line, Theme.Border);
         Commit(outer.Width, outer.Height);
         Last = outer;
     }
@@ -975,7 +1160,7 @@ struct _UiState
     {
         if (focusable)
             FocusOrder.Add(id);
-        bool inside = r.Contains(In.MouseX, In.MouseY) && Canvas.Clip.Contains(In.MouseX, In.MouseY);
+        bool inside = r.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY);
         bool hot = inside && (Active == 0u || Active == id);
         if (hot)
             Hot = id;
@@ -1003,7 +1188,7 @@ struct _UiState
     {
         if (!FocusVisible)
             return;
-        Canvas.StrokeRoundRect(r.Shrink(-Line - Line), radius + Line + Line, Line + Line, Theme.Focus);
+        StrokeRoundRect(r.Shrink(-Line - Line), radius + Line + Line, Line + Line, Theme.Focus);
     }
 
     // the part of a label before "##"
@@ -1023,7 +1208,7 @@ struct _UiState
     void Label(string text, bool muted)
     {
         var r = Place(Font.Measure(text), ControlHeight, false);
-        Canvas.Text(Font, r.X, TextY(r), text, muted ? Theme.TextMuted : Theme.Text);
+        DrawText(r.X, TextY(r), text, muted ? Theme.TextMuted : Theme.Text);
     }
 
     void Paragraph(string text)
@@ -1042,7 +1227,7 @@ struct _UiState
         int y = r.Y;
         foreach (var line in lines)
         {
-            Canvas.Text(Font, r.X, y + Px(1), line, Theme.Text);
+            DrawText(r.X, y + Px(1), line, Theme.Text);
             y += lh;
         }
     }
@@ -1095,12 +1280,12 @@ struct _UiState
         if (hot)
             WantCursor = Cursor.Hand;
         Color fill = Active == id && hot ? Theme.ControlPressed : hot ? Theme.ControlHover : Theme.Control;
-        Canvas.FillRoundRect(r, Radius, fill);
-        Canvas.StrokeRoundRect(r, Radius, Line, Theme.Border);
+        FillRoundRect(r, Radius, fill);
+        StrokeRoundRect(r, Radius, Line, Theme.Border);
         if (Focus == id)
             FocusRing(r, Radius);
         int tw = Font.Measure(shown);
-        Canvas.Text(Font, r.X + (r.Width - tw) / 2, TextY(r), shown, Theme.Text);
+        DrawText(r.X + (r.Width - tw) / 2, TextY(r), shown, Theme.Text);
         return clicked;
     }
 
@@ -1120,20 +1305,20 @@ struct _UiState
         var b = Rect.Create(r.X, r.Y + (r.Height - box) / 2, box, box);
         if (value)
         {
-            Canvas.FillRoundRect(b, Radius, Theme.Accent);
+            FillRoundRect(b, Radius, Theme.Accent);
             double s = (double)box;
             double w = Math.Max(1.5, 2.0 * Scale);
-            Canvas.Line((double)b.X + s * 0.25, (double)b.Y + s * 0.52, (double)b.X + s * 0.43, (double)b.Y + s * 0.70, w, Theme.AccentText);
-            Canvas.Line((double)b.X + s * 0.43, (double)b.Y + s * 0.70, (double)b.X + s * 0.76, (double)b.Y + s * 0.32, w, Theme.AccentText);
+            DrawLine((double)b.X + s * 0.25, (double)b.Y + s * 0.52, (double)b.X + s * 0.43, (double)b.Y + s * 0.70, w, Theme.AccentText);
+            DrawLine((double)b.X + s * 0.43, (double)b.Y + s * 0.70, (double)b.X + s * 0.76, (double)b.Y + s * 0.32, w, Theme.AccentText);
         }
         else
         {
-            Canvas.FillRoundRect(b, Radius, hot ? Theme.ControlHover : Theme.Input);
-            Canvas.StrokeRoundRect(b, Radius, Line, hot ? Theme.TextMuted : Theme.Border);
+            FillRoundRect(b, Radius, hot ? Theme.ControlHover : Theme.Input);
+            StrokeRoundRect(b, Radius, Line, hot ? Theme.TextMuted : Theme.Border);
         }
         if (Focus == id)
             FocusRing(b, Radius);
-        Canvas.Text(Font, b.X + box + gap, TextY(r), shown, Theme.Text);
+        DrawText(b.X + box + gap, TextY(r), shown, Theme.Text);
         return changed;
     }
 
@@ -1155,17 +1340,17 @@ struct _UiState
         double radius = (double)box / 2.0;
         if (value == option)
         {
-            Canvas.FillCircle(cx, cy, radius, Theme.Accent);
-            Canvas.FillCircle(cx, cy, radius * 0.4, Theme.AccentText);
+            FillCircle(cx, cy, radius, Theme.Accent);
+            FillCircle(cx, cy, radius * 0.4, Theme.AccentText);
         }
         else
         {
-            Canvas.FillCircle(cx, cy, radius, hot ? Theme.TextMuted : Theme.Border);
-            Canvas.FillCircle(cx, cy, radius - (double)Line, hot ? Theme.ControlHover : Theme.Input);
+            FillCircle(cx, cy, radius, hot ? Theme.TextMuted : Theme.Border);
+            FillCircle(cx, cy, radius - (double)Line, hot ? Theme.ControlHover : Theme.Input);
         }
         if (Focus == id)
             FocusRing(Rect.Create(r.X, r.Y + (r.Height - box) / 2, box, box), box / 2);
-        Canvas.Text(Font, r.X + box + gap, TextY(r), shown, Theme.Text);
+        DrawText(r.X + box + gap, TextY(r), shown, Theme.Text);
         return changed;
     }
 
@@ -1205,13 +1390,13 @@ struct _UiState
         int cy = r.Y + r.Height / 2;
         int trackHeight = Math.Max(2, Px(4));
         var track = Rect.Create(left, cy - trackHeight / 2, width, trackHeight);
-        Canvas.FillRoundRect(track, trackHeight / 2, Theme.Border);
+        FillRoundRect(track, trackHeight / 2, Theme.Border);
         int x = left + (int)Math.Round(t * (double)width);
-        Canvas.FillRoundRect(Rect.Create(left, track.Y, x - left, trackHeight), trackHeight / 2, Theme.Accent);
+        FillRoundRect(Rect.Create(left, track.Y, x - left, trackHeight), trackHeight / 2, Theme.Accent);
         double radius = (double)thumb;
-        Canvas.FillCircle((double)x, (double)cy, radius, Theme.Border);
-        Canvas.FillCircle((double)x, (double)cy, radius - (double)Line, Theme.Control);
-        Canvas.FillCircle((double)x, (double)cy, radius * (Active == id ? 0.45 : hot ? 0.6 : 0.5), Theme.Accent);
+        FillCircle((double)x, (double)cy, radius, Theme.Border);
+        FillCircle((double)x, (double)cy, radius - (double)Line, Theme.Control);
+        FillCircle((double)x, (double)cy, radius * (Active == id ? 0.45 : hot ? 0.6 : 0.5), Theme.Accent);
         if (Focus == id)
             FocusRing(Rect.Create(x - thumb, cy - thumb, 2 * thumb, 2 * thumb), thumb);
         return value != old;
@@ -1222,10 +1407,10 @@ struct _UiState
         int height = Math.Max(4, Px(6));
         var r = Place(Px(160), ControlHeight, true);
         var track = Rect.Create(r.X, r.Y + (r.Height - height) / 2, r.Width, height);
-        Canvas.FillRoundRect(track, height / 2, Theme.Border);
+        FillRoundRect(track, height / 2, Theme.Border);
         int filled = (int)Math.Round(Math.Clamp(fraction, 0.0, 1.0) * (double)track.Width);
         if (filled > 0)
-            Canvas.FillRoundRect(Rect.Create(track.X, track.Y, filled, height), height / 2, Theme.Accent);
+            FillRoundRect(Rect.Create(track.X, track.Y, filled, height), height / 2, Theme.Accent);
     }
 
     bool ListItem(string label, bool selected)
@@ -1236,25 +1421,25 @@ struct _UiState
         bool hot = Interact(id, r, true);
         bool clicked = Clicked(id, hot) || Activated(id);
         if (selected)
-            Canvas.FillRoundRect(r, Radius, Theme.Accent);
+            FillRoundRect(r, Radius, Theme.Accent);
         else if (hot)
-            Canvas.FillRoundRect(r, Radius, Theme.Selection);
+            FillRoundRect(r, Radius, Theme.Selection);
         if (Focus == id)
             FocusRing(r, Radius);
-        Canvas.Text(Font, r.X + Pad, TextY(r), shown, selected ? Theme.AccentText : Theme.Text);
+        DrawText(r.X + Pad, TextY(r), shown, selected ? Theme.AccentText : Theme.Text);
         return clicked;
     }
 
     void ImageWidget(Image image)
     {
         var r = Place(image.Width, image.Height, false);
-        Canvas.DrawImage(image, r.X, r.Y);
+        DrawImage(image, r.X, r.Y);
     }
 
     void Separator()
     {
         var r = Place(0, Spacing, true);
-        Canvas.FillRect(Rect.Create(r.X, r.Y + r.Height / 2, r.Width, Line), Theme.Border);
+        FillRect(Rect.Create(r.X, r.Y + r.Height / 2, r.Width, Line), Theme.Border);
     }
 
     void Space(int size)
@@ -1315,20 +1500,20 @@ struct _UiState
             ScrollX = Math.Max(0, ScrollX);
         }
         int scroll = Focus == id ? ScrollX : 0;
-        Canvas.FillRoundRect(r, Radius, Theme.Input);
-        Canvas.StrokeRoundRect(r, Radius, Line, Focus == id ? Theme.Focus : hot ? Theme.TextMuted : Theme.Border);
+        FillRoundRect(r, Radius, Theme.Input);
+        StrokeRoundRect(r, Radius, Line, Focus == id ? Theme.Focus : hot ? Theme.TextMuted : Theme.Border);
         if (Focus == id)
-            Canvas.StrokeRoundRect(r, Radius, Line + Line, Theme.Focus);
-        var saved = Canvas.Clip;
-        Canvas.SetClip(inner.Intersect(saved));
+            StrokeRoundRect(r, Radius, Line + Line, Theme.Focus);
+        var saved = Clip;
+        SetClip(inner.Intersect(saved));
         int ty = TextY(r);
         if (Focus == id && Caret != Anchor)
         {
             int a = _CountChars(text.Substring(0, Math.Min(Caret, Anchor)));
             int b = _CountChars(text.Substring(0, Math.Max(Caret, Anchor)));
-            Canvas.FillRect(Rect.Create(inner.X - scroll + a * cw, ty, (b - a) * cw, Font.LineHeight()), Theme.Selection);
+            FillRect(Rect.Create(inner.X - scroll + a * cw, ty, (b - a) * cw, Font.LineHeight()), Theme.Selection);
         }
-        Canvas.Text(Font, inner.X - scroll, ty, text, Theme.Text);
+        DrawText(inner.X - scroll, ty, text, Theme.Text);
         if (Focus == id)
         {
             double since = In.Time - BlinkStart;
@@ -1336,12 +1521,12 @@ struct _UiState
             if (phase < 0.53)
             {
                 int x = inner.X - scroll + _CountChars(text.Substring(0, Caret)) * cw;
-                Canvas.FillRect(Rect.Create(x, ty - Px(1), Line, Font.LineHeight() + Px(2)), Theme.Text);
+                FillRect(Rect.Create(x, ty - Px(1), Line, Font.LineHeight() + Px(2)), Theme.Text);
             }
             int next = (int)((0.53 - (phase < 0.53 ? phase : phase - 0.53)) * 1000.0) + 1;
             WaitMs = WaitMs < 0 ? next : Math.Min(WaitMs, next);
         }
-        Canvas.Clip = saved;
+        SetClip(saved);
         return text != old;
     }
 

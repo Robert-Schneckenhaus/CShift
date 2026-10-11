@@ -98,6 +98,8 @@ const uint32 _WsOverlappedWindow = 0x00CF0000u;
 // The window procedure: Windows calls it for the messages of the window.
 nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
 {
+    uint64 w = (uint64)wParam; // the parts of the parameters, the same on 32 and 64 bits
+    int64 l = (int64)lParam;
     unsafe
     {
         switch (message)
@@ -106,8 +108,8 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
             _UiWin.Closed = true;
             return 0;
         case _WmSize:
-            _UiWin.Width = (int)(lParam & 0xFFFF);
-            _UiWin.Height = (int)((lParam >> 16) & 0xFFFF);
+            _UiWin.Width = (int)(l & 0xFFFF);
+            _UiWin.Height = (int)((l >> 16) & 0xFFFF);
             return 0;
         case _WmEraseBackground:
             return 1;
@@ -120,39 +122,39 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
             return 0;
         }
         case _WmSetCursor:
-            if ((lParam & 0xFFFF) == 1 && _UiWin.Cursor != null) // HTCLIENT
+            if ((l & 0xFFFF) == 1 && _UiWin.Cursor != null) // HTCLIENT
             {
                 SetCursor(_UiWin.Cursor);
                 return 1;
             }
             break;
         case _WmMouseMove:
-            _UiWin.MouseX = (int)(int16)(lParam & 0xFFFF);
-            _UiWin.MouseY = (int)(int16)((lParam >> 16) & 0xFFFF);
+            _UiWin.MouseX = (int)(int16)(l & 0xFFFF);
+            _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
             return 0;
         case _WmLButtonDown:
-            _UiWin.MouseX = (int)(int16)(lParam & 0xFFFF);
-            _UiWin.MouseY = (int)(int16)((lParam >> 16) & 0xFFFF);
+            _UiWin.MouseX = (int)(int16)(l & 0xFFFF);
+            _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
             _UiWin.MouseDown = true;
             _UiWin.Pressed = true;
             _UiWin.ButtonEvent = true;
             SetCapture(hwnd);
             return 0;
         case _WmLButtonUp:
-            _UiWin.MouseX = (int)(int16)(lParam & 0xFFFF);
-            _UiWin.MouseY = (int)(int16)((lParam >> 16) & 0xFFFF);
+            _UiWin.MouseX = (int)(int16)(l & 0xFFFF);
+            _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
             _UiWin.MouseDown = false;
             _UiWin.Released = true;
             _UiWin.ButtonEvent = true;
             ReleaseCapture();
             return 0;
         case _WmMouseWheel:
-            _UiWin.WheelDelta += (int)(int16)((wParam >> 16) & 0xFFFFu);
+            _UiWin.WheelDelta += (int)(int16)((w >> 16) & 0xFFFFul);
             return 0;
         case _WmKeyDown:
         case _WmSysKeyDown:
         {
-            var key = _UiKeyOf((int)(wParam & 0xFFu));
+            var key = _UiKeyOfVk((int)(w & 0xFFul));
             if (key != Key.None)
                 _UiWin.Keys.Add(key);
             if (message == _WmKeyDown)
@@ -160,11 +162,11 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
             break; // Alt+F4 and the like
         }
         case _WmChar:
-            _UiChar((int)(wParam & 0xFFFFu));
+            _UiChar((int)(w & 0xFFFFul));
             return 0;
         case _WmDpiChanged:
         {
-            _UiWin.Dpi = (uint32)(wParam & 0xFFFFu);
+            _UiWin.Dpi = (uint32)(w & 0xFFFFul);
             int* r = (int*)lParam; // the suggested rectangle
             SetWindowPos(hwnd, null, r[0], r[1], r[2] - r[0], r[3] - r[1], 0x0014u); // SWP_NOZORDER | SWP_NOACTIVATE
             return 0;
@@ -194,57 +196,7 @@ void _UiChar(int unit)
     }
     if (code < 32 || code == 127)
         return; // control characters come as keys
-    var sb = _UiWin.Text;
-    if (code < 0x80)
-        sb.Append((char)code);
-    else if (code < 0x800)
-    {
-        sb.Append((char)(0xC0 | (code >> 6)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-    else if (code < 0x10000)
-    {
-        sb.Append((char)(0xE0 | (code >> 12)));
-        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-    else
-    {
-        sb.Append((char)(0xF0 | (code >> 18)));
-        sb.Append((char)(0x80 | ((code >> 12) & 0x3F)));
-        sb.Append((char)(0x80 | ((code >> 6) & 0x3F)));
-        sb.Append((char)(0x80 | (code & 0x3F)));
-    }
-}
-
-// The Key of a virtual key code.
-Key _UiKeyOf(int vk)
-{
-    if (vk >= 0x41 && vk <= 0x5A)
-        return (Key)((int)Key.A + vk - 0x41);
-    if (vk >= 0x30 && vk <= 0x39)
-        return (Key)((int)Key.D0 + vk - 0x30);
-    if (vk >= 0x70 && vk <= 0x7B)
-        return (Key)((int)Key.F1 + vk - 0x70);
-    switch (vk)
-    {
-    case 0x0D: return Key.Enter;
-    case 0x1B: return Key.Escape;
-    case 0x08: return Key.Backspace;
-    case 0x2E: return Key.Delete;
-    case 0x09: return Key.Tab;
-    case 0x20: return Key.Space;
-    case 0x2D: return Key.Insert;
-    case 0x25: return Key.Left;
-    case 0x26: return Key.Up;
-    case 0x27: return Key.Right;
-    case 0x28: return Key.Down;
-    case 0x24: return Key.Home;
-    case 0x23: return Key.End;
-    case 0x21: return Key.PageUp;
-    case 0x22: return Key.PageDown;
-    default: return Key.None;
-    }
+    _UiAppendUtf8(_UiWin.Text, code);
 }
 
 // Copies an image to a device context (top-down, 32 bits per pixel).
@@ -279,6 +231,13 @@ uint16[] _UiWide(string text)
 struct _UiOs
 {
     static bool Supported() { return true; }
+
+    // the window draws the frames of a Ui itself, from its commands (AmigaOS), not from their pixels
+    static bool DrawsCommands() { return false; }
+    static Font UiFont() { return Font.Fixed7x13(); }
+    static void PresentCommands(List<UiCommand> commands) { }
+    // the window can wake the program for the blinking text cursor
+    static bool Blinks() { return true; }
 
     // 0: open, 1: failed, 4: a window is already open
     static int Open(string title, int width, int height)

@@ -89,6 +89,12 @@ from other devices of the network (by default only this computer can reach it), 
 folder (`bin/`), folders that start with `.` and `node_modules` are not watched. The server is written in CShift, on
 `System.Net` ([Serve.csh](../selfhost/src/Driver/Serve.csh)).
 
+## User interfaces in the browser
+
+A program with a window of [System.Ui](ui.md#in-the-browser) runs in the browser unchanged as well: the window is
+the `<canvas>`, and `window.Update()` suspends the program until there is input. `cshiftc publish demo-ui` makes a
+page of the demo.
+
 ## Games in the browser
 
 A program with a window (GLFW) and OpenGL runs in the browser unchanged, game loop and all: `cshiftc publish` makes

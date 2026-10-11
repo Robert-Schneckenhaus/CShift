@@ -8,7 +8,9 @@
 //     glfwGetProcAddress), GLSL 330 shaders (rewritten to GLSL ES 300), and glDrawPixels/glPixelZoom/glRasterPos of
 //     OpenGL 1.1 (drawn as a texture);
 //   * the game loop: glfwPollEvents (and glfwWaitEvents) suspends the program until the next frame of the browser
-//     (requestAnimationFrame), the backend saves and restores the functions on the way (selfhost/src/Wasm/Gen.csh).
+//     (requestAnimationFrame), the backend saves and restores the functions on the way (selfhost/src/Wasm/Gen.csh);
+//   * the window of System.Ui (cshift_ui_*, see stdlib/os/wasi/ui.csh): its frames are drawn on the canvas, the input
+//     of the mouse and the keyboard goes to the program, and cshift_ui_wait suspends it until there is input.
 //
 //   import { run } from "./cshift.js";
 //   const program = await run("game.wasm", { canvas, files: { "/data/map.json": "data/map.json" }, onOutput });
@@ -130,6 +132,8 @@ class Program {
         this.gl = null;
         this.procs = new Map();
         this.stopped = false;
+        this.resumeWhen = null; // a frame of the browser resumes the program only when this gives true (or is null)
+        this.uiState = null;    // the window of System.Ui (see ui())
     }
 
     // ---- memory helpers ----
@@ -577,6 +581,173 @@ class Program {
         };
     }
 
+    // ---- the window of System.Ui (stdlib/os/wasi/ui.csh) ----
+    ui() {
+        const self = this;
+        const v = () => self.view();
+        const encoder = new TextEncoder();
+        const listen = (ui) => {
+            const canvas = self.canvas;
+            canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
+            const position = (e) => {
+                const r = canvas.getBoundingClientRect();
+                ui.x = Math.floor(((e.clientX - r.left) * canvas.width) / (r.width || canvas.width));
+                ui.y = Math.floor(((e.clientY - r.top) * canvas.height) / (r.height || canvas.height));
+            };
+            const mods = (e) => {
+                ui.ctrl = e.ctrlKey || e.metaKey;
+                ui.shift = e.shiftKey;
+                ui.alt = e.altKey;
+            };
+            canvas.addEventListener("mousemove", (e) => {
+                position(e);
+                ui.input = true;
+            });
+            canvas.addEventListener("mousedown", (e) => {
+                if (e.button !== 0) return;
+                canvas.focus();
+                e.preventDefault();
+                position(e);
+                mods(e);
+                ui.down = ui.pressed = true;
+                ui.input = true;
+            });
+            // the button may go up outside of the canvas
+            (canvas.ownerDocument ?? canvas).addEventListener("mouseup", (e) => {
+                if (e.button !== 0 || !ui.down) return;
+                position(e);
+                ui.down = false;
+                ui.released = true;
+                ui.input = true;
+            });
+            canvas.addEventListener("mouseleave", () => {
+                if (ui.down) return;
+                ui.x = ui.y = -1;
+                ui.input = true;
+            });
+            canvas.addEventListener("wheel", (e) => {
+                e.preventDefault();
+                ui.wheelDelta -= e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY;
+                const notches = Math.trunc(ui.wheelDelta);
+                ui.wheel += notches;
+                ui.wheelDelta -= notches;
+                ui.input = true;
+            }, { passive: false });
+            canvas.addEventListener("keydown", (e) => {
+                mods(e);
+                // Ctrl+V comes as the paste event below, with the text of the clipboard; Ctrl+C and Ctrl+X keep the
+                // browser's copy and cut (which do nothing on a canvas), Tab and the others are the program's
+                if (ui.ctrl && e.keyCode === 86) return;
+                if (!(ui.ctrl && (e.keyCode === 67 || e.keyCode === 88))) e.preventDefault();
+                ui.keys.push(e.keyCode);
+                if ([...e.key].length === 1 && !ui.ctrl) ui.text += e.key; // a character, not "Enter" or "Shift"
+                ui.input = true;
+            });
+            canvas.addEventListener("keyup", (e) => {
+                mods(e);
+                ui.input = true;
+            });
+            canvas.addEventListener("paste", (e) => {
+                e.preventDefault();
+                ui.clipboard = e.clipboardData?.getData("text/plain") ?? ui.clipboard;
+                ui.ctrl = true;
+                ui.keys.push(86);
+                ui.input = true;
+            });
+        };
+        // a frame of the browser after input, or when the time is up (see step)
+        const wait = (ms) => {
+            if (self.rewinding) {
+                self.instance.exports.__cs_wasm_stop_rewind();
+                self.rewinding = false;
+                return;
+            }
+            const ui = self.uiState;
+            const until = ms < 0 ? Infinity : performance.now() + ms;
+            self.resumeWhen = () => !ui || ui.input || ui.closed || performance.now() >= until;
+            self.instance.exports.__cs_wasm_start_unwind(self.asyncData);
+            self.suspended = true;
+        };
+        return {
+            cshift_ui_open(title, width, height) {
+                if (!self.canvas) return 1;
+                const ratio = self.options.pixelRatio ?? globalThis.devicePixelRatio ?? 1;
+                self.canvas.width = Math.round(width * ratio);
+                self.canvas.height = Math.round(height * ratio);
+                if (self.options.resizeCanvas !== false && !self.canvas.style.width) self.canvas.style.width = width + "px";
+                if (self.options.setTitle !== false && title && globalThis.document) document.title = self.cstring(title);
+                const ui = {
+                    ratio, x: -1, y: -1, down: false, pressed: false, released: false, wheel: 0, wheelDelta: 0,
+                    ctrl: false, shift: false, alt: false, keys: [], text: "", input: true, closed: false,
+                    clipboard: "", context: self.canvas.getContext("2d"), image: null,
+                };
+                self.uiState = ui;
+                listen(ui);
+                self.options.onWindow?.(width, height, title ? self.cstring(title) : "");
+                return 0;
+            },
+            cshift_ui_wait: wait,
+            cshift_ui_take(state, keys, keyCapacity, text, textCapacity) {
+                const ui = self.uiState;
+                const d = v();
+                const values = [ui.x, ui.y, ui.down, ui.pressed, ui.released, ui.wheel, ui.ctrl, ui.shift, ui.alt];
+                values.forEach((value, i) => d.setInt32(state + 4 * i, Number(value), true));
+                const count = Math.min(ui.keys.length, keyCapacity);
+                for (let i = 0; i < count; i++) d.setInt32(keys + 4 * i, ui.keys[i], true);
+                // the text: what fits (whole characters), the rest in the next frame
+                let taken = ui.text;
+                let bytes = encoder.encode(taken);
+                while (bytes.length > textCapacity) {
+                    taken = [...taken].slice(0, -1).join("");
+                    bytes = encoder.encode(taken);
+                }
+                self.u8().set(bytes, text);
+                d.setInt32(state + 4 * 9, bytes.length, true);
+                ui.text = ui.text.slice(taken.length);
+                ui.keys = ui.keys.slice(count);
+                ui.pressed = ui.released = false;
+                ui.wheel = 0;
+                ui.input = ui.keys.length > 0 || ui.text.length > 0;
+                return count;
+            },
+            cshift_ui_width: () => self.canvas.width,
+            cshift_ui_height: () => self.canvas.height,
+            cshift_ui_scale: () => self.uiState?.ratio ?? 1,
+            cshift_ui_present(pixels, width, height) {
+                const ui = self.uiState;
+                if (!ui.image || ui.image.width !== width || ui.image.height !== height) ui.image = ui.context.createImageData(width, height);
+                // ARGB (little endian: B, G, R, A) to the R, G, B, A of a canvas
+                const source = new Uint32Array(self.memory, pixels, width * height);
+                const target = new Uint32Array(ui.image.data.buffer);
+                for (let i = 0; i < source.length; i++) {
+                    const p = source[i];
+                    target[i] = 0xff000000 | (p & 0x0000ff00) | ((p >>> 16) & 0xff) | ((p & 0xff) << 16);
+                }
+                ui.context.putImageData(ui.image, 0, 0);
+            },
+            cshift_ui_cursor(kind) {
+                self.canvas.style.cursor = kind === 1 ? "text" : kind === 2 ? "pointer" : "default";
+            },
+            cshift_ui_title(title) {
+                if (self.options.setTitle !== false && globalThis.document) document.title = self.cstring(title);
+            },
+            cshift_ui_close() {
+                if (self.uiState) self.uiState.closed = true;
+                self.uiState = null;
+            },
+            cshift_ui_clipboard_set(text, length) {
+                const value = new TextDecoder().decode(self.u8().slice(text, text + length));
+                if (self.uiState) self.uiState.clipboard = value;
+                globalThis.navigator?.clipboard?.writeText(value).catch(() => {});
+            },
+            cshift_ui_clipboard_get(buffer, capacity) {
+                const bytes = encoder.encode(self.uiState?.clipboard ?? "");
+                self.u8().set(bytes.subarray(0, Math.min(bytes.length, capacity)), buffer);
+                return bytes.length;
+            },
+        };
+    }
+
     setCallback(kind, cb) {
         const old = this.callbacks[kind] ?? 0;
         this.callbacks[kind] = cb;
@@ -924,7 +1095,7 @@ class Program {
 
     // ---- start and the frames ----
     async start(module) {
-        const env = { ...this.glfw() };
+        const env = { ...this.glfw(), ...this.ui() };
         for (const [name, [, f]] of Object.entries(this.glFunctions())) env[name] = f;
         Object.assign(env, this.options.imports ?? {});
         // a function the program needs but nobody has: an error when it is called
@@ -971,11 +1142,18 @@ class Program {
             return;
         }
         this.instance.exports.__cs_wasm_stop_unwind();
-        requestAnimationFrame(() => {
+        const resume = () => {
+            if (this.stopped) return;
+            if (this.resumeWhen && !this.resumeWhen()) {
+                requestAnimationFrame(resume); // waiting for input (System.Ui): look again at the next frame
+                return;
+            }
+            this.resumeWhen = null;
             this.instance.exports.__cs_wasm_start_rewind(this.asyncData);
             this.rewinding = true;
             this.step();
-        });
+        };
+        requestAnimationFrame(resume);
     }
 
     // ends the program at its next frame
@@ -986,7 +1164,8 @@ class Program {
 }
 
 /**
- * Runs a program: the URL or the bytes of its .wasm. Options: canvas (for GLFW and OpenGL), args, env, files
+ * Runs a program: the URL or the bytes of its .wasm. Options: canvas (for GLFW and OpenGL, and the window of
+ * System.Ui), args, env, files
  * ({ path: URL string | Uint8Array | ArrayBuffer }, fetched before the start), onOutput(text, isError), imports
  * (more functions of "env"), pixelRatio, setTitle (false: the window title does not become the page's title),
  * resizeCanvas (false: the canvas keeps its size on the page; glfwCreateWindow sets only its pixels), onWindow(width,

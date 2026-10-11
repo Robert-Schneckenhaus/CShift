@@ -638,13 +638,6 @@ string NativePath(string path, bool windows)
 // Compiles the inputs of the options. Returns the exit code.
 int Build(BuildOptions o)
 {
-    bool windows = Process.IsWindows();
-    if (o.Target.Length > 0)
-    {
-        string lower = o.Target.ToLower();
-        windows = lower.Contains("windows") || lower.Contains("mingw");
-    }
-
     // ---- parse ----
     var diag = Diagnostics.Create();
     var tree = Ast.Create();
@@ -668,6 +661,13 @@ int Build(BuildOptions o)
     {
         Console.WriteErrorLine("error: the wasm backend generates code for wasm32 targets, not '" + o.Target + "'");
         return 1;
+    }
+    // after the targets that a backend implies: --backend wasm on Windows builds for WASI, not for Windows
+    bool windows = Process.IsWindows();
+    if (o.Target.Length > 0)
+    {
+        string lower = o.Target.ToLower();
+        windows = lower.Contains("windows") || lower.Contains("mingw");
     }
     // the backends of CShift read the IR themselves and have no use for its debug information; the m68k backend writes
     // the names of the functions into an AmigaOS executable instead (HUNK_SYMBOL)
@@ -1201,7 +1201,7 @@ string CompilerName()
 int BuildM68k(BuildOptions o, string ir, string baseName)
 {
     bool amiga = o.Target.Contains("amigaos");
-    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144) : "", o.Optimize); // the startup code comes first
+    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144, ir) : "", o.Optimize); // the startup code comes first
     if (text is error failed)
     {
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
