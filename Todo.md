@@ -7,9 +7,6 @@ the git log.
 
 - [ ] A warning for `.csh` files (the extension before 0.32), once most code has moved to `.cshift`; later, stop reading
       them.
-- [ ] When stage 0 has `Process.IsMacOS()` (0.32): use it in `selfhost/src/CodeGen/Runtime.cshift`,
-      `selfhost/src/Driver/Project.cshift` and `selfhost/src/Driver/Serve.cshift` instead of looking for
-      `/System/Library/CoreServices/SystemVersion.plist`.
 - [ ] Closures capture read-only copies. Capturing by reference (shared, mutable boxes, like C#) would need boxed
       locals; decide whether that is wanted.
 - [ ] Sharing a container between threads: `Mutex<T>` and `SharedPtr<T>` need a `T` that can be copied between threads

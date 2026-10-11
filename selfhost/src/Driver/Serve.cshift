@@ -316,7 +316,7 @@ void OpenInBrowser(string url)
 {
     if (Process.IsWindows())
         Process.Run("start \"\" \"" + url + "\"");
-    else if (File.Exists("/System/Library/CoreServices/SystemVersion.plist"))
+    else if (Process.IsMacOS())
         Process.Run("open \"" + url + "\"");
     else
         Process.Run("xdg-open \"" + url + "\" > /dev/null 2>&1 &");
