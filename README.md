@@ -11,7 +11,7 @@ The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/R
 clang optimizes it, generates machine code and links:
 
 ```
-source (.csh) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ .exe
+source (.cshift) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ .exe
 ```
 
 The compiler is written in CShift itself; it is built by an earlier release of itself (the first compiler, written in
@@ -136,12 +136,12 @@ This needs `clang` (and `libclang` for C header imports) and, for linking, `buil
 ## Usage
 
 ```
-cshiftc [options] file.csh [more.csh ...]      compile files into one program
-cshiftc new hello                              a new project: hello/cshift.json, hello/src/main.csh
+cshiftc [options] file.cshift [more.cshift ...]      compile files into one program
+cshiftc new hello                              a new project: hello/cshift.json, hello/src/main.cshift
 cshiftc run hello                              build and run (without an argument: the cshift.json here or above)
 cshiftc build                                  build only  ->  bin/<name>[.exe]
 cshiftc check                                  report all errors, generate nothing (fast; used by the editor)
-cshiftc query --at file.csh 12 8               the name at a position (hover, definition) as JSON
+cshiftc query --at file.cshift 12 8               the name at a position (hover, definition) as JSON
 ```
 
 `cshiftc --help` lists the options (`-o`, `-O0..-O3`, `--target`, `--backend`, `--ndk`, `--cc`, `-l`/`-L`/`-I`/`-D`,
@@ -167,7 +167,7 @@ the release creators) and of the libraries they use.
 
 ## VS Code
 
-The `vscode-extension/` folder has an extension for `.csh` files: syntax highlighting and snippets, the errors of the
+The `vscode-extension/` folder has an extension for `.cshift` files: syntax highlighting and snippets, the errors of the
 program while you type, hover information and go to definition (from `cshiftc check`/`query`). Every release has it as
 `cshift-vscode-<version>.vsix` — see [vscode-extension/README.md](vscode-extension/README.md).
 
@@ -177,7 +177,7 @@ program while you type, hover information and go to definition (from `cshiftc ch
 tests/run_tests.sh [path/to/cshiftc]      # or .\build.ps1 -Test
 ```
 
-`tests/test.csh`, the cases in `tests/cases/` (compiler errors, panics, features, standard library), the projects in
+`tests/test.cshift`, the cases in `tests/cases/` (compiler errors, panics, features, standard library), the projects in
 `tests/projects/`, and the self-hosting checks (the compiler rebuilds itself to the same IR). Details:
 [docs/compiler.md](docs/compiler.md#tests).
 

@@ -45,5 +45,5 @@ int Main()
 }
 ```
 
-Save this as `hello.csh` and build it with `cshiftc hello.csh -o hello --run`, or start a project with
+Save this as `hello.cshift` and build it with `cshiftc hello.cshift -o hello --run`, or start a project with
 `cshiftc new hello && cshiftc run hello`. See the [main README](../../README.md) for how to get or build `cshiftc` itself.

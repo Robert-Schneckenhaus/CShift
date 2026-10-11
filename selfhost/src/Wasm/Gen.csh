@@ -2546,7 +2546,7 @@ struct WasmGen
     bool SuspendsAlways(string name)
     {
         return name == "glfwPollEvents" || name == "glfwWaitEvents" || name == "glfwWaitEventsTimeout" || name == "glfwSwapBuffers" ||
-               name == "cshift_ui_wait"; // System.Ui: waits for input (stdlib/os/wasi/ui.csh)
+               name == "cshift_ui_wait"; // System.Ui: waits for input (stdlib/os/wasi/ui.cshift)
     }
 
     bool IndirectCallsSuspend()

@@ -18,7 +18,7 @@ struct Project
     string Name;
     string Version;
     string Type;                 // "executable", "object" or "library"
-    List<string> Sources;        // .csh files, sorted
+    List<string> Sources;        // .cshift (and .csh) files, sorted
     string Output;               // output path (without the extension of the platform)
     int Optimize;
     bool HasOptimize;
@@ -73,13 +73,29 @@ Error<string> FindProjectFile(string location)
     return error("no cshift.json found in the current directory or any parent directory");
 }
 
-// A source entry is a .csh file or a directory that is searched recursively for .csh files.
+/// A CShift source file: .cshift, or .csh (the extension before 0.32, which is read as well).
+bool IsSourceFile(StringSlice path)
+{
+    return path.EndsWith(".cshift") || path.EndsWith(".csh");
+}
+
+// The source files in a directory and its subdirectories (both extensions), sorted by their paths: the order in which
+// they are compiled.
+List<string> FindSourceFiles(string dir)
+{
+    var files = Directory.FindFiles(dir, ".cshift");
+    files.AddRange(Directory.FindFiles(dir, ".csh").ToArray());
+    files.Sort();
+    return files;
+}
+
+// A source entry is a source file or a directory that is searched recursively for source files.
 Error<void> AddSources(string projectDir, string entry, List<string> sources)
 {
     string full = Path.Combine(projectDir, entry);
     if (Directory.Exists(full))
     {
-        foreach (var f in Directory.FindFiles(full, ".csh"))
+        foreach (var f in FindSourceFiles(full))
             sources.Add(f);
         return;
     }
@@ -309,7 +325,7 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
     }
     p.Sources = unique;
     if (p.Sources.Count() == 0)
-        return error(file + ": no .csh source files found");
+        return error(file + ": no source files found (.cshift, or .csh)");
 
     // "links" entries that name a file (or contain a path) are passed to the linker as files, everything else is a
     // library name (-l<name>).
@@ -437,7 +453,7 @@ Error<void> CreateProject(string projectPath)
                   "\t\"sources\": [\"src\"],\n\t\"output\": \"bin/" + name + "\",\n\t\"optimize\": 2,\n\t\"links\": []\n}\n";
     string main = "int Main()\n{\n    Console.WriteLine(\"Hello, World!\");\n    return 0;\n}\n";
     try File.WriteAllText(Path.Combine(projectPath, "cshift.json"), json);
-    try File.WriteAllText(Path.Combine(src, "main.csh"), main);
+    try File.WriteAllText(Path.Combine(src, "main.cshift"), main);
     try File.WriteAllText(Path.Combine(projectPath, ".gitignore"), "bin/\nobj/\n");
     return;
 }

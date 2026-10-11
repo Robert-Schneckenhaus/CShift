@@ -5,9 +5,9 @@
 //     Thread<int> t = start Square(6);
 //     Console.WriteLine(t.Join());   // 36
 //
-// The mutex/condition-variable protocol, Join/Cancel and the 'is' pattern are CShift code in stdlib/thread.csh. This file
-// does what cannot be written in CShift: the checks of a thread function's signature and of its purity (it never touches
-// a global, not even through the functions it calls), the call site of a spawn (control block, argument block,
+// The mutex/condition-variable protocol, Join/Cancel and the 'is' pattern are CShift code in stdlib/thread.cshift. This
+// file does what cannot be written in CShift: the checks of a thread function's signature and of its purity (it never
+// touches a global, not even through the functions it calls), the call site of a spawn (control block, argument block,
 // pthread_create), the trampoline pthread_create calls, and 'Thread.Cancelled'.
 
 namespace CShift.CodeGen;
@@ -47,7 +47,7 @@ bool IsThreadSafeType(const ref Compiler cg, int t)
     var si = GetStructInfo(cg, t);
     if (si.LayoutInProgress)
         return false;
-    // Mutex<T> (stdlib/mutex.csh) copies its value in and out under its lock, so T only has to be copyable between
+    // Mutex<T> (stdlib/mutex.cshift) copies its value in and out under its lock, so T only has to be copyable between
     // threads. A MutexGuard holds the lock, which only the locking thread may release.
     if (si.Name.StartsWith("System.MutexGuard<"))
         return false;
@@ -239,7 +239,7 @@ int ThreadStruct(const ref Compiler cg, string name, int[] args, SourceLoc loc)
 {
     var entry = TypeDeclEntry { };
     if (!LookupTypeDecl(cg, cg.Fn[0].File, name, ref entry) || entry.Kind != DeclKind.Struct)
-        Fail(cg, loc, "internal error: '" + name + "' is missing (stdlib/thread.csh not compiled in)");
+        Fail(cg, loc, "internal error: '" + name + "' is missing (stdlib/thread.cshift not compiled in)");
     return GetStructType(cg, entry.Index, args, loc);
 }
 
@@ -267,7 +267,7 @@ int ThreadMethod(const ref Compiler cg, int owner, string name, SourceLoc loc)
 {
     var cands = MethodCandidates(cg, owner, name);
     if (cands.Length == 0)
-        Fail(cg, loc, "internal error: '" + name + "' is missing on '" + cg.Types.Name(owner) + "' (stdlib/thread.csh not compiled in)");
+        Fail(cg, loc, "internal error: '" + name + "' is missing on '" + cg.Types.Name(owner) + "' (stdlib/thread.cshift not compiled in)");
     return GetFuncInstance(cg, cands[0].Entry, cands[0].Owner, GetStructInfo(cg, cands[0].Owner).Env, new int[0], loc);
 }
 

@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 const [port, project] = process.argv.slice(2);
 const base = `http://127.0.0.1:${port}`;
-const source = join(project, "src", "main.csh");
+const source = join(project, "src", "main.cshift");
 
 async function get(path) {
     const answer = await fetch(base + path, { cache: "no-store" });
@@ -47,7 +47,7 @@ await waitForBuild(2);
 await writeFile(source, text.replace("return 3;", "return 3"));
 await waitForBuild(3);
 page = await get("/");
-check(page.text.includes("The build failed") && page.text.includes("main.csh"), "no errors on the page of a failed build");
+check(page.text.includes("The build failed") && page.text.includes("main.cshift"), "no errors on the page of a failed build");
 check(page.text.includes("/__cshift/build"), "the page of the errors does not reload itself");
 
 await writeFile(source, text);

@@ -8,7 +8,7 @@ therefore contains no LLVM (a few MB instead of the 120 MB of the first compiler
 clang.
 
 ```
-source (.csh) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ program
+source (.cshift) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ program
 ```
 
 ## Stages
@@ -85,8 +85,8 @@ WebAssembly modules without clang ([wasm.md](wasm.md)); the playground of the we
 tests/run_tests.sh [path/to/cshiftc] [-O0..-O3]     # default: build/stage2/cshiftc, then selfhost/bin/cshc
 ```
 
-* `tests/test.csh` (+ `tests/mathlib.csh`): a large program with ~165 checks; output and ARC balance are compared.
-* `tests/cases/*.csh`: small programs with their expectations in comments (`// expect-error:`, `// expect-exit:`,
+* `tests/test.cshift` (+ `tests/mathlib.cshift`): a large program with ~165 checks; output and ARC balance are compared.
+* `tests/cases/*.cshift`: small programs with their expectations in comments (`// expect-error:`, `// expect-exit:`,
   `// expect-stdout:`, `// expect-stderr:`): compiler errors (`err_*`), panics (`panic_*`), features and the standard
   library.
 * `tests/projects/*`: projects built with `cshiftc build|run`, some with C code (`native/*.c`) for the header import.

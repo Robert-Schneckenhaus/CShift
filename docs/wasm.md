@@ -5,8 +5,8 @@ interface: files, the clock, arguments, the console): node, wasmtime, wasmer, an
 There are two ways to get one:
 
 ```
-cshiftc --backend wasm hello.csh -o hello.wasm          # CShift's own backend: nothing else needed
-cshiftc --target wasm32-wasi hello.csh -o hello.wasm    # LLVM: clang, wasi-libc and wasm-ld
+cshiftc --backend wasm hello.cshift -o hello.wasm          # CShift's own backend: nothing else needed
+cshiftc --target wasm32-wasi hello.cshift -o hello.wasm    # LLVM: clang, wasi-libc and wasm-ld
 wasmtime --dir . hello.wasm                             # or: node tests/wasi-run.mjs hello.wasm
 ```
 
@@ -15,7 +15,7 @@ wasmtime --dir . hello.wasm                             # or: node tests/wasi-ru
 | needs | nothing (the compiler writes the module itself) | clang, wasi-libc, compiler-rt for wasm32, wasm-ld |
 | compiles | fast (the compiler builds itself in seconds), also inside the browser (the playground) | with LLVM's optimizations: faster code |
 | C headers, C code (`using X from "h.h"`) | no | yes, compiled for WebAssembly |
-| C library | its own, in CShift ([stdlib/wasm](../stdlib/wasm/libc.csh)), on WASI | wasi-libc |
+| C library | its own, in CShift ([stdlib/wasm](../stdlib/wasm/libc.cshift)), on WASI | wasi-libc |
 
 ```json
 {
@@ -51,7 +51,7 @@ WebAssembly with the backend: that compiler (under node) must build itself again
 ```
 cshiftc publish              # the project in this folder -> bin/<name>.html
 cshiftc publish demo-snake   # -> demo-snake/bin/demo-snake.html
-cshiftc publish hello.csh    # single files -> hello.html (-o names the page)
+cshiftc publish hello.cshift    # single files -> hello.html (-o names the page)
 ```
 
 `publish` builds the program with the wasm backend and writes one HTML file that holds everything it needs: the

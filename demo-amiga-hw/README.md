@@ -16,7 +16,7 @@ the operating system.
 demo-amiga-hw/
 ├── cshift.json        project file ("target": "m68k-amigaos")
 ├── src/
-│   └── main.csh       the copper list and the bars
+│   └── main.cshift       the copper list and the bars
 └── bin/               the Amiga executable (generated, not in git)
 ```
 

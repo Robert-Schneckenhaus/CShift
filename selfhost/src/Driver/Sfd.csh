@@ -5,7 +5,7 @@
 //     __amiga$graphics.library$288$a0.d0.d1.d2.d3$n     library, offset (negative), registers, n / v (varargs)
 //
 // The backend passes the arguments in these registers and calls the library through its base in a6; the libraries
-// that are used are opened when the program starts (stdlib/amiga/libc.csh). Types: pointers become void* (and
+// that are used are opened when the program starts (stdlib/amiga/libc.cshift). Types: pointers become void* (and
 // CONST_STRPTR a string parameter), the integer typedefs of exec/types.h their CShift types.
 
 namespace CShift.Driver;

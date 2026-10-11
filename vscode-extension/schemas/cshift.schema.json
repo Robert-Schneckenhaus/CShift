@@ -37,7 +37,7 @@
 			"type": "array",
 			"items": { "type": "string" },
 			"default": ["src"],
-			"description": "Source files or directories (searched recursively for *.csh), relative to this file. All files form one program."
+			"description": "Source files or directories (searched recursively for *.cshift), relative to this file. All files form one program."
 		},
 		"output": {
 			"type": "string",

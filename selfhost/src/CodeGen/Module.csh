@@ -146,7 +146,7 @@ void EmitEntryPoint(const ref Compiler cg)
 
     // Main(string[] args) gets the arguments without the program name; it only borrows the array.
     string prepare = cg.St[0].HasGlobalsInit ? "  call void @__cs_init_globals()\n" : "";
-    // WebAssembly: the current directory of the host (stdlib/os/wasi/stubs.csh)
+    // WebAssembly: the current directory of the host (stdlib/os/wasi/stubs.cshift)
     if (ir.Target.Wasm)
         prepare = "  call void @__cs_wasi_start()\n" + prepare;
     string argument = "";

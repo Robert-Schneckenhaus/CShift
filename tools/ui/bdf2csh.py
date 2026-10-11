@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Converts bitmap fonts in BDF format into the font data of System.Ui (stdlib/ui_fonts.csh).
+"""Converts bitmap fonts in BDF format into the font data of System.Ui (stdlib/ui_fonts.cshift).
 
-    python tools/ui/bdf2csh.py 7x13.bdf 10x20.bdf > stdlib/ui_fonts.csh
+    python tools/ui/bdf2csh.py 7x13.bdf 10x20.bdf > stdlib/ui_fonts.cshift
 
 The fonts are the "fixed" fonts of X11 (xorg/font/misc-misc: 7x13.bdf, 10x20.bdf), which are in the public domain
 ("Public domain font. Share and enjoy."), so programs that embed them owe nobody a notice. Only the characters in

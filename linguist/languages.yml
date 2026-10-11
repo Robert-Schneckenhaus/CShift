@@ -5,7 +5,7 @@ CShift:
   type: programming
   color: "#391ab2" # violet like C#, at least 43 (RGB distance) from every color in Linguist (2026-10)
   extensions:
-  - ".csh"
+  - ".cshift"
   tm_scope: source.cshift
   ace_mode: csharp
   codemirror_mode: clike

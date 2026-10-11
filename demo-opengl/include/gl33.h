@@ -4,9 +4,9 @@
  * OpenGL 1.1; everything newer has to be looked up at run time (wglGetProcAddress, here via glfwGetProcAddress).
  * So instead of prototypes, this header declares a struct of function pointers - one field per OpenGL function,
  * typed with glcorearb.h's PFNGL...PROC typedefs. In CShift every field is an Action<...>/Func<...>, and
- * src/gl.csh fills them in (gl.Clear = glClear, gl.CreateShader = glCreateShader, ...).
+ * src/gl.cshift fills them in (gl.Clear = glClear, gl.CreateShader = glCreateShader, ...).
  *
- * To use another OpenGL function: add a field here and a Load(...) line in src/gl.csh.
+ * To use another OpenGL function: add a field here and a Load(...) line in src/gl.cshift.
  */
 #ifndef CSHIFT_DEMO_GL33_H
 #define CSHIFT_DEMO_GL33_H

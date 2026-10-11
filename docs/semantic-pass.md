@@ -108,4 +108,4 @@ errors is limited (50); after that the compiler stops.
 | 7 | Tooling on top of the checker's results | done: `cshiftc check` and `cshiftc query` with the symbol index (see *Tooling*), used by the VS Code extension for errors, hover, go to definition, find all references, the outline and completion after `.`; renaming and completion of names (not only members) can follow |
 
 Tests: a case can list several `// expect-error:` lines; all of them must be in the compiler's output
-(`tests/cases/err_several_*.csh`).
+(`tests/cases/err_several_*.cshift`).

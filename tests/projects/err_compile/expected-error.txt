@@ -1,1 +1,1 @@
-main.csh:3:12: error: undefined name 'missing'
+main.cshift:3:12: error: undefined name 'missing'

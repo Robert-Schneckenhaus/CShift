@@ -1,6 +1,6 @@
 cshiftc - CShift compiler
 
-usage: cshiftc [options] file.csh [file2.csh ...]     compile single files
+usage: cshiftc [options] file.cshift [file2.cshift ...]     compile single files
        cshiftc build [project] [options]              build a project (cshift.json)
        cshiftc run   [project] [options] [-- args]    build and run a project (with the arguments after --)
        cshiftc publish [project | files] [options]    the program for the browser: one HTML file with everything
@@ -39,7 +39,7 @@ options:
   -D<name>[=value] define a macro when parsing C headers
   --ffi-api=<text> headers whose path contains <text> belong to the imported API (umbrella headers)
   file.a, file.o   libraries and object files are passed to the linker
-  --run            run the program after building (its arguments after --: file.csh --run -- a b)
+  --run            run the program after building (its arguments after --: file.cshift --run -- a b)
   --port <n>       serve: the port (default: the first free one from 8080 on)
   --host <address> serve: where it listens (default 127.0.0.1, this computer only; 0.0.0.0: every network)
   --open           serve: open the page in the browser

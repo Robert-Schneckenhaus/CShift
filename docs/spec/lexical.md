@@ -5,7 +5,7 @@ comments separate tokens and are otherwise ignored.
 
 ## Source text
 
-A source file (`.csh`) is UTF-8 text. Line breaks are `\n` or `\r\n`. Positions in error messages count lines from
+A source file (`.cshift`) is UTF-8 text. Line breaks are `\n` or `\r\n`. Positions in error messages count lines from
 1 and columns in characters (a multi-byte UTF-8 character is one column).
 
 ## White space and comments

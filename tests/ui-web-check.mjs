@@ -1,9 +1,9 @@
-// System.Ui in the browser without a browser: runs a program of the wasm backend (tests/ui/web.csh) with web/cshift.js
+// System.Ui in the browser without a browser: runs a program of the wasm backend (tests/ui/web.cshift) with web/cshift.js
 // and a canvas that only pretends (events are sent to it, putImageData keeps the image). It clicks the button and types
 // into the text box at the places the program tells, pastes, and checks the output, the pixels of the frame and that
 // the program waits for input between the frames.
 //
-//   cshiftc --backend wasm tests/ui/web.csh -o web.wasm && node tests/ui-web-check.mjs web.wasm
+//   cshiftc --backend wasm tests/ui/web.cshift -o web.wasm && node tests/ui-web-check.mjs web.wasm
 
 import { readFile } from "node:fs/promises";
 import { argv } from "node:process";

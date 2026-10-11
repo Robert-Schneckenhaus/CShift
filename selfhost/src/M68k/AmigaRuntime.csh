@@ -1,7 +1,7 @@
 // The assembly part of the AmigaOS runtime: the startup code (it comes first in the code hunk, where AmigaOS starts a
 // program), exit, the stubs that call the functions of exec.library and dos.library (their arguments are in registers,
 // the library base in a6), the entries of printf/fprintf/snprintf (their variable arguments are passed on to
-// __cs_vformat in stdlib/amiga/libc.csh) and fast memcpy/memmove/memset/memcmp/strlen.
+// __cs_vformat in stdlib/amiga/libc.cshift) and fast memcpy/memmove/memset/memcmp/strlen.
 
 namespace CShift.M68k;
 
@@ -58,7 +58,7 @@ const ReadOnlySlice<string> AmigaStubs = [
     "__gfx_WaitBlit|__cs_GfxBase|-228|",
     "__gfx_OwnBlitter|__cs_GfxBase|-456|",
     "__gfx_DisownBlitter|__cs_GfxBase|-462|",
-    // graphics.library and intuition.library (for the window of System.Ui: stdlib/amiga/ui.csh)
+    // graphics.library and intuition.library (for the window of System.Ui: stdlib/amiga/ui.cshift)
     "__gfx_Text|__cs_GfxBase|-60|a1,a0,d0",
     "__gfx_SetFont|__cs_GfxBase|-66|a1,a0",
     "__gfx_InitRastPort|__cs_GfxBase|-198|a1",

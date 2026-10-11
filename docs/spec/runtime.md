@@ -29,7 +29,7 @@ A **panic** ends the program because of a bug. It writes `panic: <reason>` and t
 
 ```text
 panic: array index out of range (index 5, length 3)
-  at src/Game/World.csh:482:21 in World.GetTile
+  at src/Game/World.cshift:482:21 in World.GetTile
 ```
 
 The place is the file (as the compiler was given it; in a project, relative to the project folder), line, column and

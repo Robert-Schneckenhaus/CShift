@@ -264,7 +264,7 @@ const debugProvider = {
             ? editor.document.uri.fsPath : null;
         const target = lib.debugTarget(projectFiles, active, config.project);
         if (!target) {
-            vscode.window.showErrorMessage("CShift: no program to debug (open a .csh file, or set \"project\" in launch.json).");
+            vscode.window.showErrorMessage("CShift: no program to debug (open a .cshift file, or set \"project\" in launch.json).");
             return undefined;
         }
         await vscode.workspace.saveAll(false);

@@ -736,7 +736,7 @@ int ResolveType(const ref Compiler cg, int refType, int file, Dictionary<string,
         cg.Structs.Get(entry.Index).Decl.TypeParams.Length > 0)
     {
         // Bare 'Thread' (no type argument) is the non-generic handle, a separate struct ('_ThreadVoid') because a
-        // struct name cannot be overloaded by the number of type arguments; see stdlib/thread.csh.
+        // struct name cannot be overloaded by the number of type arguments; see stdlib/thread.cshift.
         var voidEntry = TypeDeclEntry { };
         if (LookupTypeDecl(cg, file, "System._ThreadVoid", ref voidEntry))
             return GetStructType(cg, voidEntry.Index, new int[0], node.Loc);
@@ -1109,7 +1109,7 @@ Dictionary<string, int> NoEnv()
     return Dictionary<string, int>.Create();
 }
 
-// Names of the standard library (stdlib/*.csh). cshc does not load the library yet, so a use of one of these names
+// Names of the standard library (stdlib/*.cshift). cshc does not load the library yet, so a use of one of these names
 // is reported as "not supported" instead of "unknown".
 bool IsStdlibName(string name)
 {

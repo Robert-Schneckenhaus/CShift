@@ -19,7 +19,7 @@ wide).
 demo-amiga-ndk/
 ├── cshift.json        project file ("target": "m68k-amigaos")
 ├── src/
-│   └── main.csh       the window, the projection and the drawing
+│   └── main.cshift       the window, the projection and the drawing
 └── bin/, obj/         the Amiga executable and the imported headers (generated, not in git)
 ```
 

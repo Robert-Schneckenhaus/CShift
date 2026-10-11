@@ -78,7 +78,7 @@ out unless they have a doc comment, and so is `Main`. A namespace is listed when
 
 The types and functions that the compiler provides itself (`string`, the numbers, arrays, slices, `Optional`,
 `Error`, `Console`, `Environment`, `Memory`, `Thread`, `SharedPtr`, `Enum<T>`, `Action`, `Func`) have no source code.
-They are declared with their doc comments in `stdlib/builtin/*.csh`, which are never compiled: `cshiftc doc`
+They are declared with their doc comments in `stdlib/builtin/*.cshift`, which are never compiled: `cshiftc doc`
 documents them with the standard library (marked `"builtin": true`), and the hover shows their comments (also for
 `int.MaxValue`, `string.Length`, `Console.WriteLine`, ...). Only these files may declare static fields.
 
@@ -99,10 +99,10 @@ members, and its doc comment split into summary, description and tags:
 {"version": "0.22",
  "namespaces": [{"name": "System", "doc": {"summary": "...", ...}}],
  "items": [
-  {"kind": "struct", "name": "List", "signature": "struct List<T>", "file": "list.csh", "line": 20,
+  {"kind": "struct", "name": "List", "signature": "struct List<T>", "file": "list.cshift", "line": 20,
    "namespace": "System", "doc": {...}, "members": [
      {"kind": "method", "name": "Insert", "signature": "void Insert(int index, T value)", "static": false,
-      "file": "list.csh", "line": 82,
+      "file": "list.cshift", "line": 82,
       "doc": {"summary": "Inserts `value` before the element at `index`; `index == Count()` appends.",
               "description": "...", "params": [{"name": "index", "text": "0 to `Count()`."}, ...],
               "returns": "", "errors": [], "panics": "when `index` is out of range.", "since": "0.22",

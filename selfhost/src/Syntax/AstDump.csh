@@ -1,4 +1,4 @@
-// Text dump of the syntax tree (cshiftc --ast file.csh), for looking at what the parser made of a file; the format is
+// Text dump of the syntax tree (cshiftc --ast file.cshift), for looking at what the parser made of a file; the format is
 // the one of the retired C++ compiler (--dump-ast). One node per line, children indented by two spaces and prefixed
 // with their role:
 //

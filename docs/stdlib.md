@@ -2,33 +2,33 @@
 
 ← [Documentation](README.md)
 
-The standard library is written in CShift itself (`stdlib/*.csh`) and embedded in the compiler. Only what a program
-actually uses gets compiled (generics are instantiated per type). Examples are in `tests/cases/stdlib_*.csh`.
+The standard library is written in CShift itself (`stdlib/*.cshift`) and embedded in the compiler. Only what a program
+actually uses gets compiled (generics are instantiated per type). Examples are in `tests/cases/stdlib_*.cshift`.
 
 | Namespace | File | Contents |
 |---|---|---|
-| global | `core.csh` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
-| `System` | `list.csh`, `dictionary.csh`, `hashset.csh`, `stack.csh`, `queue.csh`, `stringbuilder.csh`, `process.csh`, `file.csh`, `directory.csh`, `encoding.csh` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
-| `Char` | `char.csh` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
-| `ConsoleInput` | `console.csh` | `ReadLine`, which the compiler calls for `Console.ReadLine()` |
-| `System.Native` | `args.csh` | a helper function for `Main(string[] args)` |
-| `Math` | `math.csh` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
-| `FastTrig` | `fasttrig.csh` | table-based trigonometry with integer angles and fixed point results (`FastTrig.Sin(angle)`) |
-| `String` | `string.csh` | string helpers, visible as methods on `string` |
-| `System.Native` | `native.csh` | C imports (`fopen`, `sin`, `pthread_mutex/cond_*`, …), also usable by your own programs (`using System.Native;`) |
-| `System` | `thread.csh`, `mutex.csh` | `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>` (`using System;`, see [threading.md](language/threading.md)) |
-| `System` | `random.csh` | `Random`: seeded pseudo-random numbers |
-| `System` | `datetime.csh` | `DateTime`, `TimeSpan`, `DayOfWeek`, `Stopwatch` |
-| `System` | `stream.csh` | `FileStream`, `StreamReader`, `StreamWriter`, `SeekOrigin` |
-| `System` | `json.csh` | `Json`, `JsonValue`, `JsonKind`, `JsonError` |
-| `System` | `regex.csh` | `Regex`, `RegexMatch`, `RegexError` |
-| `System.Compression` | `compression.csh` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
-| `System.Image` | `image.csh`, `image_png.csh`, `image_bmp.csh`, `image_ppm.csh` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
-| `System.Net` | `net.csh` | `TcpListener`, `TcpConnection`, `NetError`: TCP connections over IPv4 (`using System.Net;`) |
-| `System.Ui` | `ui.csh`, `ui_draw.csh`, `ui_window.csh`, `ui_fonts.csh` | `Ui`, `Window`, `Theme`, `UiInput`, `Key`, `Canvas`, `Font`, `Rect`, `UiCommand`, `Clipboard`, `UiError`: user interfaces in immediate mode, drawn by a software renderer or as drawing commands; windows on Windows (Win32), Linux (X11), in the browser (a canvas) and on AmigaOS (Intuition), see [ui.md](ui.md) |
-| `System` | `os/…`, `amiga/os.csh` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets); the compiler adds the one of the target |
-| `Amiga` | `amiga/hardware.csh` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
-| `Amiga` | `amiga/graphics.csh` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
+| global | `core.cshift` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
+| `System` | `list.cshift`, `dictionary.cshift`, `hashset.cshift`, `stack.cshift`, `queue.cshift`, `stringbuilder.cshift`, `process.cshift`, `file.cshift`, `directory.cshift`, `encoding.cshift` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
+| `Char` | `char.cshift` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
+| `ConsoleInput` | `console.cshift` | `ReadLine`, which the compiler calls for `Console.ReadLine()` |
+| `System.Native` | `args.cshift` | a helper function for `Main(string[] args)` |
+| `Math` | `math.cshift` | math functions and constants (without `using`: `Math.Sqrt(2)`) |
+| `FastTrig` | `fasttrig.cshift` | table-based trigonometry with integer angles and fixed point results (`FastTrig.Sin(angle)`) |
+| `String` | `string.cshift` | string helpers, visible as methods on `string` |
+| `System.Native` | `native.cshift` | C imports (`fopen`, `sin`, `pthread_mutex/cond_*`, …), also usable by your own programs (`using System.Native;`) |
+| `System` | `thread.cshift`, `mutex.cshift` | `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>` (`using System;`, see [threading.md](language/threading.md)) |
+| `System` | `random.cshift` | `Random`: seeded pseudo-random numbers |
+| `System` | `datetime.cshift` | `DateTime`, `TimeSpan`, `DayOfWeek`, `Stopwatch` |
+| `System` | `stream.cshift` | `FileStream`, `StreamReader`, `StreamWriter`, `SeekOrigin` |
+| `System` | `json.cshift` | `Json`, `JsonValue`, `JsonKind`, `JsonError` |
+| `System` | `regex.cshift` | `Regex`, `RegexMatch`, `RegexError` |
+| `System.Compression` | `compression.cshift` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
+| `System.Image` | `image.cshift`, `image_png.cshift`, `image_bmp.cshift`, `image_ppm.cshift` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
+| `System.Net` | `net.cshift` | `TcpListener`, `TcpConnection`, `NetError`: TCP connections over IPv4 (`using System.Net;`) |
+| `System.Ui` | `ui.cshift`, `ui_draw.cshift`, `ui_window.cshift`, `ui_fonts.cshift` | `Ui`, `Window`, `Theme`, `UiInput`, `Key`, `Canvas`, `Font`, `Rect`, `UiCommand`, `Clipboard`, `UiError`: user interfaces in immediate mode, drawn by a software renderer or as drawing commands; windows on Windows (Win32), Linux (X11), in the browser (a canvas) and on AmigaOS (Intuition), see [ui.md](ui.md) |
+| `System` | `os/…`, `amiga/os.cshift` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets); the compiler adds the one of the target |
+| `Amiga` | `amiga/hardware.cshift` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
+| `Amiga` | `amiga/graphics.cshift` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
 
 **`List<T>`** — a growable array. Create it with `List<int>.Create()` or a collection expression (`List<int> xs = [];`).
 `Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)` / `list[i]`, `Set(i, v)` /
@@ -61,7 +61,7 @@ empty), `TryPop()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = top), 
 `Peek()` (both panic when empty), `TryDequeue()`, `TryPeek()` (`Optional<T>`), `Count()`, `Get(i)` (0 = front),
 `Contains(v)`, `Clear()`, `ToArray()` (front first). `foreach` goes from the front to the back. Both are handles to
 shared storage, like `List`.
-**Number formats** (`numberformat.csh`) — `x.ToString("F2")`, `$"{x,8:F2}"`: `D`, `X`, `B`, `F`, `N`, `E`, `P`, `G`
+**Number formats** (`numberformat.cshift`) — `x.ToString("F2")`, `$"{x,8:F2}"`: `D`, `X`, `B`, `F`, `N`, `E`, `P`, `G`
 with up to two digits, see [number formats](language/arrays-strings-collections.md#number-formats-and-alignment).
 `NumberFormat.Check(format, floatingPoint)` tells why a format is not valid (`""` if it is).
 **`Process.Run("command")`** runs a command line through the shell and returns its exit code (what the program wrote
@@ -75,7 +75,7 @@ also captures what it wrote to stdout (`Optional<string>`); `GetEnv("NAME")` rea
 `IsRooted`, `GetFullPath` (absolute, without `.`/`..`), `GetRelativePath(from, to)`.
 **Command line:** `int Main(string[] args)` receives the arguments without the program name. `Console.WriteError(Line)`
 writes to stderr, `string.FromCStr(char*)` copies a C string (`unsafe`) into a `string`. `Console.ReadLine()` reads a
-line of the standard input (`Optional<string>` without the line break, `null` at its end; `console.csh`): what was
+line of the standard input (`Optional<string>` without the line break, `null` at its end; `console.cshift`): what was
 written before is shown first, so `Console.Write("Name: ")` is a prompt.
 
 ```csharp
@@ -106,7 +106,7 @@ Error<string> Load(string path)
 }
 ```
 
-**Error codes** ([error enums](language/error-handling.md#error-enums-typed-error-codes), `stdlib/errors.csh`):
+**Error codes** ([error enums](language/error-handling.md#error-enums-typed-error-codes), `stdlib/errors.cshift`):
 
 | Enum | Members | Returned by |
 |---|---|---|

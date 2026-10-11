@@ -8,9 +8,9 @@ function signatures come from the official Khronos header `GL/glcorearb.h`. **Es
 demo-opengl/
 ├── cshift.json        project file (sources, header path, defines, libraries)
 ├── src/
-│   ├── main.csh       entry point: window, shaders, cube, render loop
-│   ├── gl.csh         loads the OpenGL functions at run time (LoadGl)
-│   └── matrix.csh     Mat4: perspective, rotation, translation, multiplication
+│   ├── main.cshift       entry point: window, shaders, cube, render loop
+│   ├── gl.cshift         loads the OpenGL functions at run time (LoadGl)
+│   └── matrix.cshift     Mat4: perspective, rotation, translation, multiplication
 ├── include/
 │   ├── gl33.h         the OpenGL functions the demo uses, as a struct of function pointers
 │   ├── GL/glcorearb.h Khronos OpenGL core profile header (MIT)
@@ -50,7 +50,7 @@ builds, *Tasks: Run Task → cshiftc: run* runs the program.
 * **Loading OpenGL.** On Windows, `opengl32.dll` only exports OpenGL 1.1; everything newer has to be looked up at run
   time once a context exists. `include/gl33.h` therefore declares `struct GlFunctions` with one field per function,
   typed with `glcorearb.h`'s `PFNGL…PROC` typedefs. The FFI import turns each field into an `Action<…>`/`Func<…>`
-  with the right signature, and `LoadGl()` in `src/gl.csh` fills them in via `glfwGetProcAddress`:
+  with the right signature, and `LoadGl()` in `src/gl.cshift` fills them in via `glfwGetProcAddress`:
 
   ```csharp
   Load(ref gl.CreateShader, "glCreateShader");   // gl.CreateShader: Func<uint32, uint32>
@@ -63,8 +63,8 @@ builds, *Tasks: Run Task → cshiftc: run* runs the program.
   (`gdi32`, `user32`, `shell32`). `libraryPaths: ["lib"]` makes the linker find `lib/libglfw3.a`.
 * **The cube.** 8 corners, each with a color of the rainbow, and 36 indices (6 faces × 2 triangles) in a vertex
   buffer, an index buffer and a vertex array object. Every frame, the model-view-projection matrix (`Mat4` in
-  `src/matrix.csh`, column-major like OpenGL expects) goes to the vertex shader as the uniform `uMvp`; the fragment
-  shader outputs the interpolated color. The shaders (GLSL `#version 330 core`) are at the top of `src/main.csh`.
+  `src/matrix.cshift`, column-major like OpenGL expects) goes to the vertex shader as the uniform `uMvp`; the fragment
+  shader outputs the interpolated color. The shaders (GLSL `#version 330 core`) are at the top of `src/main.cshift`.
 
 The project file's format is described in [../docs/build.md](../docs/build.md), header import in
 [../docs/ffi.md](../docs/ffi.md).

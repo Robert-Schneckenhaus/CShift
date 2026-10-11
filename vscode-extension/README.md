@@ -1,6 +1,6 @@
 # CShift for VS Code
 
-Support for **CShift** (`.csh`), the native, C#-like systems language of this repository:
+Support for **CShift** (`.cshift`), the native, C#-like systems language of this repository:
 
 * **Errors while you type**: the whole program is checked (with `cshiftc check`) when a file is opened, saved, and
   after a short pause in typing; all errors of the program are shown in the editor and in *Problems*, also those of
@@ -22,7 +22,7 @@ Support for **CShift** (`.csh`), the native, C#-like systems language of this re
   string functions for strings.
 * **Debugging (F5)**: builds the program with `-g -O0` (into `bin/debug/`) and runs it under lldb, through the
   [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension (it brings its own
-  lldb): breakpoints in `.csh` files, stepping, the call stack, and variables with their values (strings as text,
+  lldb): breakpoints in `.cshift` files, stepping, the call stack, and variables with their values (strings as text,
   arrays and collections with their elements).
 * Syntax highlighting (keywords, types, generics, numbers with suffixes, strings, comments, `link`, `namespace`/`using`),
   bracket pairs, auto-indent, comment toggling, `// region` folding, snippets (`main`, `struct`, `fn`, `foreach`,
@@ -56,7 +56,7 @@ The command **CShift: Check the program of the current file** checks on demand.
 
 ## Debugging
 
-Install CodeLLDB (`vadimcn.vscode-lldb`; the extension offers it the first time). Then **F5** in a `.csh` file debugs
+Install CodeLLDB (`vadimcn.vscode-lldb`; the extension offers it the first time). Then **F5** in a `.cshift` file debugs
 its program: the project it belongs to, or the file alone. For more control, add a launch configuration (*Run → Add
 Configuration… → CShift (lldb)*):
 

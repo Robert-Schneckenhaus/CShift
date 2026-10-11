@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# How much of the language does cshc handle? Runs tests/cases/*.csh with cshc and sorts the results:
+# How much of the language does cshc handle? Runs tests/cases/*.cshift with cshc and sorts the results:
 #   pass         the expectations of the file (// expect-error, expect-exit, expect-stdout, expect-stderr) hold
 #   unsupported  cshc stops with "cshc does not support ..." (a feature that is not ported yet)
 #   FAIL         everything else (a real failure)
@@ -20,7 +20,7 @@ trap 'rm -rf "$TMP"' EXIT
 directives() { sed -n "s|^// $2:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*\$|\1|p" "$1" | tr -d '\r'; }
 
 pass=(); unsupported=(); fail=()
-for file in "$ROOT"/tests/cases/*.csh; do
+for file in "$ROOT"/tests/cases/*.cshift; do
     name="$(basename "$file")"
     want_error="$(directives "$file" expect-error | head -n 1)"
     # the case's own compiler options (// options: --unchecked), like tests/run_tests.sh

@@ -28,7 +28,7 @@ int Publish(BuildOptions o)
     string title = "";
     string page = o.Output;
     var assets = List<AssetFile>.Create();
-    if (o.Inputs.Count() > 0 && o.Inputs.Get(0).EndsWith(".csh"))
+    if (o.Inputs.Count() > 0 && IsSourceFile(o.Inputs.Get(0)))
     {
         title = StemOf(o.Inputs.Get(0));
         if (page.Length == 0)

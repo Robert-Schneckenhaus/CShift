@@ -11,13 +11,13 @@ gdb and lldb can then stop on a line or a function, step through the code, show 
 and print variables. The information is in DWARF, the format of every Linux and MinGW debugger.
 
 ```
-cshiftc -g -O0 prog.csh -o prog
+cshiftc -g -O0 prog.cshift -o prog
 gdb ./prog
-(gdb) break prog.csh:15          a line
+(gdb) break prog.cshift:15          a line
 (gdb) break Square               a function
 (gdb) break Counter.Add          a method (struct name, dot, method name)
 (gdb) run
-(gdb) bt                         where the program is: Square (x=3) at prog.csh:15, called from Main at prog.csh:25
+(gdb) bt                         where the program is: Square (x=3) at prog.cshift:15, called from Main at prog.cshift:25
 (gdb) info args                  the parameters
 (gdb) info locals                the variables of the function
 (gdb) print person               {Name = "Ann", Age = 42, Home = {X = 3, Y = 4}, Favorite = Green, Lucky = 7}
@@ -28,7 +28,7 @@ gdb ./prog
 ## VS Code
 
 With the CShift extension and [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb)
-(`vadimcn.vscode-lldb`), **F5** in a `.csh` file builds its program with `-g -O0` (into `bin/debug/`, next to the
+(`vadimcn.vscode-lldb`), **F5** in a `.cshift` file builds its program with `-g -O0` (into `bin/debug/`, next to the
 normal build) and runs it under lldb: breakpoints in the editor, stepping, the call stack, and the variables with the
 pretty printers below. CodeLLDB brings its own lldb, also on Windows, so nothing else has to be installed. A launch
 configuration (`"type": "cshift"`) can name the project and the program's arguments, see the
@@ -36,7 +36,7 @@ configuration (`"type": "cshift"`) can name the project and the program's argume
 
 ## gdb and lldb
 
-With lldb: `breakpoint set -f prog.csh -l 15`, `breakpoint set -n Square`, `run`, `bt`, `frame variable`,
+With lldb: `breakpoint set -f prog.cshift -l 15`, `breakpoint set -n Square`, `run`, `bt`, `frame variable`,
 `frame variable person.Home`, `next`, `step`.
 
 ## Strings, arrays and collections
@@ -84,7 +84,7 @@ elements.
   name in different blocks do not mix.
 * **`ref` parameters and `this`** are pointers: `print *count`, `print this->Value` (or `print *this`).
 * **The standard library** is compiled into the program from the copy inside `cshiftc`; its functions appear as
-  `<stdlib>/list.csh` without source text (with `--stdlib <dir>` the debugger finds the files).
+  `<stdlib>/list.cshift` without source text (with `--stdlib <dir>` the debugger finds the files).
 * **Panics:** `break __cs_panic_at` (and `__cs_panic_index`, `__cs_panic`) stops before the program ends with a panic;
   `bt` then shows where it happened.
 * Code that the compiler adds itself (reference counting helpers, the start of threads, the initialization of

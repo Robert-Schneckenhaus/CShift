@@ -3,7 +3,7 @@
 executed instructions of every function. The program must be built with -g, which writes the names of its functions
 into the executable (HUNK_SYMBOL).
 
-    cshiftc --target m68k-amigaos -g program.csh -o program
+    cshiftc --target m68k-amigaos -g program.cshift -o program
     python3 tools/amiga/profile.py [--cpu 68000] [--top 30] [--annotate NAME] program [arguments]
 
 --annotate NAME also lists the instructions of the functions whose name contains NAME, each with how often it ran.

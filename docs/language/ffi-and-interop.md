@@ -34,7 +34,7 @@ int Main()
 ```
 
 ```
-cshiftc prog.csh -lz          # still need to link the actual library
+cshiftc prog.cshift -lz          # still need to link the actual library
 ```
 
 Structs passed *by value* to and from C, and C callbacks, both work — a CShift function can be handed to a C

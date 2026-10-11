@@ -5,6 +5,9 @@ the git log.
 
 ## Compiler
 
+- [ ] When stage 0 reads `.cshift` (0.32): rename the compiler's sources (`selfhost/src/**/*.csh`, the references to
+      them in comments, docs and scripts such as `selfhost/bootstrap.sh`), the template (`templates/app`,
+      cshift-app-template), and later warn about `.csh` files.
 - [ ] When stage 0 has `Process.IsMacOS()` (0.32): use it in `selfhost/src/CodeGen/Runtime.csh`,
       `selfhost/src/Driver/Project.csh` and `selfhost/src/Driver/Serve.csh` instead of looking for
       `/System/Library/CoreServices/SystemVersion.plist`.
@@ -89,7 +92,7 @@ the git log.
   wrong `.ffi` file silently produces a wrong ABI), offline builds, where the cache lives. Alternatives to libclang
   were investigated: syntax-only parsers (Tree-sitter's C grammar and similar) cannot expand macros or compute
   layouts; a real C front end is a project of its own (Zig's Aro).
-- **A build written in CShift** (`build.csh`, like Zig), see [docs/build.md](docs/build.md).
+- **A build written in CShift** (`build.cshift`, like Zig), see [docs/build.md](docs/build.md).
 - **lld instead of the clang driver** on Windows (smaller toolchain).
 - **Hot reload for `System.Ui` programs** ([docs/ui.md](docs/ui.md)). The state of the program lives in one struct
   (`App`), the UI is drawn every frame by `Draw(Ui ui, ref App app)`; `cshiftc run --hot` builds a small host (window, `Ui`, the `App` value, watches the

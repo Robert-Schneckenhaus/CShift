@@ -92,10 +92,10 @@ test("extension: hover, definition and errors while editing", { skip: !compiler 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-ext-"));
     fs.mkdirSync(path.join(root, "src"));
     fs.writeFileSync(path.join(root, "cshift.json"), JSON.stringify({ name: "demo", sources: ["src"] }));
-    const mainFile = path.join(root, "src", "Main.csh");
+    const mainFile = path.join(root, "src", "Main.cshift");
     fs.writeFileSync(mainFile, "using System;\n\nint Main()\n{\n    var p = Person { Name = \"Ann\", Age = 30 };\n" +
         "    Console.WriteLine(Describe(p));\n    return 0;\n}\n");
-    fs.writeFileSync(path.join(root, "src", "Person.csh"), "struct Person\n{\n    string Name;\n    int Age;\n}\n\n" +
+    fs.writeFileSync(path.join(root, "src", "Person.cshift"), "struct Person\n{\n    string Name;\n    int Age;\n}\n\n" +
         "string Describe(Person p)\n{\n    return p.Name + \" \" + p.Age.ToString();\n}\n");
 
     const env = makeVscode(root, { compilerPath: compiler, checkWhileTyping: true, checkDelay: 50 });
@@ -112,16 +112,16 @@ test("extension: hover, definition and errors while editing", { skip: !compiler 
     assert.match(hover.contents[0].value, /string Describe\(Person p\)/);
 
     const def = await env.providers.definition.provideDefinition(doc, at);
-    assert.strictEqual(path.basename(def.uri.fsPath), "Person.csh");
+    assert.strictEqual(path.basename(def.uri.fsPath), "Person.cshift");
     assert.deepStrictEqual([def.range.start.line, def.range.start.character], [6, 7]); // the name "Describe"
 
     // find all references: the declaration and the call
     const refs = await env.providers.references.provideReferences(doc, at);
     assert.deepStrictEqual(refs.map((r) => [path.basename(r.uri.fsPath), r.range.start.line]).sort(),
-        [["Main.csh", 5], ["Person.csh", 6]]);
+        [["Main.cshift", 5], ["Person.cshift", 6]]);
 
-    // the outline of Person.csh
-    const personDoc = env.openDocument(path.join(root, "src", "Person.csh"));
+    // the outline of Person.cshift
+    const personDoc = env.openDocument(path.join(root, "src", "Person.cshift"));
     const symbols = await env.providers.symbols.provideDocumentSymbols(personDoc);
     assert.deepStrictEqual(symbols.map((s) => s.name), ["Person", "Describe"]);
     assert.deepStrictEqual(symbols[0].children.map((s) => s.name), ["Name", "Age"]);

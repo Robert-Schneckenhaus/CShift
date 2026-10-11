@@ -17,7 +17,7 @@ int Main()
 
 ```
 cshiftc build          # cshift.json: "links": ["z"]
-cshiftc prog.csh -lz   # single file
+cshiftc prog.cshift -lz   # single file
 ```
 
 AmigaOS libraries are imported the same way from the SFD files of the NDK (`using Gfx from "graphics_lib.sfd";`):
