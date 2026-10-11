@@ -16,9 +16,9 @@
 # qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross).
 #
 # What is tested:
-#   1. tests/test.csh + tests/mathlib.csh  -> stdout must match tests/test.expected, all
+#   1. tests/test.cshift + tests/mathlib.cshift  -> stdout must match tests/test.expected, all
 #      checks pass and no heap block is leaked (--arc-stats).
-#   2. tests/cases/*.csh                   -> small programs with expectations in comments:
+#   2. tests/cases/*.cshift                   -> small programs with expectations in comments:
 #        // expect-error:  <text>   compilation must fail and print <text> (several lines: all of them)
 #        // expect-exit:   <n>      exit code of the program (default 0)
 #        // expect-stdout: <text>   stdout contains <text>   (may be repeated)
@@ -29,10 +29,10 @@
 #        // stdin:         <text>   a line of the program's standard input (may be repeated; without it, stdin is empty)
 #   3. tests/projects/*/                  -> projects built with "cshiftc build|run" (see the comment further down),
 #      plus "cshiftc new". A project may contain native/*.c files (compiled with clang before the build) for FFI tests.
-#   3b. tests/query/*.csh                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
+#   3b. tests/query/*.cshift                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
 #      VS Code extension (vscode-extension/test, if node is installed); tests/publish/*/: "cshiftc publish", the page
 #      run by node (tests/publish-run.mjs); "cshiftc serve" (tests/serve-check.mjs); System.Ui in the browser
-#      (tests/ui/web.csh, run by tests/ui-web-check.mjs).
+#      (tests/ui/web.cshift, run by tests/ui-web-check.mjs).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -92,9 +92,9 @@ directives() {
 }
 
 # --- 1. main test program ----------------------------------------------------
-echo "== test.csh ($OPT)"
-if ! "$COMPILER" $OPT "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.exe" 2> "$TMP/compile.err"; then
-    report_fail "test.csh" "compilation failed:"
+echo "== test.cshift ($OPT)"
+if ! "$COMPILER" $OPT "${CC_ARGS[@]}" --arc-stats "$DIR/test.cshift" "$DIR/mathlib.cshift" -o "$TMP/test.exe" 2> "$TMP/compile.err"; then
+    report_fail "test.cshift" "compilation failed:"
     cat "$TMP/compile.err"
 else
     "${RUNNER[@]}" "$TMP/test.exe" > "$TMP/test.out" 2> "$TMP/test.err"
@@ -102,26 +102,26 @@ else
     tr -d '\r' < "$TMP/test.out" > "$TMP/test.out.n"
     tr -d '\r' < "$DIR/test.expected" > "$TMP/test.expected.n"
     if [ "$code" -ne 0 ]; then
-        report_fail "test.csh" "exit code $code (failed checks):"
+        report_fail "test.cshift" "exit code $code (failed checks):"
         grep FAIL "$TMP/test.out.n"
     elif [ "$(cat "$TMP/test.expected.n")" != "$(cat "$TMP/test.out.n")" ]; then
-        report_fail "test.csh" "output differs from test.expected"
+        report_fail "test.cshift" "output differs from test.expected"
         echo "----- expected"
         cat "$TMP/test.expected.n"
         echo "----- actual"
         cat "$TMP/test.out.n"
         echo "-----"
     elif ! grep -q "live=0" "$TMP/test.err"; then
-        report_fail "test.csh" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.err")"
+        report_fail "test.cshift" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.err")"
     else
-        report_ok "test.csh"
-        echo "ok    test.csh ($(grep 'passed:' "$TMP/test.out.n"), $(grep '\[arc\]' "$TMP/test.err" | tr -d '\r'))"
+        report_ok "test.cshift"
+        echo "ok    test.cshift ($(grep 'passed:' "$TMP/test.out.n"), $(grep '\[arc\]' "$TMP/test.err" | tr -d '\r'))"
     fi
 fi
 
 # --- 2. small cases -----------------------------------------------------------
 echo "== cases/"
-for file in "$DIR"/cases/*.csh; do
+for file in "$DIR"/cases/*.cshift; do
     name="$(basename "$file")"
     expected_error="$(directives "$file" expect-error | head -n 1)"
     options="$(directives "$file" options | head -n 1)"
@@ -231,14 +231,14 @@ else
         fi
     done
 
-    # cshiftc run <project> -- <arguments>, and file.csh --run -- <arguments>: they reach the program unchanged (spaces,
+    # cshiftc run <project> -- <arguments>, and file.cshift --run -- <arguments>: they reach the program unchanged (spaces,
     # quotes, backslashes, an empty one, things that look like options)
     want=$'6\n[one]\n[two words]\n[a"b]\n[back\slash\]\n[]\n[-O0]'
     "$COMPILER" run "$DIR/projects/args" $OPT "${CC_ARGS[@]}" -o "$TMP/args_run" -- one "two words" 'a"b' 'back\slash\' "" -O0 > "$TMP/args.out" 2> "$TMP/args.err"
     if [ "$(tr -d '\r' < "$TMP/args.out")" != "$want" ]; then
         report_fail "cshiftc run -- arguments" "got: $(tr -d '\r' < "$TMP/args.out" | tr '\n' '|') $(head -n 2 "$TMP/args.err" | tr '\n' ' ')"
-    elif [ "$("$COMPILER" "$DIR/projects/args/src/main.csh" $OPT "${CC_ARGS[@]}" -o "$TMP/args_file" --run -- x 2> /dev/null | tr -d '\r' | tr '\n' '|')" != "1|[x]|" ]; then
-        report_fail "cshiftc run -- arguments" "file.csh --run -- x did not pass x"
+    elif [ "$("$COMPILER" "$DIR/projects/args/src/main.cshift" $OPT "${CC_ARGS[@]}" -o "$TMP/args_file" --run -- x 2> /dev/null | tr -d '\r' | tr '\n' '|')" != "1|[x]|" ]; then
+        report_fail "cshiftc run -- arguments" "file.cshift --run -- x did not pass x"
     else
         report_ok "cshiftc run -- arguments"
     fi
@@ -261,9 +261,9 @@ else
     fi
 
     # An AmigaOS executable contains only what it uses (needs no clang): hello world without printf's formatting code
-    printf 'using System;\nint Main()\n{\n    Console.WriteLine("Hello " + 42.ToString());\n    return 0;\n}\n' > "$TMP/amiga_hello.csh"
-    if "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" --emit-asm -o "$TMP/amiga_hello.s" 2> "$TMP/amiga.err" &&
-       "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.csh" -o "$TMP/amiga_hello" 2>> "$TMP/amiga.err"; then
+    printf 'using System;\nint Main()\n{\n    Console.WriteLine("Hello " + 42.ToString());\n    return 0;\n}\n' > "$TMP/amiga_hello.cshift"
+    if "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.cshift" --emit-asm -o "$TMP/amiga_hello.s" 2> "$TMP/amiga.err" &&
+       "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$TMP/amiga_hello.cshift" -o "$TMP/amiga_hello" 2>> "$TMP/amiga.err"; then
         size=$(wc -c < "$TMP/amiga_hello" | tr -d ' ')
         if grep -q "__cs_vformat\|^printf:" "$TMP/amiga_hello.s"; then
             report_fail "amiga trimming" "hello world contains printf"
@@ -279,7 +279,7 @@ else
     # With vamos (amitools: pip install amitools "machine68k<0.4") AmigaOS programs run on this machine: the copies
     # and fills of the Amiga runtime (memcpy, memmove, memset with their jump towers) against plain loops
     if command -v vamos > /dev/null 2>&1; then
-        if ! "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$DIR/amiga/memory.csh" -o "$TMP/amiga_memory" 2> "$TMP/amiga.err"; then
+        if ! "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$DIR/amiga/memory.cshift" -o "$TMP/amiga_memory" 2> "$TMP/amiga.err"; then
             report_fail "amiga runtime (vamos)" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
         elif ! (cd "$TMP" && vamos amiga_memory > "$TMP/amiga.out" 2>&1) || ! grep -q "errors 0" "$TMP/amiga.out"; then
             report_fail "amiga runtime (vamos)" "$(tail -n 3 "$TMP/amiga.out" | tr '\n' ' ')"
@@ -291,25 +291,25 @@ else
     # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
     # gdb is installed, a breakpoint on a line stops there with the file and line in the backtrace, shows the parameters
     # and a global variable and, with the pretty printers that the program carries, a string as its text.
-    printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3 + Hits - 7;\n}\n\nint Hits = 7;\n' > "$TMP/debug_info.csh"
-    if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.csh" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
+    printf 'using System;\n\nint Square(int x)\n{\n    int y = x * x;\n    return y;\n}\n\nint Main()\n{\n    Func<int, int> twice = (int v) => v * 2;\n    string name = "Ann";\n    return twice(Square(3)) - 18 + name.Length - 3 + Hits - 7;\n}\n\nint Hits = 7;\n' > "$TMP/debug_info.cshift"
+    if ! "$COMPILER" -g -O0 "${CC_ARGS[@]}" "$TMP/debug_info.cshift" -o "$TMP/debug_info.exe" 2> "$TMP/debug.err"; then
         report_fail "debug information" "$(head -n 3 "$TMP/debug.err" | tr '\n' ' ')"
     elif ! "$TMP/debug_info.exe"; then
         report_fail "debug information" "the program built with -g does not run correctly"
-    elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.csh" -o "$TMP/debug_info.ll" 2>> "$TMP/debug.err" ||
+    elif ! "$COMPILER" -g --emit-llvm "$TMP/debug_info.cshift" -o "$TMP/debug_info.ll" 2>> "$TMP/debug.err" ||
          ! grep -q 'DISubprogram(name: "Square"' "$TMP/debug_info.ll"; then
         report_fail "debug information" "no subprogram for Square in the IR"
     elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.csh:13"; then
-        report_fail "debug information" "gdb does not stop at debug_info.csh:5 with Main at line 13 in the backtrace"
+         ! gdb -batch -ex 'break debug_info.cshift:5' -ex run -ex bt "$TMP/debug_info.exe" 2>&1 | grep -q "in Main () at .*debug_info.cshift:13"; then
+        report_fail "debug information" "gdb does not stop at debug_info.cshift:5 with Main at line 13 in the backtrace"
     elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
+         ! gdb -batch -ex 'break debug_info.cshift:5' -ex run -ex 'info args' -ex up -ex 'info locals' "$TMP/debug_info.exe" 2>&1 | grep -q "x = 3"; then
         report_fail "debug information" "gdb does not show the parameter x = 3"
     elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 &&
-         ! gdb -batch -ex 'break debug_info.csh:5' -ex run -ex 'print Hits' "$TMP/debug_info.exe" 2>&1 | grep -q "= 7"; then
+         ! gdb -batch -ex 'break debug_info.cshift:5' -ex run -ex 'print Hits' "$TMP/debug_info.exe" 2>&1 | grep -q "= 7"; then
         report_fail "debug information" "gdb does not show the global variable Hits = 7"
     elif [ "$(uname -s)" = "Linux" ] && command -v gdb > /dev/null 2>&1 && gdb -batch -ex 'python print(1)' > /dev/null 2>&1 &&
-         ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.csh:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
+         ! gdb -batch -iex "add-auto-load-safe-path $TMP" -ex 'break debug_info.cshift:5' -ex run -ex up -ex 'print name' "$TMP/debug_info.exe" 2>&1 | grep -q '= "Ann"'; then
         report_fail "debug information" "gdb does not show the string variable name as \"Ann\" (the pretty printers of tools/debug/cshift_gdb.py)"
     else
         report_ok "debug information"
@@ -317,11 +317,11 @@ else
 fi
 
 # --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------
-#   tests/query/*.csh: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
+#   tests/query/*.cshift: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
 #   contains <text> (the file alone is the program). "cshiftc check" reports the errors of a program and generates
 #   nothing: exit code 1 with the messages, 0 for a correct program.
 echo "== query/"
-for f in "$DIR"/query/*.csh; do
+for f in "$DIR"/query/*.cshift; do
     [ -f "$f" ] || continue
     name="query $(basename "$f")"
     problem=""
@@ -340,7 +340,7 @@ for f in "$DIR"/query/*.csh; do
 done
 # Names imported from a C header (the ffi project, copied and built in section 3): the hover of the namespace, and go
 # to definition goes to the line of the header the name is declared in.
-ffi_main="$TMP/proj_ffi/src/main.csh"
+ffi_main="$TMP/proj_ffi/src/main.cshift"
 if [ -f "$ffi_main" ]; then
     problem=""
     for q in "70 17|int32 Geo.geo_add(int32 a, int32 b)|\"line\": 41" "70 17|native/geo.h|\"col\": 5" "70 13|namespace Geo (imported from|geo.h" "63 17|const int32 GEO_VERSION = 3|\"line\": 7"; do
@@ -351,7 +351,7 @@ if [ -f "$ffi_main" ]; then
     if [ -n "$problem" ]; then report_fail "query ffi" "$problem"; else report_ok "query ffi"; fi
 fi
 # A constant from embed("file") shows the text of the file (the embed project, copied in section 3).
-embed_main="$TMP/proj_embed/src/main.csh"
+embed_main="$TMP/proj_embed/src/main.cshift"
 if [ -f "$embed_main" ]; then
     got="$("$COMPILER" query --at "$embed_main" 4 14 "$TMP/proj_embed" 2> /dev/null | tr -d '\r')"
     case "$got" in
@@ -359,12 +359,12 @@ if [ -f "$embed_main" ]; then
         *) report_fail "query embed" "expected the text of data/version.txt, got: $got" ;;
     esac
 fi
-printf 'int Main()\n{\n    int x = "a";\n    return y;\n}\n' > "$TMP/check_bad.csh"
-if "$COMPILER" check "$TMP/check_bad.csh" > /dev/null 2> "$TMP/check.err"; then
+printf 'int Main()\n{\n    int x = "a";\n    return y;\n}\n' > "$TMP/check_bad.cshift"
+if "$COMPILER" check "$TMP/check_bad.cshift" > /dev/null 2> "$TMP/check.err"; then
     report_fail "cshiftc check" "a program with errors passed"
-elif ! grep -q "check_bad.csh:3:13: error: cannot implicitly convert" "$TMP/check.err" || ! grep -q "check_bad.csh:4:12: error: undefined name 'y'" "$TMP/check.err"; then
+elif ! grep -q "check_bad.cshift:3:13: error: cannot implicitly convert" "$TMP/check.err" || ! grep -q "check_bad.cshift:4:12: error: undefined name 'y'" "$TMP/check.err"; then
     report_fail "cshiftc check" "missing errors: $(tr '\n' ' ' < "$TMP/check.err")"
-elif ! "$COMPILER" check "$DIR/query/names.csh" > /dev/null 2> "$TMP/check.err" || [ -e "$DIR/query/names" ]; then
+elif ! "$COMPILER" check "$DIR/query/names.cshift" > /dev/null 2> "$TMP/check.err" || [ -e "$DIR/query/names" ]; then
     report_fail "cshiftc check" "a correct program failed or an output was written: $(head -n 3 "$TMP/check.err" | tr '\n' ' ')"
 else
     report_ok "cshiftc check"
@@ -372,7 +372,7 @@ fi
 # "cshiftc doc": the doc comments of a program as JSON, the errors in doc comments, and the doc comments of the
 # standard library are correct and complete.
 problem=""
-if ! "$COMPILER" doc "$DIR/query/doc_comments.csh" > "$TMP/doc.json" 2> "$TMP/doc.err"; then
+if ! "$COMPILER" doc "$DIR/query/doc_comments.cshift" > "$TMP/doc.json" 2> "$TMP/doc.err"; then
     problem="failed: $(head -n 3 "$TMP/doc.err" | tr '\n' ' ')"
 else
     for want in '{"name": "", "doc": {"summary": "Points and colors."' '"name": "Add", "signature": "Point Add(Point other)"' \
@@ -384,18 +384,18 @@ else
     if [ -z "$problem" ] && grep -qF '"name": "Main"' "$TMP/doc.json"; then problem="the JSON documents Main"; fi
 fi
 printf '%s\n' '/// Bad.' '/// @param y not there' '/// @bogus' '/// See [Nowhere].' '/// @error IoError.Missing never' \
-    'void F(int x) { }' 'struct S { int A; }' > "$TMP/doc_bad.csh"
+    'void F(int x) { }' 'struct S { int A; }' > "$TMP/doc_bad.cshift"
 if [ -z "$problem" ]; then
-    if "$COMPILER" doc "$TMP/doc_bad.csh" > /dev/null 2> "$TMP/doc.err"; then
+    if "$COMPILER" doc "$TMP/doc_bad.cshift" > /dev/null 2> "$TMP/doc.err"; then
         problem="wrong doc comments passed"
     else
-        for want in "doc_bad.csh:6:6: error: '@param y': function F has no parameter 'y'" "unknown tag '@bogus' in the doc comment of function F" \
+        for want in "doc_bad.cshift:6:6: error: '@param y': function F has no parameter 'y'" "unknown tag '@bogus' in the doc comment of function F" \
                     "cannot find 'Nowhere' (a link in the doc comment of function F)" "'@error IoError.Missing' in the doc comment of function F: no such error"; do
             grep -qF "$want" "$TMP/doc.err" || { problem="missing error: $want"; break; }
         done
     fi
 fi
-if [ -z "$problem" ] && ! "$COMPILER" doc --require-docs "$TMP/doc_bad.csh" 2>&1 | grep -qF "doc_bad.csh:7:12: error: field S.A has no doc comment"; then
+if [ -z "$problem" ] && ! "$COMPILER" doc --require-docs "$TMP/doc_bad.cshift" 2>&1 | grep -qF "doc_bad.cshift:7:12: error: field S.A has no doc comment"; then
     problem="--require-docs does not report the field S.A"
 fi
 # every public declaration of the standard library is documented (also the AmigaOS part)
@@ -467,11 +467,11 @@ elif [ -n "$NODE" ]; then
             fi
         fi
     done
-    # System.Ui in the browser: tests/ui/web.csh from the wasm backend, with web/cshift.js and a canvas that only
+    # System.Ui in the browser: tests/ui/web.cshift from the wasm backend, with web/cshift.js and a canvas that only
     # pretends (tests/ui-web-check.mjs sends it the input)
     check=("$DIR/ui-web-check.mjs" "$TMP/ui-web.wasm")
     if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/ui-web-check.mjs")" "$(cygpath -w "$TMP/ui-web.wasm")"); fi
-    if ! "$COMPILER" --backend wasm "$DIR/ui/web.csh" -o "$TMP/ui-web.wasm" > /dev/null 2> "$TMP/ui-web.err"; then
+    if ! "$COMPILER" --backend wasm "$DIR/ui/web.cshift" -o "$TMP/ui-web.wasm" > /dev/null 2> "$TMP/ui-web.err"; then
         report_fail "ui in the browser" "compilation failed: $(head -n 3 "$TMP/ui-web.err" | tr '\n' ' ')"
     elif ! "$NODE" --no-warnings "${check[@]}" > "$TMP/ui-web.out" 2>&1; then
         report_fail "ui in the browser" "$(head -n 3 "$TMP/ui-web.out" | tr '\n' ' ')"
@@ -528,18 +528,18 @@ else
             head -n 10 "$TMP/selfhost.status"
         fi
         # The main test program built by cshc must behave exactly like the one built by the compiler under test.
-        if "$cshc" "${CC_ARGS[@]}" --arc-stats "$DIR/test.csh" "$DIR/mathlib.csh" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
+        if "$cshc" "${CC_ARGS[@]}" --arc-stats "$DIR/test.cshift" "$DIR/mathlib.cshift" -o "$TMP/test.cshc.exe" 2> "$TMP/test.cshc.err"; then
             "$TMP/test.cshc.exe" > "$TMP/test.cshc.out" 2> "$TMP/test.cshc.err2"
             tr -d '\r' < "$TMP/test.cshc.out" > "$TMP/test.cshc.out.n"
             if [ "$(cat "$TMP/test.expected.n")" != "$(cat "$TMP/test.cshc.out.n")" ]; then
-                report_fail "selfhost test.csh" "output differs from test.expected"
+                report_fail "selfhost test.cshift" "output differs from test.expected"
             elif ! grep -q "live=0" "$TMP/test.cshc.err2"; then
-                report_fail "selfhost test.csh" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.cshc.err2")"
+                report_fail "selfhost test.cshift" "heap blocks leaked: $(grep '\[arc\]' "$TMP/test.cshc.err2")"
             else
-                report_ok "selfhost test.csh"
+                report_ok "selfhost test.cshift"
             fi
         else
-            report_fail "selfhost test.csh" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
+            report_fail "selfhost test.cshift" "compilation failed: $(head -n 3 "$TMP/test.cshc.err" | tr '\n' ' ')"
         fi
         # Projects (cshift.json, build/run/new, C headers through libclang) built by cshc.
         if [ -n "${CSHIFT_TARGET:-}" ]; then
@@ -562,12 +562,12 @@ else
     fi
 fi
 
-# --- 5. the wasm backend: its own cases (tests/wasm/*.csh: the output must be <name>.expected, exit code 0), then it
+# --- 5. the wasm backend: its own cases (tests/wasm/*.cshift: the output must be <name>.expected, exit code 0), then it
 #        compiles the compiler: as WebAssembly (under node) that must build itself again, byte for byte -------------
 if [ "${CSHIFT_BACKEND:-}" = "wasm" ]; then
     echo "== wasm/"
-    for file in "$DIR"/wasm/*.csh; do
-        name="$(basename "$file" .csh)"
+    for file in "$DIR"/wasm/*.cshift; do
+        name="$(basename "$file" .cshift)"
         if ! "$COMPILER" --backend wasm "$file" -o "$TMP/wasm-case.wasm" 2> "$TMP/wasm-case.err"; then
             report_fail "wasm/$name" "compilation failed: $(head -n 3 "$TMP/wasm-case.err" | tr '\n' ' ')"
         elif ! "${RUNNER[@]}" "$TMP/wasm-case.wasm" > "$TMP/wasm-case.out" 2> "$TMP/wasm-case.err"; then

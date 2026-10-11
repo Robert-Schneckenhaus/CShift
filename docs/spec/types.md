@@ -56,7 +56,7 @@ copy refers to the same block, which is freed when the last reference goes (auto
 The integer types have the static fields `MinValue` and `MaxValue`; the floating-point types also `Epsilon`, `NaN`,
 `PositiveInfinity` and `NegativeInfinity`. All numbers, `bool` and `char` have `ToString()` (numbers also
 `ToString(format)`), `Equals`, `CompareTo` (not `bool`) and `GetHashCode`, and implement `IEquatable<T>`,
-`IComparable<T>` and `IHashable` (see the [built-in types](../../stdlib/builtin/numbers.csh)).
+`IComparable<T>` and `IHashable` (see the [built-in types](../../stdlib/builtin/numbers.cshift)).
 
 ### bool
 

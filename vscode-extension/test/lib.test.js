@@ -19,13 +19,13 @@ test("columns: UTF-8 bytes of cshiftc <-> characters of VS Code", () => {
 });
 
 test("diagnostics: file:line:col: error: text", () => {
-    const out = "src/a.csh:3:13: error: cannot implicitly convert 'string' to 'int32'\n" +
-                "<stdlib>/list.csh:1:1: error: internal\n" +
+    const out = "src/a.cshift:3:13: error: cannot implicitly convert 'string' to 'int32'\n" +
+                "<stdlib>/list.cshift:1:1: error: internal\n" +
                 "error: too many errors (50), stopping\n" +
-                "C:/w/b.csh:4:2: warning: something\n";
+                "C:/w/b.cshift:4:2: warning: something\n";
     const list = lib.parseDiagnostics(out, "/work");
     assert.strictEqual(list.length, 2);
-    assert.strictEqual(list[0].file, path.resolve("/work", "src/a.csh"));
+    assert.strictEqual(list[0].file, path.resolve("/work", "src/a.cshift"));
     assert.deepStrictEqual([list[0].line, list[0].col, list[0].severity], [3, 13, "error"]);
     assert.strictEqual(list[0].message, "cannot implicitly convert 'string' to 'int32'");
     assert.strictEqual(list[1].severity, "warning");
@@ -57,17 +57,17 @@ test("projects: the project whose sources contain the file", () => {
         fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true });
         fs.writeFileSync(path.join(root, p), text);
     };
-    mk("src/Base/Text.csh", "");
-    mk("src/Cli/Program.csh", "");
-    mk("src/Cli/cshift.json", JSON.stringify({ name: "cli", sources: ["Program.csh", "../Base"] }));
+    mk("src/Base/Text.cshift", "");
+    mk("src/Cli/Program.cshift", "");
+    mk("src/Cli/cshift.json", JSON.stringify({ name: "cli", sources: ["Program.cshift", "../Base"] }));
     mk("tests/cshift.json", JSON.stringify({ name: "tests", sources: ["."] }));
-    mk("tests/T.csh", "");
-    mk("other/Alone.csh", "");
+    mk("tests/T.cshift", "");
+    mk("other/Alone.cshift", "");
     const projects = [path.join(root, "src/Cli/cshift.json"), path.join(root, "tests/cshift.json")];
-    assert.strictEqual(lib.findProject(projects, path.join(root, "src/Base/Text.csh")), projects[0]);
-    assert.strictEqual(lib.findProject(projects, path.join(root, "src/Cli/Program.csh")), projects[0]);
-    assert.strictEqual(lib.findProject(projects, path.join(root, "tests/T.csh")), projects[1]);
-    assert.strictEqual(lib.findProject(projects, path.join(root, "other/Alone.csh")), null);
+    assert.strictEqual(lib.findProject(projects, path.join(root, "src/Base/Text.cshift")), projects[0]);
+    assert.strictEqual(lib.findProject(projects, path.join(root, "src/Cli/Program.cshift")), projects[0]);
+    assert.strictEqual(lib.findProject(projects, path.join(root, "tests/T.cshift")), projects[1]);
+    assert.strictEqual(lib.findProject(projects, path.join(root, "other/Alone.cshift")), null);
     fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -75,7 +75,7 @@ const compiler = process.env.CSHIFTC;
 
 test("cshiftc check and query (with an unsaved text)", { skip: !compiler }, async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
-    const file = path.join(dir, "main.csh");
+    const file = path.join(dir, "main.cshift");
     const saved = "int Add(int a, int b)\n{\n    return a + b;\n}\n\nint Main()\n{\n    return Add(1, 2);\n}\n";
     fs.writeFileSync(file, saved);
     const temp = path.join(dir, "tmp");
@@ -116,7 +116,7 @@ test("completion: the name before '.' and the text without what follows it", () 
 
 test("cshiftc query: references, members, outline", { skip: !compiler }, async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
-    const file = path.join(dir, "main.csh");
+    const file = path.join(dir, "main.cshift");
     const saved = "struct Point\n{\n    int X;\n    int Sum() { return X; }\n}\n\n" +
                   "int Twice(int v) { return v * 2; }\n\nint Main()\n{\n    var p = Point { X = 1 };\n" +
                   "    return Twice(p.Sum()) + Twice(1);\n}\n";
@@ -147,8 +147,8 @@ test("debugging: target, build command and the lldb configuration", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
     fs.mkdirSync(path.join(root, "app", "src"), { recursive: true });
     fs.writeFileSync(path.join(root, "app", "cshift.json"), JSON.stringify({ name: "demo", sources: ["src"] }));
-    const main = path.join(root, "app", "src", "main.csh");
-    const alone = path.join(root, "tool.csh");
+    const main = path.join(root, "app", "src", "main.cshift");
+    const alone = path.join(root, "tool.cshift");
     fs.writeFileSync(main, "");
     fs.writeFileSync(alone, "");
     const projects = [path.join(root, "app", "cshift.json")];

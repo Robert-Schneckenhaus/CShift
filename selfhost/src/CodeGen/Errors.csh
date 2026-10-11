@@ -179,7 +179,7 @@ Value EmitIsPattern(const ref Compiler cg, Expr e)
         return EmitUnionIs(cg, subj, DeclTypeOf(cg, n.Type), n.BindName, cg.Tree.GetType(n.Type).Loc);
     if (!types.IsResultLike(subj.Type))
     {
-        // 'thread is T result' (Thread<T> only): matches the Optional<T> of _TryGetResult() (stdlib/thread.csh), a value
+        // 'thread is T result' (Thread<T> only): matches the Optional<T> of _TryGetResult() (stdlib/thread.cshift), a value
         // only once the thread has completed without being cancelled.
         var sd = types.IsStruct(subj.Type) ? cg.Structs.Get(GetStructInfo(cg, subj.Type).Entry).Decl : StructDecl { };
         if (types.IsStruct(subj.Type) && sd.Name == "Thread" && sd.TypeParams.Length > 0)

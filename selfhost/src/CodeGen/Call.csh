@@ -915,7 +915,7 @@ Value EmitExtensionCall(const ref Compiler cg, string ns, bool hasSelf, Value se
 // Builtin methods of strings, numbers, bool and char
 // ---------------------------------------------------------------------------
 
-// number.ToString("F2"): NumberFormat.FormatInt/FormatUInt/FormatFloat of the standard library (stdlib/numberformat.csh).
+// number.ToString("F2"): NumberFormat.FormatInt/FormatUInt/FormatFloat of the standard library (stdlib/numberformat.cshift).
 // A format written as a string literal is checked now.
 Value EmitFormatNumber(const ref Compiler cg, Value obj, Arg format, SourceLoc loc)
 {

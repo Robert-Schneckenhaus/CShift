@@ -1,0 +1,175 @@
+// The operating system layer of the standard library on Windows: the clock, the local time zone, file times,
+// renaming, seeking and sleeping (see stdlib/os/posix/os.cshift for the same struct on POSIX systems).
+
+namespace System;
+
+extern "C" void GetSystemTimePreciseAsFileTime(void* time);
+extern "C" int QueryPerformanceCounter(int64* count);
+extern "C" int QueryPerformanceFrequency(int64* frequency);
+extern "C" void* _localtime64(int64* time);
+extern "C" int GetFileAttributesExA(char* path, int level, void* data);
+extern "C" int MoveFileExA(char* from, char* to, uint32 flags);
+extern "C" int RemoveDirectoryA(char* path);
+extern "C" void* CreateFileA(char* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int SetFileTime(void* file, void* creation, void* access, void* write);
+extern "C" int CloseHandle(void* handle);
+extern "C" int _fseeki64(void* file, int64 offset, int origin);
+extern "C" int64 _ftelli64(void* file);
+extern "C" int fflush(void* file);
+extern "C" int _read(int fd, void* buffer, uint32 count);
+extern "C" void Sleep(uint32 milliseconds);
+
+// 100 ns units from 1601-01-01 (FILETIME) to 1970-01-01
+const int64 _FileTimeEpoch = 116444736000000000;
+
+struct _Os
+{
+    // 100 ns units since 1970-01-01 00:00 UTC
+    static int64 NowTicks()
+    {
+        unsafe
+        {
+            int64 fileTime = 0;
+            GetSystemTimePreciseAsFileTime(&fileTime);
+            return fileTime - _FileTimeEpoch;
+        }
+    }
+
+    // 100 ns units from an arbitrary start that never goes back
+    static int64 MonotonicTicks()
+    {
+        unsafe
+        {
+            int64 count = 0;
+            int64 frequency = 0;
+            QueryPerformanceCounter(&count);
+            QueryPerformanceFrequency(&frequency);
+            if (frequency <= 0)
+                return 0;
+            // count / frequency seconds, without overflowing for long uptimes
+            return count / frequency * 10000000 + count % frequency * 10000000 / frequency;
+        }
+    }
+
+    // local time minus UTC at this moment, in seconds
+    static int LocalOffsetSeconds(int64 unixSeconds)
+    {
+        unsafe
+        {
+            int64 t = unixSeconds;
+            int* tm = (int*)_localtime64(&t); // struct tm: sec, min, hour, mday, mon, year, ...
+            if (tm == null)
+                return 0;
+            int64 local = _Calendar.DaysFromCivil(tm[5] + 1900, tm[4] + 1, tm[3]) * 86400 + tm[2] * 3600 + tm[1] * 60 + tm[0];
+            return (int)(local - unixSeconds);
+        }
+    }
+
+    // the time a file was last written (100 ns units since 1970 UTC)
+    static Optional<int64> FileWriteTime(StringSlice path)
+    {
+        unsafe
+        {
+            // WIN32_FILE_ATTRIBUTE_DATA: attributes, creation, last access, last write (FILETIME: low, high)
+            var data = new uint32[9];
+            if (GetFileAttributesExA(path.CStr(), 0, &data[0]) == 0)
+                return null;
+            int64 fileTime = (int64)data[5] | ((int64)data[6] << 32);
+            return fileTime - _FileTimeEpoch;
+        }
+    }
+
+    // sets when the file (or directory) was last written: 100 ns units since 1970-01-01 00:00 UTC
+    static bool SetFileWriteTime(StringSlice path, int64 ticks)
+    {
+        unsafe
+        {
+            // FILE_WRITE_ATTRIBUTES, all sharing, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS (for directories)
+            void* file = CreateFileA(path.CStr(), 0x100u, 7u, null, 3u, 0x02000000u, null);
+            if (file == (void*)(nint)(-1))
+                return false;
+            int64 fileTime = ticks + _FileTimeEpoch;
+            bool ok = SetFileTime(file, null, null, &fileTime) != 0;
+            CloseHandle(file);
+            return ok;
+        }
+    }
+
+    // replaces 'to' if it exists (also across drives)
+    static bool Rename(StringSlice from, StringSlice to)
+    {
+        unsafe
+        {
+            return MoveFileExA(from.CStr(), to.CStr(), 3u) != 0; // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
+        }
+    }
+
+    // an empty directory
+    static bool RemoveDirectory(StringSlice path)
+    {
+        unsafe
+        {
+            return RemoveDirectoryA(path.CStr()) != 0;
+        }
+    }
+
+    // origin: 0 the start, 1 the current position, 2 the end
+    static bool Seek(void* file, int64 offset, int origin)
+    {
+        unsafe
+        {
+            return _fseeki64(file, offset, origin) == 0;
+        }
+    }
+
+    static int64 Tell(void* file)
+    {
+        unsafe
+        {
+            return _ftelli64(file);
+        }
+    }
+
+    static void Flush(void* file)
+    {
+        unsafe
+        {
+            fflush(file);
+        }
+    }
+
+    // writes what the C library holds back for stdout (and the other output files), before the program waits for input
+    static void FlushOutput()
+    {
+        unsafe
+        {
+            fflush(null);
+        }
+    }
+
+    // the next byte of the standard input, -1 at its end
+    static int ReadInputByte()
+    {
+        unsafe
+        {
+            uint8 b = 0;
+            return _read(0, &b, 1) == 1 ? b : -1;
+        }
+    }
+
+    static void Wait(int milliseconds)
+    {
+        unsafe
+        {
+            if (milliseconds > 0)
+                Sleep((uint32)milliseconds);
+        }
+    }
+
+    // where readdir puts the name in a struct dirent (MinGW-w64: long d_ino, unsigned short d_reclen,
+    // unsigned short d_namlen, char d_name[])
+    static int DirentNameOffset()
+    {
+        return 8;
+    }
+}

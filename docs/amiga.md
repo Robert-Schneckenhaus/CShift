@@ -5,7 +5,7 @@ it turns the IR into 68000 code, assembles it and writes an AmigaOS executable i
 cross toolchain are not needed (libclang only for importing C headers of the NDK).
 
 ```
-cshiftc --target m68k-amigaos hello.csh -o hello        # an AmigaOS executable (hunk format)
+cshiftc --target m68k-amigaos hello.cshift -o hello        # an AmigaOS executable (hunk format)
 ```
 
 ```json
@@ -46,11 +46,11 @@ The whole language and the standard library work, with these differences:
 
 * **No threads.** `Thread`, `Mutex<T>` and `SharedPtr<T>` need pthreads, which AmigaOS does not have. A program that
   uses them does not link: the compiler names the missing functions.
-* **Floating point in software.** `double` and `float` are computed by `stdlib/m68k/softfloat.csh` (IEEE 754, exact
-  rounding); `Math` (`Sqrt`, `Sin`, `Exp`, `Pow`, ...) by `stdlib/m68k/math.csh` and `mathtrans.csh` (within 2 ULP of
+* **Floating point in software.** `double` and `float` are computed by `stdlib/m68k/softfloat.cshift` (IEEE 754, exact
+  rounding); `Math` (`Sqrt`, `Sin`, `Exp`, `Pow`, ...) by `stdlib/m68k/math.cshift` and `mathtrans.cshift` (within 2 ULP of
   glibc). This works but is slow on a 68000: for graphics use integers, fixed point and
   [`FastTrig`](stdlib.md) (sine and cosine from tables).
-* **The C library** (`stdlib/amiga/libc.csh`) is written on exec.library and dos.library: memory, `printf`, files,
+* **The C library** (`stdlib/amiga/libc.cshift`) is written on exec.library and dos.library: memory, `printf`, files,
   directories, `Process.GetEnv`, time, `Process.Run`. Functions that need a newer dos.library (environment
   variables, the current directory, the exit code of a command) check its version.
 * **Only what is used.** An executable contains the functions of the program, the standard library and the C library
@@ -95,7 +95,7 @@ Windows, Linux and in the browser.
 
 ## The custom chips: `Amiga.Hardware`
 
-For demos and games that bypass the operating system (`stdlib/amiga/hardware.csh`, only for amigaos targets):
+For demos and games that bypass the operating system (`stdlib/amiga/hardware.cshift`, only for amigaos targets):
 
 ```csharp
 using Amiga;
@@ -127,7 +127,7 @@ unsafe
 
 ## Graphics: `Amiga.Screen`, `Bitmap`, the blitter and sprites
 
-On top of `Amiga.Hardware`, `stdlib/amiga/graphics.csh` has what a game or a demo draws with (low resolution PAL,
+On top of `Amiga.Hardware`, `stdlib/amiga/graphics.cshift` has what a game or a demo draws with (low resolution PAL,
 OCS/ECS, every Amiga from the A500 on). [demo-amiga-gfx](../demo-amiga-gfx/README.md) shows all of it.
 
 ```csharp
@@ -229,7 +229,7 @@ for pointers; `d2`-`d7` and `a2`-`a6` are kept.
 * **vamos** ([amitools](https://github.com/cnvogelg/amitools)) runs AmigaOS command-line programs on the PC without an
   Amiga ROM: good for everything but the hardware. `vamos -v` also prints the number of CPU cycles, a measure of speed.
   (`pip install amitools "machine68k<0.4"`: amitools 0.8 does not run with machine68k 0.4.) When `vamos` is
-  installed, `tests/run_tests.sh` runs [tests/amiga/memory.csh](../tests/amiga/memory.csh) with it.
+  installed, `tests/run_tests.sh` runs [tests/amiga/memory.cshift](../tests/amiga/memory.cshift) with it.
 * **FS-UAE** (or WinUAE) with an A500 configuration and a Kickstart ROM (or the free AROS ROM) for graphics and the
   custom chips.
 * **The test suite with the backend:** `CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_SKIP_SELFHOST=1

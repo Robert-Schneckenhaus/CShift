@@ -4,7 +4,7 @@
 
 ## Program structure
 
-A CShift program is one or more `.csh` files compiled together. There are no header files and no forward
+A CShift program is one or more `.cshift` files compiled together. There are no header files and no forward
 declarations — types and functions can be used before they're defined, in the same file or a different one, because
 the compiler resolves the whole program at once.
 
@@ -95,11 +95,11 @@ index out of range, `Dictionary.Get` with a missing key, ...), the panic also sh
 
 ```text
 panic: array index out of range (index 5, length 3)
-  at src/Game/World.csh:482:21 in World.GetTile
+  at src/Game/World.cshift:482:21 in World.GetTile
 
 panic: List index out of range (index 4, count 2)
-  at stdlib/list.csh:58:30 in System.List<int32>.Get
-  called from src/Game/Party.csh:77:31 in Party.Member
+  at stdlib/list.cshift:58:30 in System.List<int32>.Get
+  called from src/Game/Party.cshift:77:31 in Party.Member
 ```
 
 The same goes for `Environment.Panic("message")`. The path is the one the compiler was given; in a project it is

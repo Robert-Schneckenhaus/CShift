@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Breaking (soft)
+- **Source files end in `.cshift`** instead of `.csh`, which is the C shell's everywhere else (GitHub, editors,
+  syntax highlighters, `file`). `.csh` is still read - projects, folders, single files, the VS Code extension - so
+  existing code builds unchanged; rename it when convenient (`git mv x.csh x.cshift`). `cshiftc new`, the standard
+  library, the tests, the demos and the documentation use `.cshift`. The compiler's own sources stay `.csh` until the
+  release that builds them (stage 0) reads `.cshift`.
+
 ### Standard library
 - `System.Ui`: user interfaces in immediate mode. The program describes its window for every frame from its own state,
   and widgets report what the user did as their result: labels, buttons, check boxes, radio buttons, sliders, text

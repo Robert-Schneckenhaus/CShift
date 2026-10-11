@@ -1,0 +1,7 @@
+{
+	"name": "legacy_extension",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/legacy_extension"
+}

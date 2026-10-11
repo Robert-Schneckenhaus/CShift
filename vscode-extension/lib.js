@@ -17,7 +17,7 @@ function samePath(p) {
     return process.platform === "win32" ? full.toLowerCase() : full;
 }
 
-// The .csh files of a project file (cshift.json): its "sources" (files, or folders searched recursively), relative to
+// The .cshift files of a project file (cshift.json): its "sources" (files, or folders searched recursively), relative to
 // the folder of the project file. Returns null if the file cannot be read.
 function projectSources(projectFile) {
     let json;
@@ -160,7 +160,7 @@ function errorRangeEnd(lineText, start) {
 function overlayArgs(dirty, tempDir) {
     const args = [];
     dirty.forEach((d, i) => {
-        const tmp = path.join(tempDir, "overlay" + i + ".csh");
+        const tmp = path.join(tempDir, "overlay" + i + ".cshift");
         fs.writeFileSync(tmp, d.text, "utf8");
         args.push("--overlay", d.file, tmp);
     });
@@ -305,7 +305,7 @@ function debugBuild(target, platform) {
         return { args: ["build", dir, "-g", "-O0", "-o", program], program, cwd: dir };
     }
     const dir = path.dirname(target.file);
-    const program = path.join(dir, "bin", "debug", path.basename(target.file, ".csh")) + exe;
+    const program = path.join(dir, "bin", "debug", path.basename(target.file).replace(/\.csh(ift)?$/, "")) + exe; // .csh: the extension before 0.32
     return { args: [target.file, "-g", "-O0", "-o", program], program, cwd: dir };
 }
 

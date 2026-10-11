@@ -51,7 +51,7 @@ import { examples } from "../playground/examples.js";
     const consoleBox = root.querySelector<HTMLElement>(".pg-console")!;
     const runButton = root.querySelector<HTMLButtonElement>(".pg-run")!;
     const select = root.querySelector<HTMLSelectElement>(".pg-examples")!;
-    const FILE = "main.csh";
+    const FILE = "main.cshift";
 
     let compiler: WebAssembly.Module | null = null;
     let errorLines = new Set<number>();

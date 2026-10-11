@@ -2,11 +2,11 @@
 
 # Projects
 
-A single file compiles on its own (`cshiftc hello.csh -o hello`), but most programs are more than one file. A
+A single file compiles on its own (`cshiftc hello.cshift -o hello`), but most programs are more than one file. A
 `cshift.json` describes a project: its name, source files, output, optimization level, and libraries.
 
 ```
-cshiftc new hello       # creates hello/cshift.json and hello/src/main.csh
+cshiftc new hello       # creates hello/cshift.json and hello/src/main.cshift
 cshiftc run hello        # builds and runs it
 cshiftc build             # builds only -> bin/<name>[.exe]
 cshiftc publish           # for the browser -> bin/<name>.html (one file with everything)
@@ -23,7 +23,7 @@ cshiftc serve             # the page on http://localhost:8080/, rebuilt and relo
 }
 ```
 
-`sources` lists files and folders (folders are searched recursively for `.csh` files); every file in the project is
+`sources` lists files and folders (folders are searched recursively for `.cshift` files); every file in the project is
 compiled together as one program, so types and functions are visible everywhere without any `using`/header. `links`
 pulls in libraries, and `includePaths`/`defines`/`libraryPaths`/`ffiApi` configure [C header imports](ffi-and-interop.md).
 
@@ -63,7 +63,7 @@ at once (generics are made for the types they are used with), so a library is sh
 namespace of its own (`namespace Geometry;`) so its names do not collide with those of the programs that use it.
 `cshiftc build` of a library checks it (`cshiftc check`); `cshiftc run` needs a program.
 
-For the full list of keys, and where the project format is headed next (a `build.csh` for cases a single JSON file
+For the full list of keys, and where the project format is headed next (a `build.cshift` for cases a single JSON file
 can't express — conditional sources, code generation, multiple targets), see
 [../build.md](../build.md). `demo-minifb/` and `demo-opengl/` are small, complete example projects
 using C libraries through FFI.

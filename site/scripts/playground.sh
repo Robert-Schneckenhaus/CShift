@@ -18,9 +18,9 @@ trap 'rm -rf "$WORK"' EXIT
 node --input-type=module -e "
 import { examples } from '$SITE/src/playground/examples.js';
 import { writeFileSync } from 'node:fs';
-examples.forEach((e, i) => writeFileSync('$WORK/example' + i + '.csh', e.code));
+examples.forEach((e, i) => writeFileSync('$WORK/example' + i + '.cshift', e.code));
 "
-for example in "$WORK"/example*.csh; do
+for example in "$WORK"/example*.cshift; do
     if ! "$CSHIFTC" check "$example"; then
         echo "error: an example of the playground does not compile: $example" >&2
         exit 1

@@ -5,7 +5,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 
 ## Basic model
 
-* A program consists of **all** `.csh` files passed to it; there are no headers and no translation units in the C
+* A program consists of **all** `.cshift` files passed to it; there are no headers and no translation units in the C
   sense. The compiler analyzes the whole program at once (symbols are resolved globally, generics are instantiated
   per type combination) and writes **one** object file, which it then links.
 * Because of that, a project only needs, at its core: a name, the source files, the target (a program or an object
@@ -33,7 +33,7 @@ FFI, libraries), but not *how* a project is described. This document fills that 
 | `name` | the project name (letters, digits, `_ - .`); required | – |
 | `version` | version (informational only) | – |
 | `type` | `"executable"` (link a program), `"object"` (object file only) or `"library"` (source code for other projects, see `dependencies`; `build` only checks it) | `"executable"` |
-| `sources` | a list of files and folders; folders are searched recursively for `*.csh`, paths are relative to `cshift.json` | `["src"]` |
+| `sources` | a list of files and folders; folders are searched recursively for `*.cshift` (and `*.csh`, the extension until 0.31), paths are relative to `cshift.json` | `["src"]` |
 | `output` | the output path without an extension (`.exe`/`.obj`/`.o` is added depending on the platform) | `"bin/<name>"` |
 | `optimize` | 0–3 (like `-O0` … `-O3`) | `2` |
 | `links` | libraries for the linker: a name (`-l<name>`) or a file (`libs/libminifb.a`, `x.o`, `x.lib`; has a path or extension); in addition to `link "name"` in source code | `[]` |
@@ -56,14 +56,17 @@ ships a schema that validates and auto-completes `cshift.json`.
 ### Commands
 
 ```
-cshiftc new <folder>           a new project (cshift.json, src/main.csh, .gitignore)
+cshiftc new <folder>           a new project (cshift.json, src/main.cshift, .gitignore)
 cshiftc build [project]        build it
 cshiftc run   [project]        build and run it; the arguments after -- go to the program:
                                cshiftc run -- input.txt --verbose
 cshiftc publish [project]      the program for the browser: bin/<name>.html with everything in it (wasm.md)
 cshiftc serve [project]        the page on http://localhost:8080/, built again when a file changes
-cshiftc [options] a.csh b.csh  single files without a project (as before)
+cshiftc [options] a.cshift b.cshift   single files without a project (as before)
 ```
+
+Source files end in `.cshift`. `.csh`, the extension until 0.31, is still read (in projects, folders and on the command
+line), so older projects build unchanged; the compiler's own sources still use it (see [compiler.md](compiler.md)).
 
 `project` is a folder containing `cshift.json`, or the path to the file. Without it, `cshift.json` is looked up in
 the current folder and its parent folders. Command-line options (`-O2`, `--target`, `-o`, `--cc`, `-l…`, `-v`)
@@ -80,7 +83,7 @@ override the file (as do `--backend` and `--ndk`).
 ## Stage 2 (idea): a build written in the language itself, like Zig
 
 For cases a single file can't express (sources conditional on the platform, code generation before the build,
-multiple targets, dependencies, tests), a `build.csh` sits next to, or instead of, `cshift.json`:
+multiple targets, dependencies, tests), a `build.cshift` sits next to, or instead of, `cshift.json`:
 
 ```csharp
 using System.Build;
@@ -104,7 +107,7 @@ Error<void> Build(ref Builder b)
 
 This is how it would work:
 
-1. `cshiftc build` finds a `build.csh` and compiles it **together with the standard library and a small
+1. `cshiftc build` finds a `build.cshift` and compiles it **together with the standard library and a small
    `System.Build` module** into a temporary program.
 2. That program is run; `Build(...)` describes the targets. The result is exactly the data model from stage 1 (one
    or more project descriptions with the same fields), which the compiler then builds.
@@ -123,4 +126,4 @@ doesn't replace it, it complements it for special cases.
   file. A package stays source code (with prebuilt C libraries per platform where it needs them): the whole program is
   compiled at once and generics are instantiated per use, so there is no binary CShift library format.
 * An intermediate `obj/` directory, incremental builds (only useful once translation units are separated).
-* Variables/conditions in the project file (`"sources"` per platform) — or handle that directly via `build.csh`.
+* Variables/conditions in the project file (`"sources"` per platform) — or handle that directly via `build.cshift`.

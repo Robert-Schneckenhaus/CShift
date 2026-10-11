@@ -1,0 +1,9 @@
+// Uses the global of a_first.csh, which is initialized before this file's (the files go in the order of their names).
+string Second = First + ", second (.cshift)";
+
+int Main()
+{
+    Console.WriteLine(Second);
+    Console.WriteLine(Greeting("World"));
+    return 0;
+}

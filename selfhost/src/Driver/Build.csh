@@ -1,6 +1,6 @@
 // The command line of cshc: single files and projects.
 //
-//     cshc [options] file.csh [file2.csh ...]     compile single files
+//     cshc [options] file.cshift [file2.cshift ...]     compile single files
 //     cshc build [project] [options]              build a project (cshift.json)
 //     cshc run   [project] [options]              build and run a project
 //     cshc publish [project | files] [options]    the program as one HTML file for the browser (Publish.csh)
@@ -289,7 +289,7 @@ int Cshc(string[] args)
     {
         // the standard library, or files or a project like 'check'
         o.Mode = command;
-        if (o.Inputs.Count() > 0 && !o.Inputs.Get(0).EndsWith(".csh"))
+        if (o.Inputs.Count() > 0 && !IsSourceFile(o.Inputs.Get(0)))
         {
             var found = LoadProject(o.Inputs.Get(0), o.Target);
             if (found is Project p)
@@ -322,7 +322,7 @@ int Cshc(string[] args)
         if (o.AtFile.Length == 0)
             o.AtFile = o.OutlineFile;
         // single files, or a project like 'build' (the project of the queried file if none is named)
-        bool files = o.Inputs.Count() > 0 && o.Inputs.Get(0).EndsWith(".csh");
+        bool files = o.Inputs.Count() > 0 && IsSourceFile(o.Inputs.Get(0));
         if (!files)
         {
             string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : (command == "query" ? ProjectAbove(o.AtFile) : "");
@@ -681,7 +681,7 @@ int Build(BuildOptions o)
     if (o.FromProject)
         cg.St[0].ProjectDir = o.ProjectDir.Length > 0 ? o.ProjectDir : ".";
 
-    // The standard library (stdlib/*.csh) is parsed as a prelude: its functions are only compiled when they are used.
+    // The standard library (stdlib/*.cshift) is parsed as a prelude: its functions are only compiled when they are used.
     // Without --stdlib the copy that is embedded in cshc is used (src/Driver/EmbeddedStdlib.csh).
     if (o.Stdlib.Length == 0)
     {
@@ -722,7 +722,7 @@ int Build(BuildOptions o)
     }
     else if (o.Stdlib != "-")
     {
-        var libFiles = Directory.FindFiles(o.Stdlib, ".csh");
+        var libFiles = FindSourceFiles(o.Stdlib);
         foreach (var libFile in libFiles)
         {
             // the runtime of a backend (stdlib/m68k/) only belongs to programs for that backend
@@ -937,7 +937,7 @@ int Build(BuildOptions o)
             command.Append(" -l" + lib);
         if (!windows)
             command.Append(" -lm"); // the math functions of the standard library
-        // 'thread' functions (stdlib/thread.csh). On Windows the static archive: the import library would make every
+        // 'thread' functions (stdlib/thread.cshift). On Windows the static archive: the import library would make every
         // program depend on libwinpthread-1.dll, which is not part of the toolchain.
         command.Append(windows ? " -Wl,-Bstatic -lpthread -Wl,-Bdynamic" : " -lpthread");
         // WebAssembly: wasm-ld gives a program 64 KB of stack, which recursive code overflows into the heap; 8 MB like
@@ -1149,7 +1149,7 @@ List<string> OsLayers(string target, string backend, bool windows)
     return layers;
 }
 
-// The declarations of the built-in types (stdlib/builtin/*.csh: string, the numbers, arrays, Console, ...), parsed
+// The declarations of the built-in types (stdlib/builtin/*.cshift: string, the numbers, arrays, Console, ...), parsed
 // for their doc comments only (cshiftc doc, the hover); from --stdlib or the copy embedded in cshc.
 List<CompilationUnit> LoadBuiltinDocs(BuildOptions o, Diagnostics diag, Ast tree)
 {
@@ -1166,7 +1166,7 @@ List<CompilationUnit> LoadBuiltinDocs(BuildOptions o, Diagnostics diag, Ast tree
     }
     else if (o.Stdlib != "-")
     {
-        foreach (var path in Directory.FindFiles(Path.Combine(o.Stdlib, "builtin"), ".csh").ToArray())
+        foreach (var path in FindSourceFiles(Path.Combine(o.Stdlib, "builtin")).ToArray())
         {
             if (ReadSource(path) is string text)
             {

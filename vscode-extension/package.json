@@ -40,6 +40,7 @@
 					"cshift"
 				],
 				"extensions": [
+					".cshift",
 					".csh"
 				],
 				"configuration": "./language-configuration.json"

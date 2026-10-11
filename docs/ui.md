@@ -172,7 +172,7 @@ ui.SetTheme(theme);
 ## Without a window
 
 `ui.Begin(input, width, height, scale)` starts a frame of any size with a `UiInput` that the program makes, and
-`ui.End()` gives its image. That is how the Ui is tested ([tests/cases/stdlib_ui.csh](../tests/cases/stdlib_ui.csh)):
+`ui.End()` gives its image. That is how the Ui is tested ([tests/cases/stdlib_ui.cshift](../tests/cases/stdlib_ui.cshift)):
 a click is `MousePressed` and `MouseReleased` in the same frame, typing is `Keys` and `Text`.
 
 ```csharp
@@ -200,7 +200,7 @@ The text is drawn with bitmap fonts: `Font.Fixed7x13()` and `Font.Fixed10x20()` 
 are in the public domain, so a program that embeds them owes nobody a notice. They have ASCII, Latin-1 and a few marks
 (€, typographic quotes and dashes, arrows); other characters are drawn as `?`. `Font.ForScale(scale)` picks the one
 for a scale (`font.Zoomed(2)` doubles the pixels). Every character has the same width, so `font.Measure(text)` is the
-number of characters times `font.CharWidth()`. The font data in `stdlib/ui_fonts.csh` is made from the BDF files by
+number of characters times `font.CharWidth()`. The font data in `stdlib/ui_fonts.cshift` is made from the BDF files by
 [tools/ui/bdf2csh.py](../tools/ui/bdf2csh.py).
 
 ## In the browser
@@ -257,6 +257,6 @@ being edited, the scroll positions and the sizes of panels and rows from the las
 again for each frame. A copy of a `Ui` shares this state (it is held in a one-element array), so `Ui` can be passed to
 functions by value, and `using (ui.Row())` can end the row it began.
 
-The window layer is the operating system part of the standard library (`stdlib/os/<layer>/ui.csh`): Win32 on
+The window layer is the operating system part of the standard library (`stdlib/os/<layer>/ui.cshift`): Win32 on
 Windows, X11 on Linux, the canvas of web/cshift.js for WebAssembly, Intuition and graphics.library on AmigaOS (from
 drawing commands). One window can be open at a time.

@@ -1,5 +1,5 @@
 // Runs a WebAssembly program (wasm32-wasi) with node: node tests/wasi-run.mjs program.wasm [args...]
-// The program sees the whole file system and starts in the current directory (PWD, see stdlib/os/wasi/stubs.csh); its
+// The program sees the whole file system and starts in the current directory (PWD, see stdlib/os/wasi/stubs.cshift); its
 // exit code is the exit code of node. A program that suspends itself in glfwPollEvents (a game's loop from the wasm
 // backend, see web/cshift.js) is resumed right away; it gets no window and no events.
 import { readFile } from 'node:fs/promises';

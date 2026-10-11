@@ -16,7 +16,7 @@ selfhost/
 │   │                        EmbeddedStdlib.csh (the stdlib, via embed), Doc.csh (doc comments, cshiftc doc),
 │   │                        Publish.csh + publish.html (cshiftc publish: one HTML file), Serve.csh (cshiftc serve),
 │   │                        usage.txt (cshiftc --help)
-│   ├── Main.csh             command line: cshc [options] file.csh ... | --tokens | --ast
+│   ├── Main.csh             command line: cshc [options] file.cshift ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
 │   │   ├── Location.csh     SourceLoc, Diagnostics
 │   │   ├── Token.csh, Lexer.csh      the lexer
@@ -98,9 +98,9 @@ selfhost/
 
 ```
 cshiftc build selfhost                                  # -> selfhost/bin/cshc
-selfhost/bin/cshc hello.csh -o hello                    # write .ll, clang optimizes/compiles/links it
-selfhost/bin/cshc --emit-llvm hello.csh -o hello.ll     # just the IR
-selfhost/bin/cshc --tokens file.csh | --ast file.csh    # dumps of the tokens / the syntax tree
+selfhost/bin/cshc hello.cshift -o hello                    # write .ll, clang optimizes/compiles/links it
+selfhost/bin/cshc --emit-llvm hello.cshift -o hello.ll     # just the IR
+selfhost/bin/cshc --tokens file.cshift | --ast file.cshift    # dumps of the tokens / the syntax tree
 ```
 
 `cshc` writes **LLVM IR as text** (`.ll`) and calls `clang` (the bundled toolchain, `PATH` or `--cc`), which optimizes it, generates
@@ -109,7 +109,7 @@ LLVM-C API).
 
 ## Verifying it
 
-* **Code generator:** `bash selfhost/status.sh selfhost/bin/cshc -v` compiles `tests/cases/*.csh` with `cshc` and
+* **Code generator:** `bash selfhost/status.sh selfhost/bin/cshc -v` compiles `tests/cases/*.cshift` with `cshc` and
   sorts the results into *pass*, *unsupported* (`cshc does not support …`, a feature not ported yet) and *FAIL* (an
   actual difference). The passing cases are listed in `passing.txt`; `status.sh --check` (part of
   `tests/run_tests.sh`) fails if one of them no longer passes. Newly-passing cases are added there (`status.sh -v`

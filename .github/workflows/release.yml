@@ -146,8 +146,8 @@ jobs:
           exe="$PWD/dist/cshift-$VERSION-windows-x64-standalone.exe"
           "$exe" --version
 
-          printf 'void Main() {}\n' > "$RUNNER_TEMP/warmup.csh"
-          "$exe" "$RUNNER_TEMP/warmup.csh" -o "$RUNNER_TEMP/warmup.exe"
+          printf 'void Main() {}\n' > "$RUNNER_TEMP/warmup.cshift"
+          "$exe" "$RUNNER_TEMP/warmup.cshift" -o "$RUNNER_TEMP/warmup.exe"
           export CSHIFT_CC="$LOCALAPPDATA/cshift/toolchain-$VERSION/toolchain/bin/clang.exe"
           if [ ! -x "$CSHIFT_CC" ]; then
             echo "::error::the embedded toolchain did not self-extract to $CSHIFT_CC"
@@ -234,8 +234,8 @@ jobs:
           exe="$PWD/dist/cshift-$VERSION-linux-x64-standalone"
           "$exe" --version
 
-          printf 'void Main() {}\n' > "$RUNNER_TEMP/warmup.csh"
-          "$exe" "$RUNNER_TEMP/warmup.csh" -o "$RUNNER_TEMP/warmup"
+          printf 'void Main() {}\n' > "$RUNNER_TEMP/warmup.cshift"
+          "$exe" "$RUNNER_TEMP/warmup.cshift" -o "$RUNNER_TEMP/warmup"
           export CSHIFT_CC="$XDG_CACHE_HOME/cshift/toolchain-$VERSION/toolchain/bin/clang"
           if [ ! -x "$CSHIFT_CC" ]; then
             echo "::error::the embedded toolchain did not self-extract to $CSHIFT_CC"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Generates the tables of stdlib/fasttrig.csh: python3 stdlib/tools/fasttrig.py > stdlib/fasttrig.csh
+# Generates the tables of stdlib/fasttrig.cshift: python3 stdlib/tools/fasttrig.py > stdlib/fasttrig.cshift
 # (the text around the tables is in this script too).
 import math
 

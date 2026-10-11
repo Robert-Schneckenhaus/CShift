@@ -530,7 +530,7 @@ struct IrWriter
         return sb.ToString();
     }
 
-    // The file node of a source file ("dir/name.csh": the directory and the name).
+    // The file node of a source file ("dir/name.cshift": the directory and the name).
     string DebugFile(string directory, string name)
     {
         return MetaNode("!DIFile(filename: " + MetaString(name) + ", directory: " + MetaString(directory) + ")");

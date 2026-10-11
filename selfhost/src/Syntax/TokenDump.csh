@@ -1,4 +1,4 @@
-// Text dump of a token list (cshiftc --tokens file.csh); the format is the one of the retired C++ compiler
+// Text dump of a token list (cshiftc --tokens file.cshift); the format is the one of the retired C++ compiler
 // (--dump-tokens):
 //     line:col kind [text] [value]
 

@@ -37,7 +37,7 @@ int Serve(string[] args, BuildOptions o)
     var roots = List<string>.Create();
     var ignored = List<string>.Create();
     string name = "";
-    if (o.Inputs.Count() > 0 && o.Inputs.Get(0).EndsWith(".csh"))
+    if (o.Inputs.Count() > 0 && IsSourceFile(o.Inputs.Get(0)))
     {
         foreach (var file in o.Inputs)
             roots.Add(file);

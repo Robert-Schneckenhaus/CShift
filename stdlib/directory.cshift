@@ -1,0 +1,325 @@
+namespace System;
+
+using System.Native;
+
+extern "C" void* opendir(char* path);
+extern "C" void* readdir(void* dir);
+extern "C" int closedir(void* dir);
+extern "C" int mkdir(char* path, int mode);
+extern "C" char* getcwd(char* buffer, nuint size);
+
+/// File names and paths, as strings: `Path.Combine("src", "main.cshift")`, `Path.GetExtension(file)`, ...
+///
+/// Paths may use `/` or `\`; the functions return `/` separators unless they say otherwise
+/// ([Path.ToNative]). Nothing here touches the file system except [Path.GetFullPath] and [Path.GetRelativePath],
+/// which read the current directory.
+struct Path
+{
+    /// Joins two path parts with '/' (an empty part is ignored, an absolute second part is returned as it is).
+    static string Combine(StringSlice a, StringSlice b)
+    {
+        if (a.Length == 0)
+            return b.ToString();
+        if (b.Length == 0)
+            return a.ToString();
+        if (b[0] == '/' || b[0] == '\\' || (b.Length > 1 && b[1] == ':'))
+            return b.ToString();
+        char last = a[a.Length - 1];
+        if (last == '/' || last == '\\')
+            return a + b;
+        return a + "/" + b;
+    }
+
+    /// All separators of `path` as `/`.
+    static string Normalize(StringSlice path)
+    {
+        return path.Replace("\\", "/");
+    }
+
+    /// The path with the separators of the operating system (for commands that are run by the shell).
+    static string ToNative(StringSlice path)
+    {
+        if (Process.IsWindows())
+            return path.Replace("/", "\\");
+        return path.ToString();
+    }
+
+    // Position of the last separator, -1 if there is none.
+    static int _LastSeparator(StringSlice path)
+    {
+        int i = path.Length - 1;
+        while (i >= 0)
+        {
+            if (path[i] == '/' || path[i] == '\\')
+                return i;
+            i -= 1;
+        }
+        return -1;
+    }
+
+    /// The directory part: "a/b/c.txt" -> "a/b", "c.txt" -> "".
+    static string GetDirectory(StringSlice path)
+    {
+        int i = _LastSeparator(path);
+        if (i < 0)
+            return "";
+        if (i == 0)
+            return path[..1].ToString();
+        return path[..i].ToString();
+    }
+
+    /// The file name: "a/b/c.txt" -> "c.txt".
+    static string GetFileName(StringSlice path)
+    {
+        int i = _LastSeparator(path);
+        return path[(i + 1)..].ToString();
+    }
+
+    /// The extension including the dot: "c.txt" -> ".txt", "c" -> "".
+    static string GetExtension(StringSlice path)
+    {
+        string name = GetFileName(path);
+        int dot = name.LastIndexOf('.');
+        if (dot <= 0)
+            return "";
+        return name.Substring(dot);
+    }
+
+    /// The file name without directory and extension: "a/b/c.txt" -> "c".
+    static string GetStem(StringSlice path)
+    {
+        string name = GetFileName(path);
+        int dot = name.LastIndexOf('.');
+        if (dot <= 0)
+            return name;
+        return name.Substring(0, dot);
+    }
+
+    /// The same path with another extension: `ChangeExtension("a/b.c", ".o")` (or `"o"`) is `"a/b.o"`.
+    static string ChangeExtension(StringSlice path, StringSlice extension)
+    {
+        string ext = GetExtension(path);
+        StringSlice baseName = path[..(path.Length - ext.Length)];
+        if (extension.Length > 0 && extension[0] != '.')
+            return baseName + "." + extension;
+        return baseName + extension;
+    }
+
+    /// Whether `path` is absolute: `"/x"`, `"\\x"` and `"C:/x"` are.
+    static bool IsRooted(StringSlice path)
+    {
+        return path.Length > 0 && (path[0] == '/' || path[0] == '\\' || (path.Length > 1 && path[1] == ':'));
+    }
+
+    /// The absolute path, with '/' separators and without "." and ".." parts (relative paths start at the current
+    /// directory).
+    static string GetFullPath(StringSlice path)
+    {
+        string full = IsRooted(path) ? Normalize(path) : Normalize(Combine(Directory.GetCurrentDirectory(), path));
+        string prefix = "";
+        if (full.Length > 1 && full[1] == ':')
+        {
+            prefix = full.Substring(0, 2);
+            full = full.Substring(2);
+        }
+        var parts = List<string>.Create();
+        foreach (var part in full.Split('/'))
+        {
+            if (part.Length == 0 || part == ".")
+                continue;
+            if (part == "..")
+            {
+                if (parts.Count() > 0)
+                    parts.RemoveAt(parts.Count() - 1);
+            }
+            else
+                parts.Add(part.ToString());
+        }
+        return prefix + "/" + string.Join("/", parts.ToArray());
+    }
+
+    /// The path of 'path' relative to the directory 'relativeTo' ("../lib/a.txt"); both are made absolute first. On
+    /// another drive the absolute path is returned.
+    static string GetRelativePath(StringSlice relativeTo, StringSlice path)
+    {
+        string from = GetFullPath(relativeTo);
+        string to = GetFullPath(path);
+        bool windows = Process.IsWindows();
+        if (from.Length > 1 && to.Length > 1 && from[1] == ':' && (to[1] != ':' || from[0].ToString().ToLower() != to[0].ToString().ToLower()))
+            return to;
+        var a = from.Split('/');
+        var b = to.Split('/');
+        int common = 0;
+        while (common < a.Length && common < b.Length && (windows ? a[common].ToLower() == b[common].ToLower() : a[common] == b[common]))
+            common += 1;
+        var parts = List<string>.Create();
+        for (var i = common; i < a.Length; i += 1)
+        {
+            if (a[i].Length > 0)
+                parts.Add("..");
+        }
+        for (var i = common; i < b.Length; i += 1)
+        {
+            if (b[i].Length > 0)
+                parts.Add(b[i].ToString());
+        }
+        return parts.Count() == 0 ? "." : string.Join("/", parts.ToArray());
+    }
+}
+
+/// Directories and file names.
+///
+/// ```
+/// if (!Directory.Exists("out"))
+///     Directory.Create("out");
+/// var sources = Directory.FindFiles("src", ".cshift");
+/// string file = Path.Combine("src", "main.cshift");
+/// ```
+///
+/// Directory operations use the C library (opendir/readdir/mkdir, which MinGW-w64 provides on Windows as well). Paths
+/// may use '/' or '\'.
+struct Directory
+{
+    /// The current working directory, with '/' separators.
+    static string GetCurrentDirectory()
+    {
+        unsafe
+        {
+            char* buffer = (char*)Memory.Allocate(4096);
+            string result = "";
+            if (getcwd(buffer, 4096) != null)
+                result = string.FromCStr(buffer);
+            Memory.Free(buffer);
+            return Path.Normalize(result);
+        }
+    }
+
+    /// Whether a directory exists at `path`.
+    static bool Exists(StringSlice path)
+    {
+        unsafe
+        {
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return false;
+            closedir(dir);
+            return true;
+        }
+    }
+
+    /// Creates a directory, including missing parents.
+    /// @returns whether the directory exists afterwards.
+    static bool Create(StringSlice path)
+    {
+        if (path.Length == 0 || Exists(path))
+            return true;
+        string parent = Path.GetDirectory(path);
+        if (parent.Length > 0 && parent != path && !(parent.Length == 2 && parent[1] == ':'))
+            Create(parent);
+        unsafe
+        {
+            mkdir(path.CStr(), 493); // 0755 (the mode is ignored on Windows)
+        }
+        return Exists(path);
+    }
+
+    /// Deletes an empty directory, or with `recursive` a directory with everything in it.
+    /// @error IoError.CannotOpen the directory does not exist.
+    /// @error IoError.CannotDelete it cannot be deleted (without `recursive`: it is not empty).
+    static IoError<void> Delete(StringSlice path, bool recursive)
+    {
+        if (!Exists(path))
+            return error("the directory '" + path + "' does not exist", IoError.CannotOpen);
+        if (recursive)
+        {
+            foreach (var name in GetEntries(path))
+            {
+                string full = Path.Combine(path, name);
+                if (Exists(full))
+                    try Delete(full, true);
+                else
+                    try File.Delete(full);
+            }
+        }
+        if (!_Os.RemoveDirectory(path))
+            return error("cannot delete the directory '" + path + "'" + (recursive ? "" : " (is it empty?)"), IoError.CannotDelete);
+        return;
+    }
+
+    /// Deletes an empty directory.
+    /// @error IoError.CannotOpen the directory does not exist.
+    /// @error IoError.CannotDelete it cannot be deleted (it is not empty, no permission).
+    static IoError<void> Delete(StringSlice path)
+    {
+        return Delete(path, false);
+    }
+
+    /// Moves (renames) a directory; the target must not exist.
+    /// @error IoError.CannotOpen `source` does not exist.
+    /// @error IoError.AlreadyExists `target` exists.
+    /// @error IoError.CannotMove the system refused (another drive on AmigaOS, no permission).
+    static IoError<void> Move(StringSlice source, StringSlice target)
+    {
+        if (!Exists(source))
+            return error("the directory '" + source + "' does not exist", IoError.CannotOpen);
+        if (Exists(target) || File.Exists(target))
+            return error("'" + target + "' already exists", IoError.AlreadyExists);
+        if (!_Os.Rename(source, target))
+            return error("cannot move '" + source + "' to '" + target + "'", IoError.CannotMove);
+        return;
+    }
+
+    // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system (the OS layer).
+    static int _NameOffset()
+    {
+        return _Os.DirentNameOffset();
+    }
+
+    /// The names of the files and directories in a directory (not the paths, without `.` and `..`), sorted.
+    /// @returns an empty list if the directory does not exist.
+    static List<string> GetEntries(StringSlice path)
+    {
+        var names = List<string>.Create();
+        int offset = _NameOffset();
+        unsafe
+        {
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return names;
+            while (true)
+            {
+                void* entry = readdir(dir);
+                if (entry == null)
+                    break;
+                string name = string.FromCStr((char*)((uint8*)entry + offset));
+                if (name != "." && name != "..")
+                    names.Add(name);
+            }
+            closedir(dir);
+        }
+        names.Sort();
+        return names;
+    }
+
+    /// All files below a directory (recursively) whose name ends with the extension (".cshift"; empty = all files).
+    /// The paths start with the given directory and use '/'. The result is sorted.
+    static List<string> FindFiles(StringSlice path, StringSlice extension)
+    {
+        var result = List<string>.Create();
+        _Collect(Path.Normalize(path), extension, result);
+        result.Sort();
+        return result;
+    }
+
+    static void _Collect(string path, StringSlice extension, List<string> result)
+    {
+        foreach (var name in GetEntries(path))
+        {
+            string full = Path.Combine(path, name);
+            if (Exists(full))
+                _Collect(full, extension, result);
+            else if (extension.Length == 0 || name.EndsWith(extension))
+                result.Add(full);
+        }
+    }
+}
