@@ -18,7 +18,7 @@ struct Project
     string Name;
     string Version;
     string Type;                 // "executable", "object" or "library"
-    List<string> Sources;        // .csh files, sorted
+    List<string> Sources;        // .cshift (and .csh) files, sorted
     string Output;               // output path (without the extension of the platform)
     int Optimize;
     bool HasOptimize;
@@ -325,7 +325,7 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
     }
     p.Sources = unique;
     if (p.Sources.Count() == 0)
-        return error(file + ": no .csh source files found");
+        return error(file + ": no source files found (.cshift, or .csh)");
 
     // "links" entries that name a file (or contain a path) are passed to the linker as files, everything else is a
     // library name (-l<name>).
