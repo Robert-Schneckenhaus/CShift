@@ -34,6 +34,7 @@ extern "C" void __gfx_ReleasePen(void* colorMap, int pen);
 extern "C" void __gfx_WaitBlit();
 extern "C" void* __intuition_OpenWindowTagList(void* newWindow, void* tags);
 extern "C" void __intuition_CloseWindow(void* window);
+extern "C" int __intuition_ModifyIDCMP(void* window, int flags);
 extern "C" void __intuition_SetWindowTitles(void* window, char* title, char* screenTitle);
 
 // the slots of the library bases (__cs_amiga_set, see stdlib/amiga/libc.cshift and amiga-startup.s)
@@ -47,6 +48,7 @@ const int _IdcmpMouseMove = 0x10;
 const int _IdcmpCloseWindow = 0x200;
 const int _IdcmpRawKey = 0x400;
 const int _IdcmpVanillaKey = 0x200000;
+const int _IdcmpBase = _IdcmpNewSize | _IdcmpMouseButtons | _IdcmpCloseWindow | _IdcmpRawKey | _IdcmpVanillaKey;
 const int _SelectDown = 0x68;
 const int _SelectUp = 0xE8;
 
@@ -72,6 +74,7 @@ struct _UiAmiga
     int BitMapHeight;
     Dictionary<uint32, int> Pens;
     int Pen;               // the pen set in RastPort (-1: none yet)
+    Color PenColor;        // the color of that pen
     Rect Clip;
     uint8[] Title;         // the window keeps a pointer to it
     int MouseX;
@@ -79,13 +82,16 @@ struct _UiAmiga
     bool MouseDown;
     bool Pressed;
     bool Released;
-    bool ButtonEvent;
     int Wheel;
     bool Ctrl;
     bool Shift;
     bool Alt;
     List<Key> Keys;
     StringBuilder Text;
+    List<int[]> Insets;    // the indents of the rows of a rounded corner, by radius (_UiInsets)
+    uint8[] Chars;         // a line of text as Latin-1 (_UiText)
+    uint32 ShownHash;      // of the commands of the frame in the window (Ui.CommandsHash): an equal one is not drawn again
+    bool Stale;            // the window must be drawn again (a new size)
 }
 
 _UiAmiga _UiA;
@@ -105,6 +111,21 @@ uint8[] _UiLatin1(StringSlice text)
     }
     bytes.Add(0);
     return bytes.ToArray();
+}
+
+// The square root of n, rounded down (integers only: floating point is software on a 68000 and a 68020 without FPU).
+int _UiSqrt(int n)
+{
+    if (n <= 0)
+        return 0;
+    int x = n;
+    int y = (x + 1) / 2;
+    while (y < x)
+    {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    return x;
 }
 
 // The pen nearest to a color (obtained once, released when the window closes).
@@ -131,6 +152,9 @@ int _UiPen(Color color)
 
 void _UiSetPen(Color color)
 {
+    if (_UiA.Pen >= 0 && color.Equals(_UiA.PenColor))
+        return;
+    _UiA.PenColor = color;
     int pen = _UiPen(color);
     if (pen == _UiA.Pen)
         return;
@@ -157,13 +181,24 @@ void _UiSpan(int left, int top, int right, int bottom)
     }
 }
 
-// How far row `dy` (from the top or the bottom) of a rounded rectangle is indented: 0 below the corners.
-int _UiInset(int radius, int dy)
+// How far each row of a rounded corner of the radius is indented (index: the row from the top or the bottom), computed
+// once per radius: radius - sqrt(radius^2 - (radius - row - 0.5)^2), rounded, in integers (in half pixels).
+int[] _UiInsets(int radius)
 {
-    if (dy >= radius)
-        return 0;
-    double d = (double)radius - (double)dy - 0.5;
-    return radius - (int)Math.Round(Math.Sqrt(Math.Max(0.0, (double)(radius * radius) - d * d)));
+    while (_UiA.Insets.Count() <= radius)
+        _UiA.Insets.Add(new int[0]);
+    var known = _UiA.Insets.Get(radius);
+    if (known.Length == radius)
+        return known;
+    var rows = new int[radius];
+    for (var dy = 0; dy < radius; dy += 1)
+    {
+        int d2 = 2 * radius - 2 * dy - 1; // (radius - dy - 0.5) in half pixels
+        int half2 = _UiSqrt(4 * radius * radius - d2 * d2); // the half width at that row, in half pixels
+        rows[dy] = radius - (half2 + 1) / 2;
+    }
+    _UiA.Insets.Set(radius, rows);
+    return rows;
 }
 
 void _UiRoundRect(Rect r, int radius, int width)
@@ -171,6 +206,7 @@ void _UiRoundRect(Rect r, int radius, int width)
     if (r.Width <= 0 || r.Height <= 0)
         return;
     int rad = Math.Clamp(radius, 0, Math.Min(r.Width, r.Height) / 2);
+    var insets = _UiInsets(rad);
     int right = r.X + r.Width - 1;
     int bottom = r.Y + r.Height - 1;
     if (width <= 0)
@@ -179,9 +215,9 @@ void _UiRoundRect(Rect r, int radius, int width)
         int dy = 0;
         while (dy < rad)
         {
-            int inset = _UiInset(rad, dy);
+            int inset = insets[dy];
             int end = dy;
-            while (end + 1 < rad && _UiInset(rad, end + 1) == inset)
+            while (end + 1 < rad && insets[end + 1] == inset)
                 end += 1;
             _UiSpan(r.X + inset, r.Y + dy, right - inset, r.Y + end);
             _UiSpan(r.X + inset, bottom - end, right - inset, bottom - dy);
@@ -194,7 +230,7 @@ void _UiRoundRect(Rect r, int radius, int width)
     int w = Math.Min(width, Math.Min(r.Width, r.Height) / 2);
     for (var dy = 0; dy < Math.Max(rad, w); dy += 1)
     {
-        int inset = _UiInset(rad, dy);
+        int inset = dy < rad ? insets[dy] : 0;
         if (dy < w)
         {
             _UiSpan(r.X + inset, r.Y + dy, right - inset, r.Y + dy);
@@ -214,10 +250,26 @@ void _UiRoundRect(Rect r, int radius, int width)
     _UiSpan(right - w + 1, top, right, low);
 }
 
-void _UiCircle(double cx, double cy, double radius)
+// A coordinate of a command (1/16 pixels) in half pixels, rounded.
+int _UiHalves(int v)
 {
-    int top = (int)Math.Floor(cy - radius);
-    int bottom = (int)Math.Ceiling(cy + radius);
+    return v >= 0 ? (v + 4) >> 3 : -((-v + 3) >> 3);
+}
+
+// floor(a / 2) for negative numbers too
+int _UiHalf(int a)
+{
+    return a >= 0 ? a / 2 : -((-a + 1) / 2);
+}
+
+void _UiCircle(int cx, int cy, int radius)
+{
+    // in half pixels: the rows from the top, each a run of pixels around the center
+    int cx2 = _UiHalves(cx);
+    int cy2 = _UiHalves(cy);
+    int r2 = _UiHalves(radius);
+    int top = _UiHalf(cy2 - r2) - 1;
+    int bottom = _UiHalf(cy2 + r2) + 1;
     int runStart = top;
     int runLeft = 0;
     int runRight = -1;
@@ -225,12 +277,12 @@ void _UiCircle(double cx, double cy, double radius)
     {
         int left = 0;
         int right = -1;
-        double dy = (double)y + 0.5 - cy;
-        if (y <= bottom && Math.Abs(dy) < radius)
+        int dy2 = 2 * y + 1 - cy2; // the center of the row, relative to the center of the circle
+        if (y <= bottom && dy2 < r2 && -dy2 < r2)
         {
-            double half = Math.Sqrt(radius * radius - dy * dy);
-            left = (int)Math.Round(cx - half);
-            right = (int)Math.Round(cx + half) - 1;
+            int half2 = _UiSqrt(r2 * r2 - dy2 * dy2);
+            left = _UiHalf(cx2 - half2 + 1);
+            right = _UiHalf(cx2 + half2 + 1) - 1;
         }
         if (left != runLeft || right != runRight)
         {
@@ -245,10 +297,10 @@ void _UiCircle(double cx, double cy, double radius)
 
 void _UiLine(UiCommand c)
 {
-    int x0 = (int)Math.Round(c.X0);
-    int y0 = (int)Math.Round(c.Y0);
-    int x1 = (int)Math.Round(c.X1);
-    int y1 = (int)Math.Round(c.Y1);
+    int x0 = _UiHalf(_UiHalves(c.X0) + 1);
+    int y0 = _UiHalf(_UiHalves(c.Y0) + 1);
+    int x1 = _UiHalf(_UiHalves(c.X1) + 1);
+    int y1 = _UiHalf(_UiHalves(c.Y1) + 1);
     var clip = _UiA.Clip;
     // the RastPort has no layer: a line that leaves the clip rectangle is not drawn
     if (!clip.Contains(x0, y0) || !clip.Contains(x1, y1) || !clip.Contains(x0 + 1, y0) || !clip.Contains(x1 + 1, y1))
@@ -258,7 +310,7 @@ void _UiLine(UiCommand c)
         void* rp = &_UiA.RastPort[0];
         __gfx_Move(rp, x0, y0);
         __gfx_Draw(rp, x1, y1);
-        if (c.Size >= 1.5)
+        if (c.Size >= 24) // 1.5 pixels
         {
             // thicker: once more, one pixel to the right
             __gfx_Move(rp, x0 + 1, y0);
@@ -274,8 +326,30 @@ void _UiText(UiCommand c)
     int y = c.Rect.Y;
     if (y < clip.Y || y + _UiA.FontHeight > clip.Y + clip.Height || cw <= 0)
         return; // a line that is cut off at the top or the bottom (in a scroll area) is left out
-    var bytes = _UiLatin1(c.Text);
-    int count = bytes.Length - 1;
+    // UTF-8 as Latin-1 (the characters of AmigaOS; others become '?') into the buffer
+    var text = c.Text;
+    if (_UiA.Chars.Length < text.Length)
+        _UiA.Chars = new uint8[text.Length + 32];
+    var chars = _UiA.Chars;
+    int count = 0;
+    int i = 0;
+    while (i < text.Length)
+    {
+        int b = (int)text[i];
+        if (b < 0x80)
+        {
+            chars[count] = (uint8)b;
+            i += 1;
+        }
+        else
+        {
+            int length = 1;
+            int code = _DecodeChar(text, i, ref length);
+            chars[count] = code < 256 ? (uint8)code : (uint8)'?';
+            i += length;
+        }
+        count += 1;
+    }
     // the characters that are completely inside, from left to right
     int first = 0;
     while (first < count && c.Rect.X + first * cw < clip.X)
@@ -289,7 +363,7 @@ void _UiText(UiCommand c)
     {
         void* rp = &_UiA.RastPort[0];
         __gfx_Move(rp, c.Rect.X + first * cw, y + _UiA.FontBaseline);
-        __gfx_Text(rp, (char*)&bytes[first], last - first);
+        __gfx_Text(rp, (char*)&chars[first], last - first);
     }
 }
 
@@ -358,6 +432,7 @@ void _UiMessage(uint8* m)
             break;
         case _IdcmpNewSize:
             _UiInnerSize();
+            _UiA.Stale = true;
             break;
         case _IdcmpMouseMove:
             _UiA.MouseX = mx;
@@ -370,13 +445,13 @@ void _UiMessage(uint8* m)
             {
                 _UiA.MouseDown = true;
                 _UiA.Pressed = true;
-                _UiA.ButtonEvent = true;
+                __intuition_ModifyIDCMP(_UiA.Window, _IdcmpBase | _IdcmpMouseMove); // follow the mouse while it is held
             }
             else if (code == _SelectUp)
             {
                 _UiA.MouseDown = false;
                 _UiA.Released = true;
-                _UiA.ButtonEvent = true;
+                __intuition_ModifyIDCMP(_UiA.Window, _IdcmpBase);
             }
             break;
         case _IdcmpVanillaKey:
@@ -462,9 +537,12 @@ struct _UiOs
             __cs_amiga_set(_VarGfxBase, (int)(nint)gfx);
             __cs_amiga_set(_VarIntuitionBase, (int)(nint)intuition);
             _UiA = _UiAmiga { Gfx = gfx, Intuition = intuition, Pens = Dictionary<uint32, int>.Create(), Keys = List<Key>.Create(),
-                              Text = StringBuilder.Create(), RastPort = new uint8[100], Pen = -1, MouseX = -1, MouseY = -1 };
+                              Text = StringBuilder.Create(), RastPort = new uint8[100], Pen = -1, MouseX = -1, MouseY = -1,
+                              Insets = List<int[]>.Create(), Chars = new uint8[256], Stale = true };
             _UiA.Title = _UiLatin1(title);
-            int idcmp = _IdcmpNewSize | _IdcmpMouseButtons | _IdcmpMouseMove | _IdcmpCloseWindow | _IdcmpRawKey | _IdcmpVanillaKey;
+            // the mouse moving is reported only while the button is held (dragging a slider, selecting text): a frame
+            // for every move, to see what is under the mouse, takes too long on a 68000
+            int idcmp = _IdcmpBase;
             int[] tags = [
                 unchecked((int)0x80000076u), width,                         // WA_InnerWidth
                 unchecked((int)0x80000077u), height,                        // WA_InnerHeight
@@ -517,8 +595,9 @@ struct _UiOs
             // no timer: any wait is a wait for input (WaitPort returns at once if a message is there)
             if (waitMs != 0 && !_UiA.Closed)
                 __exec_WaitPort(_UiA.Port);
-            _UiA.ButtonEvent = false;
-            while (!_UiA.ButtonEvent)
+            // everything that is waiting goes into one frame: a quick click (pressed and released) is one frame, which a
+            // Ui handles as a click
+            while (true)
             {
                 uint8* m = (uint8*)__exec_GetMsg(_UiA.Port);
                 if (m == null)
@@ -561,10 +640,10 @@ struct _UiOs
 
     static void Present(Image image) { } // images are not shown
 
-    static void PresentCommands(List<UiCommand> commands)
+    static void PresentCommands(List<UiCommand> commands, uint32 hash)
     {
-        if (!_UiA.Open || !_UiBitMap())
-            return;
+        if (!_UiA.Open || (hash == _UiA.ShownHash && !_UiA.Stale) || !_UiBitMap())
+            return; // nothing changed (the mouse moved over nothing): the window shows it already
         var bounds = Rect.Create(0, 0, _UiA.BitMapWidth, _UiA.BitMapHeight);
         _UiA.Clip = bounds;
         foreach (var c in commands)
@@ -612,6 +691,8 @@ struct _UiOs
             void* windowRp = *(void**)(w + 50);
             __gfx_BltBitMapRastPort(_UiA.BitMap, 0, 0, windowRp, (int)w[54], (int)w[55], _UiA.BitMapWidth, _UiA.BitMapHeight, 0xC0);
         }
+        _UiA.ShownHash = hash;
+        _UiA.Stale = false;
     }
 
     static void SetPointer(Cursor cursor) { }

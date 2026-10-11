@@ -235,10 +235,17 @@ cshiftc build demo-ui --target m68k-amigaos -o demo-ui
 ```
 
 The window is on the Workbench screen and can be moved, resized and closed. It needs AmigaOS 3.0 (graphics.library and
-intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the text cursor does
-not blink (the program sleeps until there is input), images (`ui.Image`) are not drawn, the mouse pointer keeps its
-shape, and the clipboard stays inside the program. The keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys,
-F1 to F10, Ctrl with a letter, and the wheel of NewMouse.
+intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the mouse is followed
+only while its button is held (dragging a slider, selecting text), so nothing lights up under it (as with the gadgets of
+AmigaOS) and moving it costs no frame; the text cursor does not blink (the program sleeps until there is input),
+images (`ui.Image`) are not drawn, the mouse pointer keeps its shape, and the clipboard stays inside the program. The
+keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys, F1 to F10, Ctrl with a letter, and the wheel of NewMouse.
+
+**Speed.** A 68020 at 14 MHz (A1200) computes a frame of [demo-ui](../demo-ui/README.md) (about 30 widgets) in about a
+quarter of a second; drawing it takes another tenth. A frame that draws the same as the one in the window (same
+`Ui.CommandsHash`) is not drawn again, and a quick click is one frame. Floating point is software without an FPU and
+costs milliseconds per operation: the Ui itself uses none in a frame, and a program for the Amiga should keep `double`
+out of the code that runs for every frame too (`$"{x:F0}"` of a double costs some 40 ms on an A1200).
 
 ## Drawing with commands
 

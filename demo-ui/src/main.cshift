@@ -97,7 +97,7 @@ void Draw(Ui ui, ref App app)
             ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
         using (ui.Columns(2))
         {
-            ui.Label($"Zoom {app.Zoom * 100.0:F0} %");
+            ui.Label($"Zoom {(int)(app.Zoom * 100.0 + 0.5)} %"); // an integer: formatting a double is slow without an FPU
             ui.Slider("zoom", ref app.Zoom, 0.75, 2.0);
         }
         ui.Text("Tab moves between the controls, Enter and Space press buttons, the arrow keys move sliders. " +
