@@ -11,7 +11,7 @@ tools/debug/*.py text eol=lf
 tests/cases/embed/** -text
 tests/projects/embed/data/** -text
 
-# GitHub language statistics: CShift (C#-like) counted as C#; .csh (the compiler's sources, the extension before 0.32)
-# is not C shell
+# GitHub language statistics: CShift (C#-like) counted as C#, also .csh (the extension before 0.32), which is not C
+# shell
 *.cshift linguist-language=C#
 *.csh linguist-language=C#

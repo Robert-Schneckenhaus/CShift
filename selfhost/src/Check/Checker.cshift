@@ -2,7 +2,7 @@
 // the errors of a program instead of the first one (docs/semantic-pass.md).
 //
 // It computes Values like code generation (type, lvalue, const, literal) without code, using the same decisions
-// (CodeGen/Rules.csh, ConversionCost, TryResolveOverload) and the same scopes (FnState.Vars). An expression it cannot
+// (CodeGen/Rules.cshift, ConversionCost, TryResolveOverload) and the same scopes (FnState.Vars). An expression it cannot
 // type yet, or one with an error, has the unknown type; nothing involving it is reported, so every mistake gives one
 // message. What the checker does not know yet is left to code generation, which still stops at its first error.
 

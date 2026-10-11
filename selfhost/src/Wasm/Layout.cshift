@@ -1,5 +1,5 @@
 // Sizes and alignments of IR types on wasm32: natural alignment (i16 2, i32/ptr/float 4, i64/double 8), the layout of
-// clang's wasm32 data layout, which the front end computes for a wasm32 triple too (Emit/Target.csh).
+// clang's wasm32 data layout, which the front end computes for a wasm32 triple too (Emit/Target.cshift).
 
 namespace CShift.Wasm;
 

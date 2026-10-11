@@ -324,7 +324,7 @@ ConstVal ConstConvert(const ref Compiler cg, ConstVal v, int to, SourceLoc loc, 
     return v;
 }
 
-// The text of a float the way the program formats it at run time (RoundTripHelper in Runtime.csh): the fewest digits
+// The text of a float the way the program formats it at run time (RoundTripHelper in Runtime.cshift): the fewest digits
 // that read back as the same value. Written out here instead of using ToString() so that it does not depend on the
 // compiler that built cshc.
 string RoundTripText(double value, bool single)

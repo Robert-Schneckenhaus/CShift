@@ -87,7 +87,7 @@ changes; the page in the browser reloads itself. A build that fails shows the er
 in the terminal) until the next one works. `--open` opens the page in the browser, `--host 0.0.0.0` makes it reachable
 from other devices of the network (by default only this computer can reach it), Ctrl+C ends the server. The output
 folder (`bin/`), folders that start with `.` and `node_modules` are not watched. The server is written in CShift, on
-`System.Net` ([Serve.csh](../selfhost/src/Driver/Serve.csh)).
+`System.Net` ([Serve.cshift](../selfhost/src/Driver/Serve.cshift)).
 
 ## User interfaces in the browser
 

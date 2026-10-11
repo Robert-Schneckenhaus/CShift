@@ -10,80 +10,80 @@ open work is tracked in [../Todo.md](../Todo.md). This file is the tour of the s
 selfhost/
 ├── cshift.json              project "cshc" (build with: cshiftc build selfhost)
 ├── src/
-│   ├── Driver/              command line: Build.csh (options, build/run/new, finding clang and the toolchain),
-│   │                        Project.csh (cshift.json), Json.csh, Ffi.csh (loading and caching .ffi files),
-│   │                        FfiGenerator.csh (C header -> .ffi with libclang), Sfd.csh (AmigaOS SFD file -> .ffi),
-│   │                        EmbeddedStdlib.csh (the stdlib, via embed), Doc.csh (doc comments, cshiftc doc),
-│   │                        Publish.csh + publish.html (cshiftc publish: one HTML file), Serve.csh (cshiftc serve),
+│   ├── Driver/              command line: Build.cshift (options, build/run/new, finding clang and the toolchain),
+│   │                        Project.cshift (cshift.json), Json.cshift, Ffi.cshift (loading and caching .ffi files),
+│   │                        FfiGenerator.cshift (C header -> .ffi with libclang), Sfd.cshift (AmigaOS SFD file -> .ffi),
+│   │                        EmbeddedStdlib.cshift (the stdlib, via embed), Doc.cshift (doc comments, cshiftc doc),
+│   │                        Publish.cshift + publish.html (cshiftc publish: one HTML file), Serve.cshift (cshiftc serve),
 │   │                        usage.txt (cshiftc --help)
-│   ├── Main.csh             command line: cshc [options] file.cshift ... | --tokens | --ast
+│   ├── Main.cshift             command line: cshc [options] file.cshift ... | --tokens | --ast
 │   ├── Syntax/              namespace CShift.Syntax
-│   │   ├── Location.csh     SourceLoc, Diagnostics
-│   │   ├── Token.csh, Lexer.csh      the lexer
-│   │   ├── Ast.csh          the syntax tree: node types and the arenas (struct Ast)
-│   │   ├── Parser.csh       the parser
-│   │   └── TokenDump.csh, AstDump.csh    text dumps of the tokens and the syntax tree (--tokens, --ast)
+│   │   ├── Location.cshift     SourceLoc, Diagnostics
+│   │   ├── Token.cshift, Lexer.cshift      the lexer
+│   │   ├── Ast.cshift          the syntax tree: node types and the arenas (struct Ast)
+│   │   ├── Parser.cshift       the parser
+│   │   └── TokenDump.cshift, AstDump.cshift    text dumps of the tokens and the syntax tree (--tokens, --ast)
 │   ├── Sema/                namespace CShift.Sema
-│   │   └── Types.csh        the type table: types are integers (ids), interned types compare with ==
+│   │   └── Types.cshift        the type table: types are integers (ids), interned types compare with ==
 │   ├── Emit/                namespace CShift.Emit
-│   │   ├── IrWriter.csh     writes LLVM IR as text (blocks, instructions, constants, declarations)
-│   │   └── Target.csh       what the code depends on of the target: pointer size, alignments
+│   │   ├── IrWriter.cshift     writes LLVM IR as text (blocks, instructions, constants, declarations)
+│   │   └── Target.cshift       what the code depends on of the target: pointer size, alignments
 │   ├── Check/               namespace CShift.Check: the checker (docs/semantic-pass.md)
-│   │   ├── Checker.csh      checks every function body of the program before code generation, continues after errors
-│   │   ├── CheckStmt.csh    statements and scopes (the same scopes as code generation)
-│   │   ├── CheckExpr.csh    expressions: Values without code; unknown type for what is not checked yet
-│   │   ├── CheckMembers.csh members and calls through them, indexing, slices, 'new', struct initializers
-│   │   ├── CheckCollections.csh  collection expressions [a, b, ..c]
-│   │   ├── CheckLambdas.csh the result type of a lambda body (type inference from lambdas)
-│   │   └── Index.csh        the symbol index for tooling: hover, go to definition (cshiftc query)
+│   │   ├── Checker.cshift      checks every function body of the program before code generation, continues after errors
+│   │   ├── CheckStmt.cshift    statements and scopes (the same scopes as code generation)
+│   │   ├── CheckExpr.cshift    expressions: Values without code; unknown type for what is not checked yet
+│   │   ├── CheckMembers.cshift members and calls through them, indexing, slices, 'new', struct initializers
+│   │   ├── CheckCollections.cshift  collection expressions [a, b, ..c]
+│   │   ├── CheckLambdas.cshift the result type of a lambda body (type inference from lambdas)
+│   │   └── Index.cshift        the symbol index for tooling: hover, go to definition (cshiftc query)
 │   ├── CodeGen/             namespace CShift.CodeGen
-│   │   ├── Compiler.csh     compiler state, declarations, type resolution, function instances
-│   │   ├── Rules.csh        decisions shared by the checker and code generation (operator types, conditions, ...)
-│   │   ├── Values.csh       values, reference counting, conversions
-│   │   ├── Moves.csh        moves: the last use of a local variable gives its reference away
-│   │   ├── Expr.csh         expressions
-│   │   ├── Call.csh         calls, overload resolution, Console/Environment
-│   │   ├── KeepsThis.csh    which methods leave 'this' unchanged (callable on read-only values)
-│   │   ├── Structs.csh      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
-│   │   ├── Arrays.csh       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
-│   │   ├── Slices.csh       Slice<T>, ReadOnlySlice<T>, StringSlice
-│   │   ├── Fixed.csh        Fixed<T, N>: elements stored inline
-│   │   ├── Collections.csh  collection expressions [a, b, ..c]
-│   │   ├── Errors.csh       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
-│   │   ├── Switch.csh       switch with constant and pattern labels
-│   │   ├── Enums.csh        enums and constant integer expressions
-│   │   ├── Generics.csh     type arguments, inference, interfaces, constraints, using/IDisposable
-│   │   ├── Pointers.csh     pointers: *, &, arithmetic, casts
-│   │   ├── FuncPtrs.csh     function pointers: Action/Func, method groups, indirect calls
-│   │   ├── Layout.csh       sizes/alignment, layout of C structs (FFI)
-│   │   ├── ConstEval.csh    the compile-time evaluator for constants, enum values, sizeof(T)
-│   │   ├── Stmt.csh         statements, scopes, function bodies
-│   │   ├── Globals.csh      global variables and constants, their initialization and release
-│   │   ├── Threads.csh      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
-│   │   ├── Lambdas.csh      lambdas and closures: captures, environments
-│   │   ├── Interfaces.csh   interfaces as ref/const ref parameters: method tables, dispatch
-│   │   ├── Unions.csh       sum types: layout, conversion, is/switch, dispatch on the tag
-│   │   ├── Runtime.csh      the runtime as IR text: strings, ARC, panics
-│   │   ├── Debug.csh        debug information (-g): lines and functions for gdb/lldb
-│   │   └── Module.csh       compiling the whole program, the entry point
+│   │   ├── Compiler.cshift     compiler state, declarations, type resolution, function instances
+│   │   ├── Rules.cshift        decisions shared by the checker and code generation (operator types, conditions, ...)
+│   │   ├── Values.cshift       values, reference counting, conversions
+│   │   ├── Moves.cshift        moves: the last use of a local variable gives its reference away
+│   │   ├── Expr.cshift         expressions
+│   │   ├── Call.cshift         calls, overload resolution, Console/Environment
+│   │   ├── KeepsThis.cshift    which methods leave 'this' unchanged (callable on read-only values)
+│   │   ├── Structs.cshift      structs: layout, fields, methods, initializers, inheritance, retain/release per struct
+│   │   ├── Arrays.cshift       arrays: new T[], indexers, foreach, Array.Copy, Clone, release per array type
+│   │   ├── Slices.cshift       Slice<T>, ReadOnlySlice<T>, StringSlice
+│   │   ├── Fixed.cshift        Fixed<T, N>: elements stored inline
+│   │   ├── Collections.cshift  collection expressions [a, b, ..c]
+│   │   ├── Errors.cshift       Error<T>/Optional<T>: error(...), is-patterns, try, retain/release of the result types
+│   │   ├── Switch.cshift       switch with constant and pattern labels
+│   │   ├── Enums.cshift        enums and constant integer expressions
+│   │   ├── Generics.cshift     type arguments, inference, interfaces, constraints, using/IDisposable
+│   │   ├── Pointers.cshift     pointers: *, &, arithmetic, casts
+│   │   ├── FuncPtrs.cshift     function pointers: Action/Func, method groups, indirect calls
+│   │   ├── Layout.cshift       sizes/alignment, layout of C structs (FFI)
+│   │   ├── ConstEval.cshift    the compile-time evaluator for constants, enum values, sizeof(T)
+│   │   ├── Stmt.cshift         statements, scopes, function bodies
+│   │   ├── Globals.cshift      global variables and constants, their initialization and release
+│   │   ├── Threads.cshift      'thread' functions: checks, spawning, trampolines, Thread.Cancelled; copies for threads
+│   │   ├── Lambdas.cshift      lambdas and closures: captures, environments
+│   │   ├── Interfaces.cshift   interfaces as ref/const ref parameters: method tables, dispatch
+│   │   ├── Unions.cshift       sum types: layout, conversion, is/switch, dispatch on the tag
+│   │   ├── Runtime.cshift      the runtime as IR text: strings, ARC, panics
+│   │   ├── Debug.cshift        debug information (-g): lines and functions for gdb/lldb
+│   │   └── Module.cshift       compiling the whole program, the entry point
 │   ├── Wasm/                namespace CShift.Wasm: the WebAssembly backend (--backend wasm, docs/wasm.md)
-│   │   ├── Encoder.csh      the binary format: bytes, LEB128 numbers, sections
-│   │   ├── Layout.csh       sizes and offsets of the IR types on wasm32
-│   │   └── Gen.csh          the module: what is used, memory and globals, functions (values in locals, blocks as
+│   │   ├── Encoder.cshift      the binary format: bytes, LEB128 numbers, sections
+│   │   ├── Layout.cshift       sizes and offsets of the IR types on wasm32
+│   │   └── Gen.cshift          the module: what is used, memory and globals, functions (values in locals, blocks as
 │   │                        nested wasm blocks), calls, intrinsics; WASI and "env" imports
 │   └── M68k/                namespace CShift.M68k: the 68000 backend (--backend m68k, docs/amiga.md); its IR reader
 │                            is used by the wasm backend too
-│       ├── IrReader.csh     reads the IR text back (types, constants, functions, instructions)
-│       ├── Layout.csh       sizes and offsets of the IR types on the 68000
-│       ├── Prepare.csh      constant folding, dead code, variables written once, address folding
-│       ├── Inline.csh       inlining of small functions (in loops: larger ones, the deepest loops first)
-│       ├── Regalloc.csh     linear scan register allocation (d4-d7/a2-a5), load forwarding
-│       ├── Gen.csh          IR -> 68000 assembly (GNU syntax); AmigaOS library calls
-│       ├── Peephole.csh     simplifications of the assembly
-│       ├── Asm.csh          the assembler: 68000 encoding, branch relaxation
-│       ├── Hunk.csh, Elf.csh    AmigaOS executables, ELF objects (m68k Linux, for the tests)
-│       ├── Chunks.csh       the startup code and the runtime in pieces: only the pieces a program uses
-│       └── Runtime.csh, AmigaRuntime.csh    multiplication/division helpers; startup, library stubs, printf
+│       ├── IrReader.cshift     reads the IR text back (types, constants, functions, instructions)
+│       ├── Layout.cshift       sizes and offsets of the IR types on the 68000
+│       ├── Prepare.cshift      constant folding, dead code, variables written once, address folding
+│       ├── Inline.cshift       inlining of small functions (in loops: larger ones, the deepest loops first)
+│       ├── Regalloc.cshift     linear scan register allocation (d4-d7/a2-a5), load forwarding
+│       ├── Gen.cshift          IR -> 68000 assembly (GNU syntax); AmigaOS library calls
+│       ├── Peephole.cshift     simplifications of the assembly
+│       ├── Asm.cshift          the assembler: 68000 encoding, branch relaxation
+│       ├── Hunk.cshift, Elf.cshift    AmigaOS executables, ELF objects (m68k Linux, for the tests)
+│       ├── Chunks.cshift       the startup code and the runtime in pieces: only the pieces a program uses
+│       └── Runtime.cshift, AmigaRuntime.cshift    multiplication/division helpers; startup, library stubs, printf
 ├── native/                  host.c + host.ffi: libclang (loaded at run time), the path of the executable, file parts
 ├── version/version.txt      the version cshc reports (written by build-release.sh)
 ├── stage0.txt               the release that is stage 0 (selfhost/ and stdlib/ may use its features)

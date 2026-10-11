@@ -1,4 +1,4 @@
-// What the IR already knows at a place, used before the code is written (Prepare.csh):
+// What the IR already knows at a place, used before the code is written (Prepare.cshift):
 //
 //   * Known variables: a load of a variable that was stored or loaded before on every way to it (the last access in a
 //     dominating block, and no store on the ways from there) is that value. Only for variables whose address is used by
@@ -1091,7 +1091,7 @@ void JoinBlocks(Gen g, IrFunc f)
 
 // A pure computation (or a load, if nothing writes memory before its use) that only one later instruction of its block
 // uses moves right before that instruction, with the computation of the first operand last: the value then goes
-// through d0 (Regalloc.csh, ForwardedValues) instead of a register of its own. 'x = load; s = d >> 8; x ^ s' becomes
+// through d0 (Regalloc.cshift, ForwardedValues) instead of a register of its own. 'x = load; s = d >> 8; x ^ s' becomes
 // 's = d >> 8; x = load; x ^ s'.
 void OrderOperands(Gen g, IrFunc f)
 {

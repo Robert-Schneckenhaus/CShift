@@ -23,8 +23,7 @@ Until 0.31 the extension was `.csh`, which Linguist gives to **Tcsh** (the C she
 heuristic that told the two apart by their content was tried first: on 111 C shell scripts from GitHub it took none for
 CShift, and it recognized 533 of 536 CShift files. Editors, syntax highlighters and `file` would still have taken
 `.csh` for the C shell, though, and GitHub Search could not have counted CShift files by their extension, so the
-extension was changed instead. The compiler's own sources (`selfhost/src`) keep `.csh` until the release that builds
-them (stage 0) reads `.cshift`.
+extension was changed instead (in 0.32).
 
 ## What is missing
 

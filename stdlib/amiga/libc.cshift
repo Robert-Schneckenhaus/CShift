@@ -2,7 +2,7 @@
 // generated code and the standard library use (malloc/free, printf, files, directories, getenv, ...), written on
 // exec.library and dos.library. It runs on every AmigaOS from 1.3 on; functions that need a newer dos.library
 // (getenv, getcwd, system with a result) check its version. The startup code, exit, printf's entries, memcpy & co and
-// the stubs that call the libraries (__exec_*, __dos_*) are in selfhost/src/M68k/AmigaRuntime.csh.
+// the stubs that call the libraries (__exec_*, __dos_*) are in selfhost/src/M68k/AmigaRuntime.cshift.
 
 namespace System.Amiga;
 
@@ -40,7 +40,7 @@ extern "C" void __cs_amiga_set(int index, int value);
 extern "C" int* __cs_amiga_libtable();
 extern "C" int main(int argc, char** argv);
 
-// the slots of __cs_amiga_get/__cs_amiga_set (AmigaRuntime.csh)
+// the slots of __cs_amiga_get/__cs_amiga_set (AmigaRuntime.cshift)
 const int _VarSysBase = 0;
 const int _VarDOSBase = 1;
 const int _VarThisTask = 2;

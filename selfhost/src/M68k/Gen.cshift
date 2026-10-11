@@ -1,5 +1,5 @@
-// The 68000 code generator: translates the IR module (IrReader.csh) into assembly for the 68000 (GNU as syntax,
-// assembled by M68k/Asm.csh or by GNU as when testing).
+// The 68000 code generator: translates the IR module (IrReader.cshift) into assembly for the 68000 (GNU as syntax,
+// assembled by M68k/Asm.cshift or by GNU as when testing).
 //
 // Simple and correct first: every value of a function has a slot in its stack frame (addressed through a6, the frame
 // pointer); an instruction loads its operands into d0/d1 (d2/d3 for the second operand of 64-bit operations),
@@ -8,7 +8,7 @@
 //   * A value of up to 4 bytes (i1, i8, i16, i32, ptr, float) is a long in its slot: only its low bits are meaningful,
 //     so operations that look at the high bits (compare, divide, shift right, widen) extend first.
 //   * i64 and double: two longs, high first (the memory order of the 68000).
-//   * Structs and arrays: their bytes (Layout.csh).
+//   * Structs and arrays: their bytes (Layout.cshift).
 //
 // Calls use the C convention of m68k (the one GCC and LLVM use, so C functions can be called): arguments on the
 // stack, pushed from the last, each in 4 bytes (8 for i64/double, structs rounded up to 4); integers are returned in
@@ -40,9 +40,9 @@ struct Gen
     Dictionary<string, List<IrInst>> Phis; // block -> its phis
     Dictionary<string, string> Home;       // values and allocas that live in a register for the whole function
     List<string> Saved;                   // the registers the function keeps (movem)
-    Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.csh)
+    Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.cshift)
     HashSet<string> Skip;                 // instructions that are not written (folded)
-    HashSet<string> NoWrap;               // plain adds that were checked ones (Facts.csh): they do not wrap around
+    HashSet<string> NoWrap;               // plain adds that were checked ones (Facts.cshift): they do not wrap around
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
     int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
@@ -987,7 +987,7 @@ void StoreResult(Gen g, IrInst inst)
     var home = g.Home.TryGet(inst.Res);
     if (home is string reg)
     {
-        if (reg != "%d0") // (a value that the next instruction takes from d0: Regalloc.csh, ForwardedValues)
+        if (reg != "%d0") // (a value that the next instruction takes from d0: Regalloc.cshift, ForwardedValues)
             g.Line("move.l\t%d0," + reg);
         return;
     }
@@ -1068,7 +1068,7 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
     if ((op == "load" || op == "store") && IsLocal(g, inst.Args[op == "load" ? 0 : 1]) &&
         g.Folds.ContainsKey(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name))
     {
-        // an access through an address mode (Prepare.csh)
+        // an access through an address mode (Prepare.cshift)
         var fold = g.Folds.Get(g.M.Vals.Get(inst.Args[op == "load" ? 0 : 1]).Name);
         int size = g.L.Size(op == "load" ? inst.Type : inst.OpType);
         string suffix = SizeSuffix(size);
@@ -1117,7 +1117,7 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         g.Line("move" + suffix + "\t" + src + "," + absolute);
         return;
     }
-    // a value that lives in its variable's slot (Regalloc.csh): the load and the store are that slot already
+    // a value that lives in its variable's slot (Regalloc.cshift): the load and the store are that slot already
     if (op == "load" && IsLocal(g, inst.Args[0]) && g.Alloca.ContainsKey(g.M.Vals.Get(inst.Args[0]).Name))
     {
         var home = g.Home.TryGet(inst.Res);

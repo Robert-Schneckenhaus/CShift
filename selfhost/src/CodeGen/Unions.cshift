@@ -10,7 +10,7 @@
 //
 // Layout: { i32 tag, [payload] }; the payload has the size and alignment of the largest member. Tag 0 is the default
 // value (empty); member k has tag k + 1. The interfaces a union lists must be implemented by every member; a method of
-// such an interface is called through the member's method table (Interfaces.csh), picked by the tag, with 'this'
+// such an interface is called through the member's method table (Interfaces.cshift), picked by the tag, with 'this'
 // pointing into the union - so a method that changes the member changes it in place. Calling a method of an empty
 // union panics.
 

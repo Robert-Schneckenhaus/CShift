@@ -1,6 +1,6 @@
 // Sizes and alignments of IR types for the 68000 backend: the layout of the AmigaOS compilers (and of GCC on m68k):
 // one-byte values are byte aligned, everything larger is aligned to two bytes. It matches what the front end computes
-// for the m68k backend (Emit/Target.csh), so sizeof, unions and slices agree with the generated code.
+// for the m68k backend (Emit/Target.cshift), so sizeof, unions and slices agree with the generated code.
 
 namespace CShift.M68k;
 

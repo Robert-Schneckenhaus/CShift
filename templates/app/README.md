@@ -10,9 +10,9 @@ cshiftc build        # bin/app (bin/app.exe on Windows)
 | | |
 |---|---|
 | `cshift.json` | the project: its name, sources, output, libraries ([projects](https://robert-schneckenhaus.github.io/CShift/)) |
-| `src/main.csh` | the program, starting at `Main` |
+| `src/main.cshift` | the program, starting at `Main` |
 | `.github/workflows/build.yml` | builds and runs it on Linux and Windows with the latest release of CShift |
-| `.gitattributes` | GitHub counts `.csh` as C# (for the language statistics; otherwise it takes them for C shell scripts) |
+| `.gitattributes` | GitHub counts CShift as C# in its language statistics (it does not know CShift yet) |
 
 ## Getting started
 

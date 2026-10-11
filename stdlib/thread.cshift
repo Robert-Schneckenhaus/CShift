@@ -25,9 +25,9 @@
 //  - Thread / Thread<T> themselves: Join, Cancel, CancelAndWait, IsCompleted, IsCancelled, and the private
 //    '_TryGetResult' that backs the 'thread is T result' pattern. ('Thread', the plain non-generic handle, is
 //    actually named '_ThreadVoid' below - the compiler maps the bare spelling 'Thread' to it, see
-//    selfhost/src/CodeGen/Threads.csh, because this codebase's structs cannot be overloaded by type-argument count.)
+//    selfhost/src/CodeGen/Threads.cshift, because this codebase's structs cannot be overloaded by type-argument count.)
 //
-// The code generator (selfhost/src/CodeGen/Threads.csh) calls a handful of these methods directly - by name, through
+// The code generator (selfhost/src/CodeGen/Threads.cshift) calls a handful of these methods directly - by name, through
 // a raw pointer, exactly like CShift code calling them through '->' - when it spawns a thread and when it emits
 // 'Thread.Cancelled'.
 
@@ -145,7 +145,7 @@ struct _ThreadControl<T>
 }
 
 // The handle returned by calling a 'thread void' function. Written to the language as bare 'Thread' - the
-// compiler resolves that spelling to this struct (see selfhost/src/CodeGen/Threads.csh); 'Thread<T>' below is a
+// compiler resolves that spelling to this struct (see selfhost/src/CodeGen/Threads.cshift); 'Thread<T>' below is a
 // separate, ordinary generic struct that this codebase's type system cannot give the very same name at a different
 // arity.
 struct _ThreadVoid

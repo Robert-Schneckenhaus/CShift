@@ -1,4 +1,4 @@
-| The startup code of AmigaOS programs (see AmigaRuntime.csh): it must be the first code of the program. When it is
+| The startup code of AmigaOS programs (see AmigaRuntime.cshift): it must be the first code of the program. When it is
 | used, the placeholder STACK (between @ signs) becomes the size of the program's own stack (the stack of a CLI program
 | is often only 4 KB, too small for CShift's stack frames) and STUBS the stubs that call the libraries (AmigaStubsAsm).
 | Comments start with '|' (as in GNU as for m68k).

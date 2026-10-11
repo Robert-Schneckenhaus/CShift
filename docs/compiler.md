@@ -57,7 +57,7 @@ The file-by-file tour is in [selfhost/README.md](../selfhost/README.md). In shor
 
 Before code generation, the checker (`selfhost/src/Check`) walks every function body of the program and reports all
 the errors it finds, continuing after each one; the decisions (result types, conversions, overloads) are functions
-that it shares with code generation (`CodeGen/Rules.csh`). It is being built step by step into a full semantic pass,
+that it shares with code generation (`CodeGen/Rules.cshift`). It is being built step by step into a full semantic pass,
 see [semantic-pass.md](semantic-pass.md): what it does not check yet is still checked by code generation, which stops
 at its first error. Generic bodies are walked again for every instantiation, like C++ templates.
 
@@ -67,7 +67,7 @@ retains its own parameters. Heap blocks (strings, arrays, closure environments) 
 `{size count, size length}`. `--arc-stats` prints the balance of allocations and frees at the end of the program.
 Only `SharedPtr<T>` counts atomically.
 
-**Targets:** `size` is the pointer-sized integer of the target (`selfhost/src/Emit/Target.csh`): `i64` on 64-bit targets
+**Targets:** `size` is the pointer-sized integer of the target (`selfhost/src/Emit/Target.cshift`): `i64` on 64-bit targets
 (the default, the host), `i32` for a `--target` triple with 32-bit pointers (`i686-linux-gnu`, `m68k-…`, `arm…`). It
 is the type of lengths, indexes and sizes in the generated code, of `nint`/`nuint` and of the length in a slice; the
 sizes and alignments of types follow the target's data layout. The language does not change: `Length` is `int32`,

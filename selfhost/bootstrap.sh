@@ -27,7 +27,7 @@ if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-FILES=$(find "$ROOT/selfhost/src" -name '*.csh' | sort)
+FILES=$(find "$ROOT/selfhost/src" -name '*.cshift' | sort)
 EXE=""
 case "$STAGE1" in *.exe) EXE=".exe" ;; esac
 

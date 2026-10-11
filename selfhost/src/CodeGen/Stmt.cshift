@@ -593,7 +593,7 @@ void EmitReturn(const ref Compiler cg, Stmt s)
     {
         if (types.IsVoid(rt))
             Fail(cg, s.Loc, "a void function cannot return a value");
-        // variables moved into the value (Moves.csh) keep their slots, which the cleanup below leaves alone
+        // variables moved into the value (Moves.cshift) keep their slots, which the cleanup below leaves alone
         cg.Fn[0].InReturn = true;
         cg.Fn[0].ReturnMoves = List<string>.Create();
         Value v = EmitExprAs(cg, n.Value, rt);

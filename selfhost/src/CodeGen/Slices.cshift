@@ -81,7 +81,7 @@ Value ToSlice(const ref Compiler cg, Value v, int sliceType)
     return MakeSlice(cg, sliceType, PartsOf(cg, r));
 }
 
-// An index for a[i] or a range bound: a size (Layout.csh: SizeIndex), counted from the end for ^n.
+// An index for a[i] or a range bound: a size (Layout.cshift: SizeIndex), counted from the end for ^n.
 string SliceBound(const ref Compiler cg, Expr e, bool fromEnd, string length)
 {
     var types = cg.Types;

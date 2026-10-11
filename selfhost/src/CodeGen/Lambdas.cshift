@@ -10,7 +10,7 @@
 //
 // The body is compiled right away, into an IR writer of its own; the enclosing variables it needs are found while it is
 // compiled (LookupVariable asks CaptureVariable). Only then the environment is known: the block
-// { size count, size unused, ptr drop, captured values..., [this] } that the new function value owns (see FuncPtrs.csh).
+// { size count, size unused, ptr drop, captured values..., [this] } that the new function value owns (see FuncPtrs.cshift).
 // A lambda that captures nothing is a plain function (no environment, and it can be passed to C).
 
 namespace CShift.CodeGen;
@@ -226,7 +226,7 @@ Value EmitLambda(const ref Compiler cg, Expr e, int ft, SourceLoc loc)
     }
     else
     {
-        cg.Fn[0].InReturn = true; // x => x: the parameter is moved (Moves.csh)
+        cg.Fn[0].InReturn = true; // x => x: the parameter is moved (Moves.cshift)
         cg.Fn[0].ReturnMoves = List<string>.Create();
         Value v = ConvertValue(lcg, EmitExpr(lcg, n.Body), ret, n.Body.Loc);
         string rv = Consume(lcg, v);

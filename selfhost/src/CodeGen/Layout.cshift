@@ -1,6 +1,6 @@
 // Sizes and alignments of types, and the layout of structs imported from C headers.
 //
-// The IR is written as text, so there is no LLVM data layout to ask: sizes follow the target's rules (Emit/Target.csh:
+// The IR is written as text, so there is no LLVM data layout to ask: sizes follow the target's rules (Emit/Target.cshift:
 // the size of pointers and the alignment of the scalars; structs are padded like in C).
 
 namespace CShift.CodeGen;
@@ -89,7 +89,7 @@ string SizeIndex(const ref Compiler cg, string v, int type)
     return ir.Select(fits, "i32", ir.Cast("trunc", "i64", v, "i32"), "-1");
 }
 
-// A text of IR for the target (see Sized in Runtime.csh: $S, $P, $H, $I).
+// A text of IR for the target (see Sized in Runtime.cshift: $S, $P, $H, $I).
 string SizedText(const ref Compiler cg, string text)
 {
     return Sized(text, cg.Ir);

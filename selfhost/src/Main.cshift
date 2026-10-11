@@ -1,8 +1,8 @@
 // cshc: the CShift compiler, written in CShift, released as cshiftc. The commands and options are in
-// Driver/usage.txt (cshiftc --help) and Driver/Build.csh; two more are for looking at the front end:
+// Driver/usage.txt (cshiftc --help) and Driver/Build.cshift; two more are for looking at the front end:
 //
-//     cshiftc --tokens file.cshift     the tokens of a file (Syntax/TokenDump.csh)
-//     cshiftc --ast file.cshift        the syntax tree of a file (Syntax/AstDump.csh)
+//     cshiftc --tokens file.cshift     the tokens of a file (Syntax/TokenDump.cshift)
+//     cshiftc --ast file.cshift        the syntax tree of a file (Syntax/AstDump.cshift)
 
 using System;
 using CShift.Syntax;

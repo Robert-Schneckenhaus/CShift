@@ -132,7 +132,7 @@ jobs:
 
       # A clean environment (no MSYS2, no clang, no PATH toolchain, no pre-existing cache): the very first
       # compile has to self-extract the embedded toolchain and then work exactly like the regular archive.
-      # cshiftc.exe itself finds that extracted toolchain on its own (BundledClang in selfhost/src/Driver/Build.csh),
+      # cshiftc.exe itself finds that extracted toolchain on its own (BundledClang in selfhost/src/Driver/Build.cshift),
       # but two other things run during the test suite do not know about it and need clang locatable some other way:
       # tests/run_tests.sh's own compilation of tests/projects/*/native/*.c (CSHIFT_CC, or 'clang' on PATH), and the
       # cshc the selfhost section builds fresh (a plain executable without an embedded toolchain). A trivial warm-up

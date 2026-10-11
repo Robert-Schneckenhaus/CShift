@@ -1,7 +1,7 @@
 // Function values: Action<...> and Func<..., R>.
 //
 // A function value is { ptr fn, ptr env }. For a plain function (and a lambda that captures nothing) env is null and
-// fn is the function itself, so it can be passed to C as it is. A lambda that captures variables (Lambdas.csh) has an
+// fn is the function itself, so it can be passed to C as it is. A lambda that captures variables (Lambdas.cshift) has an
 // environment: a reference-counted block { size count, size unused, ptr drop, captured values... }, and fn takes it as
 // an extra first parameter. 'drop' releases the captured values when the last reference goes away.
 //

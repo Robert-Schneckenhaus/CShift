@@ -9,7 +9,7 @@
 //     never changes its length, so every bounds check of the same array uses the same length (also in loops).
 //   * Conditions: '&&' and '||' in a condition become branches (no bool is made: the block of the phi that joins them
 //     goes away), and a branch on '!c' branches on c the other way round.
-//   * What is known (Facts.csh): loads of variables whose value is known, computations made twice, comparisons whose
+//   * What is known (Facts.cshift): loads of variables whose value is known, computations made twice, comparisons whose
 //     outcome is known, checked arithmetic that cannot overflow, branches on constants, unreachable and joinable blocks.
 //   * Address folding: a getelementptr whose only uses are loads and stores (one, or the load and the store of
 //     'a[i] ^= x') is not computed on its own: each access uses the 68000's addressing modes, (d16,An) or (d8,An,Dn.l).

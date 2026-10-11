@@ -512,8 +512,8 @@ else
     work="$TMP/selfhost"
     cp -r "$DIR/../selfhost" "$work"
     cp -r "$DIR/../stdlib" "$TMP/stdlib" # read at compile time by embed (../../../stdlib from selfhost/src/Driver)
-    mkdir -p "$TMP/tools" && cp -r "$DIR/../tools/debug" "$TMP/tools/debug" # the gdb pretty printers (CodeGen/Debug.csh)
-    mkdir -p "$TMP/web" && cp "$DIR/../web/cshift.js" "$TMP/web/cshift.js" # the runtime of 'publish' (Driver/Publish.csh)
+    mkdir -p "$TMP/tools" && cp -r "$DIR/../tools/debug" "$TMP/tools/debug" # the gdb pretty printers (CodeGen/Debug.cshift)
+    mkdir -p "$TMP/web" && cp "$DIR/../web/cshift.js" "$TMP/web/cshift.js" # the runtime of 'publish' (Driver/Publish.cshift)
     if ! "$COMPILER" build "$work" $OPT "${CC_ARGS[@]}" > "$TMP/selfhost.out" 2> "$TMP/selfhost.err"; then
         report_fail "selfhost build" "$(head -n 5 "$TMP/selfhost.err" | tr '\n' ' ')"
     else

@@ -1,8 +1,8 @@
 // The state of the compiler: declarations, types, function instances and the function being generated.
 //
 // CShift structs cannot be split over several files, so the code generator is made of free functions that take the
-// Compiler; they live in Compiler.csh (declarations, types, function instances), Convert.csh (conversions), Expr.csh,
-// Call.csh, Stmt.csh, Module.csh and the other files of CodeGen.
+// Compiler; they live in Compiler.cshift (declarations, types, function instances), Convert.cshift (conversions), Expr.cshift,
+// Call.cshift, Stmt.cshift, Module.cshift and the other files of CodeGen.
 // The Compiler is a handle: all mutable state is in lists, dictionaries and small arrays, so copies share it.
 //
 // Errors: the first error is printed and ends the compiler (Fail).
@@ -185,13 +185,13 @@ struct FnState
     bool IsIntMain;
     int File;                          // file context of the function (for name lookup)
     Dictionary<string, int> Env;       // its type parameters
-    // lambdas (Lambdas.csh)
+    // lambdas (Lambdas.cshift)
     int LambdaId;                      // > 0 while the body of a lambda is compiled
     List<ScopeVar> Outer;              // the variables of the enclosing functions (innermost last)
     List<LambdaCapture> Captures;      // the enclosing variables the body uses, in the order of the environment
     string EnvType;                    // the LLVM type of the environment
     string CallerArg;                  // a library function that reports its caller: the parameter with the call site
-    HashSet<int> Moves;                // the Name nodes that are the last use of a variable (Moves.csh)
+    HashSet<int> Moves;                // the Name nodes that are the last use of a variable (Moves.cshift)
     bool HasMoves;                     // ... Moves is set (code generation of a function or lambda body)
     bool InReturn;                     // the value of a 'return' is being computed
     List<string> ReturnMoves;          // ... the slots of the variables moved into it: the cleanup leaves them alone
@@ -295,12 +295,12 @@ struct Compiler
     List<int> PendingTrampolines;   // thread functions whose trampoline still has to be written
     HashSet<int> TrampolinesQueued;
     Dictionary<int, Value[]> CheckedCollections; // the checker: the item values of each collection expression (by node)
-    List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.csh)
-    Dictionary<string, int> KeepsThis; // "method:struct type": whether the method keeps 'this' (KeepsThis.csh)
+    List<IndexEntry> Index;      // the checker in 'cshiftc query': the names it resolved (Check/Index.cshift)
+    Dictionary<string, int> KeepsThis; // "method:struct type": whether the method keeps 'this' (KeepsThis.cshift)
     Dictionary<string, string> KeepsWhy; // ... and what it does to 'this' if not
 
     // triple: the target ("" = the host) and the backend that generates the machine code; they decide the size of
-    // pointers and the layout of structs (Emit/Target.csh)
+    // pointers and the layout of structs (Emit/Target.cshift)
     static Compiler Create(Ast tree, Diagnostics diag, bool windows, string triple, string backend)
     {
         var cg = Compiler { Tree = tree, Diag = diag };
@@ -656,7 +656,7 @@ int PrimitiveType(const ref Compiler cg, string name)
     }
 }
 
-// A parameter type: an interface is allowed for 'ref' and 'const ref' parameters (Interfaces.csh).
+// A parameter type: an interface is allowed for 'ref' and 'const ref' parameters (Interfaces.cshift).
 int ResolveParamType(const ref Compiler cg, Param p, int file, Dictionary<string, int> env)
 {
     if (p.Ref == RefKind.None)
@@ -900,15 +900,15 @@ string LlvmType(const ref Compiler cg, int t)
     case TypeKind.Union:
         return GetUnionInfo(cg, t).IrName;
     case TypeKind.Function:
-        return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.csh)
+        return "{ ptr, ptr }"; // the function and its environment (null for a plain function, see FuncPtrs.cshift)
     case TypeKind.Interface:
-        return "{ ptr, ptr }"; // a ref/const ref parameter: the struct and its method table (Interfaces.csh)
+        return "{ ptr, ptr }"; // a ref/const ref parameter: the struct and its method table (Interfaces.cshift)
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:
     case TypeKind.StringSlice:
         return "{ ptr, ptr, " + cg.Ir.Target.SizeIr + " }";
     case TypeKind.Fixed:
-        return "[" + types.Count(t).ToString() + " x " + LlvmType(cg, types.Elem(t)) + "]"; // the block that owns the elements, the first element, the length (Slices.csh)
+        return "[" + types.Count(t).ToString() + " x " + LlvmType(cg, types.Elem(t)) + "]"; // the block that owns the elements, the first element, the length (Slices.cshift)
     default:
         return "ptr"; // string, pointer, array, null
     }
