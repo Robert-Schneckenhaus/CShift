@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.32] - 2026-10-11
+
 ### Breaking (soft)
 - **Source files end in `.cshift`** instead of `.csh`, which is the C shell's everywhere else (GitHub, editors,
   syntax highlighters, `file`). `.csh` is still read - projects, folders, single files, the VS Code extension - so
