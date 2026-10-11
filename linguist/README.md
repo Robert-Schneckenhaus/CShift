@@ -13,8 +13,8 @@ languages that are already widely used on GitHub (see [what is missing](#what-is
 | [evaluate.py](evaluate.py) | measures the heuristic (below) |
 
 The grammar (`tm_scope: source.cshift`) is the one of the VS Code extension
-([vscode-extension/syntaxes](../vscode-extension/syntaxes/cshift.tmLanguage.json)); for `script/add-grammar` it is to be
-published on its own as the repository `cshift-grammar` (MIT, not created yet).
+([vscode-extension/syntaxes](../vscode-extension/syntaxes/cshift.tmLanguage.json)), published on its own for
+`script/add-grammar` as [cshift-grammar](https://github.com/Robert-Schneckenhaus/cshift-grammar) (MIT).
 
 ## .csh is the C shell's
 
@@ -80,8 +80,9 @@ To measure again: put C shell scripts into a folder and run `python -I linguist/
    (Pyrdacor/Ambermoon, whose tools are written in CShift); this repository was not in the index. Linguist closes
    pull requests for languages below the threshold.
 2. A second **Tcsh sample** (see above).
-3. The **grammar repository** `cshift-grammar` on GitHub, with an [allowed license](https://github.com/github-linguist/linguist/blob/main/vendor/README.md)
-   (MIT is), added with `script/add-grammar https://github.com/<owner>/cshift-grammar`.
+3. Adding the grammar ([cshift-grammar](https://github.com/Robert-Schneckenhaus/cshift-grammar), MIT, one of the
+   [allowed licenses](https://github.com/github-linguist/linguist/blob/main/vendor/README.md)) in the pull request:
+   `script/add-grammar https://github.com/Robert-Schneckenhaus/cshift-grammar`.
 4. `language_id` (assigned by `script/update-ids`) and the color checked by Linguist's tests (`#391ab2` was chosen as
    far as possible from the colors of the other languages).
 5. The pull request itself: the entry, the heuristic, the samples (their license stated: MIT, from this repository),
