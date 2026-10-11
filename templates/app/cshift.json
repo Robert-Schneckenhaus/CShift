@@ -1,0 +1,9 @@
+{
+	"name": "app",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/app",
+	"optimize": 2,
+	"links": []
+}

@@ -10,3 +10,6 @@ tools/debug/*.py text eol=lf
 # Files that tests embed byte for byte (BOM, CRLF and LF mixed on purpose).
 tests/cases/embed/** -text
 tests/projects/embed/data/** -text
+
+# GitHub language statistics: .csh is CShift (C#-like), not C shell
+*.csh linguist-language=C#

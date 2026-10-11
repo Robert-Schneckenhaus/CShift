@@ -1,0 +1,2 @@
+# GitHub language statistics: .csh is CShift (C#-like), not C shell
+*.csh linguist-language=C#
