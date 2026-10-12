@@ -3,6 +3,7 @@
 | Document | For |
 |---|---|
 | [Installation](install.md) | what `cshiftc` needs on Windows and Linux, the packages per distribution |
+| [The cshiftc command](cli.md) | every command and option: `build`, `run`, `new`, `publish`, `serve`, `check`, `query`, `doc` |
 | [Language guide](language/README.md) | learning the language: a tour with examples, chapter by chapter |
 | [Language reference](spec/README.md) | the precise rules of the language: syntax, types, conversions, semantics, the grammar |
 | [Language status](language/status.md) | what is implemented, and the decisions the design leaves open |
@@ -12,11 +13,11 @@
 | [WebAssembly](wasm.md) | `--backend wasm` and `--target wasm32-wasi`: programs for node, wasmtime and the browser, games with GLFW and OpenGL in the browser; what is needed, what differs |
 | [The Amiga: the m68k backend](amiga.md) | AmigaOS programs: `--target m68k-amigaos`, libraries from SFD files, the NDK, `Amiga.Hardware` |
 | [Debugging](debugging.md) | `-g`: breakpoints, stepping and call stacks with gdb and lldb |
-| [Projects and the build](build.md) | `cshift.json`, `cshiftc build/run/new`, ideas for a build in CShift |
+| [Projects and the build](build.md) | `cshift.json`: sources, libraries, dependencies, platforms, assets; ideas for a build in CShift |
 | [The compiler](compiler.md) | how `cshiftc` works, the bootstrap, tests, dependencies |
 | [Language design](language-design.md) | the original design document: goals and rationale |
 
-The documentation is also a website with search and the reference of every type and function of the standard
+The source code is on GitHub: https://github.com/Robert-Schneckenhaus/CShift. The documentation is also a website with search and the reference of every type and function of the standard
 library: https://robert-schneckenhaus.github.io/CShift/ (one version per major release, made by [site/](../site/README.md) at every release).
 
 The compiler's sources are described in [selfhost/README.md](../selfhost/README.md); open work is in

@@ -1,6 +1,6 @@
 cshiftc - CShift compiler
 
-usage: cshiftc [options] file.cshift [file2.cshift ...]     compile single files
+usage: cshiftc [options] file.cshift [...]            compile single files
        cshiftc build [project] [options]              build a project (cshift.json)
        cshiftc run   [project] [options] [-- args]    build and run a project (with the arguments after --)
        cshiftc publish [project | files] [options]    the program for the browser: one HTML file with everything
@@ -27,8 +27,9 @@ options:
   --emit-llvm      write LLVM IR (.ll) instead of an executable
   -O0 .. -O3       optimization level (default -O2)
   -g               debug information (lines and functions for gdb/lldb; best with -O0)
-  --target <triple> target triple (default: host; m68k-amigaos: AmigaOS on a 68000)
-  --backend <name> code generator: llvm (the default) or m68k (CShift's own, the default for AmigaOS)
+  --target <triple> target triple (default: host; wasm32-wasi: WebAssembly; m68k-amigaos: AmigaOS on a 68000)
+  --backend <name> code generator: llvm (the default), wasm (CShift's own, WebAssembly for WASI) or m68k
+                   (CShift's own, the default for AmigaOS)
   --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)
   --emit-asm       m68k backend: write the assembly (.s) instead of an executable
   --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)

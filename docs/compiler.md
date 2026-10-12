@@ -11,6 +11,10 @@ clang.
 source (.cshift) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ program
 ```
 
+Two backends of its own translate that IR further without clang: `--backend wasm` into a WebAssembly module
+([selfhost/src/Wasm](../selfhost/src/Wasm), [wasm.md](wasm.md)) and `--backend m68k` into 68000 code for AmigaOS
+([selfhost/src/M68k](../selfhost/src/M68k), [amiga.md](amiga.md)).
+
 ## Stages
 
 The compiler builds itself. Stage 0 is an earlier release: the version in

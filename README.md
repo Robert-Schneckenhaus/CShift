@@ -1,14 +1,15 @@
 # CShift
 
 **[Try it in the browser](https://robert-schneckenhaus.github.io/CShift/v0/playground/)** (the compiler runs as
-WebAssembly in the page) · [Documentation](https://robert-schneckenhaus.github.io/CShift/)
+WebAssembly in the page) · [Documentation](https://robert-schneckenhaus.github.io/CShift/) ·
+[Releases](https://github.com/Robert-Schneckenhaus/CShift/releases)
 
 CShift is a native, C#-like systems language: structs instead of classes, no GC (ARC), no headers, generics via
 monomorphization, errors as values, lambdas, sum types, interfaces without boxing, real OS threads, and direct C interop (C headers are
 imported as they are).
 
-The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/README.md)). It writes LLVM IR as text;
-clang optimizes it, generates machine code and links:
+The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/README.md)). For native programs it
+writes LLVM IR as text; clang optimizes it, generates machine code and links:
 
 ```
 source (.cshift) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type checking + code generation ─▶ LLVM IR (text) ─▶ clang ─▶ .exe
@@ -16,6 +17,11 @@ source (.cshift) ─▶ lexer ─▶ parser ─▶ syntax tree ─▶ type check
 
 The compiler is written in CShift itself; it is built by an earlier release of itself (the first compiler, written in
 C++ against the LLVM API, bootstrapped it and was retired after version 0.04; it is in the git history).
+
+Two more backends are CShift's own and need nothing else: `--backend wasm` writes WebAssembly, and
+`cshiftc publish` turns a program into one HTML page for the browser ([docs/wasm.md](docs/wasm.md)); `--target
+m68k-amigaos` builds programs for the Amiga's 68000 ([docs/amiga.md](docs/amiga.md)). Windows with buttons, text
+boxes and sliders ([System.Ui](docs/ui.md)) run on all of them: Windows, Linux, the browser and AmigaOS.
 
 ```csharp
 using System;
@@ -57,7 +63,8 @@ int Main()
 ```
 
 **Documentation:** [docs/](docs/README.md) — the [language guide](docs/language/README.md), the
-[standard library](docs/stdlib.md), [user interfaces](docs/ui.md), [C interop](docs/ffi.md), [projects](docs/build.md) and
+[standard library](docs/stdlib.md), [user interfaces](docs/ui.md), [C interop](docs/ffi.md), [the `cshiftc`
+command](docs/cli.md), [projects](docs/build.md), [WebAssembly and the browser](docs/wasm.md) and
 [the compiler](docs/compiler.md). What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## Ready-made releases
@@ -68,8 +75,8 @@ compiler and a matching toolchain (clang, libclang, and on Windows also lld plus
 libraries).
 
 ```
-Windows:  cshift-0.31-windows-x64.zip       unpack it, add the folder to PATH
-Linux:    cshift-0.31-linux-x64.tar.xz      tar -xf ... -C ~ ; add to PATH; sudo apt install build-essential
+Windows:  cshift-<version>-windows-x64.zip       unpack it, add the folder to PATH
+Linux:    cshift-<version>-linux-x64.tar.xz      tar -xf ... -C ~ ; add to PATH; sudo apt install build-essential
 ```
 
 ```
@@ -82,8 +89,8 @@ cshiftc run hello
 not needed. On Linux, the C library and linker come from the system (`build-essential`); which packages exactly, for
 other distributions too, is in [docs/install.md](docs/install.md).
 
-**Standalone executable:** each release also has a single, self-contained file - `cshift-0.31-windows-x64-standalone.exe`
-/ `cshift-0.31-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:
+**Standalone executable:** each release also has a single, self-contained file - `cshift-<version>-windows-x64-standalone.exe`
+/ `cshift-<version>-linux-x64-standalone` - with the same toolchain embedded in it. Nothing to extract or add to `PATH`:
 run it, and the first time it actually needs the toolchain (linking, or `using X from "header.h";`) it unpacks
 itself once into a per-user cache directory (`cshiftc --clear-cache` deletes it, all versions). See
 [packaging/make-standalone.sh](packaging/make-standalone.sh).
@@ -136,16 +143,19 @@ This needs `clang` (and `libclang` for C header imports) and, for linking, `buil
 ## Usage
 
 ```
-cshiftc [options] file.cshift [more.cshift ...]      compile files into one program
-cshiftc new hello                              a new project: hello/cshift.json, hello/src/main.cshift
-cshiftc run hello                              build and run (without an argument: the cshift.json here or above)
-cshiftc build                                  build only  ->  bin/<name>[.exe]
-cshiftc check                                  report all errors, generate nothing (fast; used by the editor)
-cshiftc query --at file.cshift 12 8               the name at a position (hover, definition) as JSON
+cshiftc [options] file.cshift [more.cshift ...]   compile files into one program
+cshiftc new hello                                 a new project: hello/cshift.json, hello/src/main.cshift
+cshiftc run hello                                 build and run (without an argument: the cshift.json here or above)
+cshiftc run -- input.txt                          the arguments after -- go to the program
+cshiftc build                                     build only  ->  bin/<name>[.exe]
+cshiftc build --backend wasm                      a WebAssembly module (WASI)
+cshiftc build --target m68k-amigaos               an AmigaOS program
+cshiftc publish                                   the program for the browser: bin/<name>.html, one file
+cshiftc serve --open                              the page on http://localhost:8080/, rebuilt when a file changes
+cshiftc check                                     report all errors, generate nothing (fast; used by the editor)
 ```
 
-`cshiftc --help` lists the options (`-o`, `-O0..-O3`, `--target`, `--backend`, `--ndk`, `--cc`, `-l`/`-L`/`-I`/`-D`,
-`--emit-llvm`, `--emit-asm`, `--arc-stats`, ...). All files of a program form one unit: types and functions can be used before their definition,
+Every command and option: [docs/cli.md](docs/cli.md) (or `cshiftc --help`). All files of a program form one unit: types and functions can be used before their definition,
 in any file. Errors are printed as `file:line:column: error: text`.
 
 A project is described by a `cshift.json` (sources, output, libraries, per-platform settings; see
@@ -189,7 +199,7 @@ tests/run_tests.sh [path/to/cshiftc]      # or .\build.ps1 -Test
 * Reference counts of strings, arrays and containers are not atomic: threads get copies of strings, and share values
   only through `SharedPtr<T>` and `Mutex<T>` (whose values must be copyable between threads, so no containers yet).
 * Lambdas capture read-only copies.
-* No debug information (DWARF/PDB), no streams, dates or number formatting options in the standard library.
+* Debug information (`-g`) is DWARF for gdb and lldb; there is no PDB for the Visual Studio debugger.
 * More in [Todo.md](Todo.md).
 
 ## License
