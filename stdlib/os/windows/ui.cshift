@@ -235,7 +235,7 @@ struct _UiOs
     // the window draws the frames of a Ui itself, from its commands (AmigaOS), not from their pixels
     static bool DrawsCommands() { return false; }
     static Font UiFont() { return Font.Fixed7x13(); }
-    static void PresentCommands(List<UiCommand> commands) { }
+    static void PresentCommands(List<UiCommand> commands, uint32 hash) { }
     // the window can wake the program for the blinking text cursor
     static bool Blinks() { return true; }
 

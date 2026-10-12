@@ -90,7 +90,7 @@ struct Window : IDisposable
     {
         var frame = ui.End();
         if (_UiOs.DrawsCommands())
-            _UiOs.PresentCommands(ui.Commands());
+            _UiOs.PresentCommands(ui.Commands(), ui.CommandsHash());
         else
             _UiOs.Present(frame);
         _UiOs.SetPointer(ui.Cursor());

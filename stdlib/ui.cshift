@@ -334,9 +334,9 @@ enum UiCommandKind : int32
     FillRoundRect,
     /// The outline of `Rect` with corners of `Radius`, `Width` pixels thick, inside of it, in `Color`.
     StrokeRoundRect,
-    /// A circle around (`X0`, `Y0`) with the radius `Size`, in `Color`.
+    /// A circle around (`X0`, `Y0`) with the radius `Size`, in `Color` (in 1/16 pixels).
     FillCircle,
-    /// A line from (`X0`, `Y0`) to (`X1`, `Y1`), `Size` pixels thick, in `Color`.
+    /// A line from (`X0`, `Y0`) to (`X1`, `Y1`), `Size` thick, in `Color` (in 1/16 pixels).
     Line,
     /// `Text` in `Color`, the top left corner of its first character at (`Rect.X`, `Rect.Y`).
     Text,
@@ -361,16 +361,17 @@ struct UiCommand
     int Width;
     /// The color.
     Color Color;
-    /// The center of a circle, the start of a line.
-    double X0;
-    /// The center of a circle, the start of a line.
-    double Y0;
-    /// The end of a line.
-    double X1;
-    /// The end of a line.
-    double Y1;
-    /// The radius of a circle, the thickness of a line.
-    double Size;
+    /// The center of a circle, the start of a line: in 1/16 pixels (integers, so that a renderer needs no floating
+    /// point, which is software on a 68000).
+    int X0;
+    /// The center of a circle, the start of a line, in 1/16 pixels.
+    int Y0;
+    /// The end of a line, in 1/16 pixels.
+    int X1;
+    /// The end of a line, in 1/16 pixels.
+    int Y1;
+    /// The radius of a circle, the thickness of a line, in 1/16 pixels.
+    int Size;
     /// The text (UTF-8).
     string Text;
     /// The image.
@@ -431,6 +432,10 @@ struct Ui
 
     /// The drawing commands of the last frame begun with [Ui.BeginCommands] (the list is used again by the next one).
     List<UiCommand> Commands() { return _S[0].Commands; }
+
+    /// A hash of [Ui.Commands]: frames that draw the same have the same hash, so a renderer can skip a frame whose hash
+    /// is the one of the frame it shows (the mouse moved over nothing) without comparing the commands.
+    uint32 CommandsHash() { return _S[0].CommandsHash; }
 
     /// Ends the frame and gives the image it drew (the same image every frame, as long as the size stays).
     Image End()
@@ -619,12 +624,14 @@ struct _UiState
     Canvas Canvas;
     bool Record;                // draws with commands (Commands), not into Frame
     List<UiCommand> Commands;
+    uint32 CommandsHash;        // of the commands of the frame (Add)
     Rect Clip;                  // only this part is drawn into (and the mouse counts only there)
     Rect Bounds;                // the frame
     Font FixedFont;             // the font of a frame with commands
     Theme Theme;
     Font Font;
     double Scale;
+    int ScaleQ;                 // Scale in 1/256 (Px)
     UiInput In;
     bool InFrame;               // between Begin and End
     bool PrevMouseDown;
@@ -637,7 +644,8 @@ struct _UiState
     int Radius;
     int Line;        // the thickness of lines (1 at scale 1)
 
-    List<_UiLayout> Layouts;
+    _UiLayout[] Stack;          // the open groups; Stack[Depth - 1] is the innermost (changed in place, not copied)
+    int Depth;
     List<uint32> FocusOrder;    // the focusable widgets of this frame, in order
     Dictionary<uint32, int> PanelHeights;
     Dictionary<uint32, _UiScroll> Scrolls;
@@ -675,7 +683,7 @@ struct _UiState
             Font = Font.Fixed7x13(),
             Scale = 0.0,
             In = UiInput.Create(),
-            Layouts = List<_UiLayout>.Create(),
+            Stack = new _UiLayout[8],
             Commands = List<UiCommand>.Create(),
             FocusOrder = List<uint32>.Create(),
             PanelHeights = Dictionary<uint32, int>.Create(),
@@ -688,7 +696,9 @@ struct _UiState
     // pixels at scale 1 -> pixels of the frame
     int Px(int size)
     {
-        return (int)Math.Round((double)size * Scale);
+        // in 1/256 (ScaleQ, set with Scale): no floating point here, which is software on a 68000 or a 68020 without FPU
+        int scaled = size * ScaleQ;
+        return scaled >= 0 ? (scaled + 128) >> 8 : -((-scaled + 128) >> 8);
     }
 
     // ---- frames ----
@@ -719,6 +729,7 @@ struct _UiState
             Metrics(s, font);
         }
         Commands.Clear();
+        CommandsHash = 2166136261u;
         Frame = Image.Create(0, 0);
         Canvas = Canvas.Create(Frame);
         Start(input, Math.Max(1, width), Math.Max(1, height));
@@ -728,6 +739,7 @@ struct _UiState
     void Metrics(double scale, Font font)
     {
         Scale = scale;
+        ScaleQ = (int)Math.Round(scale * 256.0);
         Font = font;
         int lh = Font.LineHeight();
         Pad = Px(4);
@@ -762,14 +774,14 @@ struct _UiState
         WaitMs = -1;
         SubmittedId = 0u;
         RowCount = 0;
-        Layouts.Clear();
+        Depth = 0;
         var root = _UiLayout { Kind = 0, Area = Rect.Create(Margin, Margin, w - 2 * Margin, h - 2 * Margin), Scope = 0 };
         root.X = root.Area.X;
         root.Y = root.Area.Y;
         root.Right = root.X;
         root.Bottom = root.Y;
         root.SavedClip = Clip;
-        Layouts.Add(root);
+        Push(root);
     }
 
     void End()
@@ -777,7 +789,7 @@ struct _UiState
         if (!InFrame)
             return; // ended already (ui.End() and then Window.Show(ui))
         InFrame = false;
-        while (Layouts.Count() > 1)
+        while (Depth > 1)
             EndScope();
         // Tab moves the focus along the focusable widgets of this frame
         if (In.Pressed(Key.Tab) && FocusOrder.Count() > 0)
@@ -806,6 +818,21 @@ struct _UiState
     void Add(UiCommand command)
     {
         Commands.Add(command);
+        // what the command draws, into the hash of the frame (a window skips a frame with the hash of the one it shows)
+        uint32 h = CommandsHash;
+        h = unchecked((h ^ (uint32)command.Kind) * 16777619u);
+        h = unchecked((h ^ (uint32)command.Rect.X) * 16777619u);
+        h = unchecked((h ^ (uint32)command.Rect.Y) * 16777619u);
+        h = unchecked((h ^ (uint32)command.Rect.Width) * 16777619u);
+        h = unchecked((h ^ (uint32)command.Rect.Height) * 16777619u);
+        h = unchecked((h ^ (uint32)(command.Radius + command.Width * 4096)) * 16777619u);
+        h = unchecked((h ^ command.Color.ToArgb()) * 16777619u);
+        h = unchecked((h ^ (uint32)(command.X0 + command.X1 * 65599)) * 16777619u);
+        h = unchecked((h ^ (uint32)(command.Y0 + command.Y1 * 65599 + command.Size * 31)) * 16777619u);
+        var text = command.Text;
+        for (var i = 0; i < text.Length; i += 1)
+            h = unchecked((h ^ (uint32)text[i]) * 16777619u);
+        CommandsHash = h;
     }
 
     void ClearFrame(Color color)
@@ -850,26 +877,33 @@ struct _UiState
             Canvas.StrokeRoundRect(r, radius, width, color);
     }
 
-    void FillCircle(double cx, double cy, double radius, Color color)
+    // circles and lines in 1/16 pixels: no floating point in a frame (it is software on a 68000), except in Canvas
+    void FillCircle(int cx, int cy, int radius, Color color)
     {
         if (Record)
             Add(UiCommand { Kind = UiCommandKind.FillCircle, X0 = cx, Y0 = cy, Size = radius, Color = color });
         else
-            Canvas.FillCircle(cx, cy, radius, color);
+            Canvas.FillCircle((double)cx / 16.0, (double)cy / 16.0, (double)radius / 16.0, color);
     }
 
-    void DrawLine(double x0, double y0, double x1, double y1, double width, Color color)
+    void DrawLine(int x0, int y0, int x1, int y1, int width, Color color)
     {
         if (Record)
             Add(UiCommand { Kind = UiCommandKind.Line, X0 = x0, Y0 = y0, X1 = x1, Y1 = y1, Size = width, Color = color });
         else
-            Canvas.Line(x0, y0, x1, y1, width, color);
+            Canvas.Line((double)x0 / 16.0, (double)y0 / 16.0, (double)x1 / 16.0, (double)y1 / 16.0, (double)width / 16.0, color);
     }
 
     void DrawText(int x, int y, string text, Color color)
     {
+        DrawTextOf(x, y, text, Record ? Font.Measure(text) : 0, color);
+    }
+
+    // with the width of the text, when it is known already
+    void DrawTextOf(int x, int y, string text, int width, Color color)
+    {
         if (Record)
-            Add(UiCommand { Kind = UiCommandKind.Text, Rect = Rect.Create(x, y, Font.Measure(text), Font.LineHeight()), Text = text, Color = color });
+            Add(UiCommand { Kind = UiCommandKind.Text, Rect = Rect.Create(x, y, width, Font.LineHeight()), Text = text, Color = color });
         else
             Canvas.Text(Font, x, y, text, color);
     }
@@ -886,7 +920,7 @@ struct _UiState
 
     uint32 Seed()
     {
-        return Layouts.Count() > 0 ? Layouts.Get(Layouts.Count() - 1).Id : 0u;
+        return Depth > 0 ? Stack[Depth - 1].Id : 0u;
     }
 
     uint32 IdOf(string label)
@@ -899,59 +933,69 @@ struct _UiState
 
     // ---- layout ----
 
-    _UiLayout Top() { return Layouts.Get(Layouts.Count() - 1); }
+    _UiLayout Top() { return Stack[Depth - 1]; }
 
-    void SetTop(_UiLayout layout) { Layouts.Set(Layouts.Count() - 1, layout); }
+    void Push(_UiLayout layout)
+    {
+        if (Depth == Stack.Length)
+        {
+            var bigger = new _UiLayout[Stack.Length * 2];
+            for (var i = 0; i < Depth; i += 1)
+                bigger[i] = Stack[i];
+            Stack = bigger;
+        }
+        Stack[Depth] = layout;
+        Depth += 1;
+    }
 
     // where the next widget goes, and how wide it may be
     Rect Slot()
     {
-        var l = Top();
-        switch (l.Kind)
+        int t = Depth - 1;
+        switch (Stack[t].Kind)
         {
         case 1:
-            return Rect.Create(l.X, l.Y, Math.Max(0, l.Area.X + l.Area.Width - l.X), 0);
+            return Rect.Create(Stack[t].X, Stack[t].Y, Math.Max(0, Stack[t].Area.X + Stack[t].Area.Width - Stack[t].X), 0);
         case 2:
         {
-            int cell = (l.Area.Width - (l.Columns - 1) * Spacing) / l.Columns;
-            return Rect.Create(l.Area.X + l.Index * (cell + Spacing), l.Y, cell, 0);
+            int cell = (Stack[t].Area.Width - (Stack[t].Columns - 1) * Spacing) / Stack[t].Columns;
+            return Rect.Create(Stack[t].Area.X + Stack[t].Index * (cell + Spacing), Stack[t].Y, cell, 0);
         }
         default:
-            return Rect.Create(l.X, l.Y, l.Area.Width, 0);
+            return Rect.Create(Stack[t].X, Stack[t].Y, Stack[t].Area.Width, 0);
         }
     }
 
     // the widget at the slot took width x height: move on
     void Commit(int width, int height)
     {
-        var l = Top();
-        switch (l.Kind)
+        int t = Depth - 1;
+        switch (Stack[t].Kind)
         {
         case 1:
-            l.LineHeight = Math.Max(l.LineHeight, height);
-            l.Right = Math.Max(l.Right, l.X + width);
-            l.X += width + Spacing;
-            l.Bottom = Math.Max(l.Bottom, l.Y + l.LineHeight);
+            Stack[t].LineHeight = Math.Max(Stack[t].LineHeight, height);
+            Stack[t].Right = Math.Max(Stack[t].Right, Stack[t].X + width);
+            Stack[t].X += width + Spacing;
+            Stack[t].Bottom = Math.Max(Stack[t].Bottom, Stack[t].Y + Stack[t].LineHeight);
             break;
         case 2:
-            l.LineHeight = Math.Max(l.LineHeight, height);
-            l.Bottom = Math.Max(l.Bottom, l.Y + l.LineHeight);
-            l.Right = l.Area.X + l.Area.Width;
-            l.Index += 1;
-            if (l.Index >= l.Columns)
+            Stack[t].LineHeight = Math.Max(Stack[t].LineHeight, height);
+            Stack[t].Bottom = Math.Max(Stack[t].Bottom, Stack[t].Y + Stack[t].LineHeight);
+            Stack[t].Right = Stack[t].Area.X + Stack[t].Area.Width;
+            Stack[t].Index += 1;
+            if (Stack[t].Index >= Stack[t].Columns)
             {
-                l.Index = 0;
-                l.Y += l.LineHeight + Spacing;
-                l.LineHeight = 0;
+                Stack[t].Index = 0;
+                Stack[t].Y += Stack[t].LineHeight + Spacing;
+                Stack[t].LineHeight = 0;
             }
             break;
         default:
-            l.Right = Math.Max(l.Right, l.X + width);
-            l.Bottom = Math.Max(l.Bottom, l.Y + height);
-            l.Y += height + Spacing;
+            Stack[t].Right = Math.Max(Stack[t].Right, Stack[t].X + width);
+            Stack[t].Bottom = Math.Max(Stack[t].Bottom, Stack[t].Y + height);
+            Stack[t].Y += height + Spacing;
             break;
         }
-        SetTop(l);
     }
 
     // a widget of a natural width (fill: as wide as there is room)
@@ -959,24 +1003,23 @@ struct _UiState
     {
         var slot = Slot();
         int w = fill ? slot.Width : Math.Min(width, Math.Max(slot.Width, 0));
-        var l = Top();
-        if (l.Kind == 1)
+        int t = Depth - 1;
+        if (Stack[t].Kind == 1)
         {
             // in a row, a widget that fills gets what the others left in the last frame
             if (fill)
             {
-                w = l.FillWidth > 0 ? Math.Min(l.FillWidth, Math.Max(slot.Width, 0)) : slot.Width;
+                w = Stack[t].FillWidth > 0 ? Math.Min(Stack[t].FillWidth, Math.Max(slot.Width, 0)) : slot.Width;
                 if (w <= 0)
                     w = width;
-                l.Fills += 1;
+                Stack[t].Fills += 1;
             }
             else
             {
                 w = width; // its own width: what is too wide goes past the end of the line
-                l.Fixed += w;
+                Stack[t].Fixed += w;
             }
-            l.Items += 1;
-            SetTop(l);
+            Stack[t].Items += 1;
         }
         var r = Rect.Create(slot.X, slot.Y, Math.Max(0, w), height);
         Commit(r.Width, r.Height);
@@ -1001,7 +1044,7 @@ struct _UiState
             if (memo.Fills > 0)
                 l.FillWidth = Math.Max(Px(20), (slot.Width - memo.Fixed - Spacing * (memo.Items - 1)) / memo.Fills);
         }
-        Layouts.Add(l);
+        Push(l);
     }
 
     void BeginId(string value)
@@ -1012,7 +1055,7 @@ struct _UiState
         l.Scope = 3;
         l.Id = id;
         l.SavedClip = Clip;
-        Layouts.Add(l);
+        Push(l);
     }
 
     void BeginPanel(string title)
@@ -1034,7 +1077,7 @@ struct _UiState
         l.Right = l.X;
         l.Bottom = top;
         l.SavedClip = Clip;
-        Layouts.Add(l);
+        Push(l);
     }
 
     void BeginScroll(string name, int height)
@@ -1053,16 +1096,16 @@ struct _UiState
         l.Bottom = top;
         l.SavedClip = Clip;
         l.ScrollOffset = state.Offset;
-        Layouts.Add(l);
+        Push(l);
         SetClip(outer.Shrink(Line).Intersect(l.SavedClip));
     }
 
     void EndScope()
     {
-        if (Layouts.Count() <= 1)
+        if (Depth <= 1)
             return; // more ends than beginnings
-        var l = Top();
-        Layouts.RemoveAt(Layouts.Count() - 1);
+        Depth -= 1;
+        var l = Stack[Depth];
         SetClip(l.SavedClip);
         switch (l.Scope)
         {
@@ -1102,17 +1145,16 @@ struct _UiState
         }
         if (l.Scope == 3)
         {
-            var parent = Top();
-            parent.X = l.X;
-            parent.Y = l.Y;
-            parent.LineHeight = l.LineHeight;
-            parent.Index = l.Index;
-            parent.Right = l.Right;
-            parent.Bottom = l.Bottom;
-            parent.Fixed = l.Fixed;
-            parent.Fills = l.Fills;
-            parent.Items = l.Items;
-            SetTop(parent);
+            int t = Depth - 1;
+            Stack[t].X = l.X;
+            Stack[t].Y = l.Y;
+            Stack[t].LineHeight = l.LineHeight;
+            Stack[t].Index = l.Index;
+            Stack[t].Right = l.Right;
+            Stack[t].Bottom = l.Bottom;
+            Stack[t].Fixed = l.Fixed;
+            Stack[t].Fills = l.Fills;
+            Stack[t].Items = l.Items;
         }
     }
 
@@ -1216,8 +1258,9 @@ struct _UiState
 
     void Label(string text, bool muted)
     {
-        var r = Place(Font.Measure(text), ControlHeight, false);
-        DrawText(r.X, TextY(r), text, muted ? Theme.TextMuted : Theme.Text);
+        int width = Font.Measure(text);
+        var r = Place(width, ControlHeight, false);
+        DrawTextOf(r.X, TextY(r), text, width, muted ? Theme.TextMuted : Theme.Text);
     }
 
     void Paragraph(string text)
@@ -1294,7 +1337,7 @@ struct _UiState
         if (Focus == id)
             FocusRing(r, Radius);
         int tw = Font.Measure(shown);
-        DrawText(r.X + (r.Width - tw) / 2, TextY(r), shown, Theme.Text);
+        DrawTextOf(r.X + (r.Width - tw) / 2, TextY(r), shown, tw, Theme.Text);
         return clicked;
     }
 
@@ -1315,10 +1358,12 @@ struct _UiState
         if (value)
         {
             FillRoundRect(b, Radius, Theme.Accent);
-            double s = (double)box;
-            double w = Math.Max(1.5, 2.0 * Scale);
-            DrawLine((double)b.X + s * 0.25, (double)b.Y + s * 0.52, (double)b.X + s * 0.43, (double)b.Y + s * 0.70, w, Theme.AccentText);
-            DrawLine((double)b.X + s * 0.43, (double)b.Y + s * 0.70, (double)b.X + s * 0.76, (double)b.Y + s * 0.32, w, Theme.AccentText);
+            // the check mark, in 1/16 pixels: from 25 %, 52 % of the box down to 43 %, 70 % and up to 76 %, 32 %
+            int x = b.X * 16;
+            int y = b.Y * 16;
+            int w = Math.Max(24, (32 * ScaleQ + 128) >> 8); // 2 pixels at the scale, at least 1.5
+            DrawLine(x + box * 4, y + box * 832 / 100, x + box * 688 / 100, y + box * 1120 / 100, w, Theme.AccentText);
+            DrawLine(x + box * 688 / 100, y + box * 1120 / 100, x + box * 1216 / 100, y + box * 512 / 100, w, Theme.AccentText);
         }
         else
         {
@@ -1344,18 +1389,18 @@ struct _UiState
             value = option;
         if (hot)
             WantCursor = Cursor.Hand;
-        double cx = (double)r.X + (double)box / 2.0;
-        double cy = (double)r.Y + (double)r.Height / 2.0;
-        double radius = (double)box / 2.0;
+        int cx = r.X * 16 + box * 8; // in 1/16 pixels
+        int cy = r.Y * 16 + r.Height * 8;
+        int radius = box * 8;
         if (value == option)
         {
             FillCircle(cx, cy, radius, Theme.Accent);
-            FillCircle(cx, cy, radius * 0.4, Theme.AccentText);
+            FillCircle(cx, cy, radius * 2 / 5, Theme.AccentText);
         }
         else
         {
             FillCircle(cx, cy, radius, hot ? Theme.TextMuted : Theme.Border);
-            FillCircle(cx, cy, radius - (double)Line, hot ? Theme.ControlHover : Theme.Input);
+            FillCircle(cx, cy, radius - Line * 16, hot ? Theme.ControlHover : Theme.Input);
         }
         if (Focus == id)
             FocusRing(Rect.Create(r.X, r.Y + (r.Height - box) / 2, box, box), box / 2);
@@ -1400,12 +1445,12 @@ struct _UiState
         int trackHeight = Math.Max(2, Px(4));
         var track = Rect.Create(left, cy - trackHeight / 2, width, trackHeight);
         FillRoundRect(track, trackHeight / 2, Theme.Border);
-        int x = left + (int)Math.Round(t * (double)width);
+        int x = left + (int)(t * (double)width + 0.5);
         FillRoundRect(Rect.Create(left, track.Y, x - left, trackHeight), trackHeight / 2, Theme.Accent);
-        double radius = (double)thumb;
-        FillCircle((double)x, (double)cy, radius, Theme.Border);
-        FillCircle((double)x, (double)cy, radius - (double)Line, Theme.Control);
-        FillCircle((double)x, (double)cy, radius * (Active == id ? 0.45 : hot ? 0.6 : 0.5), Theme.Accent);
+        int radius = thumb * 16; // in 1/16 pixels
+        FillCircle(x * 16, cy * 16, radius, Theme.Border);
+        FillCircle(x * 16, cy * 16, radius - Line * 16, Theme.Control);
+        FillCircle(x * 16, cy * 16, Active == id ? radius * 9 / 20 : hot ? radius * 3 / 5 : radius / 2, Theme.Accent);
         if (Focus == id)
             FocusRing(Rect.Create(x - thumb, cy - thumb, 2 * thumb, 2 * thumb), thumb);
         return value != old;
@@ -1417,7 +1462,7 @@ struct _UiState
         var r = Place(Px(160), ControlHeight, true);
         var track = Rect.Create(r.X, r.Y + (r.Height - height) / 2, r.Width, height);
         FillRoundRect(track, height / 2, Theme.Border);
-        int filled = (int)Math.Round(Math.Clamp(fraction, 0.0, 1.0) * (double)track.Width);
+        int filled = (int)(Math.Clamp(fraction, 0.0, 1.0) * (double)track.Width + 0.5);
         if (filled > 0)
             FillRoundRect(Rect.Create(track.X, track.Y, filled, height), height / 2, Theme.Accent);
     }
@@ -1523,7 +1568,13 @@ struct _UiState
             FillRect(Rect.Create(inner.X - scroll + a * cw, ty, (b - a) * cw, Font.LineHeight()), Theme.Selection);
         }
         DrawText(inner.X - scroll, ty, text, Theme.Text);
-        if (Focus == id)
+        if (Focus == id && In.Time == 0.0)
+        {
+            // no clock (the window does not wake the program to blink): the cursor stays on
+            int x = inner.X - scroll + _CountChars(text.Substring(0, Caret)) * cw;
+            FillRect(Rect.Create(x, ty - Px(1), Line, Font.LineHeight() + Px(2)), Theme.Text);
+        }
+        else if (Focus == id)
         {
             double since = In.Time - BlinkStart;
             double phase = since - Math.Floor(since / 1.06) * 1.06;

@@ -73,6 +73,7 @@ const ReadOnlySlice<string> AmigaStubs = [
     "__gfx_FreeBitMap|__cs_GfxBase|-924|a0",
     "__gfx_ReleasePen|__cs_GfxBase|-948|a0,d0",
     "__intuition_CloseWindow|__cs_IntuitionBase|-72|a0",
+    "__intuition_ModifyIDCMP|__cs_IntuitionBase|-150|a0,d0",
     "__intuition_SetWindowTitles|__cs_IntuitionBase|-276|a0,a1,a2",
     "__intuition_OpenWindowTagList|__cs_IntuitionBase|-606|a0,a1"];
 
