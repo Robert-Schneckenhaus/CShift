@@ -1,5 +1,6 @@
 // Standard library: paths with characters outside ASCII (UTF-8), also on Windows (where the C runtime and the Windows
 // functions would otherwise read them in the ANSI code page). The program runs in a temporary directory.
+// skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
 // Main returns the number of failed checks.
 // expect-exit: 0
 
