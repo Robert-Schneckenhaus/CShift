@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.33] - 2026-10-12
+
 ### Standard library
 - `System.Ui` on AmigaOS: a frame takes some 0.4 s on an A1200 instead of 6 s. The Ui uses no floating point in a frame
   any more (it is software without an FPU: milliseconds per operation): sizes in fixed point, circles and lines in
@@ -13,6 +15,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   the one it shows (`Ui.CommandsHash`), follows the mouse only while its button is held, and makes a quick click one
   frame. **Changed:** the coordinates of `UiCommand` (`X0`, `Y0`, `X1`, `Y1`, `Size`) are `int` in 1/16 pixels (were
   `double` in 0.32).
+
+### Documentation
+- A page for the `cshiftc` command ([docs/cli.md](docs/cli.md)): every command (`new`, `build`, `run`, `publish`,
+  `serve`, `check`, `query`, `doc`), the options and the environment variables. `cshiftc --help` names the wasm
+  backend and `wasm32-wasi`.
+- The website links to the source code on GitHub (the start page and the sidebar); outdated parts of the README and
+  the guides were corrected.
 
 ### Tools
 - Building the compiler from source starts from cshiftc 0.32 (`selfhost/stage0.txt`), and its own sources end in
