@@ -17,8 +17,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 ### Fixed
 - Windows: `Main(string[] args)` gets the arguments as UTF-8, so `JAN_NOVÁK` or `日本` arrive as typed (they were in the
   ANSI code page, characters outside it became `?`). File and directory names outside ASCII work as well: the C
-  runtime reads them as UTF-8 (`fopen`, `remove`, `mkdir`, directory listings, `system`), and the file times,
-  `File.Move`/`Directory.Move` and `Directory.Delete` call the UTF-16 functions of Windows.
+  runtime reads them as UTF-8 (`fopen`, `remove`, `system`), and `Directory.Exists`/`Create`/`GetEntries`, the file
+  times, `File.Move`/`Directory.Move` and `Directory.Delete` call the UTF-16 functions of Windows (MinGW-w64's
+  `opendir` read the path in the ANSI code page).
 
 ### Tools
 - Building the compiler from source starts from cshiftc 0.32 (`selfhost/stage0.txt`), and its own sources end in
