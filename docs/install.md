@@ -42,7 +42,10 @@ instead (see below) and install:
 | Arch | `sudo pacman -S clang gcc` |
 | openSUSE | `sudo zypper install clang clang-devel gcc glibc-devel` |
 
-(`clang-devel` and Arch's `clang` contain libclang, needed only for `using X from "header.h"`.) Distributions
+(`clang-devel` and Arch's `clang` contain libclang, needed only for `using X from "header.h"`.)
+
+Programs with a window of [System.Ui](ui.md) need libX11 when they run (`libx11-6` on Debian and Ubuntu,
+`libX11` on Fedora, `libx11` on Arch); every desktop has it. Programs without a window do not. Distributions
 with musl instead of glibc (Alpine) are not supported.
 
 ### Finding out what is missing

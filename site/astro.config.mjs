@@ -29,8 +29,10 @@ export default defineConfig({
                     items: [
                         { label: "Overview", link: "/docs/" },
                         { label: "Installation", link: "/docs/install/" },
+                        { label: "The cshiftc command", link: "/docs/cli/" },
                         { label: "Playground", link: "/playground/" },
                         { label: "Games in the browser", link: "/games/" },
+                        { label: "Source code on GitHub", link: "https://github.com/Robert-Schneckenhaus/CShift" },
                     ],
                 },
                 { label: "Language guide", items: [{ autogenerate: { directory: "language" } }] },

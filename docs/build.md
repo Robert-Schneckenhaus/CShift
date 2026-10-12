@@ -65,6 +65,8 @@ cshiftc serve [project]        the page on http://localhost:8080/, built again w
 cshiftc [options] a.cshift b.cshift   single files without a project (as before)
 ```
 
+Every command and option is described in [the cshiftc command](cli.md).
+
 Source files end in `.cshift`. `.csh`, the extension until 0.31, is still read (in projects, folders and on the command
 line), so older projects build unchanged.
 
