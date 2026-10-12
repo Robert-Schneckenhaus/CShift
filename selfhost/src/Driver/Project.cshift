@@ -155,7 +155,7 @@ string PlatformOf(string target)
     {
         if (Process.IsWindows())
             return "windows";
-        return File.Exists("/System/Library/CoreServices/SystemVersion.plist") ? "macos" : "linux";
+        return Process.IsMacOS() ? "macos" : "linux";
     }
     if (lower.Contains("windows") || lower.Contains("mingw"))
         return "windows";

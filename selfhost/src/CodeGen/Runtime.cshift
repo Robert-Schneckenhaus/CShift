@@ -67,7 +67,7 @@ string UsableSizeFunction(bool windows, string triple)
         return "_msize";
     string lower = triple.ToLower();
     bool apple = lower.Contains("apple") || lower.Contains("darwin") || lower.Contains("macos");
-    if (apple || (triple.Length == 0 && File.Exists("/System/Library/CoreServices/SystemVersion.plist")))
+    if (apple || (triple.Length == 0 && Process.IsMacOS()))
         return "malloc_size";
     return "malloc_usable_size";
 }
