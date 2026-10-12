@@ -7,10 +7,11 @@ extern "C" void GetSystemTimePreciseAsFileTime(void* time);
 extern "C" int QueryPerformanceCounter(int64* count);
 extern "C" int QueryPerformanceFrequency(int64* frequency);
 extern "C" void* _localtime64(int64* time);
-extern "C" int GetFileAttributesExA(char* path, int level, void* data);
-extern "C" int MoveFileExA(char* from, char* to, uint32 flags);
-extern "C" int RemoveDirectoryA(char* path);
-extern "C" void* CreateFileA(char* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int GetFileAttributesExW(uint16* path, int level, void* data);
+extern "C" int MoveFileExW(uint16* from, uint16* to, uint32 flags);
+extern "C" int RemoveDirectoryW(uint16* path);
+extern "C" void* CreateFileW(uint16* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int MultiByteToWideChar(uint32 codePage, uint32 flags, char* text, int length, uint16* wide, int wideLength);
 extern "C" int SetFileTime(void* file, void* creation, void* access, void* write);
 extern "C" int CloseHandle(void* handle);
 extern "C" int _fseeki64(void* file, int64 offset, int origin);
@@ -18,6 +19,21 @@ extern "C" int64 _ftelli64(void* file);
 extern "C" int fflush(void* file);
 extern "C" int _read(int fd, void* buffer, uint32 count);
 extern "C" void Sleep(uint32 milliseconds);
+
+// A path (UTF-8) as a NUL-terminated UTF-16 string for the ...W functions of Windows: the ...A ones would read it in the
+// ANSI code page. (The C runtime reads the paths of fopen, remove, mkdir, ... as UTF-8: the runtime of a program sets
+// LC_CTYPE to ".UTF-8" on Windows.)
+uint16[] _OsWide(StringSlice text)
+{
+    unsafe
+    {
+        int length = MultiByteToWideChar(65001u, 0u, text.CStr(), -1, null, 0);
+        var wide = new uint16[Math.Max(1, length)];
+        if (length > 0)
+            MultiByteToWideChar(65001u, 0u, text.CStr(), -1, &wide[0], length);
+        return wide;
+    }
+}
 
 // 100 ns units from 1601-01-01 (FILETIME) to 1970-01-01
 const int64 _FileTimeEpoch = 116444736000000000;
@@ -72,7 +88,8 @@ struct _Os
         {
             // WIN32_FILE_ATTRIBUTE_DATA: attributes, creation, last access, last write (FILETIME: low, high)
             var data = new uint32[9];
-            if (GetFileAttributesExA(path.CStr(), 0, &data[0]) == 0)
+            var wide = _OsWide(path);
+            if (GetFileAttributesExW(&wide[0], 0, &data[0]) == 0)
                 return null;
             int64 fileTime = (int64)data[5] | ((int64)data[6] << 32);
             return fileTime - _FileTimeEpoch;
@@ -85,7 +102,8 @@ struct _Os
         unsafe
         {
             // FILE_WRITE_ATTRIBUTES, all sharing, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS (for directories)
-            void* file = CreateFileA(path.CStr(), 0x100u, 7u, null, 3u, 0x02000000u, null);
+            var wide = _OsWide(path);
+            void* file = CreateFileW(&wide[0], 0x100u, 7u, null, 3u, 0x02000000u, null);
             if (file == (void*)(nint)(-1))
                 return false;
             int64 fileTime = ticks + _FileTimeEpoch;
@@ -100,7 +118,9 @@ struct _Os
     {
         unsafe
         {
-            return MoveFileExA(from.CStr(), to.CStr(), 3u) != 0; // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
+            var wideFrom = _OsWide(from);
+            var wideTo = _OsWide(to);
+            return MoveFileExW(&wideFrom[0], &wideTo[0], 3u) != 0; // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
         }
     }
 
@@ -109,7 +129,8 @@ struct _Os
     {
         unsafe
         {
-            return RemoveDirectoryA(path.CStr()) != 0;
+            var wide = _OsWide(path);
+            return RemoveDirectoryW(&wide[0]) != 0;
         }
     }
 

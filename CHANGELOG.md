@@ -14,6 +14,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   frame. **Changed:** the coordinates of `UiCommand` (`X0`, `Y0`, `X1`, `Y1`, `Size`) are `int` in 1/16 pixels (were
   `double` in 0.32).
 
+### Fixed
+- Windows: `Main(string[] args)` gets the arguments as UTF-8, so `JAN_NOVÁK` or `日本` arrive as typed (they were in the
+  ANSI code page, characters outside it became `?`). File and directory names outside ASCII work as well: the C
+  runtime reads them as UTF-8 (`fopen`, `remove`, `mkdir`, directory listings, `system`), and the file times,
+  `File.Move`/`Directory.Move` and `Directory.Delete` call the UTF-16 functions of Windows.
+
 ### Tools
 - Building the compiler from source starts from cshiftc 0.32 (`selfhost/stage0.txt`), and its own sources end in
   `.cshift` as well.

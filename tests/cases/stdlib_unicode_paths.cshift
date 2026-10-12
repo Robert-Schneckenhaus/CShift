@@ -1,0 +1,36 @@
+// Standard library: paths with characters outside ASCII (UTF-8), also on Windows (where the C runtime and the Windows
+// functions would otherwise read them in the ANSI code page). The program runs in a temporary directory.
+// Main returns the number of failed checks.
+// expect-exit: 0
+
+using System;
+
+int Check(string name, bool ok)
+{
+    if (ok)
+        return 0;
+    Console.WriteLine("FAIL: " + name);
+    return 1;
+}
+
+int Main()
+{
+    int f = 0;
+    // Latin-1 (in the ANSI code page of a western Windows), Czech (not in it) and Japanese
+    string dir = "ünïcödé_Novák_日本";
+    string file = dir + "/Grüße_ž.txt";
+    f += Check("create directory", Directory.Create(dir) && Directory.Exists(dir));
+    f += Check("write", !(File.WriteAllText(file, "Ž") is error));
+    f += Check("exists", File.Exists(file));
+    f += Check("read", File.ReadAllText(file) is string text && text == "Ž");
+    var entries = Directory.GetEntries(dir);
+    f += Check("entries", entries.Count() == 1 && entries.Get(0) == "Grüße_ž.txt");
+    f += Check("write time", File.GetLastWriteTimeUtc(file) is DateTime);
+    f += Check("set write time", !(File.SetLastWriteTimeUtc(file, DateTime.FromUnixSeconds(1000000000)) is error));
+    string moved = dir + "/Čeština.txt";
+    f += Check("move", !(File.Move(file, moved) is error) && File.Exists(moved) && !File.Exists(file));
+    f += Check("delete file", !(File.Delete(moved) is error) && !File.Exists(moved));
+    f += Check("move directory", !(Directory.Move(dir, "Ωmega") is error) && Directory.Exists("Ωmega"));
+    f += Check("delete directory", !(Directory.Delete("Ωmega") is error) && !Directory.Exists("Ωmega"));
+    return f;
+}

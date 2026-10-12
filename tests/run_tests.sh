@@ -232,9 +232,9 @@ else
     done
 
     # cshiftc run <project> -- <arguments>, and file.cshift --run -- <arguments>: they reach the program unchanged (spaces,
-    # quotes, backslashes, an empty one, things that look like options)
-    want=$'6\n[one]\n[two words]\n[a"b]\n[back\slash\]\n[]\n[-O0]'
-    "$COMPILER" run "$DIR/projects/args" $OPT "${CC_ARGS[@]}" -o "$TMP/args_run" -- one "two words" 'a"b' 'back\slash\' "" -O0 > "$TMP/args.out" 2> "$TMP/args.err"
+    # quotes, backslashes, an empty one, things that look like options, characters outside ASCII: as UTF-8, also on Windows)
+    want=$'8\n[one]\n[two words]\n[a"b]\n[back\slash\]\n[]\n[-O0]\n[JAN_NOVÁK]\n[Grüße 日本]'
+    "$COMPILER" run "$DIR/projects/args" $OPT "${CC_ARGS[@]}" -o "$TMP/args_run" -- one "two words" 'a"b' 'back\slash\' "" -O0 "JAN_NOVÁK" "Grüße 日本" > "$TMP/args.out" 2> "$TMP/args.err"
     if [ "$(tr -d '\r' < "$TMP/args.out")" != "$want" ]; then
         report_fail "cshiftc run -- arguments" "got: $(tr -d '\r' < "$TMP/args.out" | tr '\n' '|') $(head -n 2 "$TMP/args.err" | tr '\n' ' ')"
     elif [ "$("$COMPILER" "$DIR/projects/args/src/main.cshift" $OPT "${CC_ARGS[@]}" -o "$TMP/args_file" --run -- x 2> /dev/null | tr -d '\r' | tr '\n' '|')" != "1|[x]|" ]; then
