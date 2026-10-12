@@ -1,17 +1,21 @@
 // Standard library: paths with characters outside ASCII (UTF-8), also on Windows (where the C runtime and the Windows
 // functions would otherwise read them in the ANSI code page). The program runs in a temporary directory.
 // skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
-// Main returns the number of failed checks.
+// Main returns the failed checks as bits (bit n: the nth check).
 // expect-exit: 0
 
 using System;
 
+int _bit = 1;
+
 int Check(string name, bool ok)
 {
+    int bit = _bit;
+    _bit *= 2;
     if (ok)
         return 0;
     Console.WriteLine("FAIL: " + name);
-    return 1;
+    return bit;
 }
 
 int Main()
