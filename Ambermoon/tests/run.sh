@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests of the Ambermoon tools: their results for synthetic data (made by tools/make_data.py) must be the ones of the
-# original tools (expected.txt: MD5 sums of the console output and of the files written).
+# original tools (expected.txt: MD5 sums of the console output and of the files written), or the ones in
+# expected-port.txt where the port differs on purpose (the packed bytes of the LOB compressors).
 #
 #   Ambermoon/tests/run.sh [path/to/cshiftc]       builds the tools and compares (default compiler: $CSHIFTC,
 #                                                   build/stage2/cshiftc, selfhost/bin/cshc)
@@ -199,8 +200,14 @@ if [ $RECORD -eq 1 ]; then
 fi
 
 pass=0
+port=0
 fail=0
 while read -r kind name rest; do
+    want="$(grep -F "$kind $name " "$DIR/expected-port.txt" | head -n 1)"
+    if [ -n "$want" ] && [ "$want" = "$kind $name $rest" ]; then
+        port=$((port + 1))
+        continue
+    fi
     want="$(grep -F "$kind $name " "$DIR/expected.txt" | head -n 1)"
     if [ "$want" = "$kind $name $rest" ]; then
         pass=$((pass + 1))
@@ -211,5 +218,5 @@ while read -r kind name rest; do
         echo "      got:      $kind $name $rest"
     fi
 done < "$RESULTS"
-echo "ok    Ambermoon tools ($pass of $((pass + fail)) results like the original)"
+echo "ok    Ambermoon tools ($pass of $((pass + port + fail)) results like the original, $port like expected-port.txt)"
 [ $fail -eq 0 ]

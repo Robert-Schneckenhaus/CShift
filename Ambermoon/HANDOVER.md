@@ -17,7 +17,7 @@ Libraries: `Ambermoon.Common`, `Ambermoon.Data.Common`, `Ambermoon.Data.Legacy`,
 
 | Tool | Checked against the original (details in README.md) |
 |---|---|
-| AmbermoonPack | all files of the game, 491 packing runs, byte for byte; 60-300x faster |
+| AmbermoonPack | all files of the game, 491 packing runs, byte for byte (since the hash chains of the LOB compressors: the same or a smaller size, the same data unpacked); 400-2000x faster |
 | AmbermoonEventEditor | all listings, 1200 random editing sessions |
 | HexValueChanger | sessions with all commands |
 | AmbermoonIntroTextPacker, AmbermoonExtroTextPacker, AmbermoonExtroIntroTextPackCreator | all translations, all text encodings |

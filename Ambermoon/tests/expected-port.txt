@@ -1,0 +1,7 @@
+# Results of the port that differ from the original tools on purpose (Ambermoon/tests/run.sh takes them before
+# expected.txt). The LOB compressors find their matches with hash chains instead of the trie of the original: the
+# same lengths, sometimes a nearer offset, so the packed files have the same size but other bytes. The unpack results
+# of the same cases are still the original ones.
+pack amnp-c0 1f4107bd05b47f265ef7f70e54494b3b 3d6cae3c8f19e1168d9be0d4c8894576
+pack vol1 db773afb00a8fd6ccd84b13151de7831 4d582f8cf94deee6d765aa9fd48b84fb
+pack jh-lob db773afb00a8fd6ccd84b13151de7831 285142baa442f9202e51fa6c7909003f

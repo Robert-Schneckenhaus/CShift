@@ -87,8 +87,9 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
 
 * **AmbermoonPack**: UNPACK of all files of the game, and packing of all 65 unpacked containers and files with combinations of the
   compressions (`-c0` to `-c5`), the dictionary compressions (`-d1` to `-d4`) and all types: 491 runs, the files and
-  the console output (`-v` included) are the same byte for byte as those of the original (built from the sources of
-  Ambermoon.net).
+  the console output (`-v` included) were the same byte for byte as those of the original (built from the sources of
+  Ambermoon.net). Since then the LOB compressors find their matches with hash chains (see below): the packed files
+  have the same or a smaller size and unpack to the same data, but some bytes differ.
 * **AmbermoonEventEditor**: the listings of all maps, NPCs and party members, and 1200 random editing sessions (all
   commands, random answers, saved at the end): the output and the saved files are the same as those of the original
   (with the crashes of the original that are fixed here fixed the same way in it, see below).
@@ -136,18 +137,23 @@ AmbermoonNameExtract i Amberfiles names              # and back into the game da
 ## Different from the original
 
 The output is the same (the texts of .NET included: enum names, `[Flags]` combinations, the rounding of `0.00`
-formats). What is different:
+formats), except for the bytes of LOB-packed data. What is different:
 
-**Faster.** The match trie of the LOB compressions is the same algorithm, but stored in arrays and a hash table
-instead of objects and sorted dictionaries, and without the copy of all nodes at every byte that the original makes
-when it removes old matches. Packing is 60 to 300 times faster:
+**Faster.** The LOB compressions find their matches with hash chains (`MatchChains.csh`) instead of the match trie
+of the original, which copies all nodes at every byte when it removes old matches. The chains find matches of the
+same length, sometimes a nearer one of that length (the trie keeps the oldest one in some cases), so a packed file
+has the same or a smaller size and unpacks to the same data, but some bytes differ (`tests/expected-port.txt`).
+Packing is 400 to 2000 times faster than the original:
 
 | | original | CShift |
 |---|---|---|
-| `AMNP 1Map_data.amb -c0` | 134 s | 0.44 s |
-| `AMNP Monster_gfx.amb -c0` | 55 s | 0.16 s |
-| `AMNP Music.amb -c2` | 11.7 s | 0.19 s |
-| `AMNP 2Wall3D.amb -c1` | 11.1 s | 0.13 s |
+| `AMNP 1Map_data.amb -c0` | 134 s | 0.06 s |
+| `AMNP Monster_gfx.amb -c0` | 55 s | 0.05 s |
+| `AMNP Music.amb -c2` | 11.7 s | 0.03 s |
+| `AMNP 2Wall3D.amb -c1` | 11.1 s | 0.03 s |
+
+On a 68000 (vamos) the hash chains need 16 to 36% of the cycles of a trie stored in arrays (the version
+before them) for 12 containers of the game with `-c0` to `-c5`, with 0.06% smaller output in total.
 | `UNPACK 1Map_data.amb` | 0.11 s | 0.02 s |
 
 **Fixed failures of the original** (it ends with an exception in these cases):

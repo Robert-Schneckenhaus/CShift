@@ -23,15 +23,15 @@ struct AdvancedLob
             Data = data,
             Out = ByteList.Create(data.Length),
             Literals = ByteList.Create(127),
-            Trie = MatchTrie.Create(_AdvancedLobMaxLargeMatchOffset),
+            Matches = MatchChains.Create(_AdvancedLobMaxLargeMatchOffset, 1, _AdvancedLobMinMatchLength),
             LargeMatchReserveIndex = -1,
             Failure = ""
         };
         c.Run();
         if (c.Failure.Length > 0)
             return error(c.Failure);
-        if (c.Trie.Error().Length > 0)
-            return error(c.Trie.Error());
+        if (c.Matches.Error().Length > 0)
+            return error(c.Matches.Error());
         return c.Out.ToArray();
     }
 
@@ -138,7 +138,7 @@ struct _AdvancedLobCompressor
 {
     uint8[] Data;
     ByteList Out;
-    MatchTrie Trie;
+    MatchChains Matches;
     ByteList Literals;
     int RleCount;
     uint8 RleLiteral;
@@ -153,14 +153,14 @@ struct _AdvancedLobCompressor
 
         if (_CheckRle())
         {
-            Trie.Add(Data, 0, Math.Min(_AdvancedLobMaxLargeMatchLength, length));
-            Trie.Add(Data, 1, Math.Min(_AdvancedLobMaxLargeMatchLength, length - 1));
-            Trie.Add(Data, 2, Math.Min(_AdvancedLobMaxLargeMatchLength, length - 2));
+            Matches.Add(Data, 0, Math.Min(_AdvancedLobMaxLargeMatchLength, length));
+            Matches.Add(Data, 1, Math.Min(_AdvancedLobMaxLargeMatchLength, length - 1));
+            Matches.Add(Data, 2, Math.Min(_AdvancedLobMaxLargeMatchLength, length - 2));
             I += 3;
         }
         else
         {
-            Trie.Add(Data, 0, _AdvancedLobMaxLargeMatchLength);
+            Matches.Add(Data, 0, _AdvancedLobMaxLargeMatchLength);
             Literals.Add(Data[I]);
             I += 1;
         }
@@ -194,19 +194,19 @@ struct _AdvancedLobCompressor
             }
 
             int maxMatchLength = Math.Min(length - I, _AdvancedLobMaxLargeMatchLength);
-            var match = Trie.GetLongestMatch(Data, I, maxMatchLength);
+            var match = Matches.GetLongestMatch(Data, I, maxMatchLength);
             int rleLength = JustFoundRle ? _CheckRleLength(I) : 0;
 
             if (I - match.Offset <= _AdvancedLobMaxLargeMatchOffset && match.Length >= _AdvancedLobMinMatchLength && match.Length > rleLength)
             {
-                Trie.Add(Data, I, maxMatchLength);
+                Matches.Add(Data, I, maxMatchLength);
                 if (!JustFoundRle)
                     _WriteCurrentData(false, false, 0, false);
                 else
                     RleCount = 0;
                 _AddMatch(I - match.Offset, match.Length);
                 for (var j = 1; j < match.Length; j += 1)
-                    Trie.Add(Data, I + j, Math.Min(_AdvancedLobMaxLargeMatchLength, length - I - j));
+                    Matches.Add(Data, I + j, Math.Min(_AdvancedLobMaxLargeMatchLength, length - I - j));
                 I += match.Length;
             }
             else if (JustFoundRle)
@@ -216,7 +216,7 @@ struct _AdvancedLobCompressor
             else
             {
                 if (RleCount < 3)
-                    Trie.Add(Data, I, maxMatchLength);
+                    Matches.Add(Data, I, maxMatchLength);
                 _WriteCurrentData(true, false, 0, false);
                 Literals.Add(Data[I]);
                 I += 1;
@@ -264,15 +264,15 @@ struct _AdvancedLobCompressor
                 Failure = "[Application] There should be no stored literals when a RLE is compressed.";
 
             int index = I - RleCount;
-            int addTrieCount = RleCount;
+            int addCount = RleCount;
             if (index < 3)
             {
                 int reduce = 3 - index;
-                addTrieCount -= reduce;
+                addCount -= reduce;
                 index += reduce;
             }
-            for (var j = 0; j < addTrieCount; j += 1)
-                Trie.Add(Data, index + j, Math.Min(_AdvancedLobMaxLargeMatchLength, Data.Length - index - j));
+            for (var j = 0; j < addCount; j += 1)
+                Matches.Add(Data, index + j, Math.Min(_AdvancedLobMaxLargeMatchLength, Data.Length - index - j));
 
             uint8 literal = hasRleLiteral ? useRleLiteral : RleLiteral;
 

@@ -16,7 +16,7 @@ struct TextLob
     static Error<uint8[]> CompressData(uint8[] data)
     {
         var compressed = ByteList.Create(data.Length);
-        var trie = MatchTrie.Create(_TextLobMaxMatchOffset);
+        var matches = MatchChains.Create(_TextLobMaxMatchOffset, _TextLobMinMatchOffset, 2);
         int length = data.Length;
         int matchReserveIndex = -1;
 
@@ -44,7 +44,7 @@ struct TextLob
         // the first byte cannot be a match
         if (i >= length)
             return error(_OutOfBounds);
-        trie.Add(data, i, _TextLobMaxMatchLength);
+        matches.Add(data, i, _TextLobMaxMatchLength);
         if (data[i] == 0)
             compressed.Add(0x1f);
         else
@@ -56,8 +56,8 @@ struct TextLob
             if (data[i] > 0 && data[i] < 32)
                 return error("[Data] Unsupported text data at index " + i.ToString() + ".");
             int maxMatchLength = Math.Min(_TextLobMaxMatchLength, length - i);
-            var match = trie.GetLongestMatch(data, i, maxMatchLength);
-            trie.Add(data, i, maxMatchLength);
+            var match = matches.GetLongestMatch(data, i, maxMatchLength);
+            matches.Add(data, i, maxMatchLength);
 
             int matchOffset = i - match.Offset;
             int matchLength = match.Length;
@@ -87,7 +87,7 @@ struct TextLob
                 }
 
                 for (var j = 1; j < matchLength; j += 1)
-                    trie.Add(data, i + j, Math.Min(_TextLobMaxMatchLength, length - i - j));
+                    matches.Add(data, i + j, Math.Min(_TextLobMaxMatchLength, length - i - j));
                 i += matchLength;
             }
             else
@@ -100,8 +100,8 @@ struct TextLob
         if (compressed.Count() % 2 != 0)
             compressed.Add(0x1f); // a single zero if it was read by accident
 
-        if (trie.Error().Length > 0)
-            return error(trie.Error());
+        if (matches.Error().Length > 0)
+            return error(matches.Error());
         return compressed.ToArray();
     }
 

@@ -16,7 +16,7 @@ struct ExtendedLob
         var c = _ExtendedLobCompressor {
             Data = data,
             Out = ByteList.Create(data.Length),
-            Trie = MatchTrie.Create(_ExtendedLobMaxMatchOffset),
+            Matches = MatchChains.Create(_ExtendedLobMaxMatchOffset, _ExtendedLobMinMatchOffset, _ExtendedLobMinMatchLength),
             LastMatchHeaderIndex = -1,
             LastLiteral = -1,
             Failure = ""
@@ -24,8 +24,8 @@ struct ExtendedLob
         c.Run();
         if (c.Failure.Length > 0)
             return error(c.Failure);
-        if (c.Trie.Error().Length > 0)
-            return error(c.Trie.Error());
+        if (c.Matches.Error().Length > 0)
+            return error(c.Matches.Error());
         return c.Out.ToArray();
     }
 
@@ -131,7 +131,7 @@ struct _ExtendedLobCompressor
 {
     uint8[] Data;
     ByteList Out;
-    MatchTrie Trie;
+    MatchChains Matches;
     ByteList Literals;
     int RleCount;
     uint8 RleLiteral;
@@ -144,7 +144,7 @@ struct _ExtendedLobCompressor
     void Run()
     {
         int length = Data.Length;
-        Trie.Add(Data, 0, _ExtendedLobMaxMatchLength);
+        Matches.Add(Data, 0, _ExtendedLobMaxMatchLength);
         Literals.Add(Data[I]);
         I += 1;
 
@@ -178,13 +178,13 @@ struct _ExtendedLobCompressor
             }
 
             int maxMatchLength = Math.Min(length - I, _ExtendedLobMaxMatchLength);
-            var match = Trie.GetLongestMatch(Data, I, maxMatchLength);
+            var match = Matches.GetLongestMatch(Data, I, maxMatchLength);
             int rleLength = JustFoundRle ? _CheckRleLength(I) : 0;
             int matchOffset = I - match.Offset;
 
             if (matchOffset >= _ExtendedLobMinMatchOffset && matchOffset <= _ExtendedLobMaxMatchOffset && match.Length >= _ExtendedLobMinMatchLength && match.Length > rleLength)
             {
-                Trie.Add(Data, I, maxMatchLength);
+                Matches.Add(Data, I, maxMatchLength);
                 if (!JustFoundRle)
                     _WriteCurrentData(false, false, 0, false);
                 else
@@ -192,7 +192,7 @@ struct _ExtendedLobCompressor
                 LastLiteral = Data[match.Offset + match.Length - 1];
                 _AddMatch(I - match.Offset, match.Length);
                 for (var j = 1; j < match.Length; j += 1)
-                    Trie.Add(Data, I + j, Math.Min(_ExtendedLobMaxMatchLength, length - I - j));
+                    Matches.Add(Data, I + j, Math.Min(_ExtendedLobMaxMatchLength, length - I - j));
                 I += match.Length;
             }
             else if (JustFoundRle)
@@ -202,7 +202,7 @@ struct _ExtendedLobCompressor
             else
             {
                 if (RleCount < _ExtendedLobMinRLELength)
-                    Trie.Add(Data, I, maxMatchLength);
+                    Matches.Add(Data, I, maxMatchLength);
                 _WriteCurrentData(true, false, 0, false);
                 Literals.Add(Data[I]);
                 I += 1;
@@ -338,15 +338,15 @@ struct _ExtendedLobCompressor
         if (RleCount >= _ExtendedLobMinRLELength && !noRle)
         {
             int index = I - RleCount;
-            int addTrieCount = RleCount;
+            int addCount = RleCount;
             if (index < _ExtendedLobMinRLELength)
             {
                 int reduce = _ExtendedLobMinRLELength - index;
-                addTrieCount -= reduce;
+                addCount -= reduce;
                 index += reduce;
             }
-            for (var j = 0; j < addTrieCount; j += 1)
-                Trie.Add(Data, index + j, Math.Min(_ExtendedLobMaxMatchLength, Data.Length - index - j));
+            for (var j = 0; j < addCount; j += 1)
+                Matches.Add(Data, index + j, Math.Min(_ExtendedLobMaxMatchLength, Data.Length - index - j));
 
             uint8 literal = hasRleLiteral ? useRleLiteral : RleLiteral;
             bool rleLiteralAlreadyThere = (Literals.Count() != 0 && Literals.Last() == literal) ||
