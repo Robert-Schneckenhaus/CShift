@@ -3,14 +3,23 @@
 
 namespace System;
 
+using System.Native;
+
 extern "C" void GetSystemTimePreciseAsFileTime(void* time);
 extern "C" int QueryPerformanceCounter(int64* count);
 extern "C" int QueryPerformanceFrequency(int64* frequency);
 extern "C" void* _localtime64(int64* time);
-extern "C" int GetFileAttributesExA(char* path, int level, void* data);
-extern "C" int MoveFileExA(char* from, char* to, uint32 flags);
-extern "C" int RemoveDirectoryA(char* path);
-extern "C" void* CreateFileA(char* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int GetFileAttributesExW(uint16* path, int level, void* data);
+extern "C" int MoveFileExW(uint16* from, uint16* to, uint32 flags);
+extern "C" int RemoveDirectoryW(uint16* path);
+extern "C" void* CreateFileW(uint16* path, uint32 access, uint32 share, void* security, uint32 disposition, uint32 flags, void* template);
+extern "C" int MultiByteToWideChar(uint32 codePage, uint32 flags, char* text, int length, uint16* wide, int wideLength);
+extern "C" int WideCharToMultiByte(uint32 codePage, uint32 flags, uint16* wide, int wideLength, char* text, int length, void* defaultChar, void* usedDefault);
+extern "C" uint32 GetFileAttributesW(uint16* path);
+extern "C" int CreateDirectoryW(uint16* path, void* security);
+extern "C" void* FindFirstFileW(uint16* pattern, void* data);
+extern "C" int FindNextFileW(void* find, void* data);
+extern "C" int FindClose(void* find);
 extern "C" int SetFileTime(void* file, void* creation, void* access, void* write);
 extern "C" int CloseHandle(void* handle);
 extern "C" int _fseeki64(void* file, int64 offset, int origin);
@@ -18,6 +27,34 @@ extern "C" int64 _ftelli64(void* file);
 extern "C" int fflush(void* file);
 extern "C" int _read(int fd, void* buffer, uint32 count);
 extern "C" void Sleep(uint32 milliseconds);
+
+// A path (UTF-8) as a NUL-terminated UTF-16 string for the ...W functions of Windows: the ...A ones would read it in the
+// ANSI code page. (The C runtime reads the paths of fopen, remove, mkdir, ... as UTF-8: the runtime of a program sets
+// LC_CTYPE to ".UTF-8" on Windows.)
+uint16[] _OsWide(StringSlice text)
+{
+    unsafe
+    {
+        int length = MultiByteToWideChar(65001u, 0u, text.CStr(), -1, null, 0);
+        var wide = new uint16[Math.Max(1, length)];
+        if (length > 0)
+            MultiByteToWideChar(65001u, 0u, text.CStr(), -1, &wide[0], length);
+        return wide;
+    }
+}
+
+// A NUL-terminated UTF-16 string (from Windows) as UTF-8.
+unsafe string _OsUtf8(uint16* wide)
+{
+    int length = WideCharToMultiByte(65001u, 0u, wide, -1, null, 0, null, null);
+    if (length <= 1)
+        return "";
+    char* text = (char*)Memory.Allocate((nuint)length);
+    WideCharToMultiByte(65001u, 0u, wide, -1, text, length, null, null);
+    string result = string.FromCStr(text);
+    Memory.Free(text);
+    return result;
+}
 
 // 100 ns units from 1601-01-01 (FILETIME) to 1970-01-01
 const int64 _FileTimeEpoch = 116444736000000000;
@@ -72,7 +109,8 @@ struct _Os
         {
             // WIN32_FILE_ATTRIBUTE_DATA: attributes, creation, last access, last write (FILETIME: low, high)
             var data = new uint32[9];
-            if (GetFileAttributesExA(path.CStr(), 0, &data[0]) == 0)
+            var wide = _OsWide(path);
+            if (GetFileAttributesExW(&wide[0], 0, &data[0]) == 0)
                 return null;
             int64 fileTime = (int64)data[5] | ((int64)data[6] << 32);
             return fileTime - _FileTimeEpoch;
@@ -85,7 +123,8 @@ struct _Os
         unsafe
         {
             // FILE_WRITE_ATTRIBUTES, all sharing, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS (for directories)
-            void* file = CreateFileA(path.CStr(), 0x100u, 7u, null, 3u, 0x02000000u, null);
+            var wide = _OsWide(path);
+            void* file = CreateFileW(&wide[0], 0x100u, 7u, null, 3u, 0x02000000u, null);
             if (file == (void*)(nint)(-1))
                 return false;
             int64 fileTime = ticks + _FileTimeEpoch;
@@ -100,7 +139,9 @@ struct _Os
     {
         unsafe
         {
-            return MoveFileExA(from.CStr(), to.CStr(), 3u) != 0; // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
+            var wideFrom = _OsWide(from);
+            var wideTo = _OsWide(to);
+            return MoveFileExW(&wideFrom[0], &wideTo[0], 3u) != 0; // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
         }
     }
 
@@ -109,7 +150,8 @@ struct _Os
     {
         unsafe
         {
-            return RemoveDirectoryA(path.CStr()) != 0;
+            var wide = _OsWide(path);
+            return RemoveDirectoryW(&wide[0]) != 0;
         }
     }
 
@@ -166,10 +208,48 @@ struct _Os
         }
     }
 
-    // where readdir puts the name in a struct dirent (MinGW-w64: long d_ino, unsigned short d_reclen,
-    // unsigned short d_namlen, char d_name[])
-    static int DirentNameOffset()
+    // FILE_ATTRIBUTE_DIRECTORY of a path that exists
+    static bool DirectoryExists(StringSlice path)
     {
-        return 8;
+        unsafe
+        {
+            var wide = _OsWide(path);
+            uint32 attributes = GetFileAttributesW(&wide[0]);
+            return attributes != 0xffffffffu && (attributes & 0x10u) != 0;
+        }
     }
+
+    static void MakeDirectory(StringSlice path)
+    {
+        unsafe
+        {
+            var wide = _OsWide(path);
+            CreateDirectoryW(&wide[0], null);
+        }
+    }
+
+    // the names in the directory, without . and .. (FindFirstFileW on "<path>\*")
+    static void ReadDirectory(StringSlice path, ref List<string> names)
+    {
+        unsafe
+        {
+            string pattern = path.EndsWith("/") || path.EndsWith("\\") ? path + "*" : path + "\\*";
+            var wide = _OsWide(pattern);
+            // WIN32_FIND_DATAW: 44 bytes before cFileName[260] (UTF-16), then cAlternateFileName[14]
+            var data = new uint16[22 + 260 + 14 + 8];
+            void* find = FindFirstFileW(&wide[0], &data[0]);
+            if (find == (void*)(nint)(-1))
+                return;
+            while (true)
+            {
+                string name = _OsUtf8(&data[22]);
+                if (name != "." && name != "..")
+                    names.Add(name);
+                if (FindNextFileW(find, &data[0]) == 0)
+                    break;
+            }
+            FindClose(find);
+        }
+    }
+
 }

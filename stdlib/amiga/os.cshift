@@ -143,4 +143,8 @@ struct _Os
     {
         return 11;
     }
+
+    static bool DirectoryExists(StringSlice path) { return _Dirent.Exists(path); }
+    static void MakeDirectory(StringSlice path) { _Dirent.Make(path); }
+    static void ReadDirectory(StringSlice path, ref List<string> names) { _Dirent.Read(path, DirentNameOffset(), ref names); }
 }

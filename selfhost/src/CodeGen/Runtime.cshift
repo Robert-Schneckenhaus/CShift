@@ -43,6 +43,8 @@ string RuntimeGlobals(bool windows, bool arcStats, IrWriter ir)
               "@.cs.false = private global { $S, $S, [6 x i8] } { $S $I, $S 5, [6 x i8] c\"false\\00\" }\n", ir);
     if (!windows)
         text += "@stdout = external global ptr\n@stderr = external global ptr\n";
+    else
+        text += "@.cs.utf8 = private constant [7 x i8] c\".UTF-8\\00\"\n";
     if (arcStats)
         text += Sized("@__cs_allocs = internal global $S 0\n@__cs_frees = internal global $S 0\n@__cs_threads = internal global $S 0\n", ir) +
                 "@.cs.arc = private constant [40 x i8] c\"[arc] allocs=%lld frees=%lld live=%lld\\0A\\00\"\n";
@@ -90,7 +92,11 @@ string RuntimeFunctions(bool windows, string triple, bool arcStats, IrWriter ir)
         "declare void @llvm.memcpy.p0.p0.$S(ptr, ptr, $S, i1)\n" +
         "declare void @llvm.memmove.p0.p0.$S(ptr, ptr, $S, i1)\n";
     if (windows)
-        text += CDeclare(ir, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)");
+        text += CDeclare(ir, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)") +
+            CDeclare(ir, "setlocale", "declare ptr @setlocale(i32, ptr)") +
+            CDeclare(ir, "GetCommandLineW", "declare ptr @GetCommandLineW()") +
+            CDeclare(ir, "CommandLineToArgvW", "declare ptr @CommandLineToArgvW(ptr, ptr)") +
+            CDeclare(ir, "WideCharToMultiByte", "declare i32 @WideCharToMultiByte(i32, i32, ptr, i32, ptr, i32, ptr, ptr)");
     text += "\n";
 
     // The runtime writes with fwrite only, so a program that does not call printf itself does not need it (on AmigaOS
@@ -323,6 +329,27 @@ string RuntimeFunctions(bool windows, string triple, bool arcStats, IrWriter ir)
             "  %ep = getelementptr ptr, ptr %data, $S %i\n  store ptr %str, ptr %ep\n" +
             "  %next = add $S %i, 1\n  br label %loop\n" +
             "done:\n  ret ptr %arr\n}\n\n";
+
+    // utf8_argv(&argc): Windows passes the arguments of main in the ANSI code page, which cannot hold every character;
+    // this reads the command line as UTF-16 and converts each argument to UTF-8 (CP_UTF8 = 65001). It returns the new
+    // argv (NULL-terminated) and stores its count, or returns null if Windows could not split the command line.
+    if (windows)
+        text += "define internal ptr @__cs_utf8_argv(ptr %pargc) {\nentry:\n" +
+                "  %cmd = call ptr @GetCommandLineW()\n  %wargv = call ptr @CommandLineToArgvW(ptr %cmd, ptr %pargc)\n" +
+                "  %failed = icmp eq ptr %wargv, null\n  br i1 %failed, label %none, label %start\n" +
+                "none:\n  ret ptr null\n" +
+                "start:\n  %c32 = load i32, ptr %pargc\n  " + SizeFromI32(ir, "%count", "%c32").Trim() + "\n" +
+                "  %slots = add $S %count, 1\n  %bytes = mul $S %slots, $P\n  %argv = call ptr @malloc($S %bytes)\n" +
+                "  br label %loop\n" +
+                "loop:\n  %i = phi $S [ 0, %start ], [ %next, %body ]\n" +
+                "  %more = icmp ult $S %i, %count\n  br i1 %more, label %body, label %done\n" +
+                "body:\n  %wp = getelementptr ptr, ptr %wargv, $S %i\n  %w = load ptr, ptr %wp\n" +
+                "  %n = call i32 @WideCharToMultiByte(i32 65001, i32 0, ptr %w, i32 -1, ptr null, i32 0, ptr null, ptr null)\n" +
+                "  " + SizeFromI32(ir, "%size", "%n").Trim() + "\n  %s = call ptr @malloc($S %size)\n" +
+                "  call i32 @WideCharToMultiByte(i32 65001, i32 0, ptr %w, i32 -1, ptr %s, i32 %n, ptr null, ptr null)\n" +
+                "  %ap = getelementptr ptr, ptr %argv, $S %i\n  store ptr %s, ptr %ap\n" +
+                "  %next = add $S %i, 1\n  br label %loop\n" +
+                "done:\n  %endp = getelementptr ptr, ptr %argv, $S %count\n  store ptr null, ptr %endp\n  ret ptr %argv\n}\n\n";
 
     // number to string
     text += FormatHelper("i64", true);

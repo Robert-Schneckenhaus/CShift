@@ -48,7 +48,6 @@ extern "C" void* GlobalAlloc(uint32 flags, nuint bytes);
 extern "C" void* GlobalFree(void* memory);
 extern "C" void* GlobalLock(void* memory);
 extern "C" int GlobalUnlock(void* memory);
-extern "C" int MultiByteToWideChar(uint32 codePage, uint32 flags, char* text, int length, uint16* wide, int wideLength);
 extern "C" int WideCharToMultiByte(uint32 codePage, uint32 flags, uint16* wide, int wideLength, char* text, int length, void* defaultChar,
                                    void* usedDefault);
 
@@ -218,14 +217,7 @@ void _UiBlit(void* dc, Image image)
 // A string as a NUL-terminated UTF-16 string.
 uint16[] _UiWide(string text)
 {
-    unsafe
-    {
-        int length = MultiByteToWideChar(65001u, 0u, text.CStr(), -1, null, 0);
-        var wide = new uint16[Math.Max(1, length)];
-        if (length > 0)
-            MultiByteToWideChar(65001u, 0u, text.CStr(), -1, &wide[0], length);
-        return wide;
-    }
+    return _OsWide(text);
 }
 
 struct _UiOs

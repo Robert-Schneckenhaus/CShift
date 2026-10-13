@@ -88,6 +88,10 @@ Error<int> Main()             // also with string[] args
 without `Main` or with two of them. Before `Main` runs, the global variables are initialized (see
 [declarations](declarations.md#global-variables)); after it returns, their heap memory is released.
 
+The arguments are UTF-8 strings like all others, also on Windows: the program reads them from the UTF-16 command line
+there (not in the ANSI code page, which has no room for most characters), and the C runtime takes file names as
+UTF-8 as well (`setlocale(LC_CTYPE, ".UTF-8")` before `Main`; numbers are still written and read with a `.`).
+
 ## Compilation model
 
 * **Whole program:** the compiler sees all files at once, so the order of the files and of the declarations does not

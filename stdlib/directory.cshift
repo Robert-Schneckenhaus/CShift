@@ -176,7 +176,7 @@ struct Path
 /// string file = Path.Combine("src", "main.cshift");
 /// ```
 ///
-/// Directory operations use the C library (opendir/readdir/mkdir, which MinGW-w64 provides on Windows as well). Paths
+/// Directory operations use the C library (opendir/readdir/mkdir), on Windows the UTF-16 functions of the system. Paths
 /// may use '/' or '\'.
 struct Directory
 {
@@ -197,14 +197,7 @@ struct Directory
     /// Whether a directory exists at `path`.
     static bool Exists(StringSlice path)
     {
-        unsafe
-        {
-            void* dir = opendir(path.CStr());
-            if (dir == null)
-                return false;
-            closedir(dir);
-            return true;
-        }
+        return _Os.DirectoryExists(path);
     }
 
     /// Creates a directory, including missing parents.
@@ -216,10 +209,7 @@ struct Directory
         string parent = Path.GetDirectory(path);
         if (parent.Length > 0 && parent != path && !(parent.Length == 2 && parent[1] == ':'))
             Create(parent);
-        unsafe
-        {
-            mkdir(path.CStr(), 493); // 0755 (the mode is ignored on Windows)
-        }
+        _Os.MakeDirectory(path);
         return Exists(path);
     }
 
@@ -269,34 +259,12 @@ struct Directory
         return;
     }
 
-    // Where readdir puts the name in its 'struct dirent': the layout of the C library of the system (the OS layer).
-    static int _NameOffset()
-    {
-        return _Os.DirentNameOffset();
-    }
-
     /// The names of the files and directories in a directory (not the paths, without `.` and `..`), sorted.
     /// @returns an empty list if the directory does not exist.
     static List<string> GetEntries(StringSlice path)
     {
         var names = List<string>.Create();
-        int offset = _NameOffset();
-        unsafe
-        {
-            void* dir = opendir(path.CStr());
-            if (dir == null)
-                return names;
-            while (true)
-            {
-                void* entry = readdir(dir);
-                if (entry == null)
-                    break;
-                string name = string.FromCStr((char*)((uint8*)entry + offset));
-                if (name != "." && name != "..")
-                    names.Add(name);
-            }
-            closedir(dir);
-        }
+        _Os.ReadDirectory(path, ref names);
         names.Sort();
         return names;
     }
@@ -320,6 +288,53 @@ struct Directory
                 _Collect(full, extension, result);
             else if (extension.Length == 0 || name.EndsWith(extension))
                 result.Add(full);
+        }
+    }
+}
+
+// The directory functions of the C library (opendir/readdir/mkdir) for the OS layers that use them (all but Windows,
+// whose layer calls the UTF-16 functions: MinGW-w64's opendir reads the path in the ANSI code page).
+struct _Dirent
+{
+    static bool Exists(StringSlice path)
+    {
+        unsafe
+        {
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return false;
+            closedir(dir);
+            return true;
+        }
+    }
+
+    static void Make(StringSlice path)
+    {
+        unsafe
+        {
+            mkdir(path.CStr(), 493); // 0755
+        }
+    }
+
+    // adds the names without . and .. ('offset': where readdir puts the name in its 'struct dirent', which depends on
+    // the C library of the system)
+    static void Read(StringSlice path, int offset, ref List<string> names)
+    {
+        unsafe
+        {
+            void* dir = opendir(path.CStr());
+            if (dir == null)
+                return;
+            while (true)
+            {
+                void* entry = readdir(dir);
+                if (entry == null)
+                    break;
+                string name = string.FromCStr((char*)((uint8*)entry + offset));
+                if (name != "." && name != "..")
+                    names.Add(name);
+            }
+            closedir(dir);
         }
     }
 }
