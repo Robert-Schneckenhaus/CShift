@@ -14,23 +14,23 @@ struct Lob
             return error(_OutOfBounds);
         var w = _LobWriter { Out = ByteList.Create(data.Length), HeaderBitMask = 0x80 >> 1, Header = 0x80 };
         w.Out.Add(0); // the first header, written later
-        var trie = MatchTrie.Create();
+        var matches = MatchChains.Create((1 << 12) - 1, 1, _LobMinMatchLength);
         int length = data.Length;
 
         // the first byte cannot be a match
-        trie.Add(data, 0, _LobMaxMatchLength);
+        matches.Add(data, 0, _LobMaxMatchLength);
         w.Out.Add(data[0]);
         int i = 1;
 
         while (i <= length - _LobMaxMatchLength)
         {
-            var match = trie.GetLongestMatch(data, i, _LobMaxMatchLength);
-            trie.Add(data, i, _LobMaxMatchLength);
+            var match = matches.GetLongestMatch(data, i, _LobMaxMatchLength);
+            matches.Add(data, i, _LobMaxMatchLength);
             if (match.Length > 2)
             {
                 w.AddMatch(i - match.Offset, match.Length, i + match.Length == length);
                 for (var j = 1; j < match.Length; j += 1)
-                    trie.Add(data, i + j, Math.Min(_LobMaxMatchLength, length - i - j));
+                    matches.Add(data, i + j, Math.Min(_LobMaxMatchLength, length - i - j));
                 i += match.Length;
             }
             else
@@ -43,13 +43,13 @@ struct Lob
         while (i <= length - _LobMinMatchLength)
         {
             int rest = length - i;
-            var match = trie.GetLongestMatch(data, i, rest);
-            trie.Add(data, i, rest);
+            var match = matches.GetLongestMatch(data, i, rest);
+            matches.Add(data, i, rest);
             if (match.Length > 2)
             {
                 w.AddMatch(i - match.Offset, match.Length, i + match.Length == length);
                 for (var j = 1; j < match.Length; j += 1)
-                    trie.Add(data, i + j, rest - j);
+                    matches.Add(data, i + j, rest - j);
                 i += match.Length;
             }
             else
@@ -67,8 +67,8 @@ struct Lob
 
         if (w.HeaderBitMask != 0x80)
             w.Out[w.HeaderPosition] = (uint8)w.Header;
-        if (trie.Error().Length > 0)
-            return error(trie.Error());
+        if (matches.Error().Length > 0)
+            return error(matches.Error());
         return w.Out.ToArray();
     }
 

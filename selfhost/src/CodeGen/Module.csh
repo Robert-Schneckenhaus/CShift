@@ -149,13 +149,25 @@ void EmitEntryPoint(const ref Compiler cg)
     // WebAssembly: the current directory of the host (stdlib/os/wasi/stubs.csh)
     if (ir.Target.Wasm)
         prepare = "  call void @__cs_wasi_start()\n" + prepare;
+    // Windows: the C runtime reads the paths of fopen, remove, mkdir, ... as UTF-8, like the strings of CShift (not in
+    // the ANSI code page); LC_CTYPE only, so numbers are still formatted and read with a '.'
+    if (cg.St[0].Windows)
+        prepare = "  call ptr @setlocale(i32 2, ptr @.cs.utf8)\n" + prepare;
     string argument = "";
     string cleanup = "";
     // the values of the globals are released when Main has returned (before the balance of heap blocks is printed)
     string releaseGlobals = EmitGlobalsRelease(cg) ? "  call void @__cs_release_globals()\n" : "";
     if (m.ParamTypes.Length == 1)
     {
-        prepare += "  %args = call ptr @__cs_make_args(i32 %argc, ptr %argv)\n";
+        if (cg.St[0].Windows)
+            // the arguments as UTF-8 (see __cs_utf8_argv); the ones of the C runtime if Windows could not split them
+            prepare += "  %wargcp = alloca i32\n  store i32 0, ptr %wargcp\n  %wargv = call ptr @__cs_utf8_argv(ptr %wargcp)\n" +
+                       "  %wfailed = icmp eq ptr %wargv, null\n  %wargc = load i32, ptr %wargcp\n" +
+                       "  %argc8 = select i1 %wfailed, i32 %argc, i32 %wargc\n" +
+                       "  %argv8 = select i1 %wfailed, ptr %argv, ptr %wargv\n" +
+                       "  %args = call ptr @__cs_make_args(i32 %argc8, ptr %argv8)\n";
+        else
+            prepare += "  %args = call ptr @__cs_make_args(i32 %argc, ptr %argv)\n";
         argument = "ptr %args";
         cleanup = "  call void " + ReleaseFunction(cg, m.ParamTypes[0]) + "(ptr %args)\n";
     }
