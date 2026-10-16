@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.35] - 2026-10-16
+
 ### Standard library
 - `System.Ui`: **animations without a busy loop.** `Ui.RequestFrame(milliseconds)` asks for the next frame after that
   time at the latest, also without input: the next `Window.Update` after `Window.Show(ui)` waits at most that long, and
