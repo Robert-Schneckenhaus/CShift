@@ -1,0 +1,89 @@
+// Standard library: Ui.RequestFrame without a window - how long the next Window.Update may wait (WaitMilliseconds):
+// one call, several calls (the shortest wins), 0, only the frame of the call, together with the blinking text cursor
+// and a steady input (UiInput.Steady: no blinking); UiInput.CloseRequested reaches the program. Main returns the number
+// of failed checks.
+// expect-stdout: wait 100
+// expect-stdout: wait -1
+// expect-exit: 0
+
+using System;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+// one settled frame with a label; the requests are made in it, the wait it leaves is returned
+int Frame(Ui ui, UiInput input, int first, int second)
+{
+    ui.Begin(input, 300, 200, 1.0);
+    ui.Label("Frames");
+    if (first >= -1)
+        ui.RequestFrame(first);
+    if (second >= -1)
+        ui.RequestFrame(second);
+    ui.End();
+    return ui.WaitMilliseconds();
+}
+
+int Main()
+{
+    var ui = Ui.Create();
+    var input = UiInput.Create();
+    for (var i = 0; i < 3; i += 1)
+        Frame(ui, input, -2, -2); // the layout settles
+    Check(Frame(ui, input, -2, -2) == -1, "no request: wait for input");
+    int one = Frame(ui, input, 100, -2);
+    Console.WriteLine($"wait {one}");
+    Check(Frame(ui, input, 200, 50) == 50, "two requests: the shorter");
+    Check(Frame(ui, input, 30, 200) == 30, "two requests, the shorter first");
+    Check(Frame(ui, input, 0, -2) == 0, "0: at once");
+    Check(Frame(ui, input, -1, -2) == 0, "a negative time is 0");
+    int after = Frame(ui, input, -2, -2);
+    Console.WriteLine($"wait {after}");
+
+    // the blinking text cursor: its own wait (at most 0.53 s) wins over a longer request
+    string text = "abc";
+    var timed = UiInput.Create();
+    timed.Time = 10.0;
+    for (var frame = 0; frame < 4; frame += 1)
+    {
+        ui.Begin(timed, 300, 200, 1.0);
+        ui.TextBox("name", ref text);
+        if (frame == 0)
+            ui.SetFocus("name");
+        ui.RequestFrame(2000);
+        ui.End();
+    }
+    int blink = ui.WaitMilliseconds();
+    Check(blink > 0 && blink <= 531, $"the cursor blinks first ({blink})");
+    // a steady window: no blinking, the request alone
+    timed.Steady = true;
+    ui.Begin(timed, 300, 200, 1.0);
+    ui.TextBox("name", ref text);
+    ui.RequestFrame(2000);
+    ui.End();
+    Check(ui.WaitMilliseconds() == 2000, $"steady: no blinking ({ui.WaitMilliseconds()})");
+    ui.Begin(timed, 300, 200, 1.0);
+    ui.TextBox("name", ref text);
+    ui.End();
+    Check(ui.WaitMilliseconds() == -1, "steady and no request: wait for input");
+
+    // a request to close the window
+    var closing = UiInput.Create();
+    closing.CloseRequested = true;
+    ui.Begin(closing, 300, 200, 1.0);
+    Check(ui.Input().CloseRequested, "CloseRequested in Ui.Input");
+    ui.End();
+    ui.Begin(input, 300, 200, 1.0);
+    Check(!ui.Input().CloseRequested, "the next frame has no request");
+    ui.End();
+    return Failures;
+}

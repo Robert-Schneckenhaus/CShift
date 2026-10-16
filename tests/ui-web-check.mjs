@@ -1,7 +1,7 @@
 // System.Ui in the browser without a browser: runs a program of the wasm backend (tests/ui/web.cshift) with web/cshift.js
 // and a canvas that only pretends (events are sent to it, putImageData keeps the image). It clicks the button and types
-// into the text box at the places the program tells, pastes, and checks the output, the pixels of the frame and that
-// the program waits for input between the frames.
+// into the text box at the places the program tells, pastes, and checks the output, the pixels of the frame, that
+// the program waits for input between the frames, and that Ui.RequestFrame resumes it without input.
 //
 //   cshiftc --backend wasm tests/ui/web.cshift -o web.wasm && node tests/ui-web-check.mjs web.wasm
 
@@ -114,6 +114,9 @@ await sleep(20);
 for (const key of ["h", "i"]) canvas.send("keydown", { key, keyCode: key.toUpperCase().charCodeAt(0) });
 await waitFor("text hi");
 canvas.send("paste", { clipboardData: { getData: () => " there" } });
+// Ui.RequestFrame(30): frames without input, 4 waits of about 30 ms between the second and the last one
+const timed = (await waitFor("timed frames ")).match(/timed frames (\d+), (\d+) ms/);
+if (!timed || Number(timed[1]) !== 6 || Number(timed[2]) < 100) fail(`frames after RequestFrame: ${timed?.[0]}`);
 const exit = await program.exited;
 if (exit !== 0) fail(`exit code ${exit}`);
 if (!lines.includes("text hi there")) fail("the pasted text is missing");

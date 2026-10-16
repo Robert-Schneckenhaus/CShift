@@ -2,6 +2,7 @@
 // pretends. The program tells where its widgets are; the test clicks the button (also with the right and the middle
 // button), presses +, types into the text box and pastes,
 // and the program ends when it got all of it. Between those inputs it waits (the program is suspended until input).
+// At the end it draws frames without input (Ui.RequestFrame), each about 30 ms after the one before.
 
 using System;
 using System.Ui;
@@ -48,6 +49,22 @@ int Main()
             return 1;
         }
     }
+    // frames without input: the program is resumed after the time
+    int timed = 0;
+    var watch = Stopwatch.StartNew();
+    double first = 0.0;
+    while (timed < 6 && window.Update())
+    {
+        if (timed == 1)
+            first = watch.Elapsed().TotalMilliseconds(); // the wait after the last frame above: the text cursor's
+        ui.Begin(window);
+        ui.Label($"Timed {timed}");
+        ui.RequestFrame(30);
+        window.Show(ui);
+        timed += 1;
+    }
+    int waited = (int)(watch.Elapsed().TotalMilliseconds() - first);
+    Console.WriteLine($"timed frames {timed}, {waited} ms");
     window.Dispose();
     Console.WriteLine($"done after {frames} frames");
     return 0;

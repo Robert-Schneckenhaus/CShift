@@ -5,7 +5,8 @@
 // Move/Draw, text with the system font (its sizes are the Ui's font: Font.Metrics), colors as pens of the screen
 // (ObtainBestPenA). It draws into a bitmap of its own and copies that into the window in one blit, so nothing
 // flickers. The bitmap has no layer, so everything is clipped here. Images are not drawn. Needs AmigaOS 3.0
-// (graphics.library and intuition.library 39). The clipboard is kept inside the program.
+// (graphics.library and intuition.library 39). The clipboard is kept inside the program. A wait for at most some time
+// (Ui.RequestFrame) waits for the window's port and a request of timer.device (UNIT_VBLANK, 1/50 s) together.
 
 namespace System.Ui;
 
@@ -17,6 +18,18 @@ extern "C" void __exec_CloseLibrary(void* library);
 extern "C" void* __exec_WaitPort(void* port);
 extern "C" void* __exec_GetMsg(void* port);
 extern "C" void __exec_ReplyMsg(void* message);
+extern "C" int __exec_Wait(int signals);
+extern "C" int __exec_SetSignal(int newSignals, int mask);
+extern "C" void* __exec_CreateMsgPort();
+extern "C" void __exec_DeleteMsgPort(void* port);
+extern "C" void* __exec_CreateIORequest(void* port, int size);
+extern "C" void __exec_DeleteIORequest(void* request);
+extern "C" int __exec_OpenDevice(char* name, int unit, void* request, int flags);
+extern "C" void __exec_CloseDevice(void* request);
+extern "C" void __exec_SendIO(void* request);
+extern "C" void* __exec_CheckIO(void* request);
+extern "C" int __exec_WaitIO(void* request);
+extern "C" void __exec_AbortIO(void* request);
 extern "C" void __cs_amiga_set(int index, int value);
 extern "C" void __gfx_Text(void* rastPort, char* text, int count);
 extern "C" void __gfx_SetFont(void* rastPort, void* font);
@@ -61,6 +74,11 @@ struct _UiAmiga
 {
     bool Open;
     bool Closed;
+    bool Confirm;          // closing by the user only asks (Window.ConfirmClose)
+    bool CloseRequested;   // the user asked to close it (with Confirm)
+    void* TimerPort;       // the reply port and the timerequest of timer.device (null until the first timed wait)
+    void* TimerIo;
+    bool NoTimer;          // timer.device could not be opened: a timed wait waits for input
     void* Gfx;
     void* Intuition;
     void* Window;
@@ -438,7 +456,10 @@ void _UiMessage(uint8* m)
         switch (cls)
         {
         case _IdcmpCloseWindow:
-            _UiA.Closed = true;
+            if (_UiA.Confirm)
+                _UiA.CloseRequested = true;
+            else
+                _UiA.Closed = true;
             break;
         case _IdcmpNewSize:
             _UiInnerSize();
@@ -546,6 +567,32 @@ void _UiRawKey(int code)
     }
 }
 
+// Opens timer.device for the timed waits of Pump (once); false if it cannot be opened.
+bool _UiTimer()
+{
+    if (_UiA.TimerIo != null)
+        return true;
+    if (_UiA.NoTimer)
+        return false;
+    unsafe
+    {
+        void* port = __exec_CreateMsgPort();
+        void* io = port != null ? __exec_CreateIORequest(port, 40) : null; // struct timerequest
+        if (io != null && __exec_OpenDevice("timer.device".CStr(), 1, io, 0) == 0) // UNIT_VBLANK
+        {
+            _UiA.TimerPort = port;
+            _UiA.TimerIo = io;
+            return true;
+        }
+        if (io != null)
+            __exec_DeleteIORequest(io);
+        if (port != null)
+            __exec_DeleteMsgPort(port);
+    }
+    _UiA.NoTimer = true;
+    return false;
+}
+
 struct _UiOs
 {
     static bool Supported() { return true; }
@@ -553,7 +600,7 @@ struct _UiOs
     // the window draws the frames of a Ui itself, from its commands
     static bool DrawsCommands() { return true; }
     static Font UiFont() { return Font.Metrics(Math.Max(1, _UiA.FontWidth), Math.Max(1, _UiA.FontHeight), _UiA.FontBaseline); }
-    // the program is only woken by input: the text cursor does not blink
+    // a frame takes long: the Ui wakes the program for no frames of its own (the text cursor does not blink)
     static bool Blinks() { return false; }
 
     // 0: open, 3: failed, 4: a window is already open, 5: AmigaOS is older than 3.0
@@ -631,8 +678,24 @@ struct _UiOs
             return false;
         unsafe
         {
-            // no timer: any wait is a wait for input (WaitPort returns at once if a message is there)
-            if (waitMs != 0 && !_UiA.Closed)
+            // a wait for input (WaitPort returns at once if a message is there), or for input or the timer: the port is
+            // empty here (every message was taken in the last round), so a message that came since has set its signal
+            if (waitMs > 0 && !_UiA.Closed && _UiTimer())
+            {
+                uint8* io = (uint8*)_UiA.TimerIo;
+                *(uint16*)(io + 28) = 9;                          // io_Command: TR_ADDREQUEST
+                *(int*)(io + 32) = waitMs / 1000;                 // tv_secs
+                *(int*)(io + 36) = (waitMs % 1000) * 1000;        // tv_micro
+                __exec_SendIO(io);
+                int portSignal = 1 << (int)*((uint8*)_UiA.Port + 15);      // mp_SigBit
+                int timerSignal = 1 << (int)*((uint8*)_UiA.TimerPort + 15);
+                __exec_Wait(portSignal | timerSignal);
+                if (__exec_CheckIO(io) == null)
+                    __exec_AbortIO(io);
+                __exec_WaitIO(io);
+                __exec_SetSignal(0, timerSignal);
+            }
+            else if (waitMs != 0 && !_UiA.Closed)
                 __exec_WaitPort(_UiA.Port);
             // everything that is waiting goes into one frame: a quick click (pressed and released) is one frame, which a
             // Ui handles as a click
@@ -671,6 +734,8 @@ struct _UiOs
         input.Ctrl = _UiA.Ctrl;
         input.Shift = _UiA.Shift;
         input.Alt = _UiA.Alt;
+        input.CloseRequested = _UiA.CloseRequested;
+        _UiA.CloseRequested = false;
         _UiA.Pressed = false;
         _UiA.Released = false;
         _UiA.RightPressed = false;
@@ -758,12 +823,21 @@ struct _UiOs
         }
     }
 
+    static void ConfirmClose(bool confirm) { _UiA.Confirm = confirm; }
+
     static void Close()
     {
         if (!_UiA.Open)
             return;
         unsafe
         {
+            if (_UiA.TimerIo != null)
+            {
+                __exec_CloseDevice(_UiA.TimerIo);
+                __exec_DeleteIORequest(_UiA.TimerIo);
+            }
+            if (_UiA.TimerPort != null)
+                __exec_DeleteMsgPort(_UiA.TimerPort);
             __intuition_CloseWindow(_UiA.Window);
             __gfx_WaitBlit();
             if (_UiA.BitMap != null)

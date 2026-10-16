@@ -93,7 +93,7 @@ jobs:
       # System.Ui with a real window: X11 (libX11 is loaded at run time) under a virtual X server
       - name: Open a window (X11, Xvfb)
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb libx11-6
+          sudo apt-get install -y --no-install-recommends xvfb libx11-6 libxtst6
           PATH="$LLVM_PREFIX/bin:$PATH" build/stage2/cshiftc tests/ui/window_smoke.cshift -o "$RUNNER_TEMP/window_smoke"
           xvfb-run -a "$RUNNER_TEMP/window_smoke"
 

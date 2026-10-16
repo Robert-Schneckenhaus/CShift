@@ -59,7 +59,8 @@ struct Window : IDisposable
     }
 
     /// Handles the events of the window and waits for input first, as long as the last frame asked for (see
-    /// [Ui.WaitMilliseconds]; after [Window.Show] of an image it does not wait). False once the user closed the window.
+    /// [Ui.WaitMilliseconds] and [Ui.RequestFrame]; after [Window.Show] of an image it does not wait). False once the
+    /// window was closed: by the user (unless [Window.ConfirmClose] is on) or by [Window.Close].
     bool Update()
     {
         bool open = _UiOs.Pump(_Wait);
@@ -71,8 +72,9 @@ struct Window : IDisposable
     UiInput Input()
     {
         var input = _UiOs.TakeInput();
-        // a window that cannot wake the program for the blinking of the text cursor: no time, the cursor stays on
-        input.Time = _UiOs.Blinks() ? (double)_Os.MonotonicTicks() / 10000000.0 : 0.0;
+        input.Time = (double)_Os.MonotonicTicks() / 10000000.0;
+        // a window that draws slowly: no frames for the blinking of the text cursor
+        input.Steady = !_UiOs.Blinks();
         return input;
     }
 
@@ -107,6 +109,37 @@ struct Window : IDisposable
 
     /// Changes the text in the title bar.
     void SetTitle(string title) { _UiOs.SetTitle(title); }
+
+    /// When `confirm` is true, the user closing the window (its close button, Alt+F4, the close gadget) does not close
+    /// it: the next frame's input has [UiInput.CloseRequested], and [Window.Update] stays true. The program can then
+    /// ask ("Save the changes?") and close the window with [Window.Close], or do nothing to keep it open. False (the
+    /// default): closing it ends [Window.Update] at once. In the browser the page cannot be closed by the program, so
+    /// there it has no effect.
+    ///
+    /// ```
+    /// window.ConfirmClose(true);
+    /// while (window.Update())
+    /// {
+    ///     ui.Begin(window);
+    ///     if (ui.Input().CloseRequested)
+    ///         asking = true;
+    ///     if (asking)
+    ///     {
+    ///         using (ui.Modal("quit", "Quit without saving?"))
+    ///         {
+    ///             if (ui.Button("Quit"))
+    ///                 window.Close();
+    ///             if (ui.Button("Cancel"))
+    ///                 asking = false;
+    ///         }
+    ///     }
+    ///     window.Show(ui);
+    /// }
+    /// ```
+    void ConfirmClose(bool confirm) { _UiOs.ConfirmClose(confirm); }
+
+    /// Closes the window: the next [Window.Update] returns false. The same as [Window.Dispose].
+    void Close() { _UiOs.Close(); }
 
     /// Closes the window.
     void Dispose() { _UiOs.Close(); }

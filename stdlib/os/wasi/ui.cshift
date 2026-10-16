@@ -142,6 +142,9 @@ struct _UiOs
         }
     }
 
+    // the page cannot be closed by the program: closing the tab is not asked about
+    static void ConfirmClose(bool confirm) { }
+
     static void Close()
     {
         if (!_UiWebOpen)
