@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.34] - 2026-10-16
+
 ### Standard library
 - `System.Ui` has what a tool like a tile map editor needs:
   - **The right and the middle mouse button**: `UiInput.RightDown`/`RightPressed`/`RightReleased` and
