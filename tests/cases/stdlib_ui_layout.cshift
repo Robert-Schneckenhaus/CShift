@@ -1,0 +1,156 @@
+// Standard library: the layout of System.Ui without a window - a scroll area down to the bottom of the window
+// (Ui.Scroll(id, 0)), an area down to the bottom (Ui.Area(0, 0)), a scroll area with both scroll bars (Ui.ScrollArea):
+// the wheel, Shift with the wheel, the horizontal wheel, dragging the horizontal scroll bar, Ui.SetScroll; fixed and
+// rest columns in a row whose rest column comes first. Main returns the number of failed checks.
+// expect-stdout: rest 451
+// expect-stdout: scrolled 0 120
+// expect-exit: 0
+
+using System;
+using System.Image;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+UiInput At(int x, int y)
+{
+    var input = UiInput.Create();
+    input.MouseX = x;
+    input.MouseY = y;
+    return input;
+}
+
+struct Rects
+{
+    Rect Scroll;
+    Rect Map;
+    Rect Rest;
+    Rect Side;
+    Rect View;
+}
+
+void Draw(Ui ui, ref Rects rects, int page)
+{
+    if (page == 0)
+    {
+        ui.Label("Above");
+        using (ui.Scroll("list", 0))
+        {
+            for (var i = 0; i < 100; i += 1)
+                ui.Label($"Line {i}");
+        }
+        rects.Scroll = ui.LastRect();
+    }
+    else if (page == 1)
+    {
+        using (ui.ScrollArea("map", 300, 200))
+        {
+            rects.Map = ui.Area(1000, 800);
+        }
+        rects.Scroll = ui.LastRect();
+        rects.Rest = ui.Area(0, 0);
+    }
+    else
+    {
+        // the view first, then the side bar of a fixed width on the right
+        using (ui.Row())
+        {
+            using (ui.Column(0))
+            {
+                rects.View = ui.Area(0, 50);
+            }
+            using (ui.Column(150))
+            {
+                ui.Label("Side");
+            }
+            rects.Side = ui.LastRect();
+        }
+    }
+}
+
+void Frame(Ui ui, UiInput input, ref Rects rects, int page)
+{
+    ui.Begin(input, 500, 500, 1.0);
+    Draw(ui, ref rects, page);
+    ui.End();
+}
+
+void Settle(Ui ui, ref Rects rects, int page)
+{
+    for (var i = 0; i < 4; i += 1)
+    {
+        Frame(ui, At(-1, -1), ref rects, page);
+        if (ui.WaitMilliseconds() != 0)
+            return;
+    }
+}
+
+int Main()
+{
+    var ui = Ui.Create();
+    var rects = Rects { };
+
+    // ---- a scroll area down to the bottom ----
+    Settle(ui, ref rects, 0);
+    Console.WriteLine($"rest {rects.Scroll.Height}");
+    Check(rects.Scroll.Y + rects.Scroll.Height == 500 - 10, "the scroll area ends at the margin of the window");
+    var wheel = At(rects.Scroll.X + 20, rects.Scroll.Y + 20);
+    wheel.Wheel = -2;
+    Frame(ui, wheel, ref rects, 0);
+    Check(ui.ScrollY("list") > 0, "the wheel scrolls it");
+
+    // ---- both ways ----
+    Settle(ui, ref rects, 1);
+    Check(rects.Scroll.Width == 300 && rects.Scroll.Height == 200, $"the size of the scroll area {rects.Scroll}");
+    Check(rects.Rest.Y + rects.Rest.Height == 490 && rects.Rest.Y > rects.Scroll.Y + 200, $"an area down to the bottom {rects.Rest}");
+    var inside = At(rects.Scroll.X + 50, rects.Scroll.Y + 50);
+    inside.Wheel = -1;
+    Frame(ui, inside, ref rects, 1);
+    int y1 = ui.ScrollY("map");
+    Check(y1 > 0 && ui.ScrollX("map") == 0, "the wheel scrolls down");
+    var shifted = At(rects.Scroll.X + 50, rects.Scroll.Y + 50);
+    shifted.Wheel = -1;
+    shifted.Shift = true;
+    Frame(ui, shifted, ref rects, 1);
+    Check(ui.ScrollX("map") > 0 && ui.ScrollY("map") == y1, "Shift with the wheel scrolls to the right");
+    int x1 = ui.ScrollX("map");
+    var sideways = At(rects.Scroll.X + 50, rects.Scroll.Y + 50);
+    sideways.WheelX = 2;
+    Frame(ui, sideways, ref rects, 1);
+    Check(ui.ScrollX("map") > x1, "the horizontal wheel");
+    Frame(ui, At(-1, -1), ref rects, 1);
+    Check(rects.Map.X < rects.Scroll.X, "the content moves to the left");
+    // the horizontal scroll bar: drag its thumb to the right end
+    int barY = rects.Scroll.Y + rects.Scroll.Height - 6;
+    var press = At(rects.Scroll.X + 20, barY);
+    press.MousePressed = true;
+    press.MouseDown = true;
+    Frame(ui, press, ref rects, 1);
+    var drag = At(rects.Scroll.X + 400, barY);
+    drag.MouseDown = true;
+    Frame(ui, drag, ref rects, 1);
+    var release = At(rects.Scroll.X + 400, barY);
+    release.MouseReleased = true;
+    Frame(ui, release, ref rects, 1);
+    int maxX = ui.ScrollX("map");
+    Check(maxX > 600, $"the thumb at the end ({maxX})");
+    Check(rects.Map.X + 1000 + 4 >= rects.Scroll.X + 300 - 10 - 2, "the right end of the content is in view");
+    ui.SetScroll("map", 0, 120);
+    Settle(ui, ref rects, 1);
+    Console.WriteLine($"scrolled {ui.ScrollX("map")} {ui.ScrollY("map")}");
+
+    // ---- a rest column before a fixed one ----
+    Settle(ui, ref rects, 2);
+    Check(rects.Side.Width == 150 && rects.Side.X + 150 == 490, $"the fixed column on the right {rects.Side}");
+    Check(rects.View.X == 10 && rects.View.Width == 480 - 150 - 6, $"the rest column on the left {rects.View}");
+    return Failures;
+}

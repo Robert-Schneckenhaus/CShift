@@ -1,10 +1,61 @@
-// System.Ui with a real window: opens it, draws frames of a Ui and shows them, and closes it again - without input, so
+// System.Ui with a real window: opens it, draws frames of a Ui and shows them, and closes it again - without a user, so
 // it runs unattended (CI: on Linux under Xvfb, with libX11 loaded at run time). Prints "window ok" and the size.
+// On X11 with the XTEST extension (libXtst) it also clicks the button with the right and the middle mouse button
+// (fake events of the X server) and checks that the Ui got them; without XTEST that part is skipped.
 //
 //   cshiftc tests/ui/window_smoke.cshift -o smoke && xvfb-run -a ./smoke
 
 using System;
 using System.Ui;
+
+extern "C" void* dlopen(char* file, int mode);
+extern "C" void* dlsym(void* handle, char* name);
+
+// XTEST: fake events of the mouse, as if the user had moved it and pressed a button
+struct FakeMouse
+{
+    bool Ok;
+    void* Display;
+    Func<void*, int, int, int, nuint, int> Motion;
+    Func<void*, uint32, int, nuint, int> Button;
+    Func<void*, int> Flush;
+
+    static FakeMouse Open()
+    {
+        if (Process.IsWindows() || Process.IsMacOS())
+            return FakeMouse { };
+        unsafe
+        {
+            void* x11 = dlopen("libX11.so.6".CStr(), 2);
+            void* xtst = dlopen("libXtst.so.6".CStr(), 2);
+            if (x11 == null || xtst == null)
+                return FakeMouse { };
+            void* open = dlsym(x11, "XOpenDisplay".CStr());
+            void* motion = dlsym(xtst, "XTestFakeMotionEvent".CStr());
+            void* button = dlsym(xtst, "XTestFakeButtonEvent".CStr());
+            void* flush = dlsym(x11, "XFlush".CStr());
+            if (open == null || motion == null || button == null || flush == null)
+                return FakeMouse { };
+            void* display = ((Func<char*, void*>)open)(null);
+            if (display == null)
+                return FakeMouse { };
+            return FakeMouse { Ok = true, Display = display, Motion = (Func<void*, int, int, int, nuint, int>)motion,
+                               Button = (Func<void*, uint32, int, nuint, int>)button, Flush = (Func<void*, int>)flush };
+        }
+    }
+
+    // a press and a release of a button (1 left, 2 middle, 3 right) at a point of the screen
+    void Click(int x, int y, uint32 button)
+    {
+        unsafe
+        {
+            Motion(Display, -1, x, y, 0);
+            Button(Display, button, 1, 0);
+            Button(Display, button, 0, 0);
+            Flush(Display);
+        }
+    }
+}
 
 int Main()
 {
@@ -15,8 +66,12 @@ int Main()
         return 1;
     }
     var ui = Ui.Create();
+    var fake = FakeMouse.Open();
     int clicks = 0;
-    for (var frame = 0; frame < 30; frame += 1)
+    int rightClicks = 0;
+    int middle = 0;
+    var button = Rect.Create(0, 0, 0, 0);
+    for (var frame = 0; frame < 200; frame += 1)
     {
         if (!window.Update())
         {
@@ -27,7 +82,23 @@ int Main()
         ui.Label($"Frame {frame}");
         if (ui.Button("Click"))
             clicks += 1;
+        button = ui.LastRect();
+        if (ui.RightClicked())
+            rightClicks += 1;
+        if (ui.Input().MiddleReleased)
+            middle += 1;
         window.Show(ui.End()); // shown as an image: the next Update does not wait for input
+        // the window is at the top left of the screen of Xvfb (no window manager): its pixels are the screen's
+        if (fake.Ok && frame == 20)
+            fake.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 3u);
+        if (fake.Ok && frame == 60)
+            fake.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 2u);
+        if (frame >= 29 && !fake.Ok)
+            break;
+        if (frame > 100 && rightClicks > 0 && middle > 0)
+            break;
+        if (fake.Ok)
+            Thread.Sleep(5); // time for the X server to deliver the fake events
     }
     int width = window.Width();
     int height = window.Height();
@@ -39,6 +110,17 @@ int Main()
         Console.WriteLine($"error: size {width} x {height}");
         return 1;
     }
+    if (fake.Ok)
+    {
+        if (rightClicks != 1 || middle != 1 || clicks != 0)
+        {
+            Console.WriteLine($"error: right clicks {rightClicks}, middle {middle}, left clicks {clicks}");
+            return 1;
+        }
+        Console.WriteLine("mouse buttons ok (right and middle, with XTEST)");
+    }
+    else
+        Console.WriteLine("mouse buttons skipped (no XTEST)");
     Console.WriteLine($"window ok {width} x {height}, scale {scale:F2}");
     return 0;
 }

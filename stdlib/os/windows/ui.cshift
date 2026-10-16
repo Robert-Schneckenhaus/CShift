@@ -65,8 +65,15 @@ struct _UiWin32
     bool MouseDown;
     bool Pressed;
     bool Released;
+    bool RightDown;
+    bool RightPressed;
+    bool RightReleased;
+    bool MiddleDown;
+    bool MiddlePressed;
+    bool MiddleReleased;
     bool ButtonEvent;     // a button changed in this round of messages: stop, so that it gets a frame of its own
     int WheelDelta;       // 1/120 notches
+    int WheelXDelta;
     List<Key> Keys;
     StringBuilder Text;
     int HighSurrogate;
@@ -74,6 +81,8 @@ struct _UiWin32
     void* CursorArrow;
     void* CursorText;
     void* CursorHand;
+    void* CursorCross;
+    void* CursorMove;
     void* Cursor;
 }
 
@@ -90,7 +99,12 @@ const uint32 _WmSysKeyDown = 0x0104u;
 const uint32 _WmMouseMove = 0x0200u;
 const uint32 _WmLButtonDown = 0x0201u;
 const uint32 _WmLButtonUp = 0x0202u;
+const uint32 _WmRButtonDown = 0x0204u;
+const uint32 _WmRButtonUp = 0x0205u;
+const uint32 _WmMButtonDown = 0x0207u;
+const uint32 _WmMButtonUp = 0x0208u;
 const uint32 _WmMouseWheel = 0x020Au;
+const uint32 _WmMouseHWheel = 0x020Eu;
 const uint32 _WmDpiChanged = 0x02E0u;
 const uint32 _WsOverlappedWindow = 0x00CF0000u;
 
@@ -132,23 +146,52 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
             _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
             return 0;
         case _WmLButtonDown:
-            _UiWin.MouseX = (int)(int16)(l & 0xFFFF);
-            _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
-            _UiWin.MouseDown = true;
-            _UiWin.Pressed = true;
-            _UiWin.ButtonEvent = true;
-            SetCapture(hwnd);
-            return 0;
         case _WmLButtonUp:
+        case _WmRButtonDown:
+        case _WmRButtonUp:
+        case _WmMButtonDown:
+        case _WmMButtonUp:
+        {
             _UiWin.MouseX = (int)(int16)(l & 0xFFFF);
             _UiWin.MouseY = (int)(int16)((l >> 16) & 0xFFFF);
-            _UiWin.MouseDown = false;
-            _UiWin.Released = true;
+            bool down = message == _WmLButtonDown || message == _WmRButtonDown || message == _WmMButtonDown;
+            if (message == _WmLButtonDown || message == _WmLButtonUp)
+            {
+                _UiWin.MouseDown = down;
+                if (down)
+                    _UiWin.Pressed = true;
+                else
+                    _UiWin.Released = true;
+            }
+            else if (message == _WmRButtonDown || message == _WmRButtonUp)
+            {
+                _UiWin.RightDown = down;
+                if (down)
+                    _UiWin.RightPressed = true;
+                else
+                    _UiWin.RightReleased = true;
+            }
+            else
+            {
+                _UiWin.MiddleDown = down;
+                if (down)
+                    _UiWin.MiddlePressed = true;
+                else
+                    _UiWin.MiddleReleased = true;
+            }
             _UiWin.ButtonEvent = true;
-            ReleaseCapture();
+            // the window keeps the mouse while a button is held (it may go up outside of it)
+            if (down)
+                SetCapture(hwnd);
+            else if (!_UiWin.MouseDown && !_UiWin.RightDown && !_UiWin.MiddleDown)
+                ReleaseCapture();
             return 0;
+        }
         case _WmMouseWheel:
             _UiWin.WheelDelta += (int)(int16)((w >> 16) & 0xFFFFul);
+            return 0;
+        case _WmMouseHWheel:
+            _UiWin.WheelXDelta += (int)(int16)((w >> 16) & 0xFFFFul);
             return 0;
         case _WmKeyDown:
         case _WmSysKeyDown:
@@ -258,6 +301,8 @@ struct _UiOs
             _UiWin.CursorArrow = LoadCursorW(null, 32512);
             _UiWin.CursorText = LoadCursorW(null, 32513);
             _UiWin.CursorHand = LoadCursorW(null, 32649);
+            _UiWin.CursorCross = LoadCursorW(null, 32515); // IDC_CROSS
+            _UiWin.CursorMove = LoadCursorW(null, 32646);  // IDC_SIZEALL
             _UiWin.Cursor = _UiWin.CursorArrow;
             // the size for the screen's scale
             _UiWin.Dpi = GetDpiForWindow(hwnd);
@@ -305,8 +350,16 @@ struct _UiOs
         input.MouseDown = _UiWin.MouseDown;
         input.MousePressed = _UiWin.Pressed;
         input.MouseReleased = _UiWin.Released;
+        input.RightDown = _UiWin.RightDown;
+        input.RightPressed = _UiWin.RightPressed;
+        input.RightReleased = _UiWin.RightReleased;
+        input.MiddleDown = _UiWin.MiddleDown;
+        input.MiddlePressed = _UiWin.MiddlePressed;
+        input.MiddleReleased = _UiWin.MiddleReleased;
         input.Wheel = _UiWin.WheelDelta / 120;
         _UiWin.WheelDelta -= input.Wheel * 120;
+        input.WheelX = _UiWin.WheelXDelta / 120;
+        _UiWin.WheelXDelta -= input.WheelX * 120;
         foreach (var key in _UiWin.Keys)
             input.Keys.Add(key);
         input.Text = _UiWin.Text.ToString();
@@ -315,6 +368,10 @@ struct _UiOs
         input.Alt = GetKeyState(0x12) < 0;
         _UiWin.Pressed = false;
         _UiWin.Released = false;
+        _UiWin.RightPressed = false;
+        _UiWin.RightReleased = false;
+        _UiWin.MiddlePressed = false;
+        _UiWin.MiddleReleased = false;
         _UiWin.Keys.Clear();
         _UiWin.Text.Clear();
         return input;
@@ -339,7 +396,8 @@ struct _UiOs
 
     static void SetPointer(Cursor cursor)
     {
-        void* wanted = cursor == Cursor.Text ? _UiWin.CursorText : cursor == Cursor.Hand ? _UiWin.CursorHand : _UiWin.CursorArrow;
+        void* wanted = cursor == Cursor.Text ? _UiWin.CursorText : cursor == Cursor.Hand ? _UiWin.CursorHand :
+                       cursor == Cursor.Crosshair ? _UiWin.CursorCross : cursor == Cursor.Move ? _UiWin.CursorMove : _UiWin.CursorArrow;
         if (wanted != _UiWin.Cursor)
         {
             _UiWin.Cursor = wanted;

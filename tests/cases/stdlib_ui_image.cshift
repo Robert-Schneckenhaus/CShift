@@ -1,0 +1,168 @@
+// Standard library: Canvas.DrawImage of a part of an image, unscaled and scaled (nearest neighbour: whole zoom factors
+// and any other size, transparency, clipping, a source that reaches past the image), the ImagePart command of a frame
+// with commands, ui.DrawImage inside a popup layer, and a benchmark: a map of 50 x 50 tiles of 16 x 16 pixels at zoom 2
+// in a view of 800 x 500 (the map view of a tile editor). Main returns the number of failed checks.
+// skip-target: m68k (no pixels are drawn on the Amiga, and qemu is too slow for the benchmark)
+// expect-stdout: unscaled ok
+// expect-stdout: zoom ok
+// expect-stdout: odd ok
+// expect-stdout: map frames 10
+// expect-exit: 0
+
+using System;
+using System.Image;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+// a tile set: 4 x 4 tiles of 16 x 16, tile n filled with the color n (the top left pixel of tile 0 transparent)
+Image Tiles()
+{
+    var image = Image.Create(64, 64);
+    for (var y = 0; y < 64; y += 1)
+    {
+        for (var x = 0; x < 64; x += 1)
+        {
+            int n = (y / 16) * 4 + x / 16;
+            image.SetPixel(x, y, Color.FromRgb(n * 10, 255 - n * 10, (x % 16) * 16));
+        }
+    }
+    image.SetPixel(0, 0, Color.FromArgb(0x00000000u));
+    image.SetPixel(1, 0, Color.FromArgb(128, 255, 255, 255));
+    return image;
+}
+
+int Main()
+{
+    var tiles = Tiles();
+    var target = Image.Create(100, 80);
+    var canvas = Canvas.Create(target);
+
+    // ---- a part, unscaled ----
+    canvas.Clear(Color.Black());
+    canvas.DrawImage(tiles, Rect.Create(16, 16, 16, 16), 10, 20); // tile 5
+    bool unscaled = target.GetPixel(10, 20).ToArgb() == tiles.GetPixel(16, 16).ToArgb()
+        && target.GetPixel(25, 35).ToArgb() == tiles.GetPixel(31, 31).ToArgb()
+        && target.GetPixel(26, 20).ToArgb() == 0xFF000000u && target.GetPixel(9, 20).ToArgb() == 0xFF000000u;
+    Check(unscaled, "a tile, unscaled");
+    // transparency: tile 0 has a transparent and a half transparent pixel
+    canvas.DrawImage(tiles, Rect.Create(0, 0, 16, 16), 40, 0);
+    Check(target.GetPixel(40, 0).ToArgb() == 0xFF000000u, "a transparent pixel leaves the target");
+    Check(target.GetPixel(41, 0).R > 100 && target.GetPixel(41, 0).R < 160, "a half transparent pixel is blended");
+    Console.WriteLine($"unscaled {(unscaled ? "ok" : "wrong")}");
+
+    // ---- a whole zoom factor ----
+    canvas.Clear(Color.Black());
+    canvas.DrawImage(tiles, Rect.Create(16, 0, 16, 16), Rect.Create(5, 5, 48, 48)); // tile 1 at zoom 3
+    bool zoom = true;
+    for (var y = 0; y < 48; y += 1)
+    {
+        for (var x = 0; x < 48; x += 1)
+        {
+            if (target.GetPixel(5 + x, 5 + y).ToArgb() != tiles.GetPixel(16 + x / 3, y / 3).ToArgb())
+                zoom = false;
+        }
+    }
+    Check(zoom, "zoom 3");
+    Check(target.GetPixel(53, 5).ToArgb() == 0xFF000000u && target.GetPixel(5, 53).ToArgb() == 0xFF000000u, "nothing outside the target");
+    // clipped: only a part of the target
+    canvas.Clear(Color.Black());
+    canvas.SetClip(Rect.Create(10, 10, 7, 5));
+    canvas.DrawImage(tiles, Rect.Create(16, 0, 16, 16), Rect.Create(4, 4, 32, 32));
+    canvas.SetClip(Rect.Create(0, 0, 100, 80));
+    Check(target.GetPixel(10, 10).ToArgb() == tiles.GetPixel(16 + 3, 3).ToArgb(), "zoom 2, clipped: the first pixel");
+    Check(target.GetPixel(16, 14).ToArgb() == tiles.GetPixel(16 + 6, 5).ToArgb(), "zoom 2, clipped: the last pixel");
+    Check(target.GetPixel(17, 10).ToArgb() == 0xFF000000u && target.GetPixel(9, 10).ToArgb() == 0xFF000000u, "zoom 2, clipped: outside");
+    Console.WriteLine($"zoom {(zoom ? "ok" : "wrong")}");
+
+    // ---- any other size ----
+    canvas.Clear(Color.Black());
+    canvas.DrawImage(tiles, Rect.Create(0, 16, 32, 16), Rect.Create(0, 0, 48, 20)); // tiles 4 and 5, 1.5 x 1.25
+    bool odd = target.GetPixel(0, 0).ToArgb() == tiles.GetPixel(0, 16).ToArgb()
+        && target.GetPixel(47, 19).ToArgb() == tiles.GetPixel(31, 31).ToArgb()
+        && target.GetPixel(24, 10).ToArgb() == tiles.GetPixel(16, 24).ToArgb();
+    Check(odd, "1.5 x 1.25");
+    // smaller than the source
+    canvas.DrawImage(tiles, Rect.Create(0, 0, 64, 64), Rect.Create(60, 0, 32, 32));
+    Check(target.GetPixel(60 + 9, 9).ToArgb() == tiles.GetPixel(19, 19).ToArgb(), "half the size");
+    // a source that reaches past the image: the part that is there, in its place
+    canvas.Clear(Color.Black());
+    canvas.DrawImage(tiles, Rect.Create(48, 48, 32, 32), Rect.Create(0, 0, 64, 64));
+    Check(target.GetPixel(0, 0).ToArgb() == tiles.GetPixel(48, 48).ToArgb() && target.GetPixel(40, 40).ToArgb() == 0xFF000000u,
+          "a source past the image");
+    Console.WriteLine($"odd {(odd ? "ok" : "wrong")}");
+
+    // ---- with commands, and inside a popup ----
+    var ui = Ui.Create();
+    var input = UiInput.Create();
+    ui.BeginCommands(input, 200, 100, 1.0, Font.Metrics(8, 8, 6));
+    ui.DrawImage(tiles, Rect.Create(16, 16, 16, 16), Rect.Create(20, 20, 32, 32));
+    ui.End();
+    bool part = false;
+    foreach (var c in ui.Commands())
+    {
+        if (c.Kind == UiCommandKind.ImagePart && c.Source.Equals(Rect.Create(16, 16, 16, 16)) && c.Rect.Equals(Rect.Create(20, 20, 32, 32)))
+            part = true;
+    }
+    Check(part, "the ImagePart command");
+    // a modal shows an image on top of the dimmed frame
+    for (var frame = 0; frame < 3; frame += 1)
+    {
+        ui.Begin(input, 300, 200, 1.0);
+        ui.Label("behind");
+        using (ui.Modal("tile", "Tile"))
+        {
+            var r = ui.Area(32, 32);
+            ui.DrawImage(tiles, Rect.Create(16, 16, 16, 16), r);
+        }
+        ui.End();
+    }
+    ui.Begin(input, 300, 200, 1.0);
+    Rect shown = Rect.Create(0, 0, 0, 0);
+    using (ui.Modal("tile", "Tile"))
+    {
+        shown = ui.Area(32, 32);
+        ui.DrawImage(tiles, Rect.Create(16, 16, 16, 16), shown);
+    }
+    var image = ui.End();
+    Check(image.GetPixel(shown.X + 1, shown.Y + 1).ToArgb() == tiles.GetPixel(16, 16).ToArgb(), "an image in a modal, over the dimming");
+
+    // ---- the benchmark: 50 x 50 tiles at zoom 2 in a view of 800 x 500, scrolled to the middle ----
+    var view = Image.Create(800, 500);
+    var c2 = Canvas.Create(view);
+    int frames = 10;
+    var watch = Stopwatch.StartNew();
+    for (var f = 0; f < frames; f += 1)
+    {
+        int scrollX = 300 + f;
+        int scrollY = 400;
+        for (var ty = 0; ty < 50; ty += 1)
+        {
+            int y = ty * 32 - scrollY;
+            if (y + 32 <= 0 || y >= 500)
+                continue;
+            for (var tx = 0; tx < 50; tx += 1)
+            {
+                int x = tx * 32 - scrollX;
+                if (x + 32 <= 0 || x >= 800)
+                    continue;
+                int n = (tx * 7 + ty * 3) % 16;
+                c2.DrawImage(tiles, Rect.Create((n % 4) * 16, (n / 4) * 16, 16, 16), Rect.Create(x, y, 32, 32));
+            }
+        }
+    }
+    double ms = watch.Elapsed().TotalMilliseconds() / (double)frames;
+    Console.WriteLine($"map frames {frames}");
+    Console.WriteLine($"map: {ms:F2} ms per frame of 800 x 500 (400 tiles at zoom 2)");
+    Check(ms < 100.0, $"a frame of the map view takes {ms:F1} ms");
+    return Failures;
+}

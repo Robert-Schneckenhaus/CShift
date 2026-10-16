@@ -9,7 +9,7 @@
 // The functions of the host:
 //   int cshift_ui_open(char* title, int width, int height)   0: the canvas has the size (pixels at scale 1), 1: none
 //   void cshift_ui_wait(int milliseconds)                    suspends until input, or the time (-1: no limit)
-//   int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity)
+//   int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity)   (state: 17 ints)
 //       the input since the last call (see _UiOs.TakeInput); returns the number of keys
 //   int cshift_ui_width(), int cshift_ui_height()            the canvas in its pixels
 //   double cshift_ui_scale()                                 devicePixelRatio (or the option pixelRatio)
@@ -78,8 +78,9 @@ struct _UiOs
             return input;
         unsafe
         {
-            // mouse x, y, down, pressed, released, wheel, ctrl, shift, alt, the length of the text
-            var state = new int32[10];
+            // mouse x, y, down, pressed, released, wheel, ctrl, shift, alt, the length of the text; the right button
+            // (down, pressed, released), the middle one, the horizontal wheel (zero from a cshift.js before 0.34)
+            var state = new int32[17];
             var keys = new int32[64];
             var text = new uint8[1024];
             int count = cshift_ui_take(&state[0], &keys[0], keys.Length, (char*)&text[0], text.Length);
@@ -92,6 +93,13 @@ struct _UiOs
             input.Ctrl = state[6] != 0;
             input.Shift = state[7] != 0;
             input.Alt = state[8] != 0;
+            input.RightDown = state[10] != 0;
+            input.RightPressed = state[11] != 0;
+            input.RightReleased = state[12] != 0;
+            input.MiddleDown = state[13] != 0;
+            input.MiddlePressed = state[14] != 0;
+            input.MiddleReleased = state[15] != 0;
+            input.WheelX = state[16];
             for (var i = 0; i < Math.Min(count, keys.Length); i += 1)
             {
                 var key = _UiKeyOfVk(keys[i]);

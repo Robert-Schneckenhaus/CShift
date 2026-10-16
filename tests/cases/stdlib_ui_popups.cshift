@@ -1,0 +1,342 @@
+// Standard library: System.Ui without a window - the right mouse button (Ui.RightClicked on a button and on an area),
+// popups (a context menu: open at the mouse, an item, a click outside, Escape), the combo box (open, choose with the
+// mouse and with the keys, close), a modal dialog (it blocks the input to the widgets behind it), a menu bar, fixed
+// columns in a row, a scroll area down to the bottom of the window, a scroll area with both scroll bars, the IntBox,
+// tooltips, SetCursor, and the layers in the pixels and in the commands. Main returns the number of failed checks.
+// expect-stdout: right click true
+// expect-stdout: popup item Paste
+// expect-stdout: combo 2
+// expect-stdout: modal blocks true
+// expect-stdout: columns 200
+// expect-exit: 0
+
+using System;
+using System.Image;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+// input with the mouse at (x, y)
+UiInput At(int x, int y)
+{
+    var input = UiInput.Create();
+    input.MouseX = x;
+    input.MouseY = y;
+    return input;
+}
+
+// a click with the left button (pressed and released in one frame)
+UiInput Click(int x, int y)
+{
+    var input = At(x, y);
+    input.MousePressed = true;
+    input.MouseReleased = true;
+    return input;
+}
+
+UiInput RightClick(int x, int y)
+{
+    var input = At(x, y);
+    input.RightPressed = true;
+    input.RightReleased = true;
+    return input;
+}
+
+UiInput Keys(Key key)
+{
+    var input = At(-1, -1);
+    input.Keys.Add(key);
+    return input;
+}
+
+int Center(Rect r, bool y) { return y ? r.Y + r.Height / 2 : r.X + r.Width / 2; }
+
+struct App
+{
+    int Combo;
+    List<string> Items;
+    List<string> Many;
+    int ManyChoice;
+    string Chosen;
+    bool ShowModal;
+    int Behind;
+    int Number;
+    bool AreaRight;
+    bool ButtonRight;
+}
+
+struct Rects
+{
+    Rect Button;
+    Rect Area;
+    Rect Combo;
+    Rect Many;
+    Rect Behind;
+    Rect Number;
+    Rect Paste;
+    Rect Item2;
+    Rect ModalOk;
+    Rect Side;
+    Rect View;
+    Rect Menu;
+}
+
+void Draw(Ui ui, ref App app, ref Rects rects)
+{
+    using (ui.MenuBar())
+    {
+        using (ui.Menu("File"))
+        {
+            if (ui.MenuItem("Open", "Ctrl+O"))
+                app.Chosen = "Open";
+            if (ui.MenuItem("Quit"))
+                app.Chosen = "Quit";
+        }
+        rects.Menu = ui.LastRect();
+    }
+    if (ui.Button("Behind"))
+        app.Behind += 1;
+    rects.Behind = ui.LastRect();
+    if (ui.RightClicked())
+        app.ButtonRight = true;
+    ui.Tooltip("A button behind the dialog");
+    var area = ui.Area(200, 40);
+    rects.Area = area;
+    if (ui.RightClicked())
+    {
+        app.AreaRight = true;
+        ui.OpenPopup("context");
+    }
+    if (ui.Hovered())
+        ui.SetCursor(Cursor.Crosshair);
+    using (ui.Popup("context"))
+    {
+        if (ui.MenuItem("Cut", "Ctrl+X"))
+            app.Chosen = "Cut";
+        if (ui.MenuItem("Paste", "Ctrl+V"))
+            app.Chosen = "Paste";
+        rects.Paste = ui.LastRect();
+    }
+    ui.ComboBox("combo", ref app.Combo, app.Items);
+    rects.Combo = ui.LastRect();
+    ui.ComboBox("many", ref app.ManyChoice, app.Many);
+    rects.Many = ui.LastRect();
+    ui.IntBox("number", ref app.Number, 0, 99);
+    rects.Number = ui.LastRect();
+    using (ui.Row())
+    {
+        using (ui.Column(200))
+        {
+            ui.Label("Side");
+            rects.Side = ui.LastRect();
+        }
+        rects.Side = ui.LastRect();
+        using (ui.Column(0))
+        {
+            var r = ui.Area(0, 30);
+            rects.View = r;
+        }
+    }
+    if (app.ShowModal)
+    {
+        using (ui.Modal("ask", "Unsaved changes"))
+        {
+            ui.Label("Save the map?");
+            if (ui.Button("OK"))
+                app.ShowModal = false;
+            rects.ModalOk = ui.LastRect();
+        }
+    }
+}
+
+Image Frame(Ui ui, UiInput input, ref App app, ref Rects rects)
+{
+    ui.Begin(input, 600, 500, 1.0);
+    Draw(ui, ref app, ref rects);
+    return ui.End();
+}
+
+// draws frames without input until the layout settles
+void Settle(Ui ui, ref App app, ref Rects rects)
+{
+    for (var i = 0; i < 4; i += 1)
+    {
+        Frame(ui, At(-1, -1), ref app, ref rects);
+        if (ui.WaitMilliseconds() != 0)
+            return;
+    }
+}
+
+int Main()
+{
+    var ui = Ui.Create();
+    var app = App { Items = List<string>.Create(), Many = List<string>.Create(), Chosen = "" };
+    app.Items.Add("Grass");
+    app.Items.Add("Stone");
+    app.Items.Add("Water");
+    for (var i = 0; i < 40; i += 1)
+        app.Many.Add($"Event {i}");
+    var rects = Rects { };
+    Settle(ui, ref app, ref rects);
+
+    // ---- the right button ----
+    Frame(ui, RightClick(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    Check(app.ButtonRight, "right click on a button");
+    Check(app.Behind == 0, "a right click is not a click");
+    Frame(ui, RightClick(Center(rects.Area, false), Center(rects.Area, true)), ref app, ref rects);
+    Console.WriteLine($"right click {app.AreaRight}");
+    Check(ui.IsPopupOpen("context"), "the context menu opened");
+    Settle(ui, ref app, ref rects);
+    Check(!rects.Paste.IsEmpty(), "the popup has its items");
+    Check(rects.Paste.X >= rects.Area.X + rects.Area.Width / 2 - 2, "the popup is at the mouse");
+    // ---- the popup: an item ----
+    Frame(ui, Click(Center(rects.Paste, false), Center(rects.Paste, true)), ref app, ref rects);
+    Console.WriteLine($"popup item {app.Chosen}");
+    Check(!ui.IsPopupOpen("context"), "an item closes the popup");
+    // ---- a click outside closes it, and goes no further ----
+    Frame(ui, RightClick(Center(rects.Area, false), Center(rects.Area, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Check(ui.IsPopupOpen("context"), "opened again");
+    Frame(ui, Click(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    Check(!ui.IsPopupOpen("context"), "a click outside closes the popup");
+    Check(app.Behind == 0, "the click that closes a popup goes no further");
+    // ---- Escape closes it ----
+    Frame(ui, RightClick(Center(rects.Area, false), Center(rects.Area, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Keys(Key.Escape), ref app, ref rects);
+    Check(!ui.IsPopupOpen("context"), "Escape closes the popup");
+    // ---- the popup is drawn over the widgets below it (in the pixels) ----
+    Frame(ui, RightClick(rects.Area.X + 4, rects.Area.Y + 4), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    var frame = Frame(ui, At(-1, -1), ref app, ref rects);
+    var theme = ui.GetTheme();
+    // the combo box is below the area: the popup covers its left part (the panel color, not the control color)
+    uint32 over = frame.GetPixel(rects.Combo.X + 30, rects.Combo.Y + 3).ToArgb();
+    Check(over == theme.Panel.ToArgb() || over == theme.Selection.ToArgb(), $"the popup covers the combo box ({over:X8})");
+    Frame(ui, Keys(Key.Escape), ref app, ref rects);
+
+    // ---- the combo box: open with a click, choose an item ----
+    Frame(ui, Click(Center(rects.Combo, false), Center(rects.Combo, true)), ref app, ref rects);
+    Check(ui.IsPopupOpen("combo") == false, "a combo box list is not a popup of the program");
+    Settle(ui, ref app, ref rects);
+    // the list is below the box: the third item
+    int pitch = rects.Combo.Height + 6;
+    int itemY = rects.Combo.Y + rects.Combo.Height + 4 + 2 * pitch + rects.Combo.Height / 2;
+    Frame(ui, Click(Center(rects.Combo, false), itemY), ref app, ref rects);
+    Console.WriteLine($"combo {app.Combo}");
+    Settle(ui, ref app, ref rects);
+    // a click outside closes the list without choosing
+    Frame(ui, Click(Center(rects.Combo, false), Center(rects.Combo, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Click(590, 490), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Check(app.Combo == 2, "a click outside chooses nothing");
+    // the keys: Up chooses the item before (the box has the focus after the click)
+    Frame(ui, Click(Center(rects.Combo, false), Center(rects.Combo, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Keys(Key.Escape), ref app, ref rects); // closes the list, the focus stays
+    Frame(ui, Keys(Key.Up), ref app, ref rects);
+    Check(app.Combo == 1, $"Up chooses the item before ({app.Combo})");
+    // Enter opens the list, Down moves in it, Enter chooses
+    Frame(ui, Keys(Key.Enter), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Keys(Key.Down), ref app, ref rects);
+    Frame(ui, Keys(Key.Enter), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Check(app.Combo == 2, $"Down and Enter in the list ({app.Combo})");
+    // a long list scrolls: End and Enter choose the last item
+    Frame(ui, Click(Center(rects.Many, false), Center(rects.Many, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Keys(Key.End), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Keys(Key.Enter), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    Check(app.ManyChoice == 39, $"the last item of a long list ({app.ManyChoice})");
+
+    // ---- the menu bar ----
+    Frame(ui, Click(Center(rects.Menu, false), Center(rects.Menu, true)), ref app, ref rects);
+    Settle(ui, ref app, ref rects);
+    // "Quit" is the second item below the menu
+    int quitY = rects.Menu.Y + rects.Menu.Height + 4 + pitch + rects.Menu.Height / 2;
+    Frame(ui, Click(rects.Menu.X + 20, quitY), ref app, ref rects);
+    Check(app.Chosen == "Quit", $"a menu item ({app.Chosen})");
+
+    // ---- the modal dialog: the widgets behind it get no input ----
+    app.ShowModal = true;
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Click(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    Console.WriteLine($"modal blocks {app.Behind == 0}");
+    Check(!rects.ModalOk.IsEmpty() && rects.ModalOk.X > 150, "the dialog is in the middle");
+    var dimmed = Frame(ui, At(-1, -1), ref app, ref rects);
+    Check(dimmed.GetPixel(2, 499 - 2).R < theme.Background.R, "the rest of the window is dimmed");
+    Frame(ui, Click(Center(rects.ModalOk, false), Center(rects.ModalOk, true)), ref app, ref rects);
+    Check(!app.ShowModal, "the button of the dialog");
+    Settle(ui, ref app, ref rects);
+    Frame(ui, Click(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    Check(app.Behind == 1, "the input goes behind again once the dialog is gone");
+
+    // ---- fixed columns ----
+    Console.WriteLine($"columns {rects.Side.Width}");
+    Check(rects.View.X == rects.Side.X + 200 + 6, $"the rest column starts after the fixed one ({rects.View.X})");
+    Check(rects.View.Width == 600 - 10 - rects.View.X, $"the rest column takes the rest ({rects.View.Width})");
+
+    // ---- IntBox ----
+    Frame(ui, Click(Center(rects.Number, false), Center(rects.Number, true)), ref app, ref rects);
+    var typing = At(-1, -1);
+    typing.Text = "4x2";
+    Frame(ui, typing, ref app, ref rects);
+    Check(app.Number == 42, $"IntBox takes digits only ({app.Number})");
+    var more = At(-1, -1);
+    more.Text = "9";
+    Frame(ui, more, ref app, ref rects);
+    Check(app.Number == 99, $"IntBox keeps to the range ({app.Number})");
+    Frame(ui, Keys(Key.Down), ref app, ref rects);
+    Check(app.Number == 98, $"Down subtracts 1 ({app.Number})");
+
+    // ---- tooltip and cursor ----
+    Frame(ui, At(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    var tip = Frame(ui, At(Center(rects.Behind, false), Center(rects.Behind, true)), ref app, ref rects);
+    int tx = Center(rects.Behind, false) + 12 + 8;
+    int ty = Center(rects.Behind, true) + 18 + 8;
+    bool found = false;
+    for (var x = tx; x < tx + 60; x += 1)
+    {
+        if (tip.GetPixel(x, ty).ToArgb() == theme.Text.ToArgb())
+            found = true;
+    }
+    Check(found, "the tooltip is drawn next to the mouse");
+    Frame(ui, At(Center(rects.Area, false), Center(rects.Area, true)), ref app, ref rects);
+    Check(ui.Cursor() == Cursor.Crosshair, "SetCursor");
+
+    // ---- with commands: the popup comes after the frame ----
+    var font = Font.Metrics(8, 8, 6);
+    Frame(ui, RightClick(Center(rects.Area, false), Center(rects.Area, true)), ref app, ref rects);
+    for (var i = 0; i < 3; i += 1)
+    {
+        ui.BeginCommands(At(-1, -1), 600, 500, 1.0, font);
+        Draw(ui, ref app, ref rects);
+        ui.End();
+    }
+    var commands = ui.Commands();
+    int lastText = -1;
+    int pasteText = -1;
+    for (var i = 0; i < commands.Count(); i += 1)
+    {
+        var c = commands.Get(i);
+        if (c.Kind == UiCommandKind.Text && c.Text == "Paste")
+            pasteText = i;
+        if (c.Kind == UiCommandKind.Text && c.Text == "Side")
+            lastText = i;
+    }
+    Check(pasteText > lastText && lastText >= 0, $"the popup is drawn after the frame ({pasteText}, {lastText})");
+    return Failures;
+}

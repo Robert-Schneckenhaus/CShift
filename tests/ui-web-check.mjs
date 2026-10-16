@@ -97,6 +97,18 @@ const click = (x, y) => {
 };
 click(bx, by);
 await waitFor("clicked");
+// the right button (MouseEvent.button 2), without the browser's menu, and the middle one (1)
+let menu = false;
+canvas.send("contextmenu", { preventDefault() { menu = true; } });
+if (!menu) fail("the context menu of the browser is not suppressed");
+canvas.send("mousedown", { clientX: bx, clientY: by, button: 2 });
+document.send("mouseup", { clientX: bx, clientY: by, button: 2 });
+await waitFor("right clicked");
+canvas.send("mousedown", { clientX: bx, clientY: by, button: 1 });
+document.send("mouseup", { clientX: bx, clientY: by, button: 1 });
+await waitFor("middle");
+canvas.send("keydown", { key: "+", keyCode: 187 });
+await waitFor("plus");
 click(tx, ty);
 await sleep(20);
 for (const key of ["h", "i"]) canvas.send("keydown", { key, keyCode: key.toUpperCase().charCodeAt(0) });
