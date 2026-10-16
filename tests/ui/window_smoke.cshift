@@ -1,7 +1,11 @@
 // System.Ui with a real window: opens it, draws frames of a Ui and shows them, and closes it again - without a user, so
 // it runs unattended (CI: on Linux under Xvfb, with libX11 loaded at run time). Prints "window ok" and the size.
-// On X11 with the XTEST extension (libXtst) it also clicks the button with the right and the middle mouse button
-// (fake events of the X server) and checks that the Ui got them; without XTEST that part is skipped.
+// On X11 it also checks, with a connection to the X server of its own:
+// - Ui.RequestFrame: frames come without input, about every 100 ms;
+// - Window.ConfirmClose: WM_DELETE_WINDOW (what the close button of a window manager sends) gives
+//   UiInput.CloseRequested and the window stays open until Window.Close; without ConfirmClose, Update returns false;
+// - with the XTEST extension (libXtst): clicks of the right and the middle mouse button on the button (fake events of
+//   the X server); without XTEST that part is skipped.
 //
 //   cshiftc tests/ui/window_smoke.cshift -o smoke && xvfb-run -a ./smoke
 
@@ -11,36 +15,60 @@ using System.Ui;
 extern "C" void* dlopen(char* file, int mode);
 extern "C" void* dlsym(void* handle, char* name);
 
-// XTEST: fake events of the mouse, as if the user had moved it and pressed a button
-struct FakeMouse
+// A connection to the X server of the test's own: finds the window by its title, sends it WM_DELETE_WINDOW, and with
+// XTEST fakes events of the mouse, as if the user had moved it and pressed a button
+struct FakeUser
 {
     bool Ok;
+    bool Mouse;
     void* Display;
     Func<void*, int, int, int, nuint, int> Motion;
     Func<void*, uint32, int, nuint, int> Button;
     Func<void*, int> Flush;
+    Func<void*, nuint> Root;
+    Func<void*, nuint, nuint*, nuint*, nuint**, uint32*, int> QueryTree;
+    Func<void*, nuint, char**, int> FetchName;
+    Func<void*, int> Free;
+    Func<void*, char*, int, nuint> InternAtom;
+    Func<void*, nuint, int, nint, void*, int> SendEvent;
 
-    static FakeMouse Open()
+    static FakeUser Open()
     {
         if (Process.IsWindows() || Process.IsMacOS())
-            return FakeMouse { };
+            return FakeUser { };
         unsafe
         {
             void* x11 = dlopen("libX11.so.6".CStr(), 2);
-            void* xtst = dlopen("libXtst.so.6".CStr(), 2);
-            if (x11 == null || xtst == null)
-                return FakeMouse { };
+            if (x11 == null)
+                return FakeUser { };
             void* open = dlsym(x11, "XOpenDisplay".CStr());
-            void* motion = dlsym(xtst, "XTestFakeMotionEvent".CStr());
-            void* button = dlsym(xtst, "XTestFakeButtonEvent".CStr());
             void* flush = dlsym(x11, "XFlush".CStr());
-            if (open == null || motion == null || button == null || flush == null)
-                return FakeMouse { };
+            void* root = dlsym(x11, "XDefaultRootWindow".CStr());
+            void* query = dlsym(x11, "XQueryTree".CStr());
+            void* fetch = dlsym(x11, "XFetchName".CStr());
+            void* free = dlsym(x11, "XFree".CStr());
+            void* intern = dlsym(x11, "XInternAtom".CStr());
+            void* send = dlsym(x11, "XSendEvent".CStr());
+            if (open == null || flush == null || root == null || query == null || fetch == null || free == null || intern == null || send == null)
+                return FakeUser { };
             void* display = ((Func<char*, void*>)open)(null);
             if (display == null)
-                return FakeMouse { };
-            return FakeMouse { Ok = true, Display = display, Motion = (Func<void*, int, int, int, nuint, int>)motion,
-                               Button = (Func<void*, uint32, int, nuint, int>)button, Flush = (Func<void*, int>)flush };
+                return FakeUser { };
+            var user = FakeUser { Ok = true, Display = display, Flush = (Func<void*, int>)flush, Root = (Func<void*, nuint>)root,
+                                  QueryTree = (Func<void*, nuint, nuint*, nuint*, nuint**, uint32*, int>)query,
+                                  FetchName = (Func<void*, nuint, char**, int>)fetch, Free = (Func<void*, int>)free,
+                                  InternAtom = (Func<void*, char*, int, nuint>)intern,
+                                  SendEvent = (Func<void*, nuint, int, nint, void*, int>)send };
+            void* xtst = dlopen("libXtst.so.6".CStr(), 2);
+            void* motion = xtst != null ? dlsym(xtst, "XTestFakeMotionEvent".CStr()) : null;
+            void* button = xtst != null ? dlsym(xtst, "XTestFakeButtonEvent".CStr()) : null;
+            if (motion != null && button != null)
+            {
+                user.Mouse = true;
+                user.Motion = (Func<void*, int, int, int, nuint, int>)motion;
+                user.Button = (Func<void*, uint32, int, nuint, int>)button;
+            }
+            return user;
         }
     }
 
@@ -55,6 +83,54 @@ struct FakeMouse
             Flush(Display);
         }
     }
+
+    // the window with this title among the top level windows (0 if there is none)
+    nuint Find(string title)
+    {
+        nuint found = 0;
+        unsafe
+        {
+            nuint rootReturn = 0;
+            nuint parent = 0;
+            nuint* children = null;
+            uint32 count = 0u;
+            if (QueryTree(Display, Root(Display), &rootReturn, &parent, &children, &count) == 0)
+                return 0;
+            for (var i = 0; i < (int)count; i += 1)
+            {
+                char* name = null;
+                if (FetchName(Display, children[i], &name) != 0 && name != null)
+                {
+                    if (string.FromCStr(name) == title)
+                        found = children[i];
+                    Free(name);
+                }
+            }
+            if (children != null)
+                Free(children);
+        }
+        return found;
+    }
+
+    // what a window manager sends when the user clicks the close button: a ClientMessage WM_PROTOCOLS WM_DELETE_WINDOW
+    bool SendClose(string title)
+    {
+        nuint window = Find(title);
+        if (window == 0)
+            return false;
+        unsafe
+        {
+            var e = new int64[24]; // XClientMessageEvent in an XEvent (64 bits)
+            e[0] = 33;             // type: ClientMessage
+            e[4] = (int64)window;  // window
+            e[5] = (int64)InternAtom(Display, "WM_PROTOCOLS".CStr(), 0); // message_type
+            e[6] = 32;             // format
+            e[7] = (int64)InternAtom(Display, "WM_DELETE_WINDOW".CStr(), 0); // data.l[0]
+            SendEvent(Display, window, 0, 0, &e[0]);
+            Flush(Display);
+        }
+        return true;
+    }
 }
 
 int Main()
@@ -66,7 +142,7 @@ int Main()
         return 1;
     }
     var ui = Ui.Create();
-    var fake = FakeMouse.Open();
+    var user = FakeUser.Open();
     int clicks = 0;
     int rightClicks = 0;
     int middle = 0;
@@ -89,28 +165,27 @@ int Main()
             middle += 1;
         window.Show(ui.End()); // shown as an image: the next Update does not wait for input
         // the window is at the top left of the screen of Xvfb (no window manager): its pixels are the screen's
-        if (fake.Ok && frame == 20)
-            fake.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 3u);
-        if (fake.Ok && frame == 60)
-            fake.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 2u);
-        if (frame >= 29 && !fake.Ok)
+        if (user.Mouse && frame == 20)
+            user.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 3u);
+        if (user.Mouse && frame == 60)
+            user.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 2u);
+        if (frame >= 29 && !user.Mouse)
             break;
         if (frame > 100 && rightClicks > 0 && middle > 0)
             break;
-        if (fake.Ok)
+        if (user.Mouse)
             Thread.Sleep(5); // time for the X server to deliver the fake events
     }
     int width = window.Width();
     int height = window.Height();
     double scale = window.Scale();
     window.SetTitle("CShift window test (done)");
-    window.Dispose();
     if (width <= 0 || height <= 0)
     {
         Console.WriteLine($"error: size {width} x {height}");
         return 1;
     }
-    if (fake.Ok)
+    if (user.Mouse)
     {
         if (rightClicks != 1 || middle != 1 || clicks != 0)
         {
@@ -121,6 +196,118 @@ int Main()
     }
     else
         Console.WriteLine("mouse buttons skipped (no XTEST)");
+
+    // ---- Ui.RequestFrame: frames without input, every 100 ms ----
+    // after Show(ui) the next Update waits for input: without the request, for ever
+    var watch = Stopwatch.StartNew();
+    double last = 0.0;
+    double longest = 0.0;
+    int frames = 0;
+    double previousTime = 0.0;
+    bool timeOk = true;
+    while (frames < 12 && watch.Elapsed().TotalMilliseconds() < 10000.0)
+    {
+        if (!window.Update())
+        {
+            Console.WriteLine("error: closed while animating");
+            return 1;
+        }
+        double now = watch.Elapsed().TotalMilliseconds();
+        if (frames >= 4)
+            longest = Math.Max(longest, now - last); // the first frames: the layout settles (no wait)
+        last = now;
+        ui.Begin(window);
+        var input = ui.Input();
+        if (input.Time <= 0.0 || input.Time < previousTime)
+            timeOk = false;
+        previousTime = input.Time;
+        ui.Label($"Animated {frames}");
+        ui.RequestFrame(100);
+        window.Show(ui);
+        frames += 1;
+    }
+    double total = watch.Elapsed().TotalMilliseconds();
+    // 12 frames, the last 8 or so after a wait of about 100 ms each
+    if (frames < 12 || total < 700.0 || longest > 1500.0 || !timeOk)
+    {
+        Console.WriteLine($"error: RequestFrame: {frames} frames in {total:F0} ms, the longest wait {longest:F0} ms, the time {(timeOk ? "ok" : "wrong")}");
+        return 1;
+    }
+    Console.WriteLine("request frame ok (frames without input)");
+
+    // ---- Window.ConfirmClose: the close button asks the program ----
+    if (user.Ok)
+    {
+        window.ConfirmClose(true);
+        bool sent = false;
+        bool requested = false;
+        bool closed = false;
+        int after = 0;
+        watch = Stopwatch.StartNew();
+        while (watch.Elapsed().TotalMilliseconds() < 5000.0)
+        {
+            if (!window.Update())
+            {
+                closed = true;
+                break;
+            }
+            ui.Begin(window);
+            if (ui.Input().CloseRequested)
+                requested = true;
+            ui.Label(requested ? "Close?" : "Open");
+            ui.RequestFrame(20);
+            window.Show(ui);
+            if (!sent)
+                sent = user.SendClose("CShift window test (done)");
+            if (requested)
+            {
+                after += 1;
+                if (after == 5)
+                    window.Close(); // the program decided: the next Update is false
+            }
+        }
+        if (!sent || !requested || !closed || after != 5)
+        {
+            Console.WriteLine($"error: ConfirmClose: sent {sent}, requested {requested}, frames after it {after}, closed {closed}");
+            return 1;
+        }
+        // without ConfirmClose: Update is false, as before
+        var again = Window.Open("CShift window test 2", 200, 100);
+        if (again is not Window second)
+        {
+            Console.WriteLine("error: the second window: " + again.Message);
+            return 1;
+        }
+        closed = false;
+        requested = false;
+        sent = false;
+        watch = Stopwatch.StartNew();
+        while (watch.Elapsed().TotalMilliseconds() < 5000.0)
+        {
+            if (!second.Update())
+            {
+                closed = true;
+                break;
+            }
+            ui.Begin(second);
+            if (ui.Input().CloseRequested)
+                requested = true;
+            ui.Label("Second");
+            ui.RequestFrame(20);
+            second.Show(ui);
+            if (!sent)
+                sent = user.SendClose("CShift window test 2");
+        }
+        second.Dispose();
+        if (!sent || !closed || requested)
+        {
+            Console.WriteLine($"error: without ConfirmClose: sent {sent}, closed {closed}, requested {requested}");
+            return 1;
+        }
+        Console.WriteLine("confirm close ok (WM_DELETE_WINDOW)");
+    }
+    else
+        window.Dispose();
     Console.WriteLine($"window ok {width} x {height}, scale {scale:F2}");
     return 0;
 }

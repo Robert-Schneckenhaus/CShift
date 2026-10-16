@@ -289,11 +289,59 @@ keyboard), `Comma` and `Period`.
 
 `window.Update()` handles the events of the window and **waits for input** before it returns, so a window that nobody
 touches takes no time: a frame is drawn when something happened (a click, a key, the mouse moved), when the text
-cursor blinks, or when the layout has to settle. It returns `false` when the user closed the window.
+cursor blinks, or when the layout has to settle. It returns `false` when the window was closed (see below).
 
-`window.Show(ui)` ends the frame and shows it. For animations and games, draw into an image of your own and call
+`window.Show(ui)` ends the frame and shows it. For games, draw into an image of your own and call
 `window.Show(image)`: then the next `Update` does not wait, and the loop runs as fast as frames are drawn. Both can be
 combined: `ui.End()` gives the image of the frame, which the program can draw on before it shows it.
+
+**Animations inside the Ui.** `ui.RequestFrame(milliseconds)` asks for the next frame after that time at the latest,
+also without input: the next `Update` after `Show(ui)` waits at most that long, and the program sleeps in between (no
+busy loop, no `Thread.Sleep`). It holds for the frame in which it is called, so a program calls it in every frame while
+something moves; with several calls the shortest wins, and so does a shorter wait of the Ui's own (the text cursor,
+the layout). `0` gives the next frame at once. `ui.Input().Time` is a monotonic clock in seconds on every window, for
+the step of the animation:
+
+```csharp
+if (animating)
+{
+    int tile = (int)(ui.Input().Time * 6.0) % frames;   // a new tile every 166 ms
+    ui.DrawImage(tiles, Rect.Create(tile * 16, 0, 16, 16), r);
+    ui.RequestFrame(166);
+}
+```
+
+`ui.WaitMilliseconds()` tells what the frame asked for (-1: wait for input).
+
+**Closing the window.** By default `Update` returns `false` as soon as the user closes the window (its close button,
+Alt+F4, the close gadget), and the program can no longer ask anything. With `window.ConfirmClose(true)` closing the
+window only asks: the window stays open, the next frame's input has `CloseRequested`, and `Update` stays `true`. The
+program shows its question and closes the window itself with `window.Close()` (the same as `Dispose`); the next
+`Update` then returns `false`. A program that does nothing keeps its window.
+
+```csharp
+window.ConfirmClose(true);
+while (window.Update())
+{
+    ui.Begin(window);
+    if (ui.Input().CloseRequested)
+        asking = true;
+    // ... the window ...
+    if (asking)
+    {
+        using (ui.Modal("quit", "Save the changes?"))
+        {
+            if (ui.Button("Save")) { Save(); window.Close(); }
+            if (ui.Button("Don't save")) window.Close();
+            if (ui.Button("Cancel")) asking = false;
+        }
+    }
+    window.Show(ui);
+}
+```
+
+This works with X11 (`WM_DELETE_WINDOW`), Win32 (`WM_CLOSE`) and AmigaOS (`IDCMP_CLOSEWINDOW`); in the browser the
+page cannot be closed by the program, and `ConfirmClose` does nothing there.
 
 `ui.Canvas()` and `ui.Area(width, height)` draw into the frame: `Area` takes a rectangle of the layout, and the canvas
 draws into it (charts, previews, games inside a window):
@@ -372,7 +420,8 @@ cshiftc publish demo-ui        # bin/demo-ui.html: open it in a browser
 The scale is the page's `devicePixelRatio` (the canvas has that many pixels per CSS pixel; the option `pixelRatio`
 of `run` sets another). Ctrl+C and Ctrl+X put the selected text on the system clipboard; Ctrl+V pastes from it (the
 browser gives the text with its paste event). The page cannot be closed by the program; `window.Dispose()` stops
-the input.
+the input, and `window.ConfirmClose` has no effect (closing the tab is not asked about). `ui.RequestFrame` resumes
+the program after the time (at the browser's next animation frame).
 
 This needs `--backend wasm`, which can suspend a program; with `--target wasm32-wasi` (LLVM) a program that opens a
 window does not link. Under node or wasmtime there is no canvas: `Window.Open` reports `UiError.NotSupported`.
@@ -393,7 +442,8 @@ cshiftc build demo-ui --target m68k-amigaos -o demo-ui
 The window is on the Workbench screen and can be moved, resized and closed. It needs AmigaOS 3.0 (graphics.library and
 intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the mouse is followed
 only while its button is held (dragging a slider, selecting text), so nothing lights up under it (as with the gadgets of
-AmigaOS) and moving it costs no frame; the text cursor does not blink (the program sleeps until there is input),
+AmigaOS) and moving it costs no frame; the text cursor does not blink (the Ui asks for no frames of its own:
+`UiInput.Steady`), while `ui.RequestFrame` works (it waits for the window and `timer.device` together),
 images (`ui.Image`, `DrawImage`) are not drawn, the mouse pointer keeps its shape, and the clipboard stays inside the
 program. The right mouse button is the menu button (the window has no menus of Intuition), the middle one is reported
 too; nothing lights up under the mouse, so tooltips do not show, and the rest of the window is not dimmed behind a

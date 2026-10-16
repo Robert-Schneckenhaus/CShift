@@ -52,6 +52,8 @@ struct _UiXWindow
     bool Loaded;
     bool Open;
     bool Closed;
+    bool Confirm;          // closing by the user only asks (Window.ConfirmClose)
+    bool CloseRequested;   // the user asked to close it (with Confirm)
     void* Display;
     nuint Window;
     int Screen;
@@ -331,7 +333,12 @@ void _UiXEvent(int64[] buffer)
         case 33: // ClientMessage
         {
             nuint atom = *(nuint*)(e + 7 * p);
-            if (atom == _UiXw.DeleteAtom)
+            if (atom == _UiXw.DeleteAtom && _UiXw.Confirm)
+            {
+                _UiXw.CloseRequested = true;
+                _UiXw.ButtonEvent = true; // a frame of its own
+            }
+            else if (atom == _UiXw.DeleteAtom)
                 _UiXw.Closed = true;
             break;
         }
@@ -447,6 +454,8 @@ struct _UiOs
         input.Ctrl = _UiXw.Ctrl;
         input.Shift = _UiXw.Shift;
         input.Alt = _UiXw.Alt;
+        input.CloseRequested = _UiXw.CloseRequested;
+        _UiXw.CloseRequested = false;
         _UiXw.Pressed = false;
         _UiXw.Released = false;
         _UiXw.RightPressed = false;
@@ -513,6 +522,8 @@ struct _UiOs
             _UiX.StoreName(display, _UiXw.Window, title.CStr());
         }
     }
+
+    static void ConfirmClose(bool confirm) { _UiXw.Confirm = confirm; }
 
     static void Close()
     {

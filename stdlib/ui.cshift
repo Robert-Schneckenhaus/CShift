@@ -261,8 +261,16 @@ struct UiInput
     bool Shift;
     /// An Alt key is held down.
     bool Alt;
-    /// Seconds since an arbitrary moment (for the blinking of the text cursor).
+    /// Seconds since an arbitrary moment, from a monotonic clock (for animations, the blinking of the text cursor,
+    /// the delay of tooltips). 0 in an input that a program made itself (no clock).
     double Time;
+    /// The window draws slowly (AmigaOS): the Ui asks for no frames of its own - the text cursor does not blink and
+    /// tooltips show at once. [Ui.RequestFrame] still works.
+    bool Steady;
+    /// The user asked to close the window (its close button, Alt+F4, the close gadget) and the window was told to ask
+    /// first ([Window.ConfirmClose]): it is still open. The program asks the user, then closes it with
+    /// [Window.Close], or keeps it open by doing nothing.
+    bool CloseRequested;
 
     /// No mouse button, no keys, the mouse outside of everything.
     static UiInput Create()
@@ -516,6 +524,21 @@ struct Ui
     /// How long the program may wait for input before it draws the next frame: 0 if the layout is not settled yet
     /// (a panel changed its size), the time until the text cursor blinks, or -1 (no limit).
     int WaitMilliseconds() { return _S[0].WaitMs; }
+
+    /// Asks for the next frame after `milliseconds` at the latest, even if there is no input (an animation): the next
+    /// [Window.Update] after [Window.Show] of this frame waits at most that long. Only for the current frame, so a
+    /// program that animates calls it every frame; with several calls the shortest wins, and so does a shorter wait
+    /// that the Ui needs itself (see [Ui.WaitMilliseconds]). 0: the next frame at once.
+    ///
+    /// ```
+    /// if (animating)
+    ///     ui.RequestFrame(166); // the next tile of the animation
+    /// ```
+    void RequestFrame(int milliseconds)
+    {
+        int ms = Math.Max(0, milliseconds);
+        _S[0].WaitMs = _S[0].WaitMs < 0 ? ms : Math.Min(_S[0].WaitMs, ms);
+    }
 
     /// Uses other colors from the next widget on.
     void SetTheme(Theme theme) { _S[0].Theme = theme; }
@@ -2409,8 +2432,8 @@ struct _UiState
             TooltipStart = In.Time;
         }
         double since = In.Time - TooltipStart;
-        if (In.Time == 0.0 || since >= 0.5)
-            TooltipText = text; // without a clock (a frame without a window): at once
+        if (In.Time == 0.0 || In.Steady || since >= 0.5)
+            TooltipText = text; // without a clock (a frame without a window) or on a slow window: at once
         else
         {
             int ms = (int)((0.5 - since) * 1000.0) + 1;
@@ -2771,9 +2794,9 @@ struct _UiState
             FillRect(Rect.Create(inner.X - scroll + a * cw, ty, (b - a) * cw, Font.LineHeight()), Theme.Selection);
         }
         DrawText(inner.X - scroll, ty, text, Theme.Text);
-        if (Focus == id && In.Time == 0.0)
+        if (Focus == id && (In.Time == 0.0 || In.Steady))
         {
-            // no clock (the window does not wake the program to blink): the cursor stays on
+            // no clock, or a slow window (no frames to blink): the cursor stays on
             int x = inner.X - scroll + _CountChars(text.Substring(0, Caret)) * cw;
             FillRect(Rect.Create(x, ty - Px(1), Line, Font.LineHeight() + Px(2)), Theme.Text);
         }

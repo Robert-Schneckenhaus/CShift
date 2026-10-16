@@ -1,7 +1,7 @@
 // demo-ui: the widgets of System.Ui in a small to-do list. The state of the program is the struct App; Draw describes
 // the window for it, every frame, and changes it where the user did something. It has a menu bar, a combo box, a
-// context menu (the right mouse button on a task), a modal dialog (before removing the done tasks), a number box and
-// tooltips.
+// context menu (the right mouse button on a task), modal dialogs (before removing the done tasks, and before quitting
+// with open tasks: also when the window is closed), a number box, tooltips and an animation (Ui.RequestFrame).
 
 using System;
 using System.Ui;
@@ -27,6 +27,8 @@ struct App
     int NewDays;
     int MenuTask;        // the task whose context menu is open
     bool Confirm;        // the dialog before "Remove done" is shown
+    bool ConfirmQuit;    // the dialog before quitting with open tasks is shown
+    bool Busy;           // the spinner turns
     bool Quit;
 }
 
@@ -34,6 +36,39 @@ void SetDark(Ui ui, ref App app, bool dark)
 {
     app.Dark = dark;
     ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
+}
+
+// quits at once when all tasks are done, else asks first
+void AskQuit(ref App app)
+{
+    foreach (var task in app.Tasks)
+    {
+        if (!task.Done)
+        {
+            app.ConfirmQuit = true;
+            return;
+        }
+    }
+    app.Quit = true;
+}
+
+// a spinner: eight dots around a circle, the bright one moves on every 125 ms
+void Spinner(Ui ui)
+{
+    var r = ui.Area(24, 24);
+    var theme = ui.GetTheme();
+    int step = (int)(ui.Input().Time * 8.0) % 8;
+    int cx = r.X + r.Width / 2;
+    int cy = r.Y + r.Height / 2;
+    int[] dx = [0, 6, 8, 6, 0, -6, -8, -6];
+    int[] dy = [-8, -6, 0, 6, 8, 6, 0, -6];
+    for (var i = 0; i < 8; i += 1)
+    {
+        var color = i == step ? theme.Focus : theme.Border;
+        int d = Math.Max(2, r.Width / 6); // the size of a dot: the area is scaled with the Ui
+        ui.FillRect(Rect.Create(cx + dx[i] * r.Width / 24 - d / 2, cy + dy[i] * r.Height / 24 - d / 2, d, d), color);
+    }
+    ui.RequestFrame(125); // the next step, without input
 }
 
 void Draw(Ui ui, ref App app)
@@ -51,7 +86,7 @@ void Draw(Ui ui, ref App app)
             if (ui.MenuItem("Remove done..."))
                 app.Confirm = true;
             if (ui.MenuItem("Quit", "Ctrl+Q"))
-                app.Quit = true;
+                AskQuit(ref app);
         }
         using (ui.Menu("View"))
         {
@@ -63,8 +98,9 @@ void Draw(Ui ui, ref App app)
                 app.Zoom = Math.Max(0.75, app.Zoom - 0.25);
         }
     }
-    if (input.Ctrl && input.Pressed(Key.Q))
-        app.Quit = true;
+    // Ctrl+Q, and closing the window (Window.ConfirmClose is on)
+    if ((input.Ctrl && input.Pressed(Key.Q)) || input.CloseRequested)
+        AskQuit(ref app);
 
     int done = 0;
     foreach (var task in app.Tasks)
@@ -193,11 +229,32 @@ void Draw(Ui ui, ref App app)
         }
     }
 
+    if (app.ConfirmQuit)
+    {
+        using (ui.Modal("quit", "Quit?"))
+        {
+            ui.Text("Some tasks are not done yet.");
+            using (ui.Row())
+            {
+                if (ui.Button("Quit"))
+                    app.Quit = true;
+                if (ui.Button("Cancel") || ui.Input().Pressed(Key.Escape))
+                    app.ConfirmQuit = false;
+            }
+        }
+    }
+
     using (ui.Panel("Settings"))
     {
         bool dark = app.Dark;
         if (ui.Checkbox("Dark theme", ref dark))
             SetDark(ui, ref app, dark);
+        using (ui.Row())
+        {
+            ui.Checkbox("Busy", ref app.Busy);
+            if (app.Busy)
+                Spinner(ui);
+        }
         using (ui.Columns(2))
         {
             ui.Label($"Zoom {(int)(app.Zoom * 100.0 + 0.5)} %"); // an integer: formatting a double is slow without an FPU
@@ -216,6 +273,7 @@ int Main(string[] args)
         frames = n;
 
     var window = try Window.Open("CShift - System.Ui", 460, 640);
+    window.ConfirmClose(true); // closing the window asks first (AskQuit)
     var ui = Ui.Create();
     var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0, Priorities = List<string>.Create(), MenuTask = -1 };
     app.Priorities.Add("Low");

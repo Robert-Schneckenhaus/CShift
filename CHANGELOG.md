@@ -6,6 +6,29 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `System.Ui`: **animations without a busy loop.** `Ui.RequestFrame(milliseconds)` asks for the next frame after that
+  time at the latest, also without input: the next `Window.Update` after `Window.Show(ui)` waits at most that long, and
+  the program sleeps in between. It holds for the frame of the call (the shortest of several calls wins, and so does a
+  shorter wait of the Ui's own, such as the blinking text cursor); 0 is the next frame at once. X11 and Win32 waited
+  with a timeout already, the browser resumes the program at its next animation frame after the time, and AmigaOS
+  waits for the window and a request of `timer.device` together. `UiInput.Time` is now a monotonic clock on every
+  window (it was 0 on AmigaOS); `UiInput.Steady` tells the Ui that a window draws slowly (AmigaOS): the text cursor
+  does not blink there, as before.
+- `System.Ui`: **asking before the window closes.** With `Window.ConfirmClose(true)` the user closing the window (its
+  close button, Alt+F4, the close gadget of AmigaOS) does not close it: the next frame's input has
+  `UiInput.CloseRequested`, `Window.Update` stays true, and the program closes the window itself with the new
+  `Window.Close()` (the same as `Dispose`) after asking, or keeps it open. Off by default: programs that do not call it
+  behave as before. X11 (`WM_DELETE_WINDOW`), Win32 (`WM_CLOSE`), AmigaOS (`IDCMP_CLOSEWINDOW`); in the browser it has
+  no effect (the program cannot close the page).
+- [demo-ui](demo-ui/README.md): a spinner (the checkbox "Busy", with `RequestFrame`), and quitting (the menu, Ctrl+Q,
+  closing the window) asks first while there are open tasks.
+
+### Tools
+- The window test (`tests/ui/window_smoke.cshift`, CI under Xvfb) checks frames without input after `RequestFrame` and
+  closing the window with and without `ConfirmClose` (a `WM_DELETE_WINDOW` sent by the test); CI installs libXtst for
+  the clicks of the right and the middle button.
+
 ## [0.34] - 2026-10-16
 
 ### Standard library

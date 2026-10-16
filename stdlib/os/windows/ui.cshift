@@ -57,6 +57,8 @@ struct _UiWin32
     void* Hwnd;
     bool Open;
     bool Closed;          // the user asked to close it
+    bool Confirm;         // closing by the user only asks (Window.ConfirmClose)
+    bool CloseRequested;  // the user asked to close it (with Confirm)
     int Width;
     int Height;
     uint32 Dpi;
@@ -118,7 +120,14 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
         switch (message)
         {
         case _WmClose:
-            _UiWin.Closed = true;
+            // the window stays: DestroyWindow comes from Close
+            if (_UiWin.Confirm)
+            {
+                _UiWin.CloseRequested = true;
+                _UiWin.ButtonEvent = true; // a frame of its own
+            }
+            else
+                _UiWin.Closed = true;
             return 0;
         case _WmSize:
             _UiWin.Width = (int)(l & 0xFFFF);
@@ -366,6 +375,8 @@ struct _UiOs
         input.Ctrl = GetKeyState(0x11) < 0;
         input.Shift = GetKeyState(0x10) < 0;
         input.Alt = GetKeyState(0x12) < 0;
+        input.CloseRequested = _UiWin.CloseRequested;
+        _UiWin.CloseRequested = false;
         _UiWin.Pressed = false;
         _UiWin.Released = false;
         _UiWin.RightPressed = false;
@@ -418,6 +429,8 @@ struct _UiOs
             SetWindowTextW(_UiWin.Hwnd, &wide[0]);
         }
     }
+
+    static void ConfirmClose(bool confirm) { _UiWin.Confirm = confirm; }
 
     static void Close()
     {
