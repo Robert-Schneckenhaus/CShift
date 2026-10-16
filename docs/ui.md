@@ -52,9 +52,9 @@ sync: the next frame shows the new state. A complete example with lists, scrolli
 
 | Platform | Window | Notes |
 |---|---|---|
-| Windows | Win32 and GDI | per-monitor DPI aware; the system clipboard |
-| Linux | X11 | libX11 is loaded when the first window opens (`libx11-6`, present on every desktop); programs without a window do not need it. The clipboard stays inside the program for now |
-| The browser | a `<canvas>` | `--backend wasm`, with [web/cshift.js](../web/cshift.js) (`cshiftc publish`, `cshiftc serve`): see [in the browser](#in-the-browser) |
+| Windows | Win32 and GDI | per-monitor DPI aware; the system clipboard; all three mouse buttons and both wheels |
+| Linux | X11 | libX11 is loaded when the first window opens (`libx11-6`, present on every desktop); programs without a window do not need it. All three buttons and both wheels (buttons 4 to 7). The clipboard stays inside the program for now |
+| The browser | a `<canvas>` | `--backend wasm`, with [web/cshift.js](../web/cshift.js) (`cshiftc publish`, `cshiftc serve`): see [in the browser](#in-the-browser); the right button is the program's (no menu of the browser on the canvas) |
 | AmigaOS 3.0 and later | an Intuition window | drawn with graphics.library from the commands of the frames: see [on the Amiga](#on-the-amiga) |
 | WASI without a browser | none | `Window.Open` fails with `UiError.NotSupported`; a `Ui` still draws into images |
 
@@ -77,12 +77,17 @@ needs no graphics library, and the same frames can be drawn without a window: fo
 | `ui.Submitted(id)` | | `true` in the frame in which Enter was pressed in that text box |
 | `ui.ProgressBar(fraction)` | a bar filled from 0.0 to 1.0 | |
 | `ui.ListItem(label, selected)` | a line of a list, highlighted if selected | `true` when clicked |
+| `ui.ComboBox(id, ref int selected, items)` | the chosen item of a `List<string>`; a click opens the list over the rest | `true` when `selected` changed |
+| `ui.IntBox(id, ref int value, min, max)` | a text box for a whole number (digits and `-`, Up and Down add 1) | `true` when `value` changed |
 | `ui.Image(image)` | an image in its own size | |
 | `ui.Separator()`, `ui.Space(size)` | a line, empty space | |
+| `ui.MenuItem(label)`, `ui.MenuItem(label, shortcut)` | an item of a popup or a menu ([popups](#popups-menus-and-dialogs)) | `true` when chosen |
 
 The text box edits with the arrow keys, Home, End, Backspace and Delete (Shift selects), Ctrl+A, Ctrl+C, Ctrl+X and
 Ctrl+V, and the mouse (click, drag to select); Escape ends the editing. Tab and Shift+Tab move the keyboard focus
-through the widgets; a focused slider moves with the arrow keys, Home and End.
+through the widgets; a focused slider moves with the arrow keys, Home and End. A focused combo box chooses the item
+before or after with Up and Down; Enter or Space open its list, where Up, Down, Home, End and Enter choose and Escape
+or a click outside closes it. Long lists scroll (the wheel, the scroll bar).
 
 ## Layout
 
@@ -110,6 +115,35 @@ using (ui.Scroll("files", 200))   // 200 pixels high, the content scrolls (wheel
 }
 ```
 
+A side bar of a fixed width next to a view that takes the rest: `ui.Column(width)` inside a row is a column of that
+width (pixels at scale 1), `ui.Column(0)` one that takes the rest of the row (several share it equally; it may come
+before or after the fixed ones). A height of 0 means "down to the bottom of the window": `ui.Scroll(id, 0)`,
+`ui.Area(0, 0)`.
+
+```csharp
+using (ui.Row())
+{
+    using (ui.Column(220))                     // the tools
+    {
+        ui.ComboBox("tileset", ref app.Tileset, app.Tilesets);
+        ui.IntBox("event", ref app.Event, 0, 255);
+    }
+    using (ui.Column(0))                       // the map: the rest of the row
+    {
+        using (ui.ScrollArea("map", 0, 0))     // both scroll bars, down to the bottom of the window
+        {
+            var r = ui.Area(app.Width * 16 * app.Zoom, app.Height * 16 * app.Zoom);
+            DrawMap(ui, r, ref app);
+        }
+    }
+}
+```
+
+`ui.ScrollArea(id, width, height)` scrolls both ways: content wider than the area (an `Area` of a fixed size, a long
+row) gets a horizontal scroll bar. The wheel scrolls down and up, Shift with the wheel and the horizontal wheel
+(`UiInput.WheelX`) to the sides. `ui.ScrollX(id)` and `ui.ScrollY(id)` tell how far an area is scrolled,
+`ui.SetScroll(id, x, y)` scrolls it from the next frame on (keeping the point under the mouse while zooming).
+
 `ui.Column()` stacks widgets inside a row. Labels, buttons and check boxes are as wide as they need; text boxes,
 sliders, progress bars and list items take the width that is there (in a row: what the other widgets leave). A row and
 a panel learn their size while they are drawn, so when it changes (the first frame, a longer label) the Ui asks for a
@@ -136,6 +170,120 @@ for (var i = 0; i < app.Tasks.Count(); i += 1)
     }
 }
 ```
+
+## Popups, menus and dialogs
+
+Popups, the lists of combo boxes, menus, modal dialogs and tooltips are drawn in a layer over the rest of the frame,
+after it, and the mouse and the keys go to the topmost layer first: a click into an open list does not reach the
+widget below it.
+
+**A context menu** is opened by the program, for example with the right mouse button, and drawn wherever the program
+likes (the id of a popup is the same in every group). It closes when an item is chosen, with Escape, or with a click
+outside of it; a left click outside goes no further (it does not press the button under it), a right click does (it may
+open the menu somewhere else). `ui.CloseCurrentPopup()` closes it from the inside, `ui.IsPopupOpen(id)` tells.
+
+```csharp
+var r = ui.Area(0, 0);
+if (ui.RightClicked())
+{
+    app.MenuTile = TileAt(r, ui.Input());
+    ui.OpenPopup("tile");
+}
+using (ui.Popup("tile"))                  // the widgets inside only do something while it is open
+{
+    if (ui.MenuItem("Clear event"))
+        ClearEvent(ref app);
+    if (ui.MenuItem("Edit tile...", "E"))
+        app.EditingTile = true;
+}
+```
+
+**A menu bar** is a row of menus, each a popup below its title; a press on the title opens it, and while one is open
+the mouse moving along the bar opens the others. The shortcuts are only shown: the program handles the keys itself
+(`ui.Input().Ctrl && ui.Input().Pressed(Key.S)`).
+
+```csharp
+using (ui.MenuBar())
+{
+    using (ui.Menu("File"))
+    {
+        if (ui.MenuItem("Open map...", "Ctrl+O")) app.Opening = true;
+        if (ui.MenuItem("Save", "Ctrl+S")) Save(ref app);
+    }
+    using (ui.Menu("View"))
+    {
+        if (ui.MenuItem("Zoom in", "Ctrl++")) app.Zoom += 1;
+    }
+}
+```
+
+**A modal dialog** is shown in the middle of the window as long as the program draws it; the rest of the window is
+dimmed and gets no input meanwhile (neither the mouse nor the keys). The program closes it by not drawing it any more:
+
+```csharp
+if (app.Asking)
+{
+    using (ui.Modal("unsaved", "Unsaved changes"))
+    {
+        ui.Text("The map has changes that are not saved.");
+        using (ui.Row())
+        {
+            if (ui.Button("Save")) { Save(ref app); app.Asking = false; }
+            if (ui.Button("Cancel") || ui.Input().Pressed(Key.Escape)) app.Asking = false;
+        }
+    }
+}
+```
+
+`ui.FileDialog(id, title, ref path)` is a modal dialog for choosing a file, made of widgets: the folder (a text box
+and "Up"), its folders and files, the name, OK and Cancel. It returns `UiDialogResult.None` while it is open, `Ok`
+(`path` is the chosen file) or `Cancel`:
+
+```csharp
+if (app.Opening)
+{
+    var result = ui.FileDialog("open", "Open map", ref app.Path);
+    if (result == UiDialogResult.Ok) Load(ref app);
+    if (result != UiDialogResult.None) app.Opening = false;
+}
+```
+
+`ui.Tooltip(text)` after a widget shows the text next to the mouse when it rests on the widget for half a second.
+
+Inside a popup or a dialog, draw with the methods of the Ui, which draw into its layer: `ui.FillRect`, `ui.DrawText`,
+`ui.DrawImage` (also scaled: `ui.DrawImage(image, source, target)`). `ui.Canvas()` draws into the frame below the
+layers.
+
+## The mouse
+
+Every widget, and every `ui.Area`, takes the mouse. What the mouse did with the one placed last:
+
+| Call | True |
+|---|---|
+| `ui.Hovered()` | while the mouse is over it |
+| `ui.Clicked()` | in the frame in which it was clicked with the left button |
+| `ui.RightClicked()` | in the frame in which it was clicked with the right button (pressed and released on it) |
+| `ui.Held()`, `ui.RightHeld()` | while the left (right) button that went down on it is held: painting into an area |
+
+The input of the frame has all of it: `ui.Input()` is a `UiInput` with the position (`MouseX`, `MouseY`), the left
+button (`MouseDown`, `MousePressed`, `MouseReleased`), the right one (`RightDown`, `RightPressed`, `RightReleased`),
+the middle one (`MiddleDown`, `MiddlePressed`, `MiddleReleased`), the wheel (`Wheel`, and `WheelX` sideways), the
+modifier keys (`Ctrl`, `Shift`, `Alt`), the keys pressed (`Keys`, `Pressed(Key.Plus)`) and the text typed (`Text`). A
+press of any button gets a frame of its own.
+
+`ui.SetCursor(cursor)` sets the mouse pointer for the frame, whatever the widgets ask for: `Cursor.Arrow`, `Text`,
+`Hand`, `Crosshair` (pointing at a tile) and `Move` (moving something):
+
+```csharp
+var r = ui.Area(0, 0);
+if (ui.Hovered()) ui.SetCursor(Cursor.Crosshair);
+if (ui.Held()) Paint(ref app, r, ui.Input());
+if (ui.RightHeld()) PaintOtherLayer(ref app, r, ui.Input());
+```
+
+`Key` has the letters, the digits (`D0` to `D9`, and `NumPad0` to `NumPad9` of the number pad), the function keys,
+the keys for moving and editing, `Plus` and `Minus` (also those of the number pad, and `=` as the key of `+` on a US
+keyboard), `Comma` and `Period`.
 
 ## The loop
 
@@ -172,7 +320,10 @@ ui.SetTheme(theme);
 
 `ui.Begin(input, width, height, scale)` starts a frame of any size with a `UiInput` that the program makes, and
 `ui.End()` gives its image. That is how the Ui is tested ([tests/cases/stdlib_ui.cshift](../tests/cases/stdlib_ui.cshift)):
-a click is `MousePressed` and `MouseReleased` in the same frame, typing is `Keys` and `Text`.
+a click is `MousePressed` and `MouseReleased` in the same frame (a right click `RightPressed` and `RightReleased`),
+typing is `Keys` and `Text`. The tests of the popups, combo boxes, dialogs and the layout are
+[stdlib_ui_popups.cshift](../tests/cases/stdlib_ui_popups.cshift) and
+[stdlib_ui_layout.cshift](../tests/cases/stdlib_ui_layout.cshift).
 
 ```csharp
 var ui = Ui.Create();
@@ -194,6 +345,11 @@ try ui.End().Save("frame.png");
 `Line` (any width, round ends), `Text` and `DrawImage`. Everything is clipped to `canvas.Clip`
 (`canvas.SetClip(rect)`), colors with an alpha below 255 are blended, and the edges of rounded rectangles, circles and
 lines are smooth.
+
+`canvas.DrawImage(image, source, x, y)` draws a part of an image (a tile of a tile set), `canvas.DrawImage(image,
+source, target)` draws it scaled to a rectangle, nearest neighbour (every pixel of the image becomes a block). Opaque
+pixels at a whole zoom factor are copied without arithmetic per pixel: a map view of 800 x 500 pixels with 400 tiles of
+16 x 16 at zoom 2 takes about a millisecond ([tests/cases/stdlib_ui_image.cshift](../tests/cases/stdlib_ui_image.cshift)).
 
 The text is drawn with bitmap fonts: `Font.Fixed7x13()` and `Font.Fixed10x20()` are the "fixed" fonts of X11, which
 are in the public domain, so a program that embeds them owes nobody a notice. They have ASCII, Latin-1 and a few marks
@@ -238,8 +394,12 @@ The window is on the Workbench screen and can be moved, resized and closed. It n
 intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the mouse is followed
 only while its button is held (dragging a slider, selecting text), so nothing lights up under it (as with the gadgets of
 AmigaOS) and moving it costs no frame; the text cursor does not blink (the program sleeps until there is input),
-images (`ui.Image`) are not drawn, the mouse pointer keeps its shape, and the clipboard stays inside the program. The
-keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys, F1 to F10, Ctrl with a letter, and the wheel of NewMouse.
+images (`ui.Image`, `DrawImage`) are not drawn, the mouse pointer keeps its shape, and the clipboard stays inside the
+program. The right mouse button is the menu button (the window has no menus of Intuition), the middle one is reported
+too; nothing lights up under the mouse, so tooltips do not show, and the rest of the window is not dimmed behind a
+modal dialog (it still gets no input). The keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys, F1 to F10,
+Ctrl with a letter, `+`, `-`, `,` and `.` (the digits of the number pad come as the digits), and the wheel of
+NewMouse (no horizontal wheel).
 
 **Speed.** A 68020 at 14 MHz (A1200) computes a frame of [demo-ui](../demo-ui/README.md) (about 30 widgets) in about a
 quarter of a second; drawing it takes another tenth. A frame that draws the same as the one in the window (same
@@ -251,7 +411,8 @@ out of the code that runs for every frame too (`$"{x:F0}"` of a double costs som
 
 `ui.BeginCommands(input, width, height, scale, font)` starts a frame that is not drawn but recorded: after `ui.End()`,
 `ui.Commands()` holds the drawing operations of the frame in order (`UiCommand`: `Clear`, `FillRect`,
-`FillRoundRect`, `StrokeRoundRect`, `FillCircle`, `Line`, `Text`, `Image`, `Clip`). That is how the window of AmigaOS
+`FillRoundRect`, `StrokeRoundRect`, `FillCircle`, `Line`, `Text`, `Image`, `ImagePart` (a part of an image, scaled),
+`Clip`). The layers of popups and dialogs come after the rest of the frame. That is how the window of AmigaOS
 works, and how a renderer of your own gets the frames (a terminal, a display without pixels to spare, a test).
 `font` gives the sizes of the text; `Font.Metrics(width, height, ascent)` is a font of which only the sizes are known.
 
@@ -262,6 +423,12 @@ mouse button went down on ("active"), which one has the keyboard focus, the curs
 being edited, the scroll positions and the sizes of panels and rows from the last frame. Everything else is made
 again for each frame. A copy of a `Ui` shares this state (it is held in a one-element array), so `Ui` can be passed to
 functions by value, and `using (ui.Row())` can end the row it began.
+
+Popups and dialogs are drawn into layers: while a popup or a modal dialog is drawn, the drawing operations go into
+the list of its layer (as `UiCommand`s), and `ui.End()` draws the layers over the frame in their order (or appends
+them to the commands). Which widget gets the mouse is decided by the rectangles of the layers in the last frame (and
+those already drawn in this one): a widget below a popup does not light up, a widget behind a modal dialog gets
+nothing. The open popups are part of the state of the Ui; a popup that is not drawn in a frame is closed.
 
 The window layer is the operating system part of the standard library (`stdlib/os/<layer>/ui.cshift`): Win32 on
 Windows, X11 on Linux, the canvas of web/cshift.js for WebAssembly, Intuition and graphics.library on AmigaOS (from

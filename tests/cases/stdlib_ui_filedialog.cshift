@@ -1,0 +1,105 @@
+// Standard library: Ui.FileDialog without a window - the folders and files of a folder, into a folder and Up again,
+// choosing a file and OK, Cancel, Escape. The program runs in a temporary directory. Main returns the number of failed
+// checks.
+// skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
+// expect-stdout: chosen maps/b.map
+// expect-exit: 0
+
+using System;
+using System.Image;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+UiInput At(int x, int y)
+{
+    var input = UiInput.Create();
+    input.MouseX = x;
+    input.MouseY = y;
+    return input;
+}
+
+UiInput Click(int x, int y)
+{
+    var input = At(x, y);
+    input.MousePressed = true;
+    input.MouseReleased = true;
+    return input;
+}
+
+// the commands of a frame: where a text is drawn
+Rect TextAt(Ui ui, string text)
+{
+    foreach (var c in ui.Commands())
+    {
+        if (c.Kind == UiCommandKind.Text && c.Text == text)
+            return c.Rect;
+    }
+    return Rect.Create(-100, -100, 0, 0);
+}
+
+UiDialogResult Frame(Ui ui, UiInput input, ref string path)
+{
+    ui.BeginCommands(input, 640, 480, 1.0, Font.Fixed7x13());
+    var result = ui.FileDialog("open", "Open map", ref path);
+    ui.End();
+    return result;
+}
+
+void Settle(Ui ui, ref string path)
+{
+    for (var i = 0; i < 4; i += 1)
+    {
+        Frame(ui, At(-1, -1), ref path);
+        if (ui.WaitMilliseconds() != 0)
+            return;
+    }
+}
+
+int Main()
+{
+    Directory.Create("maps/sub");
+    try File.WriteAllText("maps/a.map", "a");
+    try File.WriteAllText("maps/b.map", "b");
+    var ui = Ui.Create();
+    string path = "maps/a.map";
+    Settle(ui, ref path);
+    var sub = TextAt(ui, "sub/");
+    var b = TextAt(ui, "b.map");
+    Check(sub.Y > 0 && b.Y > sub.Y, "the folder comes before the files");
+    // into the folder and up again
+    Frame(ui, Click(sub.X + 4, sub.Y + 4), ref path);
+    Settle(ui, ref path);
+    Check(TextAt(ui, "b.map").Y < 0, "inside the folder: its own entries");
+    var up = TextAt(ui, "Up");
+    Frame(ui, Click(up.X + 4, up.Y + 4), ref path);
+    Settle(ui, ref path);
+    b = TextAt(ui, "b.map");
+    Check(b.Y > 0, "Up: the files again");
+    // a file and OK
+    Frame(ui, Click(b.X + 4, b.Y + 4), ref path);
+    Settle(ui, ref path);
+    var ok = TextAt(ui, "OK");
+    var result = Frame(ui, Click(ok.X + 4, ok.Y + 4), ref path);
+    Check(result == UiDialogResult.Ok, "OK");
+    Console.WriteLine($"chosen {Path.GetRelativePath(Directory.GetCurrentDirectory(), path)}");
+    // Cancel and Escape leave the path
+    string other = "maps/a.map";
+    Settle(ui, ref other);
+    var cancel = TextAt(ui, "Cancel");
+    Check(Frame(ui, Click(cancel.X + 4, cancel.Y + 4), ref other) == UiDialogResult.Cancel && other == "maps/a.map", "Cancel");
+    Settle(ui, ref other);
+    var escape = At(-1, -1);
+    escape.Keys.Add(Key.Escape);
+    Check(Frame(ui, escape, ref other) == UiDialogResult.Cancel, "Escape");
+    return Failures;
+}

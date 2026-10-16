@@ -67,8 +67,15 @@ struct _UiXWindow
     bool MouseDown;
     bool Pressed;
     bool Released;
+    bool RightDown;
+    bool RightPressed;
+    bool RightReleased;
+    bool MiddleDown;
+    bool MiddlePressed;
+    bool MiddleReleased;
     bool ButtonEvent;
     int Wheel;
+    int WheelX;
     bool Ctrl;
     bool Shift;
     bool Alt;
@@ -78,6 +85,8 @@ struct _UiXWindow
     nuint CursorArrow;
     nuint CursorText;
     nuint CursorHand;
+    nuint CursorCross;
+    nuint CursorMove;
     Cursor Cursor;
 }
 
@@ -198,7 +207,17 @@ Key _UiXKeyOf(nuint keysym)
     case 0xFF57: return Key.End;
     case 0xFF55: return Key.PageUp;
     case 0xFF56: return Key.PageDown;
-    default: return Key.None;
+    case 0x2B: return Key.Plus;
+    case 0x3D: return Key.Plus;   // =, the key of + on a US keyboard
+    case 0xFFAB: return Key.Plus; // the number pad
+    case 0x2D: return Key.Minus;
+    case 0xFFAD: return Key.Minus;
+    case 0x2C: return Key.Comma;
+    case 0x2E: return Key.Period;
+    default:
+        if (k >= 0xFFB0 && k <= 0xFFB9)
+            return (Key)((int)Key.NumPad0 + k - 0xFFB0);
+        return Key.None;
     }
 }
 
@@ -258,19 +277,44 @@ void _UiXEvent(int64[] buffer)
             _UiXw.MouseX = *(int*)(e + 8 * p);
             _UiXw.MouseY = *(int*)(e + 8 * p + 4);
             uint32 button = *(uint32*)(e + 8 * p + 20);
+            bool down = type == 4;
+            // while a button is held, the window gets the events of the mouse also outside of it (the implicit grab
+            // of X11, until the last button goes up)
             if (button == 1u)
             {
-                _UiXw.MouseDown = type == 4;
-                if (type == 4)
+                _UiXw.MouseDown = down;
+                if (down)
                     _UiXw.Pressed = true;
                 else
                     _UiXw.Released = true;
                 _UiXw.ButtonEvent = true;
             }
-            else if (type == 4 && button == 4u)
+            else if (button == 3u)
+            {
+                _UiXw.RightDown = down;
+                if (down)
+                    _UiXw.RightPressed = true;
+                else
+                    _UiXw.RightReleased = true;
+                _UiXw.ButtonEvent = true;
+            }
+            else if (button == 2u)
+            {
+                _UiXw.MiddleDown = down;
+                if (down)
+                    _UiXw.MiddlePressed = true;
+                else
+                    _UiXw.MiddleReleased = true;
+                _UiXw.ButtonEvent = true;
+            }
+            else if (down && button == 4u)
                 _UiXw.Wheel += 1;
-            else if (type == 4 && button == 5u)
+            else if (down && button == 5u)
                 _UiXw.Wheel -= 1;
+            else if (down && button == 6u)
+                _UiXw.WheelX -= 1;
+            else if (down && button == 7u)
+                _UiXw.WheelX += 1;
             break;
         }
         case 6: // MotionNotify
@@ -344,6 +388,8 @@ struct _UiOs
             _UiXw.CursorArrow = _UiX.CreateFontCursor(display, 68u); // XC_left_ptr
             _UiXw.CursorText = _UiX.CreateFontCursor(display, 152u); // XC_xterm
             _UiXw.CursorHand = _UiX.CreateFontCursor(display, 60u); // XC_hand2
+            _UiXw.CursorCross = _UiX.CreateFontCursor(display, 34u); // XC_crosshair
+            _UiXw.CursorMove = _UiX.CreateFontCursor(display, 52u); // XC_fleur
             _UiX.DefineCursor(display, window, _UiXw.CursorArrow);
             SetTitle(title);
             _UiX.MapWindow(display, window);
@@ -387,7 +433,14 @@ struct _UiOs
         input.MouseDown = _UiXw.MouseDown;
         input.MousePressed = _UiXw.Pressed;
         input.MouseReleased = _UiXw.Released;
+        input.RightDown = _UiXw.RightDown;
+        input.RightPressed = _UiXw.RightPressed;
+        input.RightReleased = _UiXw.RightReleased;
+        input.MiddleDown = _UiXw.MiddleDown;
+        input.MiddlePressed = _UiXw.MiddlePressed;
+        input.MiddleReleased = _UiXw.MiddleReleased;
         input.Wheel = _UiXw.Wheel;
+        input.WheelX = _UiXw.WheelX;
         foreach (var key in _UiXw.Keys)
             input.Keys.Add(key);
         input.Text = _UiXw.Text.ToString();
@@ -396,7 +449,12 @@ struct _UiOs
         input.Alt = _UiXw.Alt;
         _UiXw.Pressed = false;
         _UiXw.Released = false;
+        _UiXw.RightPressed = false;
+        _UiXw.RightReleased = false;
+        _UiXw.MiddlePressed = false;
+        _UiXw.MiddleReleased = false;
         _UiXw.Wheel = 0;
+        _UiXw.WheelX = 0;
         _UiXw.Keys.Clear();
         _UiXw.Text.Clear();
         return input;
@@ -433,7 +491,8 @@ struct _UiOs
         if (!_UiXw.Open || cursor == _UiXw.Cursor)
             return;
         _UiXw.Cursor = cursor;
-        nuint shape = cursor == Cursor.Text ? _UiXw.CursorText : cursor == Cursor.Hand ? _UiXw.CursorHand : _UiXw.CursorArrow;
+        nuint shape = cursor == Cursor.Text ? _UiXw.CursorText : cursor == Cursor.Hand ? _UiXw.CursorHand :
+                      cursor == Cursor.Crosshair ? _UiXw.CursorCross : cursor == Cursor.Move ? _UiXw.CursorMove : _UiXw.CursorArrow;
         unsafe
         {
             _UiX.DefineCursor(_UiXw.Display, _UiXw.Window, shape);

@@ -46,22 +46,14 @@ the git log.
       - the clipboard on Linux (X11 selections: `SelectionRequest` events answered by the window) and on AmigaOS
         (clipboard.device, IFF FTXT);
       - AmigaOS: images (remapped to the pens of the screen, `WriteChunkyPixels`), a blinking text cursor
-        (timer.device in the wait), the shape of the mouse pointer, AmigaOS 2.x (fixed pens, no `AllocBitMap`);
+        (timer.device in the wait, also for the delay of tooltips), the shape of the mouse pointer, the dimming behind
+        modal dialogs, AmigaOS 2.x (fixed pens, no `AllocBitMap`);
       - text from TrueType fonts (proportional, smooth): a rasterizer in CShift and a font with a free license embedded
         with `embed` (`ReadOnlySlice<uint8>`); the bitmap fonts stay for small targets;
-      - popups that are drawn over the rest (drop-down lists, menus, tooltips): drawing in layers, the input for the top
-        one first;
       - repainting while Windows resizes the window (in its modal loop WM_PAINT shows the last frame; the new area
         stays empty until the drag ends), several windows, multi-line text boxes, input methods (dead keys and compose
         on X11: XIM).
 
-- [ ] **UTF-8 on Windows:** `Main(string[] args)` gets the arguments in the ANSI code page (`NOVÁK` arrives as
-      `4E 4F 56 C1 4B`, not UTF-8), and the file functions (`fopen`, `GetFileAttributesExA`, `MoveFileExA`, ...) take
-      ANSI paths too, so a non-ASCII argument works as a path but is not UTF-8 text. Converting only the arguments
-      would break such paths; the consistent fix is an application manifest with `activeCodePage` UTF-8 (Windows 10
-      1903+), which makes argv and all `A` functions UTF-8 - it needs a resource compiler (`llvm-windres`) in the
-      toolchain of the release. Until then the tests of the Ambermoon tools (`Tools/tests/run.sh` in the Ambermoon
-      repository) leave out the cases with non-ASCII arguments on Windows.
 - [ ] `System.Image`: GIF and JPEG decoding; a palette (and its PNG/BMP form) kept in `Image` for indexed images.
 - [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
 - [ ] The rest of the byte functions on slices: `Encoding.GetString`, `string.FromBytes` and `FileStream.Read`

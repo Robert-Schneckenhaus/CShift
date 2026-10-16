@@ -51,6 +51,10 @@ const int _IdcmpVanillaKey = 0x200000;
 const int _IdcmpBase = _IdcmpNewSize | _IdcmpMouseButtons | _IdcmpCloseWindow | _IdcmpRawKey | _IdcmpVanillaKey;
 const int _SelectDown = 0x68;
 const int _SelectUp = 0xE8;
+const int _MenuDown = 0x69;     // the right button (the window traps it: WA_RMBTrap, no menus)
+const int _MenuUp = 0xE9;
+const int _MiddleDown = 0x6A;
+const int _MiddleUp = 0xEA;
 
 // The state of the window (zero until the first Open).
 struct _UiAmiga
@@ -82,6 +86,12 @@ struct _UiAmiga
     bool MouseDown;
     bool Pressed;
     bool Released;
+    bool RightDown;
+    bool RightPressed;
+    bool RightReleased;
+    bool MiddleDown;
+    bool MiddlePressed;
+    bool MiddleReleased;
     int Wheel;
     bool Ctrl;
     bool Shift;
@@ -445,14 +455,35 @@ void _UiMessage(uint8* m)
             {
                 _UiA.MouseDown = true;
                 _UiA.Pressed = true;
-                __intuition_ModifyIDCMP(_UiA.Window, _IdcmpBase | _IdcmpMouseMove); // follow the mouse while it is held
             }
             else if (code == _SelectUp)
             {
                 _UiA.MouseDown = false;
                 _UiA.Released = true;
-                __intuition_ModifyIDCMP(_UiA.Window, _IdcmpBase);
             }
+            else if (code == _MenuDown)
+            {
+                _UiA.RightDown = true;
+                _UiA.RightPressed = true;
+            }
+            else if (code == _MenuUp)
+            {
+                _UiA.RightDown = false;
+                _UiA.RightReleased = true;
+            }
+            else if (code == _MiddleDown)
+            {
+                _UiA.MiddleDown = true;
+                _UiA.MiddlePressed = true;
+            }
+            else if (code == _MiddleUp)
+            {
+                _UiA.MiddleDown = false;
+                _UiA.MiddleReleased = true;
+            }
+            // follow the mouse while a button is held
+            bool held = _UiA.MouseDown || _UiA.RightDown || _UiA.MiddleDown;
+            __intuition_ModifyIDCMP(_UiA.Window, held ? _IdcmpBase | _IdcmpMouseMove : _IdcmpBase);
             break;
         case _IdcmpVanillaKey:
             _UiVanilla(code);
@@ -485,6 +516,14 @@ void _UiVanilla(int c)
     }
     if (c == 32)
         _UiA.Keys.Add(Key.Space);
+    else if (c == 43) // +
+        _UiA.Keys.Add(Key.Plus);
+    else if (c == 45) // -
+        _UiA.Keys.Add(Key.Minus);
+    else if (c == 44) // ,
+        _UiA.Keys.Add(Key.Comma);
+    else if (c == 46) // .
+        _UiA.Keys.Add(Key.Period);
     if (c >= 32 && c != 127 && !(c >= 128 && c < 160))
         _UiAppendUtf8(_UiA.Text, c);
 }
@@ -619,6 +658,12 @@ struct _UiOs
         input.MouseDown = _UiA.MouseDown;
         input.MousePressed = _UiA.Pressed;
         input.MouseReleased = _UiA.Released;
+        input.RightDown = _UiA.RightDown;
+        input.RightPressed = _UiA.RightPressed;
+        input.RightReleased = _UiA.RightReleased;
+        input.MiddleDown = _UiA.MiddleDown;
+        input.MiddlePressed = _UiA.MiddlePressed;
+        input.MiddleReleased = _UiA.MiddleReleased;
         input.Wheel = _UiA.Wheel;
         foreach (var key in _UiA.Keys)
             input.Keys.Add(key);
@@ -628,6 +673,10 @@ struct _UiOs
         input.Alt = _UiA.Alt;
         _UiA.Pressed = false;
         _UiA.Released = false;
+        _UiA.RightPressed = false;
+        _UiA.RightReleased = false;
+        _UiA.MiddlePressed = false;
+        _UiA.MiddleReleased = false;
         _UiA.Wheel = 0;
         _UiA.Keys.Clear();
         _UiA.Text.Clear();
@@ -682,7 +731,8 @@ struct _UiOs
                 _UiText(c);
                 break;
             case UiCommandKind.Image:
-                break;
+            case UiCommandKind.ImagePart:
+                break; // images are not drawn
             }
         }
         unsafe

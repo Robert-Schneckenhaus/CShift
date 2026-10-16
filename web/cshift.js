@@ -603,25 +603,32 @@ class Program {
                 position(e);
                 ui.input = true;
             });
+            // the buttons: 0 left, 1 middle, 2 right (MouseEvent.button)
+            const buttons = [["down", "pressed", "released"], ["middleDown", "middlePressed", "middleReleased"],
+                             ["rightDown", "rightPressed", "rightReleased"]];
             canvas.addEventListener("mousedown", (e) => {
-                if (e.button !== 0) return;
+                const b = buttons[e.button];
+                if (!b) return;
                 canvas.focus();
                 e.preventDefault();
                 position(e);
                 mods(e);
-                ui.down = ui.pressed = true;
+                ui[b[0]] = ui[b[1]] = true;
                 ui.input = true;
             });
-            // the button may go up outside of the canvas
+            // a button may go up outside of the canvas
             (canvas.ownerDocument ?? canvas).addEventListener("mouseup", (e) => {
-                if (e.button !== 0 || !ui.down) return;
+                const b = buttons[e.button];
+                if (!b || !ui[b[0]]) return;
                 position(e);
-                ui.down = false;
-                ui.released = true;
+                ui[b[0]] = false;
+                ui[b[2]] = true;
                 ui.input = true;
             });
+            // the right button is the program's, not the browser's menu
+            canvas.addEventListener("contextmenu", (e) => e.preventDefault());
             canvas.addEventListener("mouseleave", () => {
-                if (ui.down) return;
+                if (ui.down || ui.rightDown || ui.middleDown) return;
                 ui.x = ui.y = -1;
                 ui.input = true;
             });
@@ -631,6 +638,10 @@ class Program {
                 const notches = Math.trunc(ui.wheelDelta);
                 ui.wheel += notches;
                 ui.wheelDelta -= notches;
+                ui.wheelXDelta += e.deltaMode === 0 ? (e.deltaX ?? 0) / 100 : (e.deltaX ?? 0);
+                const sideways = Math.trunc(ui.wheelXDelta);
+                ui.wheelX += sideways;
+                ui.wheelXDelta -= sideways;
                 ui.input = true;
             }, { passive: false });
             canvas.addEventListener("keydown", (e) => {
@@ -678,6 +689,8 @@ class Program {
                 if (self.options.setTitle !== false && title && globalThis.document) document.title = self.cstring(title);
                 const ui = {
                     ratio, x: -1, y: -1, down: false, pressed: false, released: false, wheel: 0, wheelDelta: 0,
+                    rightDown: false, rightPressed: false, rightReleased: false,
+                    middleDown: false, middlePressed: false, middleReleased: false, wheelX: 0, wheelXDelta: 0,
                     ctrl: false, shift: false, alt: false, keys: [], text: "", input: true, closed: false,
                     clipboard: "", context: self.canvas.getContext("2d"), image: null,
                 };
@@ -692,6 +705,10 @@ class Program {
                 const d = v();
                 const values = [ui.x, ui.y, ui.down, ui.pressed, ui.released, ui.wheel, ui.ctrl, ui.shift, ui.alt];
                 values.forEach((value, i) => d.setInt32(state + 4 * i, Number(value), true));
+                // after the length of the text (9): the right and the middle button, the horizontal wheel
+                const more = [ui.rightDown, ui.rightPressed, ui.rightReleased, ui.middleDown, ui.middlePressed,
+                              ui.middleReleased, ui.wheelX];
+                more.forEach((value, i) => d.setInt32(state + 4 * (10 + i), Number(value), true));
                 const count = Math.min(ui.keys.length, keyCapacity);
                 for (let i = 0; i < count; i++) d.setInt32(keys + 4 * i, ui.keys[i], true);
                 // the text: what fits (whole characters), the rest in the next frame
@@ -706,7 +723,8 @@ class Program {
                 ui.text = ui.text.slice(taken.length);
                 ui.keys = ui.keys.slice(count);
                 ui.pressed = ui.released = false;
-                ui.wheel = 0;
+                ui.rightPressed = ui.rightReleased = ui.middlePressed = ui.middleReleased = false;
+                ui.wheel = ui.wheelX = 0;
                 ui.input = ui.keys.length > 0 || ui.text.length > 0;
                 return count;
             },
@@ -726,7 +744,7 @@ class Program {
                 ui.context.putImageData(ui.image, 0, 0);
             },
             cshift_ui_cursor(kind) {
-                self.canvas.style.cursor = kind === 1 ? "text" : kind === 2 ? "pointer" : "default";
+                self.canvas.style.cursor = ["default", "text", "pointer", "crosshair", "move"][kind] ?? "default";
             },
             cshift_ui_title(title) {
                 if (self.options.setTitle !== false && globalThis.document) document.title = self.cstring(title);

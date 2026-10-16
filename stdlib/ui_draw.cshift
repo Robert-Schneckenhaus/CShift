@@ -501,6 +501,110 @@ struct Canvas
         return font.Draw(ref this, x, y, text, color);
     }
 
+    /// Draws the part `source` of an image with its top left corner at (x, y), unscaled (a tile of a tile set).
+    void DrawImage(const ref Image image, Rect source, int x, int y)
+    {
+        DrawImage(image, source, Rect.Create(x, y, source.Width, source.Height));
+    }
+
+    /// Draws the part `source` of an image scaled to `target` (nearest neighbour: every pixel of the image becomes a
+    /// block of pixels), clipped to `Clip` and blended by the alpha of its pixels. Opaque pixels at a whole zoom factor
+    /// (16 x 16 to 32 x 32) are copied without any arithmetic per pixel.
+    void DrawImage(const ref Image image, Rect source, Rect target)
+    {
+        var src = source.Intersect(Rect.Create(0, 0, image.Width, image.Height));
+        if (src.IsEmpty() || target.IsEmpty() || !src.Equals(source))
+        {
+            if (src.IsEmpty() || target.IsEmpty())
+                return;
+            // a source that reaches past the image: the part inside, at its place in the target
+            var t = Rect.Create(target.X + (src.X - source.X) * target.Width / source.Width,
+                                target.Y + (src.Y - source.Y) * target.Height / source.Height,
+                                src.Width * target.Width / source.Width, src.Height * target.Height / source.Height);
+            DrawImage(image, src, t);
+            return;
+        }
+        var area = target.Intersect(Clip);
+        if (area.IsEmpty())
+            return;
+        var pixels = Target.Pixels;
+        var from = image.Pixels;
+        int stride = Target.Width;
+        int imageWidth = image.Width;
+        if (target.Width == source.Width && target.Height == source.Height)
+        {
+            // unscaled
+            for (var py = area.Y; py < area.Y + area.Height; py += 1)
+            {
+                int srcRow = (src.Y + py - target.Y) * imageWidth + src.X - target.X;
+                int row = py * stride;
+                for (var px = area.X; px < area.X + area.Width; px += 1)
+                {
+                    uint32 p = from[srcRow + px];
+                    if ((p >> 24) == 255u)
+                        pixels[row + px] = p;
+                    else if ((p >> 24) > 0u)
+                        Blend(px, py, Color.FromArgb(p), 255);
+                }
+            }
+            return;
+        }
+        int zoomX = target.Width / source.Width;
+        int zoomY = target.Height / source.Height;
+        if (zoomX > 0 && zoomY > 0 && zoomX * source.Width == target.Width && zoomY * source.Height == target.Height)
+        {
+            // a whole zoom factor: every source pixel is a block of zoomX x zoomY pixels
+            for (var py = area.Y; py < area.Y + area.Height; py += 1)
+            {
+                int srcRow = (src.Y + (py - target.Y) / zoomY) * imageWidth + src.X;
+                int row = py * stride;
+                int px = area.X;
+                int end = area.X + area.Width;
+                int sx = (px - target.X) / zoomX;
+                int left = zoomX - (px - target.X) % zoomX; // the pixels of the first block that are inside
+                while (px < end)
+                {
+                    uint32 p = from[srcRow + sx];
+                    int n = Math.Min(left, end - px);
+                    if ((p >> 24) == 255u)
+                    {
+                        for (var k = 0; k < n; k += 1)
+                            pixels[row + px + k] = p;
+                    }
+                    else if ((p >> 24) > 0u)
+                    {
+                        var c = Color.FromArgb(p);
+                        for (var k = 0; k < n; k += 1)
+                            Blend(px + k, py, c, 255);
+                    }
+                    px += n;
+                    sx += 1;
+                    left = zoomX;
+                }
+            }
+            return;
+        }
+        // any other size: the source pixel under the center of each target pixel, in 16.16 fixed point
+        int stepX = (int)(((int64)source.Width << 16) / target.Width);
+        int stepY = (int)(((int64)source.Height << 16) / target.Height);
+        for (var py = area.Y; py < area.Y + area.Height; py += 1)
+        {
+            int sy = src.Y + (int)(((int64)(py - target.Y) * stepY + stepY / 2) >> 16);
+            int srcRow = sy * imageWidth + src.X;
+            int row = py * stride;
+            int fx = (int)((int64)(area.X - target.X) * stepX + stepX / 2);
+            for (var px = area.X; px < area.X + area.Width; px += 1)
+            {
+                uint32 p = from[srcRow + (fx >> 16)];
+                fx += stepX;
+                if ((p >> 24) == 255u)
+                    pixels[row + px] = p;
+                else if ((p >> 24) > 0u)
+                    Blend(px, py, Color.FromArgb(p), 255);
+            }
+        }
+    }
+
     /// Draws an image with its top left corner at (x, y), blended by the alpha of its pixels.
     void DrawImage(Image image, int x, int y)
     {

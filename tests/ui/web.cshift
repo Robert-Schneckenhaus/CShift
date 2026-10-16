@@ -1,5 +1,6 @@
 // System.Ui in the browser (--backend wasm): run by tests/ui-web-check.mjs with web/cshift.js and a canvas that only
-// pretends. The program tells where its widgets are; the test clicks the button, types into the text box and pastes,
+// pretends. The program tells where its widgets are; the test clicks the button (also with the right and the middle
+// button), presses +, types into the text box and pastes,
 // and the program ends when it got all of it. Between those inputs it waits (the program is suspended until input).
 
 using System;
@@ -27,6 +28,12 @@ int Main()
             Console.WriteLine("clicked");
         }
         var button = ui.LastRect();
+        if (ui.RightClicked())
+            Console.WriteLine("right clicked");
+        if (ui.Input().MiddleReleased)
+            Console.WriteLine("middle");
+        if (ui.Input().Pressed(Key.Plus))
+            Console.WriteLine("plus");
         if (ui.TextBox("text", ref text))
             Console.WriteLine("text " + text);
         var box = ui.LastRect();

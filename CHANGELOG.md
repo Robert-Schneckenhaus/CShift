@@ -6,6 +6,32 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `System.Ui` has what a tool like a tile map editor needs:
+  - **The right and the middle mouse button**: `UiInput.RightDown`/`RightPressed`/`RightReleased` and
+    `MiddleDown`/`MiddlePressed`/`MiddleReleased`, from all windows (X11 buttons 2 and 3, Win32 with the mouse
+    captured, the browser without its context menu on the canvas, the menu button of AmigaOS). `ui.RightClicked()`,
+    `ui.Clicked()`, `ui.Hovered()`, `ui.Held()` and `ui.RightHeld()` tell what the mouse did with the widget or
+    `ui.Area` placed last; an area takes the mouse like a widget now (`ui.Area(id, width, height)` gives it an id).
+  - **Popups**: a layer drawn over the frame whose input comes first. Context menus (`ui.OpenPopup`, `ui.Popup`,
+    `ui.MenuItem` with an optional shortcut text, `ui.CloseCurrentPopup`, `ui.IsPopupOpen`; closed by an item, Escape
+    or a click outside), a menu bar (`ui.MenuBar`, `ui.Menu`), modal dialogs (`ui.Modal(id, title)`: centered, the rest
+    dimmed and without input while the program draws it), tooltips (`ui.Tooltip`), and `ui.FileDialog`, a dialog for
+    choosing a file made of widgets.
+  - **New widgets**: `ui.ComboBox(id, ref selected, items)`, a drop-down list (scrolls when long; Up, Down, Enter), and
+    `ui.IntBox(id, ref value, min, max)`.
+  - **Layout**: `ui.Column(width)` in a row, a column of a fixed width or with 0 the rest of the row (a side bar next
+    to a view); a height of 0 is "down to the bottom of the window" (`ui.Scroll(id, 0)`, `ui.Area(0, 0)`);
+    `ui.ScrollArea(id, width, height)` scrolls both ways (Shift with the wheel and the new `UiInput.WheelX` sideways);
+    `ui.ScrollX`, `ui.ScrollY` and `ui.SetScroll`.
+  - **Images**: `Canvas.DrawImage(image, source, x, y)` draws a part of an image, `DrawImage(image, source, target)`
+    scales it (nearest neighbour, a fast path for opaque pixels at whole zoom factors: 400 tiles at zoom 2 in 800 x 500
+    in about a millisecond); the command `UiCommandKind.ImagePart`; `ui.DrawImage`, `ui.FillRect` and `ui.DrawText`
+    draw into the layer that is being drawn (in a popup or dialog).
+  - **Cursor and keys**: `ui.SetCursor(cursor)` for the frame, the shapes `Cursor.Crosshair` and `Cursor.Move`; the keys
+    `Key.Plus` and `Key.Minus` (also of the number pad), `Key.Comma`, `Key.Period` and `Key.NumPad0` to `NumPad9`.
+  - Popup ids are the same in every group (a popup can be opened inside a scroll area and drawn outside of it).
+
 ### Fixed
 - Windows: `Main(string[] args)` gets the arguments as UTF-8, so `JAN_NOVÁK` or `日本` arrive as typed (they were in the
   ANSI code page, characters outside it became `?`). File and directory names outside ASCII work as well: the C

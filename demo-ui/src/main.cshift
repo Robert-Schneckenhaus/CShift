@@ -1,5 +1,7 @@
 // demo-ui: the widgets of System.Ui in a small to-do list. The state of the program is the struct App; Draw describes
-// the window for it, every frame, and changes it where the user did something.
+// the window for it, every frame, and changes it where the user did something. It has a menu bar, a combo box, a
+// context menu (the right mouse button on a task), a modal dialog (before removing the done tasks), a number box and
+// tooltips.
 
 using System;
 using System.Ui;
@@ -8,6 +10,8 @@ struct Task
 {
     string Title;
     bool Done;
+    int Priority;        // an index into Priorities
+    int Days;            // due in so many days
 }
 
 struct App
@@ -18,10 +22,50 @@ struct App
     int Filter;          // 0 all, 1 open, 2 done
     bool Dark;
     double Zoom;         // the scale of the ui, relative to the screen's
+    List<string> Priorities;
+    int NewPriority;
+    int NewDays;
+    int MenuTask;        // the task whose context menu is open
+    bool Confirm;        // the dialog before "Remove done" is shown
+    bool Quit;
+}
+
+void SetDark(Ui ui, ref App app, bool dark)
+{
+    app.Dark = dark;
+    ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
 }
 
 void Draw(Ui ui, ref App app)
 {
+    // the keys of the menus (the menu bar only shows them)
+    var input = ui.Input();
+    if (input.Ctrl && input.Pressed(Key.Plus))
+        app.Zoom = Math.Min(2.0, app.Zoom + 0.25);
+    if (input.Ctrl && input.Pressed(Key.Minus))
+        app.Zoom = Math.Max(0.75, app.Zoom - 0.25);
+    using (ui.MenuBar())
+    {
+        using (ui.Menu("File"))
+        {
+            if (ui.MenuItem("Remove done..."))
+                app.Confirm = true;
+            if (ui.MenuItem("Quit", "Ctrl+Q"))
+                app.Quit = true;
+        }
+        using (ui.Menu("View"))
+        {
+            if (ui.MenuItem(app.Dark ? "Light theme" : "Dark theme"))
+                SetDark(ui, ref app, !app.Dark);
+            if (ui.MenuItem("Zoom in", "Ctrl++"))
+                app.Zoom = Math.Min(2.0, app.Zoom + 0.25);
+            if (ui.MenuItem("Zoom out", "Ctrl+-"))
+                app.Zoom = Math.Max(0.75, app.Zoom - 0.25);
+        }
+    }
+    if (input.Ctrl && input.Pressed(Key.Q))
+        app.Quit = true;
+
     int done = 0;
     foreach (var task in app.Tasks)
     {
@@ -41,12 +85,26 @@ void Draw(Ui ui, ref App app)
     {
         ui.TextBox("new", ref app.NewTitle);
         bool add = ui.Button("Add") || ui.Submitted("new");
+        ui.Tooltip("Adds the task (Enter in the text box does too)");
         if (add && app.NewTitle.Trim().Length > 0)
         {
-            app.Tasks.Add(Task { Title = app.NewTitle.Trim().ToString() });
+            app.Tasks.Add(Task { Title = app.NewTitle.Trim().ToString(), Priority = app.NewPriority, Days = app.NewDays });
             app.NewTitle = "";
             ui.SetFocus("new");
         }
+    }
+    using (ui.Row())
+    {
+        using (ui.Column(150))
+        {
+            ui.ComboBox("priority", ref app.NewPriority, app.Priorities);
+        }
+        ui.Label("due in");
+        using (ui.Column(70))
+        {
+            ui.IntBox("days", ref app.NewDays, 0, 365);
+        }
+        ui.Label("days");
     }
 
     using (ui.Row())
@@ -69,9 +127,35 @@ void Draw(Ui ui, ref App app)
                 {
                     if (ui.Checkbox("##done", ref task.Done))
                         app.Tasks[i] = task;
-                    if (ui.ListItem(task.Title, app.Selected == i))
+                    string due = task.Days == 0 ? "today" : $"in {task.Days} days";
+                    if (ui.ListItem($"{task.Title} ({app.Priorities[task.Priority]}, {due})", app.Selected == i))
                         app.Selected = i;
+                    if (ui.RightClicked())
+                    {
+                        app.MenuTask = i;
+                        app.Selected = i;
+                        ui.OpenPopup("task");
+                    }
                 }
+            }
+        }
+    }
+
+    // the context menu of a task (the right mouse button)
+    using (ui.Popup("task"))
+    {
+        if (app.MenuTask >= 0 && app.MenuTask < app.Tasks.Count())
+        {
+            var task = app.Tasks[app.MenuTask];
+            if (ui.MenuItem(task.Done ? "Mark as open" : "Mark as done"))
+            {
+                task.Done = !task.Done;
+                app.Tasks[app.MenuTask] = task;
+            }
+            if (ui.MenuItem("Remove", "Del"))
+            {
+                app.Tasks.RemoveAt(app.MenuTask);
+                app.Selected = -1;
             }
         }
     }
@@ -79,29 +163,48 @@ void Draw(Ui ui, ref App app)
     using (ui.Row())
     {
         bool hasSelection = app.Selected >= 0 && app.Selected < app.Tasks.Count();
-        if (ui.Button("Remove selected") && hasSelection)
+        if ((ui.Button("Remove selected") || ui.Input().Pressed(Key.Delete)) && hasSelection && !ui.HasFocus("new"))
         {
             app.Tasks.RemoveAt(app.Selected);
             app.Selected = -1;
         }
         if (ui.Button("Remove done"))
+            app.Confirm = true;
+        ui.Tooltip("Asks first");
+    }
+
+    // a modal dialog: the rest of the window gets no input while it is shown
+    if (app.Confirm)
+    {
+        using (ui.Modal("confirm", "Remove the done tasks?"))
         {
-            app.Tasks = app.Tasks.Where(t => !t.Done);
-            app.Selected = -1;
+            ui.Text($"{done} tasks are done. They are removed for good.");
+            using (ui.Row())
+            {
+                if (ui.Button("Remove"))
+                {
+                    app.Tasks = app.Tasks.Where(t => !t.Done);
+                    app.Selected = -1;
+                    app.Confirm = false;
+                }
+                if (ui.Button("Cancel") || ui.Input().Pressed(Key.Escape))
+                    app.Confirm = false;
+            }
         }
     }
 
     using (ui.Panel("Settings"))
     {
-        if (ui.Checkbox("Dark theme", ref app.Dark))
-            ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
+        bool dark = app.Dark;
+        if (ui.Checkbox("Dark theme", ref dark))
+            SetDark(ui, ref app, dark);
         using (ui.Columns(2))
         {
             ui.Label($"Zoom {(int)(app.Zoom * 100.0 + 0.5)} %"); // an integer: formatting a double is slow without an FPU
             ui.Slider("zoom", ref app.Zoom, 0.75, 2.0);
         }
         ui.Text("Tab moves between the controls, Enter and Space press buttons, the arrow keys move sliders. " +
-                "Ctrl+C, Ctrl+X and Ctrl+V work in text boxes.");
+                "Ctrl+C, Ctrl+X and Ctrl+V work in text boxes. The right mouse button on a task opens its menu.");
     }
 }
 
@@ -112,9 +215,13 @@ int Main(string[] args)
     if (args.Length == 2 && args[0] == "--frames" && args[1].ParseInt() is int n)
         frames = n;
 
-    var window = try Window.Open("CShift - System.Ui", 420, 560);
+    var window = try Window.Open("CShift - System.Ui", 460, 640);
     var ui = Ui.Create();
-    var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0 };
+    var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0, Priorities = List<string>.Create(), MenuTask = -1 };
+    app.Priorities.Add("Low");
+    app.Priorities.Add("Normal");
+    app.Priorities.Add("High");
+    app.NewPriority = 1;
     app.Tasks.Add(Task { Title = "Write the window layer", Done = true });
     app.Tasks.Add(Task { Title = "Draw text with a bitmap font", Done = true });
     app.Tasks.Add(Task { Title = "Lay out rows, columns and panels" });
@@ -122,7 +229,7 @@ int Main(string[] args)
     app.Tasks.Add(Task { Title = "Try it on Linux" });
 
     int count = 0;
-    while (window.Update())
+    while (!app.Quit && window.Update())
     {
         ui.Begin(window, app.Zoom);
         Draw(ui, ref app);

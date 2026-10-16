@@ -149,7 +149,19 @@ Key _UiKeyOfVk(int vk)
     case 0x23: return Key.End;
     case 0x21: return Key.PageUp;
     case 0x22: return Key.PageDown;
-    default: return Key.None;
+    case 0xBB: return Key.Plus;   // VK_OEM_PLUS: the key of + (=+ on a US keyboard)
+    case 0x6B: return Key.Plus;   // VK_ADD: the number pad
+    case 0x3D: return Key.Plus;   // the browser (Firefox): =
+    case 0xAB: return Key.Plus;   // the browser (Firefox): +
+    case 0xBD: return Key.Minus;  // VK_OEM_MINUS
+    case 0x6D: return Key.Minus;  // VK_SUBTRACT
+    case 0xAD: return Key.Minus;  // the browser (Firefox): -
+    case 0xBC: return Key.Comma;  // VK_OEM_COMMA
+    case 0xBE: return Key.Period; // VK_OEM_PERIOD
+    default:
+        if (vk >= 0x60 && vk <= 0x69)
+            return (Key)((int)Key.NumPad0 + vk - 0x60); // VK_NUMPAD0 ... VK_NUMPAD9
+        return Key.None;
     }
 }
 

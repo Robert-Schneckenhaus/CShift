@@ -173,7 +173,36 @@ enum Key : int32
     /// The function key F11.
     F11,
     /// The function key F12.
-    F12
+    F12,
+    /// Plus: the key of `+` (on a US keyboard the one of `=`, as browsers count it for zooming) and the one of the
+    /// number pad.
+    Plus,
+    /// Minus: the key of `-` and the one of the number pad.
+    Minus,
+    /// The comma.
+    Comma,
+    /// The period.
+    Period,
+    /// The digit 0 of the number pad.
+    NumPad0,
+    /// The digit 1 of the number pad.
+    NumPad1,
+    /// The digit 2 of the number pad.
+    NumPad2,
+    /// The digit 3 of the number pad.
+    NumPad3,
+    /// The digit 4 of the number pad.
+    NumPad4,
+    /// The digit 5 of the number pad.
+    NumPad5,
+    /// The digit 6 of the number pad.
+    NumPad6,
+    /// The digit 7 of the number pad.
+    NumPad7,
+    /// The digit 8 of the number pad.
+    NumPad8,
+    /// The digit 9 of the number pad.
+    NumPad9
 }
 
 /// The shape of the mouse pointer that a frame asks for (see [Ui.Cursor]).
@@ -184,7 +213,11 @@ enum Cursor : int32
     /// Over text that can be edited.
     Text = 1,
     /// Over something that can be clicked.
-    Hand = 2
+    Hand = 2,
+    /// Cross hairs: for pointing at a pixel or a tile.
+    Crosshair = 3,
+    /// Arrows to all four sides: for moving something.
+    Move = 4
 }
 
 /// What the user did since the last frame: the state of the mouse and the keys that were pressed. A [Window] fills
@@ -201,8 +234,23 @@ struct UiInput
     bool MousePressed;
     /// The left button went up since the last frame (with MousePressed: a click within one frame).
     bool MouseReleased;
+    /// The right mouse button is held down (on AmigaOS the menu button).
+    bool RightDown;
+    /// The right button went down since the last frame.
+    bool RightPressed;
+    /// The right button went up since the last frame.
+    bool RightReleased;
+    /// The middle mouse button (the wheel) is held down.
+    bool MiddleDown;
+    /// The middle button went down since the last frame.
+    bool MiddlePressed;
+    /// The middle button went up since the last frame.
+    bool MiddleReleased;
     /// The mouse wheel, in notches since the last frame: positive when turned away from the user (scroll up).
     int Wheel;
+    /// The horizontal wheel (tilting it, or the sideways swipe of a touchpad), in notches since the last frame:
+    /// positive to the right. 0 where the window does not report it (AmigaOS).
+    int WheelX;
     /// The keys pressed since the last frame, in order, including the repeats of a key that is held.
     List<Key> Keys;
     /// The characters typed since the last frame (UTF-8).
@@ -234,6 +282,17 @@ struct UiInput
         }
         return false;
     }
+}
+
+/// What the user did with a dialog of [Ui.FileDialog].
+enum UiDialogResult : int32
+{
+    /// The dialog is still open.
+    None,
+    /// OK (or Enter in the file name): the path was chosen.
+    Ok,
+    /// Cancel or Escape.
+    Cancel
 }
 
 /// The colors of a [Ui]: [Theme.Light] (the default) or [Theme.Dark], or your own.
@@ -309,8 +368,8 @@ struct Theme
     }
 }
 
-/// The end of a group that [Ui.Row], [Ui.Columns], [Ui.Panel], [Ui.Scroll] and [Ui.Id] started: `using (ui.Row())
-/// { ... }` ends it when the block is left.
+/// The end of a group that [Ui.Row], [Ui.Columns], [Ui.Panel], [Ui.Scroll], [Ui.Id], [Ui.Popup], [Ui.Modal],
+/// [Ui.MenuBar] or [Ui.Menu] started: `using (ui.Row()) { ... }` ends it when the block is left.
 struct UiScope : IDisposable
 {
     /// The Ui it belongs to (internal).
@@ -343,7 +402,9 @@ enum UiCommandKind : int32
     /// `Image` with its top left corner at (`Rect.X`, `Rect.Y`).
     Image,
     /// From now on only `Rect` is drawn into.
-    Clip
+    Clip,
+    /// The part `Source` of `Image`, scaled to `Rect` (nearest neighbour; `Rect` of the size of `Source`: unscaled).
+    ImagePart
 }
 
 /// One drawing operation of a frame, recorded when a Ui draws with commands instead of pixels ([Ui.BeginCommands],
@@ -376,6 +437,8 @@ struct UiCommand
     string Text;
     /// The image.
     Image Image;
+    /// The part of the image that [UiCommandKind.ImagePart] draws.
+    Rect Source;
 }
 
 /// The user interface: one value for the whole program, created once and given every frame to the code that draws
@@ -474,12 +537,58 @@ struct Ui
     Canvas Canvas() { return _S[0].Canvas; }
 
     /// Takes a rectangle of the layout for drawing of your own: `width` (0: as wide as there is room) x `height`
-    /// pixels at scale 1. Returns it in pixels of the frame.
+    /// (0: down to the bottom of the window) pixels at scale 1. Returns it in pixels of the frame. It takes the mouse
+    /// like a widget: [Ui.Hovered], [Ui.Held], [Ui.Clicked] and [Ui.RightClicked] tell what the mouse does with it.
     Rect Area(int width, int height)
     {
-        int w = _S[0].Px(width);
-        return _S[0].Place(w, _S[0].Px(height), width <= 0);
+        return _S[0].Area(_S[0].IdOf("#area:" + _S[0].AreaCount.ToString()), width, height);
     }
+
+    /// The same with an id of its own (areas that are not always drawn, or in a different order).
+    Rect Area(string id, int width, int height)
+    {
+        return _S[0].Area(_S[0].IdOf("#area:" + id), width, height);
+    }
+
+    // ---- what the mouse did with the widget placed last ----
+
+    /// True if the widget (or [Ui.Area]) placed last is under the mouse.
+    bool Hovered() { return _S[0].LastHot; }
+
+    /// True in the frame in which the widget placed last was clicked with the left button.
+    bool Clicked() { return _S[0].LastId != 0u && _S[0].Active == _S[0].LastId && _S[0].In.MouseReleased && _S[0].LastHot; }
+
+    /// True in the frame in which the widget placed last was clicked with the right button (pressed and released on
+    /// it): the secondary action, or [Ui.OpenPopup] for a context menu.
+    bool RightClicked()
+    {
+        return _S[0].LastId != 0u && _S[0].RightActive == _S[0].LastId && _S[0].In.RightReleased && _S[0].LastHot;
+    }
+
+    /// True while the left button that went down on the widget placed last is held (dragging, painting into an area).
+    bool Held() { return _S[0].LastId != 0u && _S[0].Active == _S[0].LastId && _S[0].In.MouseDown; }
+
+    /// True while the right button that went down on the widget placed last is held.
+    bool RightHeld() { return _S[0].LastId != 0u && _S[0].RightActive == _S[0].LastId && _S[0].In.RightDown; }
+
+    /// The mouse pointer for this frame, whatever the widgets under it ask for (call it after the [Ui.Area] it is
+    /// for, while that is hovered: `if (ui.Hovered()) ui.SetCursor(Cursor.Crosshair);`).
+    void SetCursor(Cursor cursor) { _S[0].CursorOverride = cursor; _S[0].HasCursorOverride = true; }
+
+    // ---- drawing of your own that keeps to the layers ----
+
+    /// Fills a rectangle (pixels of the frame). Unlike [Ui.Canvas], this draws in the layer that is being drawn:
+    /// inside a [Ui.Popup] or [Ui.Modal] on top of the frame, and as commands with [Ui.BeginCommands].
+    void FillRect(Rect rect, Color color) { _S[0].FillRect(rect, color); }
+
+    /// Draws text with its top left corner at (x, y) in the font of the Ui (in the layer that is being drawn).
+    void DrawText(int x, int y, string text, Color color) { _S[0].DrawText(x, y, text, color); }
+
+    /// Draws an image with its top left corner at (x, y) (in the layer that is being drawn).
+    void DrawImage(Image image, int x, int y) { _S[0].DrawImage(image, x, y); }
+
+    /// Draws the part `source` of an image scaled to `target` (nearest neighbour), in the layer that is being drawn.
+    void DrawImage(Image image, Rect source, Rect target) { _S[0].DrawImagePart(image, source, target); }
 
     // ---- groups ----
 
@@ -496,14 +605,80 @@ struct Ui
     /// A framed group with a title (empty: none); the widgets in the block go below each other.
     UiScope Panel(string title) { _S[0].BeginPanel(title); return UiScope { State = _S }; }
 
-    /// An area of the given height (pixels at scale 1) whose content scrolls: with the mouse wheel and a scroll bar.
-    UiScope Scroll(string id, int height) { _S[0].BeginScroll(id, height); return UiScope { State = _S }; }
+    /// Inside a [Ui.Row]: a column of a fixed width (pixels at scale 1), or with 0 one that takes the rest of the row
+    /// (several share it equally). A side bar next to a view: `using (ui.Row()) { using (ui.Column(220)) { ... }
+    /// using (ui.Column(0)) { ... } }`.
+    UiScope Column(int width) { _S[0].BeginFixedColumn(width); return UiScope { State = _S }; }
+
+    /// An area of the given height (pixels at scale 1; 0: down to the bottom of the window) whose content scrolls: with
+    /// the mouse wheel and a scroll bar.
+    UiScope Scroll(string id, int height) { _S[0].BeginScroll(id, 0, height, false); return UiScope { State = _S }; }
+
+    /// An area of `width` x `height` (pixels at scale 1; 0: the room there is, down to the bottom of the window) whose
+    /// content scrolls both ways: content wider than it (an [Ui.Area] of a fixed size, a long row) gets a horizontal
+    /// scroll bar. The wheel scrolls up and down, Shift with the wheel (and the horizontal wheel) to the sides.
+    UiScope ScrollArea(string id, int width, int height) { _S[0].BeginScroll(id, width, height, true); return UiScope { State = _S }; }
+
+    /// How far the scroll area with this id (in this group) is scrolled to the right, in pixels of the frame.
+    int ScrollX(string id) { return _S[0].Scrolls.GetOrDefault(_S[0].IdOf("#scroll:" + id), _UiScroll { }).OffsetX; }
+
+    /// How far the scroll area with this id is scrolled down, in pixels of the frame.
+    int ScrollY(string id) { return _S[0].Scrolls.GetOrDefault(_S[0].IdOf("#scroll:" + id), _UiScroll { }).Offset; }
+
+    /// Scrolls the area with this id from the next frame on (pixels of the frame; it keeps to the content).
+    void SetScroll(string id, int x, int y) { _S[0].SetScroll(_S[0].IdOf("#scroll:" + id), x, y); }
 
     /// Makes the ids of the widgets in the block different from those of the same widgets elsewhere (lists).
     UiScope Id(int value) { _S[0].BeginId(value.ToString()); return UiScope { State = _S }; }
 
     /// The same with a text.
     UiScope Id(string value) { _S[0].BeginId(value); return UiScope { State = _S }; }
+
+    // ---- popups, menus and dialogs: a layer drawn over the rest, which gets the input first ----
+
+    /// Opens the popup with this id at the mouse (a context menu: `if (ui.RightClicked()) ui.OpenPopup("tile");`).
+    /// It stays open until an item is chosen ([Ui.MenuItem]), [Ui.CloseCurrentPopup], Escape, or a click outside.
+    /// The id of a popup is the same in every group of the frame: it can be opened inside a scroll area or a row
+    /// and drawn somewhere else.
+    void OpenPopup(string id) { _S[0].OpenPopup(_UiState.GlobalId("#popup:" + id), Rect.Create(_S[0].In.MouseX, _S[0].In.MouseY, 0, 0), 0u, 0u); }
+
+    /// True if the popup with this id is open.
+    bool IsPopupOpen(string id) { return _S[0].FindPopup(_UiState.GlobalId("#popup:" + id)) >= 0; }
+
+    /// The content of the popup with this id: while it is open, the widgets in the block are drawn in a frame over
+    /// the rest (where [Ui.OpenPopup] put it); while it is closed they draw nothing and do nothing.
+    UiScope Popup(string id) { _S[0].BeginPopup(_UiState.GlobalId("#popup:" + id)); return UiScope { State = _S }; }
+
+    /// An item of a popup or menu; true in the frame in which it was chosen, which closes the popups.
+    bool MenuItem(string label) { return _S[0].MenuItem(label, ""); }
+
+    /// The same with the text of a shortcut on the right ("Ctrl+S"); it is only shown, the program handles the keys.
+    bool MenuItem(string label, string shortcut) { return _S[0].MenuItem(label, shortcut); }
+
+    /// Closes the popup that is being drawn (and the ones opened from it).
+    void CloseCurrentPopup() { _S[0].CloseCurrentPopup(); }
+
+    /// A dialog in the middle of the window, with a title, over the dimmed rest of the window, which gets no input
+    /// while it is shown. It is shown as long as the program draws it: `if (app.Asking) using (ui.Modal("ask",
+    /// "Unsaved changes")) { ... if (ui.Button("Cancel")) app.Asking = false; }`.
+    UiScope Modal(string id, string title) { _S[0].BeginModal(id, title); return UiScope { State = _S }; }
+
+    /// A bar of menus across the frame: `using (ui.MenuBar()) { using (ui.Menu("File")) { ... } }`.
+    UiScope MenuBar() { _S[0].BeginMenuBar(); return UiScope { State = _S }; }
+
+    /// A menu of a [Ui.MenuBar]: its title in the bar, and while it is open (a click on the title) the widgets in the
+    /// block in a popup below it ([Ui.MenuItem]).
+    UiScope Menu(string label) { _S[0].BeginMenu(label); return UiScope { State = _S }; }
+
+    /// Shows a text next to the mouse while it rests on the widget placed last (after half a second).
+    void Tooltip(string text) { _S[0].Tooltip(text); }
+
+    /// A modal dialog for choosing a file, made of widgets (not the dialog of the system): the folder as a text box
+    /// with "Up", its folders and files ([Directory.GetEntries]), the name of the file, OK and Cancel. It starts in the
+    /// folder of `path` and shows it as long as the program draws it; `path` becomes the chosen file when it returns
+    /// [UiDialogResult.Ok]: `if (app.Opening) { var r = ui.FileDialog("open", "Open map", ref app.Path); if (r !=
+    /// UiDialogResult.None) app.Opening = false; }`.
+    UiDialogResult FileDialog(string id, string title, ref string path) { return _S[0].FileDialog(id, title, ref path); }
 
     // ---- widgets ----
 
@@ -551,6 +726,16 @@ struct Ui
     /// A line of a list that can be selected; true in the frame in which it was clicked.
     bool ListItem(string label, bool selected) { return _S[0].ListItem(label, selected); }
 
+    /// A drop-down list: shows the item `selected` (an index into `items`), and a click opens the list over the other
+    /// widgets (it scrolls if it is long). Choosing an item sets `selected` and closes it, Escape or a click outside
+    /// closes it too. With the focus: Up and Down choose the previous or next item, Enter or Space open the list (in
+    /// it Up, Down and Enter). True in the frame in which `selected` changed.
+    bool ComboBox(string id, ref int selected, List<string> items) { return _S[0].ComboBox(id, ref selected, items); }
+
+    /// A text box for a whole number from `min` to `max`: it takes digits and `-`, Up and Down add or subtract 1, and
+    /// the number is kept in the range. True in the frame in which `value` changed.
+    bool IntBox(string id, ref int value, int min, int max) { return _S[0].IntBox(id, ref value, min, max); }
+
     /// An image, in its own size.
     void Image(Image image) { _S[0].ImageWidget(image); }
 
@@ -586,7 +771,7 @@ struct _UiLayout
     int Index;       // grid: the cell of the current line
     int Right;       // the rightmost and lowest pixel used so far
     int Bottom;
-    int Scope;       // 0 layout, 1 panel, 2 scroll area, 3 id
+    int Scope;       // 0 layout, 1 panel, 2 scroll area, 3 id, 4 a closed popup (skipped), 5 popup, 6 modal
     uint32 Id;       // panel, scroll area: its id; the seed of the ids inside
     Rect Outer;      // panel, scroll area: its frame
     Rect SavedClip;
@@ -596,6 +781,39 @@ struct _UiLayout
     int Fixed;       // row: the widths of the widgets that do not fill, so far
     int Fills;       // row: the number of widgets that fill
     int Items;       // row: the number of widgets
+    int Natural;     // the rightmost pixel the widgets would like to reach (popups and modals learn their width from it)
+    int FixedWidth;  // a column of a fixed width (Ui.Column(width)): the width it takes in its row
+    int SavedLevel;  // popup, modal: the layer drawn before it
+    Rect SavedLast;  // popup, modal: the widget placed last before it (it is the last one again after the block)
+    uint32 SavedLastId;
+    bool SavedLastHot;
+    bool Both;       // scroll area: also horizontally
+    int ScrollOffsetX;
+    bool MenuBar;    // the row of a menu bar
+}
+
+// A popup that is open: where, opened from which layer, by which widget (a combo box, a menu).
+struct _UiPopup
+{
+    uint32 Id;
+    Rect Anchor;     // the mouse (an empty rectangle) or the widget it opens below
+    int OpenedAt;    // the layer that opened it
+    uint32 Owner;    // the widget that opened it (it keeps the keys while the popup is open), 0: none
+    uint32 Group;    // a menu bar: the popups of its menus replace each other when the mouse moves along it
+    bool Drawn;      // its content was drawn in this frame
+    bool New;        // opened in this frame (it may be drawn only in the next one)
+    int Highlight;   // a combo box: the item that Up, Down and Enter move and choose
+    Rect Shown;      // where it was drawn last (a click outside of it closes it)
+}
+
+// A popup or a modal dialog as it was drawn: the input goes to the topmost one first.
+struct _UiLayer
+{
+    uint32 Id;
+    int Level;
+    Rect Rect;
+    bool Modal;
+    uint32 Owner;
 }
 
 // What a row needed in the last frame: the widths of its widgets that do not fill, and how many fill the rest.
@@ -611,10 +829,23 @@ struct _UiRowMemo : IEquatable<_UiRowMemo>
     }
 }
 
+// The state of a file dialog (Ui.FileDialog): the folder it shows and its entries, the name of the file.
+struct _UiFileDialog
+{
+    string Folder;
+    string FolderText;        // the text box of the folder (taken with Enter)
+    string Name;
+    string Listed;            // the folder whose entries are in Entries
+    List<string> Entries;     // folders first (with a "/" at the end), then the files
+    int Frame;                // the frame it was drawn last
+}
+
 struct _UiScroll
 {
     int Offset;
     int ContentHeight;
+    int OffsetX;
+    int ContentWidth;
 }
 
 // The state of a Ui (shared by its copies through a one-element array).
@@ -674,6 +905,32 @@ struct _UiState
     uint32 SubmittedId;
     int DragOffset;             // scroll bars: where the thumb was grabbed
 
+    // the widget placed last (Ui.Hovered, Ui.Clicked, ...), the right button
+    uint32 LastId;
+    bool LastHot;
+    uint32 RightActive;         // the right button went down on it and has not gone up yet
+    bool RightClaimed;
+    int AreaCount;              // the areas of this frame without an id of their own
+    Cursor CursorOverride;
+    bool HasCursorOverride;
+
+    // layers: popups and modals are drawn after the frame, in the order of their layers (Level 1, 2, ...)
+    int Level;                  // the layer being drawn: 0 the frame itself
+    int Skip;                   // > 0: inside a popup that is closed: nothing is drawn, nothing takes input
+    List<UiCommand>[] Deferred; // the drawing of the layers 1, 2, ... (index = level)
+    int MaxLevel;               // the highest layer drawn in this frame
+    List<_UiPopup> Popups;      // the open popups, in the order they were opened
+    List<_UiLayer> Layers;      // the popups and modals drawn in this frame
+    List<_UiLayer> PrevLayers;  // ... in the last frame: their rectangles get the mouse first
+    Dictionary<uint32, Rect> PopupSizes; // the sizes of popups and modals in the last frame
+    uint32 TooltipId;           // the widget under the mouse that has a tooltip, since TooltipStart
+    double TooltipStart;
+    string TooltipText;         // shown at the end of this frame ("" none)
+    uint32 IntEditId;           // the IntBox being edited and its text
+    string IntText;
+    int FrameNumber;            // counts the frames (a file dialog knows that it was opened again)
+    Dictionary<uint32, _UiFileDialog> FileDialogs;
+
     static _UiState Create()
     {
         return _UiState
@@ -689,7 +946,15 @@ struct _UiState
             PanelHeights = Dictionary<uint32, int>.Create(),
             Scrolls = Dictionary<uint32, _UiScroll>.Create(),
             RowMemos = Dictionary<uint32, _UiRowMemo>.Create(),
-            WaitMs = -1
+            WaitMs = -1,
+            Deferred = new List<UiCommand>[4],
+            Popups = List<_UiPopup>.Create(),
+            Layers = List<_UiLayer>.Create(),
+            PrevLayers = List<_UiLayer>.Create(),
+            PopupSizes = Dictionary<uint32, Rect>.Create(),
+            TooltipText = "",
+            IntText = "",
+            FileDialogs = Dictionary<uint32, _UiFileDialog>.Create()
         };
     }
 
@@ -768,13 +1033,45 @@ struct _UiState
         Hot = 0u;
         FocusOrder.Clear();
         Claimed = false;
+        RightClaimed = false;
         WheelUsed = false;
         Again = false;
         WantCursor = Cursor.Arrow;
+        HasCursorOverride = false;
         WaitMs = -1;
         SubmittedId = 0u;
         RowCount = 0;
+        AreaCount = 0;
+        LastId = 0u;
+        LastHot = false;
         Depth = 0;
+        Level = 0;
+        Skip = 0;
+        FrameNumber += 1;
+        for (var i = 1; i <= MaxLevel && i < Deferred.Length; i += 1)
+        {
+            if (Deferred[i].IsCreated())
+                Deferred[i].Clear();
+        }
+        MaxLevel = 0;
+        TooltipText = "";
+        var swap = PrevLayers;
+        PrevLayers = Layers;
+        Layers = swap;
+        Layers.Clear();
+        // the layers of popups closed since: no longer in the way
+        for (var i = PrevLayers.Count() - 1; i >= 0; i -= 1)
+        {
+            if (!PrevLayers.Get(i).Modal && FindPopup(PrevLayers.Get(i).Id) < 0)
+                PrevLayers.RemoveAt(i);
+        }
+        ClosePopupsByInput();
+        for (var i = 0; i < Popups.Count(); i += 1)
+        {
+            var p = Popups.Get(i);
+            p.Drawn = false;
+            Popups.Set(i, p);
+        }
         var root = _UiLayout { Kind = 0, Area = Rect.Create(Margin, Margin, w - 2 * Margin, h - 2 * Margin), Scope = 0 };
         root.X = root.Area.X;
         root.Y = root.Area.Y;
@@ -806,11 +1103,95 @@ struct _UiState
             Focus = 0u; // a click on nothing
         if (In.MouseReleased || !In.MouseDown)
             Active = 0u;
+        if (In.RightReleased || !In.RightDown)
+            RightActive = 0u;
         if (Focus != EditId)
             EditId = 0u;
+        if (EditId != IntEditId)
+            IntEditId = 0u;
+        if (Hot != TooltipId)
+            TooltipId = 0u;
         PrevMouseDown = In.MouseDown;
+        if (HasCursorOverride)
+            WantCursor = CursorOverride;
+        // popups that were not drawn in this frame are closed (unless they were opened in it)
+        for (var i = 0; i < Popups.Count(); i += 1)
+        {
+            var p = Popups.Get(i);
+            if (!p.Drawn && !p.New)
+            {
+                ClosePopupsFrom(i);
+                break;
+            }
+            p.New = false;
+            Popups.Set(i, p);
+        }
+        DrawTooltip();
+        DrawLayers();
         if (Again)
             WaitMs = 0;
+    }
+
+    // the layers over the frame, in order: replayed onto the image, or appended to the commands
+    void DrawLayers()
+    {
+        for (var level = 1; level <= MaxLevel && level < Deferred.Length; level += 1)
+        {
+            if (!Deferred[level].IsCreated())
+                continue;
+            foreach (var c in Deferred[level])
+            {
+                if (Record)
+                    Add(c);
+                else
+                    Execute(c);
+            }
+        }
+        if (MaxLevel > 0)
+        {
+            if (Record)
+                Add(UiCommand { Kind = UiCommandKind.Clip, Rect = Bounds });
+            else
+                Canvas.SetClip(Bounds);
+        }
+    }
+
+    // draws a recorded command onto the canvas of the frame
+    void Execute(UiCommand c)
+    {
+        switch (c.Kind)
+        {
+        case UiCommandKind.Clear:
+            Canvas.Clear(c.Color);
+            break;
+        case UiCommandKind.FillRect:
+            Canvas.FillRect(c.Rect, c.Color);
+            break;
+        case UiCommandKind.FillRoundRect:
+            Canvas.FillRoundRect(c.Rect, c.Radius, c.Color);
+            break;
+        case UiCommandKind.StrokeRoundRect:
+            Canvas.StrokeRoundRect(c.Rect, c.Radius, c.Width, c.Color);
+            break;
+        case UiCommandKind.FillCircle:
+            Canvas.FillCircle((double)c.X0 / 16.0, (double)c.Y0 / 16.0, (double)c.Size / 16.0, c.Color);
+            break;
+        case UiCommandKind.Line:
+            Canvas.Line((double)c.X0 / 16.0, (double)c.Y0 / 16.0, (double)c.X1 / 16.0, (double)c.Y1 / 16.0, (double)c.Size / 16.0, c.Color);
+            break;
+        case UiCommandKind.Text:
+            Canvas.Text(Font, c.Rect.X, c.Rect.Y, c.Text, c.Color);
+            break;
+        case UiCommandKind.Image:
+            Canvas.DrawImage(c.Image, c.Rect.X, c.Rect.Y);
+            break;
+        case UiCommandKind.ImagePart:
+            Canvas.DrawImage(c.Image, c.Source, c.Rect);
+            break;
+        case UiCommandKind.Clip:
+            Canvas.SetClip(c.Rect);
+            break;
+        }
     }
 
     // ---- drawing: into the image, or as commands ----
@@ -835,6 +1216,30 @@ struct _UiState
         CommandsHash = h;
     }
 
+    // a drawing operation of a layer over the frame, or of a frame drawn with commands
+    void Emit(UiCommand command)
+    {
+        if (Level > 0)
+        {
+            if (Level >= Deferred.Length)
+            {
+                var bigger = new List<UiCommand>[Level + 4];
+                for (var i = 0; i < Deferred.Length; i += 1)
+                    bigger[i] = Deferred[i];
+                Deferred = bigger;
+            }
+            if (!Deferred[Level].IsCreated())
+                Deferred[Level] = List<UiCommand>.Create();
+            Deferred[Level].Add(command);
+            if (Level > MaxLevel)
+                MaxLevel = Level;
+        }
+        else
+            Add(command);
+    }
+
+    bool Direct() { return Level == 0 && !Record; }
+
     void ClearFrame(Color color)
     {
         if (Record)
@@ -847,51 +1252,63 @@ struct _UiState
     void SetClip(Rect clip)
     {
         Clip = clip.Intersect(Bounds);
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.Clip, Rect = Clip });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.SetClip(Clip);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.Clip, Rect = Clip });
     }
 
     void FillRect(Rect r, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.FillRect, Rect = r, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.FillRect(r, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.FillRect, Rect = r, Color = color });
     }
 
     void FillRoundRect(Rect r, int radius, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.FillRoundRect, Rect = r, Radius = radius, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.FillRoundRect(r, radius, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.FillRoundRect, Rect = r, Radius = radius, Color = color });
     }
 
     void StrokeRoundRect(Rect r, int radius, int width, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.StrokeRoundRect, Rect = r, Radius = radius, Width = width, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.StrokeRoundRect(r, radius, width, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.StrokeRoundRect, Rect = r, Radius = radius, Width = width, Color = color });
     }
 
     // circles and lines in 1/16 pixels: no floating point in a frame (it is software on a 68000), except in Canvas
     void FillCircle(int cx, int cy, int radius, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.FillCircle, X0 = cx, Y0 = cy, Size = radius, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.FillCircle((double)cx / 16.0, (double)cy / 16.0, (double)radius / 16.0, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.FillCircle, X0 = cx, Y0 = cy, Size = radius, Color = color });
     }
 
     void DrawLine(int x0, int y0, int x1, int y1, int width, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.Line, X0 = x0, Y0 = y0, X1 = x1, Y1 = y1, Size = width, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.Line((double)x0 / 16.0, (double)y0 / 16.0, (double)x1 / 16.0, (double)y1 / 16.0, (double)width / 16.0, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.Line, X0 = x0, Y0 = y0, X1 = x1, Y1 = y1, Size = width, Color = color });
     }
 
     void DrawText(int x, int y, string text, Color color)
@@ -902,18 +1319,32 @@ struct _UiState
     // with the width of the text, when it is known already
     void DrawTextOf(int x, int y, string text, int width, Color color)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.Text, Rect = Rect.Create(x, y, width, Font.LineHeight()), Text = text, Color = color });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.Text(Font, x, y, text, color);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.Text, Rect = Rect.Create(x, y, width, Font.LineHeight()), Text = text, Color = color });
     }
 
     void DrawImage(Image image, int x, int y)
     {
-        if (Record)
-            Add(UiCommand { Kind = UiCommandKind.Image, Rect = Rect.Create(x, y, image.Width, image.Height), Image = image });
-        else
+        if (Skip > 0)
+            return;
+        if (Direct())
             Canvas.DrawImage(image, x, y);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.Image, Rect = Rect.Create(x, y, image.Width, image.Height), Image = image });
+    }
+
+    void DrawImagePart(Image image, Rect source, Rect target)
+    {
+        if (Skip > 0)
+            return;
+        if (Direct())
+            Canvas.DrawImage(image, source, target);
+        else
+            Emit(UiCommand { Kind = UiCommandKind.ImagePart, Rect = target, Source = source, Image = image });
     }
 
     // ---- ids ----
@@ -921,6 +1352,15 @@ struct _UiState
     uint32 Seed()
     {
         return Depth > 0 ? Stack[Depth - 1].Id : 0u;
+    }
+
+    // an id that does not depend on the groups around it
+    static uint32 GlobalId(string label)
+    {
+        uint32 h = 2166136261u;
+        for (var i = 0; i < label.Length; i += 1)
+            h = unchecked((h ^ (uint32)label[i]) * 16777619u);
+        return h == 0u ? 1u : h;
     }
 
     uint32 IdOf(string label)
@@ -1022,9 +1462,53 @@ struct _UiState
             Stack[t].Items += 1;
         }
         var r = Rect.Create(slot.X, slot.Y, Math.Max(0, w), height);
+        Stack[t].Natural = Math.Max(Stack[t].Natural, slot.X + width);
         Commit(r.Width, r.Height);
         Last = r;
         return r;
+    }
+
+    // from y down to the bottom of the window (inside its margin), at least a little
+    int RestHeight(int y)
+    {
+        return Math.Max(Px(40), Stack[0].Area.Y + Stack[0].Area.Height - y);
+    }
+
+    Rect Area(uint32 id, int width, int height)
+    {
+        AreaCount += 1;
+        int h = height > 0 ? Px(height) : RestHeight(Slot().Y);
+        var r = Place(Px(width), h, width <= 0);
+        Interact(id, r, false);
+        return r;
+    }
+
+    void BeginFixedColumn(int width)
+    {
+        var slot = Slot();
+        int t = Depth - 1;
+        int w = width > 0 ? Px(width) : slot.Width;
+        if (Stack[t].Kind == 1)
+        {
+            // in a row: a fixed width counts like a widget of that width, 0 like one that fills (the rest)
+            if (width > 0)
+                Stack[t].Fixed += w;
+            else
+            {
+                if (Stack[t].FillWidth > 0)
+                    w = Math.Min(Stack[t].FillWidth, Math.Max(slot.Width, 0));
+                Stack[t].Fills += 1;
+            }
+            Stack[t].Items += 1;
+        }
+        w = Math.Max(0, w);
+        var l = _UiLayout { Kind = 0, Area = Rect.Create(slot.X, slot.Y, w, 0), Scope = 0, Id = Seed(), FixedWidth = Math.Max(1, w) };
+        l.X = slot.X;
+        l.Y = slot.Y;
+        l.Right = slot.X;
+        l.Bottom = slot.Y;
+        l.SavedClip = Clip;
+        Push(l);
     }
 
     void BeginLayout(int kind, int columns)
@@ -1080,24 +1564,50 @@ struct _UiState
         Push(l);
     }
 
-    void BeginScroll(string name, int height)
+    void BeginScroll(string name, int width, int height, bool both)
+    {
+        BeginScrollPx(name, width > 0 ? Px(width) : 0, height > 0 ? Px(height) : 0, both);
+    }
+
+    // the same in pixels of the frame (0: the room there is, down to the bottom of the window)
+    void BeginScrollPx(string name, int width, int height, bool both)
     {
         uint32 id = IdOf("#scroll:" + name);
         var slot = Slot();
-        var outer = Rect.Create(slot.X, slot.Y, slot.Width, Px(height));
+        int w = width > 0 ? width : slot.Width;
+        int h = height > 0 ? height : RestHeight(slot.Y);
+        if (width > 0 && Stack[Depth - 1].Kind == 1)
+            Stack[Depth - 1].Fixed += w;
+        var outer = Rect.Create(slot.X, slot.Y, w, h);
         var state = Scrolls.GetOrDefault(id, _UiScroll { });
         FillRoundRect(outer, Radius, Theme.Input);
         int bar = Px(10);
         int top = outer.Y + Pad - state.Offset;
-        var l = _UiLayout { Kind = 0, Area = Rect.Create(outer.X + Pad, top, Math.Max(0, outer.Width - 2 * Pad - bar), 0), Scope = 2, Id = id, Outer = outer };
+        int left = outer.X + Pad - (both ? state.OffsetX : 0);
+        var l = _UiLayout { Kind = 0, Area = Rect.Create(left, top, Math.Max(0, outer.Width - 2 * Pad - bar), 0), Scope = 2, Id = id, Outer = outer };
         l.X = l.Area.X;
         l.Y = top;
         l.Right = l.X;
         l.Bottom = top;
         l.SavedClip = Clip;
         l.ScrollOffset = state.Offset;
+        l.ScrollOffsetX = both ? state.OffsetX : 0;
+        l.Both = both;
         Push(l);
-        SetClip(outer.Shrink(Line).Intersect(l.SavedClip));
+        var view = outer.Shrink(Line);
+        if (both)
+            view.Height = Math.Max(0, view.Height - bar);
+        SetClip(view.Intersect(l.SavedClip));
+    }
+
+    void SetScroll(uint32 id, int x, int y)
+    {
+        var state = Scrolls.GetOrDefault(id, _UiScroll { });
+        // kept to the content when the area is drawn next
+        state.OffsetX = Math.Max(0, x);
+        state.Offset = Math.Max(0, y);
+        Scrolls.Set(id, state);
+        Again = true;
     }
 
     void EndScope()
@@ -1107,6 +1617,14 @@ struct _UiState
         Depth -= 1;
         var l = Stack[Depth];
         SetClip(l.SavedClip);
+        if (Depth > 0)
+        {
+            // what the widgets inside would like: a popup grows to it (a scroll area adds its bar and border)
+            int natural = Math.Max(l.Natural, l.Right);
+            if (l.Scope == 2)
+                natural += l.Outer.X + l.Outer.Width - (l.Area.X + l.Area.Width);
+            Stack[Depth - 1].Natural = Math.Max(Stack[Depth - 1].Natural, natural);
+        }
         switch (l.Scope)
         {
         case 1:
@@ -1130,6 +1648,16 @@ struct _UiState
             break;
         case 3:
             break; // the layout of an id scope is the one it copied: hand on where it got to
+        case 4:
+            Skip -= 1; // a closed popup: as if it was not there
+            Last = l.SavedLast;
+            LastId = l.SavedLastId;
+            LastHot = l.SavedLastHot;
+            return;
+        case 5:
+        case 6:
+            EndLayer(l);
+            return;
         default:
             if (l.Kind == 1)
             {
@@ -1140,7 +1668,14 @@ struct _UiState
                     Again = true;
                 }
             }
-            Commit(Math.Max(0, l.Right - l.Area.X), Math.Max(0, l.Bottom - l.Area.Y));
+            if (l.FixedWidth > 0)
+            {
+                // a column of a fixed width takes that width in its row, however wide its widgets are
+                Commit(l.FixedWidth, Math.Max(0, l.Bottom - l.Area.Y));
+                Last = Rect.Create(l.Area.X, l.Area.Y, l.FixedWidth, Math.Max(0, l.Bottom - l.Area.Y));
+            }
+            else
+                Commit(Math.Max(0, l.Right - l.Area.X), Math.Max(0, l.Bottom - l.Area.Y));
             break;
         }
         if (l.Scope == 3)
@@ -1161,19 +1696,36 @@ struct _UiState
     void EndScroll(_UiLayout l)
     {
         var outer = l.Outer;
-        int content = l.Bottom - (outer.Y + Pad - l.ScrollOffset) + Pad;
-        int view = outer.Height;
-        int maxOffset = Math.Max(0, content - view);
-        int offset = l.ScrollOffset;
-        var mouseInside = outer.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY);
-        if (mouseInside && In.Wheel != 0 && !WheelUsed && maxOffset > 0)
-        {
-            offset -= In.Wheel * Font.LineHeight() * 3;
-            WheelUsed = true;
-        }
-        // the scroll bar
         int bar = Px(10);
-        var track = Rect.Create(outer.X + outer.Width - bar - Line, outer.Y + Line, bar, outer.Height - 2 * Line);
+        int content = l.Bottom - (outer.Y + Pad - l.ScrollOffset) + Pad;
+        int contentWidth = Math.Max(l.Right, l.Natural) - (outer.X + Pad - l.ScrollOffsetX) + Pad;
+        int view = outer.Height - (l.Both ? bar : 0);
+        int viewWidth = outer.Width - bar;
+        int maxOffset = Math.Max(0, content - view);
+        int maxOffsetX = l.Both ? Math.Max(0, contentWidth - viewWidth) : 0;
+        int offset = l.ScrollOffset;
+        int offsetX = l.ScrollOffsetX;
+        var mouseInside = outer.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY) && Skip == 0 && !MouseBlocked();
+        if (mouseInside && !WheelUsed)
+        {
+            // Shift turns the wheel into a horizontal one
+            int wheelY = l.Both && In.Shift ? 0 : In.Wheel;
+            int wheelX = In.WheelX + (l.Both && In.Shift ? -In.Wheel : 0);
+            if (wheelY != 0 && maxOffset > 0)
+            {
+                offset -= wheelY * Font.LineHeight() * 3;
+                WheelUsed = true;
+            }
+            if (wheelX != 0 && maxOffsetX > 0)
+            {
+                offsetX += wheelX * Font.CharWidth() * 6;
+                WheelUsed = true;
+            }
+        }
+        uint32 lastId = LastId;
+        bool lastHot = LastHot;
+        // the vertical scroll bar
+        var track = Rect.Create(outer.X + outer.Width - bar - Line, outer.Y + Line, bar, view - 2 * Line);
         uint32 barId = l.Id ^ 0x5bd1e995u;
         if (maxOffset > 0)
         {
@@ -1194,10 +1746,32 @@ struct _UiState
             Color color = Active == barId ? Theme.TextMuted : Hot == barId ? Theme.TextMuted : Theme.Border;
             FillRoundRect(thumb, thumb.Width / 2, color);
         }
+        // the horizontal one
+        var trackX = Rect.Create(outer.X + Line, outer.Y + outer.Height - bar - Line, viewWidth - 2 * Line, bar);
+        uint32 barXId = l.Id ^ 0x27d4eb2fu;
+        if (maxOffsetX > 0)
+        {
+            int thumbWidth = Math.Max(Px(20), trackX.Width * viewWidth / Math.Max(1, contentWidth));
+            int room = Math.Max(1, trackX.Width - thumbWidth);
+            int thumbX = trackX.X + (int)((int64)room * Math.Clamp(offsetX, 0, maxOffsetX) / maxOffsetX);
+            var thumb = Rect.Create(thumbX, trackX.Y + Px(2), thumbWidth, bar - Px(4));
+            bool hot = Interact(barXId, trackX, false);
+            if (hot && In.MousePressed)
+                DragOffset = thumb.Contains(In.MouseX, In.MouseY) ? In.MouseX - thumb.X : thumbWidth / 2;
+            if (Active == barXId && In.MouseDown)
+                offsetX = (int)((int64)(In.MouseX - DragOffset - trackX.X) * maxOffsetX / room);
+            offsetX = Math.Clamp(offsetX, 0, maxOffsetX);
+            thumb.X = trackX.X + (int)((int64)room * offsetX / maxOffsetX);
+            Color color = Active == barXId || Hot == barXId ? Theme.TextMuted : Theme.Border;
+            FillRoundRect(thumb, thumb.Height / 2, color);
+        }
+        LastId = lastId;
+        LastHot = lastHot;
         offset = Math.Clamp(offset, 0, maxOffset);
-        if (offset != l.ScrollOffset)
+        offsetX = Math.Clamp(offsetX, 0, maxOffsetX);
+        if (offset != l.ScrollOffset || offsetX != l.ScrollOffsetX)
             Again = true;
-        Scrolls.Set(l.Id, _UiScroll { Offset = offset, ContentHeight = content });
+        Scrolls.Set(l.Id, _UiScroll { Offset = offset, ContentHeight = content, OffsetX = offsetX, ContentWidth = contentWidth });
         StrokeRoundRect(outer, Radius, Line, Theme.Border);
         Commit(outer.Width, outer.Height);
         Last = outer;
@@ -1209,10 +1783,14 @@ struct _UiState
     // focusable); the caller checks Active and In.MouseReleased for a click.
     bool Interact(uint32 id, Rect r, bool focusable)
     {
-        if (focusable)
+        LastId = id;
+        LastHot = false;
+        if (Skip > 0)
+            return false;
+        if (focusable && !KeysBlocked(id))
             FocusOrder.Add(id);
-        bool inside = r.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY);
-        bool hot = inside && (Active == 0u || Active == id);
+        bool inside = r.Contains(In.MouseX, In.MouseY) && Clip.Contains(In.MouseX, In.MouseY) && !MouseBlocked();
+        bool hot = inside && (Active == 0u || Active == id) && (RightActive == 0u || RightActive == id);
         if (hot)
             Hot = id;
         if (hot && In.MousePressed && !Claimed)
@@ -1222,7 +1800,53 @@ struct _UiState
             Focus = focusable ? id : 0u;
             FocusVisible = false;
         }
+        if (hot && In.RightPressed && !RightClaimed)
+        {
+            RightActive = id;
+            RightClaimed = true;
+        }
+        LastHot = hot;
         return hot;
+    }
+
+    // a popup or a modal above the layer being drawn covers the mouse (as they were in the last frame, and those
+    // drawn in this one already)
+    bool MouseBlocked()
+    {
+        return Covers(PrevLayers) || Covers(Layers);
+    }
+
+    bool Covers(List<_UiLayer> layers)
+    {
+        foreach (var l in layers)
+        {
+            if (l.Level > Level && (l.Modal || l.Rect.Contains(In.MouseX, In.MouseY)))
+                return true;
+        }
+        return false;
+    }
+
+    // a popup or a modal above the layer being drawn takes the keys (but a popup leaves them to its owner: the combo box
+    // whose list is open)
+    bool KeysBlocked(uint32 id)
+    {
+        foreach (var l in PrevLayers)
+        {
+            if (l.Level > Level && (l.Owner != id || l.Modal))
+                return true;
+        }
+        foreach (var l in Layers)
+        {
+            if (l.Level > Level && (l.Owner != id || l.Modal))
+                return true;
+        }
+        return false;
+    }
+
+    // the widget has the focus and gets the keys
+    bool HasKeys(uint32 id)
+    {
+        return Focus == id && Skip == 0 && !KeysBlocked(id);
     }
 
     bool Clicked(uint32 id, bool hot)
@@ -1232,7 +1856,585 @@ struct _UiState
 
     bool Activated(uint32 id)
     {
-        return Focus == id && (In.Pressed(Key.Enter) || In.Pressed(Key.Space));
+        return HasKeys(id) && (In.Pressed(Key.Enter) || In.Pressed(Key.Space));
+    }
+
+    // ---- popups and modal dialogs ----
+
+    int FindPopup(uint32 id)
+    {
+        for (var i = 0; i < Popups.Count(); i += 1)
+        {
+            if (Popups.Get(i).Id == id)
+                return i;
+        }
+        return -1;
+    }
+
+    // closes the popup at this index and the ones opened after it
+    void ClosePopupsFrom(int index)
+    {
+        while (Popups.Count() > index)
+        {
+            uint32 id = Popups.Get(Popups.Count() - 1).Id;
+            Popups.RemoveAt(Popups.Count() - 1);
+            for (var i = PrevLayers.Count() - 1; i >= 0; i -= 1)
+            {
+                if (PrevLayers.Get(i).Id == id)
+                    PrevLayers.RemoveAt(i);
+            }
+        }
+        Again = true;
+    }
+
+    // Escape closes the innermost popup; a click outside of the popups closes them (a left click goes no further, a
+    // right click does: it may open a context menu somewhere else)
+    void ClosePopupsByInput()
+    {
+        if (Popups.Count() == 0)
+            return;
+        if (In.Pressed(Key.Escape))
+        {
+            ClosePopupsFrom(Popups.Count() - 1);
+            In.Keys.Remove(Key.Escape);
+        }
+        if (Popups.Count() > 0 && (In.MousePressed || In.RightPressed))
+        {
+            int keep = 0;
+            for (var i = Popups.Count() - 1; i >= 0; i -= 1)
+            {
+                if (Popups.Get(i).Shown.Contains(In.MouseX, In.MouseY))
+                {
+                    keep = i + 1;
+                    break;
+                }
+            }
+            if (keep < Popups.Count())
+            {
+                ClosePopupsFrom(keep);
+                In.MousePressed = false;
+            }
+        }
+    }
+
+    // opens a popup at a point (an empty anchor) or below a widget; it replaces the popups opened from the same layer
+    void OpenPopup(uint32 id, Rect anchor, uint32 owner, uint32 group)
+    {
+        if (Skip > 0)
+            return;
+        for (var i = 0; i < Popups.Count(); i += 1)
+        {
+            if (Popups.Get(i).OpenedAt >= Level || Popups.Get(i).Id == id)
+            {
+                ClosePopupsFrom(i);
+                break;
+            }
+        }
+        Popups.Add(_UiPopup { Id = id, Anchor = anchor, OpenedAt = Level, Owner = owner, Group = group, New = true, Highlight = -1 });
+        Again = true;
+    }
+
+    void CloseCurrentPopup()
+    {
+        for (var t = Depth - 1; t >= 0; t -= 1)
+        {
+            if (Stack[t].Scope == 5)
+            {
+                int index = FindPopup(Stack[t].Id);
+                if (index >= 0)
+                    ClosePopupsFrom(index);
+                return;
+            }
+        }
+    }
+
+    // a group whose widgets are not drawn and take no input: a popup that is closed
+    void BeginSkipped()
+    {
+        var l = Top();
+        l.Scope = 4;
+        l.SavedClip = Clip;
+        l.SavedLast = Last;
+        l.SavedLastId = LastId;
+        l.SavedLastHot = LastHot;
+        Push(l);
+        Skip += 1;
+    }
+
+    void BeginPopup(uint32 id)
+    {
+        int index = Skip > 0 ? -1 : FindPopup(id);
+        if (index < 0)
+        {
+            BeginSkipped();
+            return;
+        }
+        var p = Popups.Get(index);
+        p.Drawn = true;
+        Popups.Set(index, p);
+        var size = PopupSizes.GetOrDefault(id, Rect.Create(0, 0, Px(120), 0));
+        int w = Math.Min(Math.Max(size.Width, p.Anchor.Width), Bounds.Width);
+        int h = Math.Min(size.Height, Bounds.Height);
+        int x = p.Anchor.X;
+        int y = p.Anchor.Y + p.Anchor.Height;
+        if (y + h > Bounds.Height)
+            y = p.Anchor.Height > 0 && p.Anchor.Y - h >= 0 ? p.Anchor.Y - h : Bounds.Height - h; // above the widget, or up
+        if (x + w > Bounds.Width)
+            x = Bounds.Width - w;
+        var outer = Rect.Create(Math.Max(0, x), Math.Max(0, y), w, h);
+        int saved = Level;
+        Level = Level + 1;
+        var clip = Clip;
+        SetClip(Bounds);
+        if (!Record)
+            FillRoundRect(Rect.Create(outer.X + Px(2), outer.Y + Px(3), outer.Width, outer.Height), Radius, Color.FromArgb(0x30000000u));
+        FillRoundRect(outer, Radius, Theme.Panel);
+        var l = _UiLayout { Kind = 0, Area = Rect.Create(outer.X + Pad, outer.Y + Pad, Math.Max(0, outer.Width - 2 * Pad), 0), Scope = 5, Id = id, Outer = outer };
+        l.X = l.Area.X;
+        l.Y = l.Area.Y;
+        l.Right = l.X;
+        l.Bottom = l.Y;
+        l.Natural = l.X;
+        l.SavedClip = clip;
+        l.SavedLevel = saved;
+        l.SavedLast = Last;
+        l.SavedLastId = LastId;
+        l.SavedLastHot = LastHot;
+        Push(l);
+    }
+
+    void BeginModal(string name, string title)
+    {
+        uint32 id = IdOf("#modal:" + name);
+        if (Skip > 0)
+        {
+            BeginSkipped();
+            return;
+        }
+        int saved = Level;
+        Level = Level + 1;
+        var clip = Clip;
+        SetClip(Bounds);
+        if (!Record)
+            FillRect(Bounds, Color.FromArgb(0x66000000u)); // the rest of the window, dimmed (not with commands: no blending)
+        var size = PopupSizes.GetOrDefault(id, Rect.Create(0, 0, Px(320), 0));
+        int w = Math.Min(Math.Max(size.Width, Px(240)), Math.Max(1, Bounds.Width - 2 * Margin));
+        int h = Math.Min(size.Height, Bounds.Height);
+        var outer = Rect.Create((Bounds.Width - w) / 2, Math.Max(0, (Bounds.Height - h) / 2), w, h);
+        FillRoundRect(outer, Radius, Theme.Panel);
+        int top = outer.Y + Margin;
+        if (title.Length > 0)
+        {
+            DrawText(outer.X + Margin, top, title, Theme.Text);
+            top += Font.LineHeight() + Margin;
+            FillRect(Rect.Create(outer.X, top - Margin / 2, outer.Width, Line), Theme.Border);
+        }
+        var l = _UiLayout { Kind = 0, Area = Rect.Create(outer.X + Margin, top, Math.Max(0, outer.Width - 2 * Margin), 0), Scope = 6, Id = id, Outer = outer };
+        l.X = l.Area.X;
+        l.Y = top;
+        l.Right = l.X;
+        l.Bottom = top;
+        l.Natural = outer.X + Margin + Font.Measure(title);
+        l.SavedClip = clip;
+        l.SavedLevel = saved;
+        l.SavedLast = Last;
+        l.SavedLastId = LastId;
+        l.SavedLastHot = LastHot;
+        Push(l);
+    }
+
+    // the end of a popup (5) or a modal (6): its size for the next frame, its frame, the layer for the input
+    void EndLayer(_UiLayout l)
+    {
+        int inset = l.Scope == 5 ? Pad : Margin;
+        int width = Math.Max(Px(l.Scope == 5 ? 80 : 240), l.Natural - l.Outer.X + inset);
+        int height = Math.Max(l.Bottom, l.Area.Y) - l.Outer.Y + inset;
+        var size = Rect.Create(0, 0, width, height);
+        if (!PopupSizes.GetOrDefault(l.Id, Rect.Create(0, 0, -1, -1)).Equals(size))
+        {
+            PopupSizes.Set(l.Id, size);
+            Again = true;
+        }
+        StrokeRoundRect(l.Outer, Radius, Line, Theme.Border);
+        Layers.Add(_UiLayer { Id = l.Id, Level = Level, Rect = l.Outer, Modal = l.Scope == 6 });
+        if (l.Scope == 5)
+        {
+            int index = FindPopup(l.Id);
+            if (index >= 0)
+            {
+                var p = Popups.Get(index);
+                p.Shown = l.Outer;
+                Popups.Set(index, p);
+                var layer = Layers.Get(Layers.Count() - 1);
+                layer.Owner = p.Owner;
+                Layers.Set(Layers.Count() - 1, layer);
+            }
+        }
+        Level = l.SavedLevel;
+        Clip = l.SavedClip;
+        Last = l.SavedLast;
+        LastId = l.SavedLastId;
+        LastHot = l.SavedLastHot;
+    }
+
+    bool MenuItem(string label, string shortcut)
+    {
+        uint32 id = IdOf(label);
+        string shown = Shown(label);
+        int gap = shortcut.Length > 0 ? Px(24) : 0;
+        int textWidth = Font.Measure(shown);
+        int keysWidth = Font.Measure(shortcut);
+        var r = Place(textWidth + gap + keysWidth + 2 * Px(8), ControlHeight, true);
+        bool hot = Interact(id, r, true);
+        bool clicked = Clicked(id, hot) || Activated(id);
+        if (hot)
+            FillRoundRect(r, Radius, Theme.Selection);
+        if (Focus == id)
+            FocusRing(r, Radius);
+        DrawTextOf(r.X + Px(8), TextY(r), shown, textWidth, Theme.Text);
+        if (shortcut.Length > 0)
+            DrawTextOf(r.X + r.Width - Px(8) - keysWidth, TextY(r), shortcut, keysWidth, Theme.TextMuted);
+        if (clicked)
+            ClosePopupsFrom(0);
+        return clicked;
+    }
+
+    void BeginMenuBar()
+    {
+        var slot = Slot();
+        FillRect(Rect.Create(slot.X, slot.Y, slot.Width, ControlHeight), Theme.Panel);
+        BeginLayout(1, 0);
+        Stack[Depth - 1].MenuBar = true;
+        Stack[Depth - 1].Id = IdOf("#menubar");
+    }
+
+    bool GroupOpen(uint32 group)
+    {
+        foreach (var p in Popups)
+        {
+            if (p.Group == group)
+                return true;
+        }
+        return false;
+    }
+
+    void BeginMenu(string label)
+    {
+        uint32 id = IdOf("#menu:" + label);
+        uint32 popupId = id ^ 0x9e3779b9u;
+        uint32 group = Top().MenuBar ? Seed() : 0u;
+        string shown = Shown(label);
+        int tw = Font.Measure(shown);
+        var r = Place(tw + 2 * Px(10), ControlHeight, false);
+        bool hot = Interact(id, r, false);
+        bool open = FindPopup(popupId) >= 0;
+        if (Skip == 0 && !open)
+        {
+            // a press opens it; with another menu of the bar open, the mouse moving onto it does
+            if ((hot && Active == id && In.MousePressed) || (hot && group != 0u && GroupOpen(group)))
+            {
+                OpenPopup(popupId, r, id, group);
+                open = true;
+            }
+        }
+        if (open || hot)
+            FillRoundRect(r, Radius, open ? Theme.Selection : Theme.ControlHover);
+        DrawTextOf(r.X + (r.Width - tw) / 2, TextY(r), shown, tw, Theme.Text);
+        BeginPopup(popupId);
+    }
+
+    bool ComboBox(string name, ref int selected, List<string> items)
+    {
+        uint32 id = IdOf(name);
+        uint32 popupId = IdOf("#combo:" + name);
+        int count = items.IsCreated() ? items.Count() : 0;
+        int old = selected;
+        string shown = selected >= 0 && selected < count ? items.Get(selected) : "";
+        int arrow = Px(16);
+        var r = Place(Font.Measure(shown) + 2 * Px(10) + arrow, ControlHeight, true);
+        bool hot = Interact(id, r, true);
+        int index = FindPopup(popupId);
+        if (hot)
+            WantCursor = Cursor.Hand;
+        if (Skip == 0)
+        {
+            if (index < 0 && ((hot && Active == id && In.MousePressed) || (HasKeys(id) && (In.Pressed(Key.Enter) || In.Pressed(Key.Space)))))
+            {
+                OpenPopup(popupId, r, id, 0u);
+                index = FindPopup(popupId);
+                var p = Popups.Get(index);
+                p.Highlight = selected;
+                Popups.Set(index, p);
+            }
+            else if (HasKeys(id) && count > 0)
+            {
+                // the keys: in the open list they move the highlight, else the selection itself
+                int at = index >= 0 ? Popups.Get(index).Highlight : selected;
+                bool choose = false;
+                foreach (var key in In.Keys)
+                {
+                    if (key == Key.Up)
+                        at = Math.Max(0, at - 1);
+                    else if (key == Key.Down)
+                        at = Math.Min(count - 1, at + 1);
+                    else if (key == Key.Home)
+                        at = 0;
+                    else if (key == Key.End)
+                        at = count - 1;
+                    else if (key == Key.Enter && index >= 0)
+                        choose = true;
+                }
+                if (index >= 0)
+                {
+                    var p = Popups.Get(index);
+                    p.Highlight = Math.Clamp(at, 0, count - 1);
+                    Popups.Set(index, p);
+                    if (choose)
+                    {
+                        selected = p.Highlight;
+                        ClosePopupsFrom(index);
+                        index = -1;
+                    }
+                }
+                else
+                    selected = Math.Clamp(at, 0, count - 1);
+            }
+        }
+        Color fill = hot ? Theme.ControlHover : Theme.Control;
+        FillRoundRect(r, Radius, fill);
+        StrokeRoundRect(r, Radius, Line, index >= 0 ? Theme.Focus : Theme.Border);
+        if (Focus == id)
+            FocusRing(r, Radius);
+        var saved = Clip;
+        SetClip(Rect.Create(r.X, r.Y, Math.Max(0, r.Width - arrow), r.Height).Intersect(saved));
+        DrawText(r.X + Px(10), TextY(r), shown, Theme.Text);
+        SetClip(saved);
+        // the arrow: a small "v", in 1/16 pixels
+        int ax = (r.X + r.Width - arrow) * 16 + arrow * 4;
+        int ay = (r.Y + r.Height / 2) * 16;
+        int aw = Math.Max(20, (24 * ScaleQ + 128) >> 8);
+        DrawLine(ax, ay - Px(2) * 16, ax + arrow * 4, ay + Px(2) * 16, aw, Theme.TextMuted);
+        DrawLine(ax + arrow * 4, ay + Px(2) * 16, ax + arrow * 8, ay - Px(2) * 16, aw, Theme.TextMuted);
+        if (index >= 0 && Skip == 0)
+        {
+            ComboList(popupId, index, ref selected, items, count);
+        }
+        return selected != old;
+    }
+
+    // the open list of a combo box, in its popup below the box
+    void ComboList(uint32 popupId, int index, ref int selected, List<string> items, int count)
+    {
+        uint32 owner = Popups.Get(index).Owner;
+        int highlight = Popups.Get(index).Highlight;
+        BeginPopup(popupId);
+        int visible = 10;
+        bool scrolls = count > visible;
+        int pitch = ControlHeight + Spacing;
+        if (scrolls)
+        {
+            // keep the highlighted item in view
+            uint32 scrollId = IdOf("#scroll:#list");
+            var state = Scrolls.GetOrDefault(scrollId, _UiScroll { });
+            int view = visible * pitch;
+            if (highlight >= 0 && (highlight * pitch < state.Offset || (highlight + 1) * pitch > state.Offset + view))
+            {
+                state.Offset = Math.Max(0, highlight * pitch - view / 2);
+                Scrolls.Set(scrollId, state);
+            }
+            BeginScrollPx("#list", 0, view + 2 * Pad - Spacing, false);
+        }
+        bool chosen = false;
+        for (var i = 0; i < count; i += 1)
+        {
+            BeginId(i.ToString());
+            if (ListItem(items.Get(i), i == (highlight >= 0 ? highlight : selected)))
+            {
+                selected = i;
+                chosen = true;
+            }
+            EndScope();
+        }
+        if (scrolls)
+            EndScope();
+        EndScope();
+        if (chosen)
+        {
+            ClosePopupsFrom(FindPopup(popupId) >= 0 ? FindPopup(popupId) : Popups.Count());
+            FocusNext = owner;
+            FocusSet = true;
+        }
+    }
+
+    bool IntBox(string name, ref int value, int min, int max)
+    {
+        uint32 id = IdOf(name);
+        int old = value;
+        bool editing = IntEditId == id && Focus == id;
+        string text = editing ? IntText : value.ToString();
+        // only digits and the minus sign get into the box
+        string typed = In.Text;
+        var sb = StringBuilder.Create();
+        for (var i = 0; i < typed.Length; i += 1)
+        {
+            char c = typed[i];
+            if ((c >= '0' && c <= '9') || c == '-')
+                sb.Append(c);
+        }
+        In.Text = sb.ToString();
+        int step = 0;
+        if (HasKeys(id))
+        {
+            foreach (var key in In.Keys)
+            {
+                if (key == Key.Up)
+                    step += 1;
+                else if (key == Key.Down)
+                    step -= 1;
+            }
+        }
+        bool changed = TextBox(name, ref text);
+        In.Text = typed;
+        if (Focus == id && Skip == 0)
+        {
+            IntEditId = id;
+            if (changed && text.ParseInt() is int parsed)
+                value = Math.Clamp(parsed, min, max);
+            if (step != 0)
+            {
+                value = Math.Clamp(value + step, min, max);
+                text = value.ToString();
+                Caret = text.Length;
+                Anchor = Caret;
+            }
+            if (Submitted(name))
+                text = value.ToString();
+            IntText = text;
+        }
+        value = Math.Clamp(value, min, max);
+        return value != old;
+    }
+
+    // ---- the file dialog ----
+
+    UiDialogResult FileDialog(string name, string title, ref string path)
+    {
+        uint32 id = IdOf("#file:" + name);
+        var d = FileDialogs.GetOrDefault(id, _UiFileDialog { Frame = -10 });
+        if (d.Frame < FrameNumber - 1)
+        {
+            // (again) shown: from the folder of the path
+            string folder = Path.GetDirectory(path);
+            if (folder.Length == 0 || !Directory.Exists(folder))
+                folder = Directory.GetCurrentDirectory();
+            d = _UiFileDialog { Folder = folder, FolderText = folder, Name = Path.GetFileName(path), Listed = "", Entries = List<string>.Create() };
+        }
+        d.Frame = FrameNumber;
+        if (d.Listed != d.Folder)
+        {
+            d.FolderText = d.Folder;
+            d.Entries = List<string>.Create();
+            var files = List<string>.Create();
+            foreach (var entry in Directory.GetEntries(d.Folder))
+            {
+                if (Directory.Exists(Path.Combine(d.Folder, entry)))
+                    d.Entries.Add(entry + "/");
+                else
+                    files.Add(entry);
+            }
+            foreach (var file in files)
+                d.Entries.Add(file);
+            d.Listed = d.Folder;
+        }
+        var result = UiDialogResult.None;
+        BeginModal(name, title);
+        BeginLayout(1, 0);
+        string folderText = d.FolderText;
+        TextBox("folder", ref folderText);
+        d.FolderText = folderText;
+        if (Submitted("folder") && Directory.Exists(folderText))
+            d.Folder = Path.Normalize(folderText);
+        if (Button("Up"))
+        {
+            string up = Path.GetDirectory(Path.GetFullPath(d.Folder));
+            if (up.Length > 0)
+                d.Folder = up;
+        }
+        EndScope();
+        BeginScrollPx("entries", Px(360), Px(220), false);
+        for (var i = 0; i < d.Entries.Count(); i += 1)
+        {
+            string entry = d.Entries.Get(i);
+            BeginId(i.ToString());
+            bool folder = entry.EndsWith("/");
+            if (ListItem(entry, !folder && entry == d.Name))
+            {
+                if (folder)
+                    d.Folder = Path.Combine(d.Folder, entry.Substring(0, entry.Length - 1));
+                else
+                    d.Name = entry;
+            }
+            EndScope();
+        }
+        EndScope();
+        string fileName = d.Name;
+        TextBox("name", ref fileName);
+        d.Name = fileName;
+        bool submit = Submitted("name");
+        BeginLayout(1, 0);
+        if ((Button("OK") || submit) && d.Name.Length > 0)
+        {
+            path = Path.Combine(d.Folder, d.Name);
+            result = UiDialogResult.Ok;
+        }
+        if (Button("Cancel") || (Skip == 0 && !KeysBlocked(0u) && In.Pressed(Key.Escape)))
+            result = UiDialogResult.Cancel;
+        EndScope();
+        EndScope();
+        if (result != UiDialogResult.None)
+            d.Frame = -10; // closed: the next time it starts from the path again
+        FileDialogs.Set(id, d);
+        return result;
+    }
+
+    // ---- tooltips ----
+
+    void Tooltip(string text)
+    {
+        if (!LastHot || Skip > 0 || LastId == 0u)
+            return;
+        if (TooltipId != LastId)
+        {
+            TooltipId = LastId;
+            TooltipStart = In.Time;
+        }
+        double since = In.Time - TooltipStart;
+        if (In.Time == 0.0 || since >= 0.5)
+            TooltipText = text; // without a clock (a frame without a window): at once
+        else
+        {
+            int ms = (int)((0.5 - since) * 1000.0) + 1;
+            WaitMs = WaitMs < 0 ? ms : Math.Min(WaitMs, ms);
+        }
+    }
+
+    // at the end of the frame: over everything, next to the mouse
+    void DrawTooltip()
+    {
+        if (TooltipText.Length == 0)
+            return;
+        Level = MaxLevel + 1;
+        SetClip(Bounds);
+        int tw = Font.Measure(TooltipText);
+        var r = Rect.Create(In.MouseX + Px(12), In.MouseY + Px(18), tw + 2 * Px(6), Font.LineHeight() + 2 * Px(4));
+        if (r.X + r.Width > Bounds.Width)
+            r.X = Math.Max(0, Bounds.Width - r.Width);
+        if (r.Y + r.Height > Bounds.Height)
+            r.Y = Math.Max(0, In.MouseY - Px(4) - r.Height);
+        FillRoundRect(r, Radius, Theme.Panel);
+        StrokeRoundRect(r, Radius, Line, Theme.Border);
+        DrawTextOf(r.X + Px(6), r.Y + Px(4), TooltipText, tw, Theme.Text);
+        Level = 0;
     }
 
     void FocusRing(Rect r, int radius)
@@ -1420,7 +2622,7 @@ struct _UiState
         int width = Math.Max(1, r.Width - 2 * thumb);
         if (Active == id && In.MouseDown && range != 0)
             value = min + (double)(In.MouseX - left) / (double)width * range;
-        if (Focus == id && range != 0)
+        if (HasKeys(id) && range != 0)
         {
             double step = whole ? Math.Max(1.0, Math.Round(range / 100.0)) : range / 100.0;
             foreach (var key in In.Keys)
@@ -1541,7 +2743,8 @@ struct _UiState
                     Anchor = at;
                 BlinkStart = In.Time;
             }
-            EditKeys(id, ref text);
+            if (HasKeys(id))
+                EditKeys(id, ref text);
         }
         // keep the cursor visible
         if (Focus == id)
