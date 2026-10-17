@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.36] - 2026-10-17
+
 ### Standard library
 - `System.Ui`: **shortcuts with the modifier keys of each key press.** A frame collects all keys since the last one,
   and `Ctrl`/`Shift`/`Alt` were the state at the end of the frame, so a quick Ctrl+S (Ctrl already let go when the
