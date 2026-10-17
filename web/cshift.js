@@ -599,6 +599,9 @@ class Program {
                 ui.shift = e.shiftKey;
                 ui.alt = e.altKey;
             };
+            // a key code with the modifier keys held at it: bit 16 says that they are there, then Ctrl (17), Shift (18),
+            // Alt (19) - KeyModifiers << 17 (stdlib/os/wasi/ui.cshift)
+            const withMods = (code) => code | 0x10000 | (ui.ctrl ? 0x20000 : 0) | (ui.shift ? 0x40000 : 0) | (ui.alt ? 0x80000 : 0);
             canvas.addEventListener("mousemove", (e) => {
                 position(e);
                 ui.input = true;
@@ -650,7 +653,7 @@ class Program {
                 // browser's copy and cut (which do nothing on a canvas), Tab and the others are the program's
                 if (ui.ctrl && e.keyCode === 86) return;
                 if (!(ui.ctrl && (e.keyCode === 67 || e.keyCode === 88))) e.preventDefault();
-                ui.keys.push(e.keyCode);
+                ui.keys.push(withMods(e.keyCode));
                 if ([...e.key].length === 1 && !ui.ctrl) ui.text += e.key; // a character, not "Enter" or "Shift"
                 ui.input = true;
             });
@@ -662,7 +665,7 @@ class Program {
                 e.preventDefault();
                 ui.clipboard = e.clipboardData?.getData("text/plain") ?? ui.clipboard;
                 ui.ctrl = true;
-                ui.keys.push(86);
+                ui.keys.push(withMods(86));
                 ui.input = true;
             });
         };

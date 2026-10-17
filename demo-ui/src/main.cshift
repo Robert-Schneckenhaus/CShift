@@ -4,6 +4,7 @@
 // with open tasks: also when the window is closed), a number box, tooltips and an animation (Ui.RequestFrame).
 
 using System;
+using System.Image;
 using System.Ui;
 
 struct Task
@@ -29,6 +30,7 @@ struct App
     bool Confirm;        // the dialog before "Remove done" is shown
     bool ConfirmQuit;    // the dialog before quitting with open tasks is shown
     bool Busy;           // the spinner turns
+    Image Icon;          // two tiles of 16 x 16 pixels (a checked and an open box), drawn twice as large
     bool Quit;
 }
 
@@ -36,6 +38,36 @@ void SetDark(Ui ui, ref App app, bool dark)
 {
     app.Dark = dark;
     ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
+}
+
+// The icon: a box with a check mark and an empty box, side by side, with transparent corners (16 x 16 each).
+Image MakeIcon()
+{
+    var image = Image.Create(32, 16);
+    var frame = Color.FromRgb(40, 90, 160);
+    var inside = Color.FromRgb(230, 238, 250);
+    var check = Color.FromRgb(30, 150, 60);
+    for (var tile = 0; tile < 2; tile += 1)
+    {
+        int ox = tile * 16;
+        for (var y = 1; y < 15; y += 1)
+        {
+            for (var x = 1; x < 15; x += 1)
+            {
+                bool corner = (x == 1 || x == 14) && (y == 1 || y == 14);
+                if (!corner)
+                    image.SetPixel(ox + x, y, x <= 2 || x >= 13 || y <= 2 || y >= 13 ? frame : inside);
+            }
+        }
+    }
+    // the check mark in the first tile
+    int[] marks = [4, 8, 5, 9, 6, 10, 7, 9, 8, 8, 9, 7, 10, 6, 11, 5];
+    for (var i = 0; i < marks.Length; i += 2)
+    {
+        image.SetPixel(marks[i], marks[i + 1], check);
+        image.SetPixel(marks[i], marks[i + 1] - 1, check);
+    }
+    return image;
 }
 
 // quits at once when all tasks are done, else asks first
@@ -73,11 +105,13 @@ void Spinner(Ui ui)
 
 void Draw(Ui ui, ref App app)
 {
-    // the keys of the menus (the menu bar only shows them)
+    // the keys of the menus (the menu bar only shows them): shortcuts with the modifier keys held at the key press,
+    // so a quick Ctrl+Q works also when the frame comes after Ctrl was let go (+ may need Shift, depending on the
+    // keyboard)
     var input = ui.Input();
-    if (input.Ctrl && input.Pressed(Key.Plus))
+    if (input.Pressed(Key.Plus, KeyModifiers.Ctrl) || input.Pressed(Key.Plus, KeyModifiers.Ctrl | KeyModifiers.Shift))
         app.Zoom = Math.Min(2.0, app.Zoom + 0.25);
-    if (input.Ctrl && input.Pressed(Key.Minus))
+    if (input.Pressed(Key.Minus, KeyModifiers.Ctrl))
         app.Zoom = Math.Max(0.75, app.Zoom - 0.25);
     using (ui.MenuBar())
     {
@@ -99,7 +133,7 @@ void Draw(Ui ui, ref App app)
         }
     }
     // Ctrl+Q, and closing the window (Window.ConfirmClose is on)
-    if ((input.Ctrl && input.Pressed(Key.Q)) || input.CloseRequested)
+    if (input.Pressed(Key.Q, KeyModifiers.Ctrl) || input.CloseRequested)
         AskQuit(ref app);
 
     int done = 0;
@@ -111,6 +145,10 @@ void Draw(Ui ui, ref App app)
 
     using (ui.Row())
     {
+        // a part of an image (one tile of two), scaled: on AmigaOS in the pens of the screen
+        var icon = ui.Area(32, 32);
+        bool all = done == app.Tasks.Count();
+        ui.DrawImage(app.Icon, Rect.Create(all ? 0 : 16, 0, 16, 16), icon);
         ui.Label("To do");
         ui.Note($"{done} of {app.Tasks.Count()} done");
     }
@@ -275,7 +313,8 @@ int Main(string[] args)
     var window = try Window.Open("CShift - System.Ui", 460, 640);
     window.ConfirmClose(true); // closing the window asks first (AskQuit)
     var ui = Ui.Create();
-    var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0, Priorities = List<string>.Create(), MenuTask = -1 };
+    var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0, Priorities = List<string>.Create(), MenuTask = -1,
+                    Icon = MakeIcon() };
     app.Priorities.Add("Low");
     app.Priorities.Add("Normal");
     app.Priorities.Add("High");

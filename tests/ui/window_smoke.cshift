@@ -4,8 +4,9 @@
 // - Ui.RequestFrame: frames come without input, about every 100 ms;
 // - Window.ConfirmClose: WM_DELETE_WINDOW (what the close button of a window manager sends) gives
 //   UiInput.CloseRequested and the window stays open until Window.Close; without ConfirmClose, Update returns false;
-// - with the XTEST extension (libXtst): clicks of the right and the middle mouse button on the button (fake events of
-//   the X server); without XTEST that part is skipped.
+// - with the XTEST extension (libXtst): clicks of the right and the middle mouse button on the button, and a quick
+//   Ctrl+Q (Ctrl down, Q down and up, Ctrl up before the next frame: UiInput.Pressed(Key.Q, KeyModifiers.Ctrl)) -
+//   fake events of the X server; without XTEST that part is skipped.
 //
 //   cshiftc tests/ui/window_smoke.cshift -o smoke && xvfb-run -a ./smoke
 
@@ -24,6 +25,8 @@ struct FakeUser
     void* Display;
     Func<void*, int, int, int, nuint, int> Motion;
     Func<void*, uint32, int, nuint, int> Button;
+    Func<void*, uint32, int, nuint, int> FakeKey;
+    Func<void*, nuint, uint8> KeysymToKeycode;
     Func<void*, int> Flush;
     Func<void*, nuint> Root;
     Func<void*, nuint, nuint*, nuint*, nuint**, uint32*, int> QueryTree;
@@ -62,9 +65,13 @@ struct FakeUser
             void* xtst = dlopen("libXtst.so.6".CStr(), 2);
             void* motion = xtst != null ? dlsym(xtst, "XTestFakeMotionEvent".CStr()) : null;
             void* button = xtst != null ? dlsym(xtst, "XTestFakeButtonEvent".CStr()) : null;
-            if (motion != null && button != null)
+            void* fakeKey = xtst != null ? dlsym(xtst, "XTestFakeKeyEvent".CStr()) : null;
+            void* toKeycode = dlsym(x11, "XKeysymToKeycode".CStr());
+            if (motion != null && button != null && fakeKey != null && toKeycode != null)
             {
                 user.Mouse = true;
+                user.FakeKey = (Func<void*, uint32, int, nuint, int>)fakeKey;
+                user.KeysymToKeycode = (Func<void*, nuint, uint8>)toKeycode;
                 user.Motion = (Func<void*, int, int, int, nuint, int>)motion;
                 user.Button = (Func<void*, uint32, int, nuint, int>)button;
             }
@@ -80,6 +87,21 @@ struct FakeUser
             Motion(Display, -1, x, y, 0);
             Button(Display, button, 1, 0);
             Button(Display, button, 0, 0);
+            Flush(Display);
+        }
+    }
+
+    // a whole shortcut at once: the modifier down, the key down and up, the modifier up
+    void Shortcut(nuint modifierKeysym, nuint keysym)
+    {
+        unsafe
+        {
+            uint32 modifier = (uint32)KeysymToKeycode(Display, modifierKeysym);
+            uint32 key = (uint32)KeysymToKeycode(Display, keysym);
+            FakeKey(Display, modifier, 1, 0);
+            FakeKey(Display, key, 1, 0);
+            FakeKey(Display, key, 0, 0);
+            FakeKey(Display, modifier, 0, 0);
             Flush(Display);
         }
     }
@@ -146,6 +168,9 @@ int Main()
     int clicks = 0;
     int rightClicks = 0;
     int middle = 0;
+    int shortcuts = 0;      // frames with Ctrl+Q (the new query)
+    int oldPattern = 0;     // frames with Ctrl && Pressed(Key.Q)
+    int plainQ = 0;         // frames with Q alone
     var button = Rect.Create(0, 0, 0, 0);
     for (var frame = 0; frame < 200; frame += 1)
     {
@@ -163,15 +188,27 @@ int Main()
             rightClicks += 1;
         if (ui.Input().MiddleReleased)
             middle += 1;
+        var keys = ui.Input();
+        if (keys.Pressed(Key.Q, KeyModifiers.Ctrl))
+            shortcuts += 1;
+        if (keys.Ctrl && keys.Pressed(Key.Q))
+            oldPattern += 1;
+        if (keys.Pressed(Key.Q, KeyModifiers.None))
+            plainQ += 1;
         window.Show(ui.End()); // shown as an image: the next Update does not wait for input
         // the window is at the top left of the screen of Xvfb (no window manager): its pixels are the screen's
         if (user.Mouse && frame == 20)
             user.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 3u);
         if (user.Mouse && frame == 60)
             user.Click(button.X + button.Width / 2, button.Y + button.Height / 2, 2u);
+        if (user.Mouse && frame == 80)
+        {
+            user.Shortcut(0xFFE3, 0x71); // Control_L, q
+            Thread.Sleep(50); // all four events reach the window before its next frame
+        }
         if (frame >= 29 && !user.Mouse)
             break;
-        if (frame > 100 && rightClicks > 0 && middle > 0)
+        if (frame > 100 && rightClicks > 0 && middle > 0 && shortcuts > 0)
             break;
         if (user.Mouse)
             Thread.Sleep(5); // time for the X server to deliver the fake events
@@ -193,6 +230,12 @@ int Main()
             return 1;
         }
         Console.WriteLine("mouse buttons ok (right and middle, with XTEST)");
+        if (shortcuts != 1 || oldPattern != 1 || plainQ != 0)
+        {
+            Console.WriteLine($"error: Ctrl+Q within one frame: {shortcuts} with the query, {oldPattern} with Ctrl && Pressed, {plainQ} as Q alone");
+            return 1;
+        }
+        Console.WriteLine("shortcut ok (Ctrl+Q within one frame, with XTEST)");
     }
     else
         Console.WriteLine("mouse buttons skipped (no XTEST)");

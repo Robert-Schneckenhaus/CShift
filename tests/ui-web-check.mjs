@@ -109,6 +109,11 @@ document.send("mouseup", { clientX: bx, clientY: by, button: 1 });
 await waitFor("middle");
 canvas.send("keydown", { key: "+", keyCode: 187 });
 await waitFor("plus");
+// a whole Ctrl+Q before the program's next frame: Ctrl is let go again at once
+canvas.send("keydown", { key: "Control", keyCode: 17, ctrlKey: true });
+canvas.send("keydown", { key: "q", keyCode: 81, ctrlKey: true });
+canvas.send("keyup", { key: "Control", keyCode: 17, ctrlKey: false });
+await waitFor("ctrl q");
 click(tx, ty);
 await sleep(20);
 for (const key of ["h", "i"]) canvas.send("keydown", { key, keyCode: key.toUpperCase().charCodeAt(0) });

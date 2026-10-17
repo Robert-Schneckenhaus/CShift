@@ -73,6 +73,8 @@ struct Window : IDisposable
     {
         var input = _UiOs.TakeInput();
         input.Time = (double)_Os.MonotonicTicks() / 10000000.0;
+        // Ctrl, Shift and Alt also when they were held with a key of the frame that ended before it (a quick Ctrl+S)
+        input = _UiStickModifiers(input);
         // a window that draws slowly: no frames for the blinking of the text cursor
         input.Steady = !_UiOs.Blinks();
         return input;
