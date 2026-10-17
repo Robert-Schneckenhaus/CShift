@@ -624,3 +624,128 @@ struct Canvas
         }
     }
 }
+
+// ---- images for a screen of pens (the window of AmigaOS: stdlib/amiga/ui.cshift) ----
+
+// An image in the pens of a screen: one byte per pixel (the pen), and whether it is drawn (alpha >= 128; there is no
+// blending with pens). Made once per image and change (Image.Changes), then parts of it are drawn as often as needed.
+struct _UiChunky
+{
+    int Width;
+    int Height;
+    uint8[] Pens;
+    uint8[] Opaque;        // 1: drawn, 0: transparent
+    bool Transparent;      // some pixel is transparent
+    uint32[] Pixels;       // the pixels it was made of (the image's identity; kept, so their memory is not reused)
+    uint32 Changes;        // Image.Changes when it was made
+}
+
+// The pens of an image: penOf gives the pen of a color (0xFFRRGGBB); runs of one color ask once.
+_UiChunky _UiChunkyOf(Image image, Func<uint32, int> penOf)
+{
+    int count = image.Width * image.Height;
+    var c = _UiChunky { Width = image.Width, Height = image.Height, Pens = new uint8[count], Opaque = new uint8[count],
+                        Pixels = image.Pixels, Changes = image.Changes };
+    uint32 last = 0u;
+    int lastPen = -1;
+    for (var i = 0; i < count; i += 1)
+    {
+        uint32 p = image.Pixels[i];
+        if (p < 0x80000000u)
+        {
+            c.Transparent = true; // alpha < 128
+            continue;
+        }
+        uint32 rgb = p | 0xFF000000u;
+        if (lastPen < 0 || rgb != last)
+        {
+            last = rgb;
+            lastPen = penOf(rgb) & 0xFF;
+        }
+        c.Pens[i] = (uint8)lastPen;
+        c.Opaque[i] = 1;
+    }
+    return c;
+}
+
+// True if the part of the image (in its bounds) has no transparent pixel: it can be written without the background.
+bool _UiChunkyOpaque(const ref _UiChunky c, Rect source)
+{
+    if (!c.Transparent)
+        return true;
+    var r = source.Intersect(Rect.Create(0, 0, c.Width, c.Height));
+    if (r.Width < source.Width || r.Height < source.Height)
+        return false; // a part outside of the image is transparent
+    for (var y = r.Y; y < r.Y + r.Height; y += 1)
+    {
+        int row = y * c.Width;
+        for (var x = r.X; x < r.X + r.Width; x += 1)
+        {
+            if (c.Opaque[row + x] == 0)
+                return false;
+        }
+    }
+    return true;
+}
+
+// The columns of the image for the columns of a part (_UiChunkyPart), kept from call to call.
+int[] _UiColumns;
+
+// Draws the part `source` of the image scaled into `target` (nearest neighbour, the center of each target pixel), only
+// where it overlaps `area`: into `dest`, which holds `area` from its top left with `stride` bytes per row (at least
+// area.Width). Transparent pixels (and those outside of the image) leave `dest` as it is. It runs for every tile of a
+// frame on a 68020, so it works with pointers, and a row that repeats the one before (zoom) is copied.
+void _UiChunkyPart(const ref _UiChunky c, Rect source, Rect target, Rect area, uint8[] dest, int stride)
+{
+    var r = target.Intersect(area);
+    if (r.Width <= 0 || r.Height <= 0 || source.Width <= 0 || source.Height <= 0)
+        return;
+    bool opaque = _UiChunkyOpaque(c, source); // then every pixel of r is written, and all columns are in the image
+    if (_UiColumns.Length < r.Width)
+        _UiColumns = new int[Math.Max(r.Width, 256)];
+    unsafe
+    {
+        int* columns = &_UiColumns[0];
+        for (var i = 0; i < r.Width; i += 1)
+        {
+            int sx = source.X + ((r.X + i - target.X) * 2 + 1) * source.Width / (target.Width * 2);
+            columns[i] = sx >= 0 && sx < c.Width ? sx : -1;
+        }
+        uint8* pens = &c.Pens[0];
+        uint8* mask = &c.Opaque[0];
+        uint8* first = &dest[0] + (r.Y - area.Y) * stride + (r.X - area.X);
+        uint8* last = null;
+        int lastSy = -1;
+        int width = r.Width;
+        for (var j = 0; j < r.Height; j += 1)
+        {
+            int sy = source.Y + ((r.Y + j - target.Y) * 2 + 1) * source.Height / (target.Height * 2);
+            if (sy < 0 || sy >= c.Height)
+                continue;
+            uint8* o = first + j * stride;
+            if (opaque && sy == lastSy)
+            {
+                memcpy(o, last, (nuint)width); // the same row of the image
+                continue;
+            }
+            uint8* p = pens + sy * c.Width;
+            if (opaque)
+            {
+                for (var i = 0; i < width; i += 1)
+                    o[i] = p[columns[i]];
+            }
+            else
+            {
+                uint8* m = mask + sy * c.Width;
+                for (var i = 0; i < width; i += 1)
+                {
+                    int sx = columns[i];
+                    if (sx >= 0 && m[sx] != 0)
+                        o[i] = p[sx];
+                }
+            }
+            last = o;
+            lastSy = sy;
+        }
+    }
+}

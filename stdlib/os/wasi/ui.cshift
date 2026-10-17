@@ -100,11 +100,16 @@ struct _UiOs
             input.MiddlePressed = state[14] != 0;
             input.MiddleReleased = state[15] != 0;
             input.WheelX = state[16];
+            // a key code with the modifier keys held at it: bit 16 says that they are there (a cshift.js before 0.36 sends
+            // the code alone: the state of the frame), then KeyModifiers << 17
+            input.Modifiers = List<KeyModifiers>.Create();
+            var held = _UiModifiers(input.Ctrl, input.Shift, input.Alt);
             for (var i = 0; i < Math.Min(count, keys.Length); i += 1)
             {
-                var key = _UiKeyOfVk(keys[i]);
+                int value = keys[i];
+                var key = _UiKeyOfVk(value & 0xFFFF);
                 if (key != Key.None)
-                    input.Keys.Add(key);
+                    input.AddKey(key, (value & 0x10000) != 0 ? (KeyModifiers)((value >> 17) & 7) : held);
             }
             int length = Math.Clamp(state[9], 0, text.Length);
             input.Text = string.FromBytes(text[..length].ToArray());

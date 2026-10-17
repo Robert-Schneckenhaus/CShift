@@ -77,6 +77,7 @@ struct _UiWin32
     int WheelDelta;       // 1/120 notches
     int WheelXDelta;
     List<Key> Keys;
+    List<KeyModifiers> Mods;   // held at each of Keys
     StringBuilder Text;
     int HighSurrogate;
     Image Last;           // the last frame, for WM_PAINT
@@ -207,7 +208,11 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
         {
             var key = _UiKeyOfVk((int)(w & 0xFFul));
             if (key != Key.None)
+            {
                 _UiWin.Keys.Add(key);
+                // the state of the modifier keys at this message
+                _UiWin.Mods.Add(_UiModifiers(GetKeyState(0x11) < 0, GetKeyState(0x10) < 0, GetKeyState(0x12) < 0));
+            }
             if (message == _WmKeyDown)
                 return 0;
             break; // Alt+F4 and the like
@@ -305,7 +310,7 @@ struct _UiOs
                                          null, null, instance, null);
             if (hwnd == null)
                 return 1;
-            _UiWin = _UiWin32 { Hwnd = hwnd, Open = true, Keys = List<Key>.Create(), Text = StringBuilder.Create(), Last = Image.Create(0, 0),
+            _UiWin = _UiWin32 { Hwnd = hwnd, Open = true, Keys = List<Key>.Create(), Mods = List<KeyModifiers>.Create(), Text = StringBuilder.Create(), Last = Image.Create(0, 0),
                                 MouseX = -1, MouseY = -1 };
             _UiWin.CursorArrow = LoadCursorW(null, 32512);
             _UiWin.CursorText = LoadCursorW(null, 32513);
@@ -369,8 +374,9 @@ struct _UiOs
         _UiWin.WheelDelta -= input.Wheel * 120;
         input.WheelX = _UiWin.WheelXDelta / 120;
         _UiWin.WheelXDelta -= input.WheelX * 120;
-        foreach (var key in _UiWin.Keys)
-            input.Keys.Add(key);
+        input.Modifiers = List<KeyModifiers>.Create();
+        for (var i = 0; i < _UiWin.Keys.Count(); i += 1)
+            input.AddKey(_UiWin.Keys.Get(i), _UiWin.Mods.Get(i));
         input.Text = _UiWin.Text.ToString();
         input.Ctrl = GetKeyState(0x11) < 0;
         input.Shift = GetKeyState(0x10) < 0;
@@ -384,6 +390,7 @@ struct _UiOs
         _UiWin.MiddlePressed = false;
         _UiWin.MiddleReleased = false;
         _UiWin.Keys.Clear();
+        _UiWin.Mods.Clear();
         _UiWin.Text.Clear();
         return input;
     }

@@ -1,0 +1,112 @@
+// Standard library: the modifier keys of each key press (UiInput.Modifiers, AddKey, Pressed(key, modifiers)) without
+// a window - a shortcut whose Ctrl was released before the end of the frame, exact modifiers (Ctrl+S is not
+// Ctrl+Shift+S), Ctrl/Shift/Alt of the frame set by the keys, the text box (Shift selection and Ctrl+X with the
+// modifiers of each key), Tab and Shift+Tab, and an input of the old kind (Keys and Ctrl alone). Main returns the
+// number of failed checks.
+// expect-stdout: shortcut ok
+// expect-exit: 0
+
+using System;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+string Text;
+string Other;
+
+void Frame(Ui ui, UiInput input)
+{
+    ui.Begin(input, 300, 200, 1.0);
+    ui.TextBox("text", ref Text);
+    ui.TextBox("other", ref Other);
+    ui.End();
+}
+
+int Main()
+{
+    // ---- the query ----
+    var input = UiInput.Create();
+    input.AddKey(Key.S, KeyModifiers.Ctrl); // Ctrl was let go before the frame: Ctrl is false at its end
+    Check(!input.Ctrl, "Ctrl is not held at the end of the frame");
+    Check(input.Pressed(Key.S, KeyModifiers.Ctrl), "Ctrl+S");
+    Check(!input.Pressed(Key.S, KeyModifiers.Ctrl | KeyModifiers.Shift), "not Ctrl+Shift+S");
+    Check(!input.Pressed(Key.S, KeyModifiers.None), "not S alone");
+    Check(input.Pressed(Key.S), "Pressed(key) as before");
+    Check(!input.Pressed(Key.Q, KeyModifiers.Ctrl), "not Ctrl+Q");
+    var both = UiInput.Create();
+    both.AddKey(Key.S, KeyModifiers.Ctrl | KeyModifiers.Shift);
+    both.AddKey(Key.S, KeyModifiers.None);
+    Check(both.Pressed(Key.S, KeyModifiers.Shift | KeyModifiers.Ctrl) && both.Pressed(Key.S, KeyModifiers.None) &&
+          !both.Pressed(Key.S, KeyModifiers.Ctrl), "two presses of S");
+    // an input of the old kind: the keys alone, with the state of the frame
+    var old = UiInput.Create();
+    old.Ctrl = true;
+    old.Keys.Add(Key.S);
+    Check(old.Pressed(Key.S, KeyModifiers.Ctrl) && old.ModifiersAt(0) == KeyModifiers.Ctrl, "Keys.Add with Ctrl held");
+
+    // ---- the frame: Ctrl/Shift/Alt are set by the keys ----
+    var ui = Ui.Create();
+    Text = "abc";
+    Other = "";
+    Frame(ui, input);
+    var seen = ui.Input();
+    Check(seen.Ctrl && !seen.Shift && !seen.Alt, "Ctrl in the frame of a quick Ctrl+S");
+    Check(seen.Ctrl && seen.Pressed(Key.S), "the old pattern Ctrl && Pressed(S)");
+    Console.WriteLine("shortcut " + (seen.Pressed(Key.S, KeyModifiers.Ctrl) ? "ok" : "missed"));
+
+    // ---- the text box: the modifiers of each key ----
+    ui.SetFocus("text");
+    Frame(ui, UiInput.Create());
+    // Home, then Shift+End (Shift let go before the frame ends): all selected; then Ctrl+X cuts it
+    var select = UiInput.Create();
+    select.AddKey(Key.Home, KeyModifiers.None);
+    select.AddKey(Key.End, KeyModifiers.Shift);
+    Frame(ui, select);
+    var cut = UiInput.Create();
+    cut.AddKey(Key.X, KeyModifiers.Ctrl);
+    Frame(ui, cut);
+    // (the text is cut: the selection was all of it; WebAssembly without a browser has no clipboard to look at)
+    Check(Text == "", $"Shift+End and Ctrl+X: text '{Text}'");
+    // Shift held only for the first key: the second Left moves without selecting
+    Text = "abcd";
+    var keys = UiInput.Create();
+    keys.AddKey(Key.End, KeyModifiers.None);
+    keys.AddKey(Key.Left, KeyModifiers.Shift);
+    keys.AddKey(Key.Left, KeyModifiers.None);
+    keys.AddKey(Key.Backspace, KeyModifiers.None);
+    Frame(ui, keys);
+    // Shift+Left selects the d, Left ends the selection at the c, Backspace deletes the c (Shift for both: "ab")
+    Check(Text == "abd", $"Shift only for one key: '{Text}'");
+    // the old kind still works: Ctrl held and A
+    Text = "xyz";
+    var all = UiInput.Create();
+    all.Ctrl = true;
+    all.Keys.Add(Key.A);
+    Frame(ui, all);
+    var del = UiInput.Create();
+    del.Keys.Add(Key.Delete);
+    Frame(ui, del);
+    Check(Text == "", $"Ctrl+A (old kind) and Delete: '{Text}'");
+
+    // ---- Tab and Shift+Tab ----
+    var tab = UiInput.Create();
+    tab.AddKey(Key.Tab, KeyModifiers.None);
+    Frame(ui, tab);
+    Frame(ui, UiInput.Create());
+    Check(ui.HasFocus("other"), "Tab: the next box");
+    var back = UiInput.Create();
+    back.AddKey(Key.Tab, KeyModifiers.Shift); // Shift let go before the frame
+    Frame(ui, back);
+    Frame(ui, UiInput.Create());
+    Check(ui.HasFocus("text"), "Shift+Tab: the box before");
+    return Failures;
+}

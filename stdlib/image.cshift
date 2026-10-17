@@ -135,6 +135,14 @@ struct Image
     int Height;
     /// The pixels, row by row from the top left: `Pixels[y * Width + x]` is `0xAARRGGBB`.
     uint32[] Pixels;
+    /// A counter of changes of the pixels, for those who keep something made from them: the window of System.Ui on
+    /// AmigaOS keeps an image in the pens of the screen and makes it again when this differs. Count it up with
+    /// [Image.Changed] after changing the pixels of an image that is shown again.
+    uint32 Changes;
+
+    /// Tells that the pixels changed (counts up [Image.Changes]); only needed for an image that a window on AmigaOS
+    /// shows again (see there).
+    void Changed() { Changes = unchecked(Changes + 1u); }
 
     /// A new image of `width` times `height` transparent black pixels (0).
     /// @panics when a size is negative.

@@ -82,6 +82,7 @@ struct _UiXWindow
     bool Shift;
     bool Alt;
     List<Key> Keys;
+    List<KeyModifiers> Mods;   // held at each of Keys
     StringBuilder Text;
     Image Last;
     nuint CursorArrow;
@@ -267,7 +268,10 @@ void _UiXEvent(int64[] buffer)
                 break;
             var key = _UiXKeyOf(keysym);
             if (key != Key.None)
+            {
                 _UiXw.Keys.Add(key);
+                _UiXw.Mods.Add(_UiModifiers(_UiXw.Ctrl, _UiXw.Shift, _UiXw.Alt));
+            }
             int code = _UiXCharOf(keysym);
             if (code != 0 && !_UiXw.Ctrl)
                 _UiAppendUtf8(_UiXw.Text, code);
@@ -382,7 +386,7 @@ struct _UiOs
                 return 3;
             }
             _UiXw = _UiXWindow { Loaded = true, Open = true, Display = display, Window = window, Screen = screen, Width = w, Height = h,
-                                 Scale = scale, MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Text = StringBuilder.Create(),
+                                 Scale = scale, MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Mods = List<KeyModifiers>.Create(), Text = StringBuilder.Create(),
                                  Last = Image.Create(0, 0) };
             _UiXw.Gc = _UiX.DefaultGC(display, screen);
             _UiXw.Visual = _UiX.DefaultVisual(display, screen);
@@ -448,8 +452,9 @@ struct _UiOs
         input.MiddleReleased = _UiXw.MiddleReleased;
         input.Wheel = _UiXw.Wheel;
         input.WheelX = _UiXw.WheelX;
-        foreach (var key in _UiXw.Keys)
-            input.Keys.Add(key);
+        input.Modifiers = List<KeyModifiers>.Create();
+        for (var i = 0; i < _UiXw.Keys.Count(); i += 1)
+            input.AddKey(_UiXw.Keys.Get(i), _UiXw.Mods.Get(i));
         input.Text = _UiXw.Text.ToString();
         input.Ctrl = _UiXw.Ctrl;
         input.Shift = _UiXw.Shift;
@@ -465,6 +470,7 @@ struct _UiOs
         _UiXw.Wheel = 0;
         _UiXw.WheelX = 0;
         _UiXw.Keys.Clear();
+        _UiXw.Mods.Clear();
         _UiXw.Text.Clear();
         return input;
     }

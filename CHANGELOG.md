@@ -6,6 +6,38 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `System.Ui`: **shortcuts with the modifier keys of each key press.** A frame collects all keys since the last one,
+  and `Ctrl`/`Shift`/`Alt` were the state at the end of the frame, so a quick Ctrl+S (Ctrl already let go when the
+  frame was made, under `xdotool key ctrl+q`, or with any normal keystroke during a slow frame on an A1200) was seen as
+  S alone. Now each key press keeps the modifier keys held at it (`UiInput.Modifiers`, `UiInput.ModifiersAt(i)`; X11
+  from `XKeyEvent.state`, Win32 with `GetKeyState` at `WM_KEYDOWN`, AmigaOS from the qualifier of the message, the
+  browser from `ctrlKey`/`shiftKey`/`altKey` of the event), and the new `UiInput.Pressed(key, modifiers)` with
+  `KeyModifiers` (`None`, `Ctrl`, `Shift`, `Alt`, combined with `|`) asks for a shortcut with exactly these modifiers:
+  `Pressed(Key.S, KeyModifiers.Ctrl)` is not Ctrl+Shift+S. `Pressed(key)` is unchanged, and `Ctrl`, `Shift` and `Alt`
+  are now also true when they were held with a key pressed in the frame, so `Ctrl && Pressed(Key.S)` works for quick
+  shortcuts too. The text box (Shift selection, Ctrl+A/C/X/V) and Tab/Shift+Tab use the modifiers of each key.
+  `UiInput.AddKey(key, modifiers)` adds a key with its modifiers to an input of your own. Keys added to `Keys` alone
+  count with `Ctrl`/`Shift`/`Alt` as before.
+- `System.Ui` on AmigaOS: **images are drawn.** `ui.Image`, `ui.DrawImage` (also scaled) and `Canvas.DrawImage` in a
+  frame with commands: the window keeps each image in the pens of the screen (`ObtainBestPenA` once per color, one
+  byte per pixel, alpha below 128 transparent), made once per image and kept for the next frames (32 images), and
+  draws the parts scaled into its bitmap with `WriteChunkyPixels` (AmigaOS 3.1) or `WritePixelArray8`, reading the
+  background first where a part has transparent pixels; the clip rectangle is kept. On 8 or 16 colors an image is a
+  rough picture in the colors of the screen. Checked in FS-UAE (an A1200 with the AROS ROM): images at zoom 1 to 3,
+  transparency, clipping in a scroll area, and the icon of demo-ui; about 1.2 s for an area of 320 x 192 full of
+  32 x 32 tiles there (see [docs/ui.md](docs/ui.md#on-the-amiga)). Not checked on a real Amiga or with AmigaOS 3.x.
+- `Image.Changes` and `Image.Changed()`: a counter of changes of the pixels, for what is made from them (the copy in
+  pens on AmigaOS); `Ui.CommandsHash` now includes which image a command draws, its part and `Image.Changes`, so a
+  frame that only draws other tiles is drawn again on AmigaOS.
+- [demo-ui](demo-ui/README.md): Ctrl+Q, Ctrl+Plus and Ctrl+Minus with `Pressed(key, KeyModifiers.Ctrl)`, and an icon
+  (a part of an image, scaled 2x) next to the title.
+
+### Tools
+- Tests: `stdlib_ui_shortcuts` (the modifiers of each key, the text box, Tab), `stdlib_ui_chunky` (an image in pens,
+  scaled 2x and 3x with transparency and clipping, the hash of image commands); the window test under Xvfb sends a
+  whole Ctrl+Q with XTEST before the next frame, and the browser test a Ctrl+Q whose Ctrl is let go at once.
+
 ## [0.35] - 2026-10-16
 
 ### Standard library

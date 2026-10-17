@@ -4,8 +4,10 @@
 // draws them with graphics.library: rectangles with RectFill (rounded corners and circles as runs of rows), lines with
 // Move/Draw, text with the system font (its sizes are the Ui's font: Font.Metrics), colors as pens of the screen
 // (ObtainBestPenA). It draws into a bitmap of its own and copies that into the window in one blit, so nothing
-// flickers. The bitmap has no layer, so everything is clipped here. Images are not drawn. Needs AmigaOS 3.0
-// (graphics.library and intuition.library 39). The clipboard is kept inside the program. A wait for at most some time
+// flickers. The bitmap has no layer, so everything is clipped here. Images are kept in the pens of the screen (one byte
+// per pixel, made once per image and Image.Changes: _UiChunkyOf in stdlib/ui_draw.cshift), and their parts are drawn
+// scaled with WritePixelArray8; with transparent pixels the background is read first (ReadPixelArray8). Needs AmigaOS
+// 3.0 (graphics.library and intuition.library 39). The clipboard is kept inside the program. A wait for at most some time
 // (Ui.RequestFrame) waits for the window's port and a request of timer.device (UNIT_VBLANK, 1/50 s) together.
 
 namespace System.Ui;
@@ -45,6 +47,9 @@ extern "C" void* __gfx_AllocBitMap(int width, int height, int depth, int flags, 
 extern "C" void __gfx_FreeBitMap(void* bitMap);
 extern "C" void __gfx_ReleasePen(void* colorMap, int pen);
 extern "C" void __gfx_WaitBlit();
+extern "C" int __gfx_ReadPixelArray8(void* rastPort, int xStart, int yStart, int xStop, int yStop, void* array, void* tempRastPort);
+extern "C" int __gfx_WritePixelArray8(void* rastPort, int xStart, int yStart, int xStop, int yStop, void* array, void* tempRastPort);
+extern "C" void __gfx_WriteChunkyPixels(void* rastPort, int xStart, int yStart, int xStop, int yStop, void* array, int bytesPerRow);
 extern "C" void* __intuition_OpenWindowTagList(void* newWindow, void* tags);
 extern "C" void __intuition_CloseWindow(void* window);
 extern "C" int __intuition_ModifyIDCMP(void* window, int flags);
@@ -115,12 +120,21 @@ struct _UiAmiga
     bool Shift;
     bool Alt;
     List<Key> Keys;
+    List<KeyModifiers> Mods;   // held at each of Keys (the qualifier of its message)
     StringBuilder Text;
     List<int[]> Insets;    // the indents of the rows of a rounded corner, by radius (_UiInsets)
     uint8[] Chars;         // a line of text as Latin-1 (_UiText)
     uint32 ShownHash;      // of the commands of the frame in the window (Ui.CommandsHash): an equal one is not drawn again
     bool Stale;            // the window must be drawn again (a new size)
+    List<_UiChunky> Images; // the images in pens, the one used last at the end (at most _UiImageCache)
+    uint8[] TempRastPort;  // the RastPort of one row for Read/WritePixelArray8 (100 bytes)
+    void* TempBitMap;
+    int TempWidth;
+    uint8[] Chunky;        // the pens of a part of an image, rows of 16-pixel multiples
 }
+
+// the number of images kept in pens (an atlas of tiles and a few more)
+const int _UiImageCache = 32;
 
 _UiAmiga _UiA;
 string _UiClipboardText;
@@ -176,6 +190,107 @@ int _UiPen(Color color)
         pen = 1;
     _UiA.Pens.Set(key, pen);
     return pen;
+}
+
+// The pen of a color for the pixels of an image (0xFFRRGGBB).
+int _UiImagePen(uint32 rgb)
+{
+    return _UiPen(Color.FromArgb(rgb));
+}
+
+// The image in pens: from the cache when its pixels and changes are the same, else made (and the oldest one dropped).
+_UiChunky _UiChunkyFor(Image image)
+{
+    unsafe
+    {
+        void* pixels = &image.Pixels[0];
+        for (var i = _UiA.Images.Count() - 1; i >= 0; i -= 1)
+        {
+            var c = _UiA.Images.Get(i);
+            if ((void*)&c.Pixels[0] == pixels && c.Width == image.Width && c.Height == image.Height)
+            {
+                if (c.Changes == image.Changes)
+                {
+                    if (i != _UiA.Images.Count() - 1)
+                    {
+                        _UiA.Images.RemoveAt(i); // the one used last goes to the end
+                        _UiA.Images.Add(c);
+                    }
+                    return c;
+                }
+                _UiA.Images.RemoveAt(i); // changed: made again
+                break;
+            }
+        }
+    }
+    if (_UiA.Images.Count() >= _UiImageCache)
+        _UiA.Images.RemoveAt(0);
+    var made = _UiChunkyOf(image, _UiImagePen);
+    _UiA.Images.Add(made);
+    return made;
+}
+
+// The RastPort of one row that Read/WritePixelArray8 need, at least `width` pixels wide.
+bool _UiTempRastPort(int width)
+{
+    if (_UiA.TempBitMap != null && _UiA.TempWidth >= width)
+        return true;
+    unsafe
+    {
+        if (_UiA.TempBitMap != null)
+        {
+            __gfx_WaitBlit();
+            __gfx_FreeBitMap(_UiA.TempBitMap);
+            _UiA.TempBitMap = null;
+        }
+        int w = Math.Max(width, _UiA.Width);
+        int depth = (int)*((uint8*)_UiA.BitMap + 5); // BitMap.Depth of the frame's bitmap
+        _UiA.TempBitMap = __gfx_AllocBitMap((w + 15) & ~15, 1, depth, 0, null);
+        if (_UiA.TempBitMap == null)
+            return false;
+        _UiA.TempWidth = w;
+        // a copy of the frame's RastPort (no layer) with the bitmap of one row
+        for (var i = 0; i < 100; i += 1)
+            _UiA.TempRastPort[i] = _UiA.RastPort[i];
+        *(void**)(&_UiA.TempRastPort[0] + 4) = _UiA.TempBitMap;
+        return true;
+    }
+}
+
+// Draws the part `source` of an image scaled into `target` (nearest neighbour), within the clip rectangle.
+void _UiImage(Image image, Rect source, Rect target)
+{
+    if (image.Width <= 0 || image.Height <= 0 || source.Width <= 0 || source.Height <= 0)
+        return;
+    var area = target.Intersect(_UiA.Clip);
+    if (area.Width <= 0 || area.Height <= 0 || !_UiTempRastPort(area.Width))
+        return;
+    var c = _UiChunkyFor(image);
+    int stride = (area.Width + 15) & ~15; // the rows of Read/WritePixelArray8
+    int size = stride * area.Height;
+    if (_UiA.Chunky.Length < size)
+        _UiA.Chunky = new uint8[size];
+    unsafe
+    {
+        void* rp = &_UiA.RastPort[0];
+        void* temp = &_UiA.TempRastPort[0];
+        void* buffer = &_UiA.Chunky[0];
+        int x1 = area.X + area.Width - 1;
+        int y1 = area.Y + area.Height - 1;
+        // with transparent pixels, the background first: they keep it
+        if (!_UiChunkyOpaque(c, source))
+        {
+            __gfx_WaitBlit(); // the rectangles before it are drawn
+            __gfx_ReadPixelArray8(rp, area.X, area.Y, x1, y1, buffer, temp);
+        }
+        _UiChunkyPart(c, source, target, area, _UiA.Chunky, stride);
+        // WriteChunkyPixels (graphics.library 40, AmigaOS 3.1) is the faster one
+        if ((int)*(uint16*)((uint8*)_UiA.Gfx + 20) >= 40) // lib_Version
+            __gfx_WriteChunkyPixels(rp, area.X, area.Y, x1, y1, buffer, stride);
+        else
+            __gfx_WritePixelArray8(rp, area.X, area.Y, x1, y1, buffer, temp);
+    }
+    _UiA.Pen = -1; // the pixel functions may change the pen of the RastPort
 }
 
 void _UiSetPen(Color color)
@@ -440,6 +555,13 @@ void _UiInnerSize()
 }
 
 // One IntuiMessage: class at 20, code at 24, qualifier at 26, the mouse at 32 and 34 (relative to the window).
+// A key press with the modifier keys of its message (Ctrl, Shift and Alt are set from the qualifier first).
+void _UiAKey(Key key)
+{
+    _UiA.Keys.Add(key);
+    _UiA.Mods.Add(_UiModifiers(_UiA.Ctrl, _UiA.Shift, _UiA.Alt));
+}
+
 void _UiMessage(uint8* m)
 {
     unsafe
@@ -523,28 +645,28 @@ void _UiVanilla(int c)
 {
     switch (c)
     {
-    case 8: _UiA.Keys.Add(Key.Backspace); return;
-    case 9: _UiA.Keys.Add(Key.Tab); return;
-    case 13: _UiA.Keys.Add(Key.Enter); return;
-    case 27: _UiA.Keys.Add(Key.Escape); return;
-    case 127: _UiA.Keys.Add(Key.Delete); return;
+    case 8: _UiAKey(Key.Backspace); return;
+    case 9: _UiAKey(Key.Tab); return;
+    case 13: _UiAKey(Key.Enter); return;
+    case 27: _UiAKey(Key.Escape); return;
+    case 127: _UiAKey(Key.Delete); return;
     default: break;
     }
     if (c >= 1 && c <= 26)
     {
-        _UiA.Keys.Add((Key)((int)Key.A + c - 1)); // Ctrl+A ... Ctrl+Z
+        _UiAKey((Key)((int)Key.A + c - 1)); // Ctrl+A ... Ctrl+Z
         return;
     }
     if (c == 32)
-        _UiA.Keys.Add(Key.Space);
+        _UiAKey(Key.Space);
     else if (c == 43) // +
-        _UiA.Keys.Add(Key.Plus);
+        _UiAKey(Key.Plus);
     else if (c == 45) // -
-        _UiA.Keys.Add(Key.Minus);
+        _UiAKey(Key.Minus);
     else if (c == 44) // ,
-        _UiA.Keys.Add(Key.Comma);
+        _UiAKey(Key.Comma);
     else if (c == 46) // .
-        _UiA.Keys.Add(Key.Period);
+        _UiAKey(Key.Period);
     if (c >= 32 && c != 127 && !(c >= 128 && c < 160))
         _UiAppendUtf8(_UiA.Text, c);
 }
@@ -554,15 +676,15 @@ void _UiRawKey(int code)
 {
     switch (code)
     {
-    case 0x4C: _UiA.Keys.Add(Key.Up); break;
-    case 0x4D: _UiA.Keys.Add(Key.Down); break;
-    case 0x4E: _UiA.Keys.Add(Key.Right); break;
-    case 0x4F: _UiA.Keys.Add(Key.Left); break;
+    case 0x4C: _UiAKey(Key.Up); break;
+    case 0x4D: _UiAKey(Key.Down); break;
+    case 0x4E: _UiAKey(Key.Right); break;
+    case 0x4F: _UiAKey(Key.Left); break;
     case 0x7A: _UiA.Wheel += 1; break;
     case 0x7B: _UiA.Wheel -= 1; break;
     default:
         if (code >= 0x50 && code <= 0x59)
-            _UiA.Keys.Add((Key)((int)Key.F1 + code - 0x50));
+            _UiAKey((Key)((int)Key.F1 + code - 0x50));
         break;
     }
 }
@@ -622,7 +744,8 @@ struct _UiOs
             }
             __cs_amiga_set(_VarGfxBase, (int)(nint)gfx);
             __cs_amiga_set(_VarIntuitionBase, (int)(nint)intuition);
-            _UiA = _UiAmiga { Gfx = gfx, Intuition = intuition, Pens = Dictionary<uint32, int>.Create(), Keys = List<Key>.Create(),
+            _UiA = _UiAmiga { Gfx = gfx, Intuition = intuition, Pens = Dictionary<uint32, int>.Create(), Keys = List<Key>.Create(), Mods = List<KeyModifiers>.Create(),
+                              Images = List<_UiChunky>.Create(), TempRastPort = new uint8[100], Chunky = new uint8[0],
                               Text = StringBuilder.Create(), RastPort = new uint8[100], Pen = -1, MouseX = -1, MouseY = -1,
                               Insets = List<int[]>.Create(), Chars = new uint8[256], Stale = true };
             _UiA.Title = _UiLatin1(title);
@@ -728,8 +851,9 @@ struct _UiOs
         input.MiddlePressed = _UiA.MiddlePressed;
         input.MiddleReleased = _UiA.MiddleReleased;
         input.Wheel = _UiA.Wheel;
-        foreach (var key in _UiA.Keys)
-            input.Keys.Add(key);
+        input.Modifiers = List<KeyModifiers>.Create();
+        for (var i = 0; i < _UiA.Keys.Count(); i += 1)
+            input.AddKey(_UiA.Keys.Get(i), _UiA.Mods.Get(i));
         input.Text = _UiA.Text.ToString();
         input.Ctrl = _UiA.Ctrl;
         input.Shift = _UiA.Shift;
@@ -744,6 +868,7 @@ struct _UiOs
         _UiA.MiddleReleased = false;
         _UiA.Wheel = 0;
         _UiA.Keys.Clear();
+        _UiA.Mods.Clear();
         _UiA.Text.Clear();
         return input;
     }
@@ -752,7 +877,7 @@ struct _UiOs
     static int Height() { return _UiA.Height; }
     static double Scale() { return 1.0; }
 
-    static void Present(Image image) { } // images are not shown
+    static void Present(Image image) { } // a whole frame as an image (Window.Show(image)) is not shown
 
     static void PresentCommands(List<UiCommand> commands, uint32 hash)
     {
@@ -796,8 +921,11 @@ struct _UiOs
                 _UiText(c);
                 break;
             case UiCommandKind.Image:
+                _UiImage(c.Image, Rect.Create(0, 0, c.Image.Width, c.Image.Height), c.Rect);
+                break;
             case UiCommandKind.ImagePart:
-                break; // images are not drawn
+                _UiImage(c.Image, c.Source, c.Rect);
+                break;
             }
         }
         unsafe
@@ -842,6 +970,8 @@ struct _UiOs
             __gfx_WaitBlit();
             if (_UiA.BitMap != null)
                 __gfx_FreeBitMap(_UiA.BitMap);
+            if (_UiA.TempBitMap != null)
+                __gfx_FreeBitMap(_UiA.TempBitMap);
             foreach (var pen in _UiA.Pens.Values())
                 __gfx_ReleasePen(_UiA.ColorMap, pen);
             __exec_CloseLibrary(_UiA.Intuition);

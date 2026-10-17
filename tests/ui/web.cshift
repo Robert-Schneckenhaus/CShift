@@ -35,6 +35,8 @@ int Main()
             Console.WriteLine("middle");
         if (ui.Input().Pressed(Key.Plus))
             Console.WriteLine("plus");
+        if (ui.Input().Pressed(Key.Q, KeyModifiers.Ctrl) && ui.Input().Ctrl)
+            Console.WriteLine("ctrl q");
         if (ui.TextBox("text", ref text))
             Console.WriteLine("text " + text);
         var box = ui.LastRect();

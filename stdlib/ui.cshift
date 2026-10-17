@@ -43,6 +43,64 @@ using System.Image;
 //! screenshots: [Ui.Begin] with a [UiInput] of your own). Sizes are in pixels at a scale of 1 (96 dpi); a [Window]
 //! reports the scale of its screen, and the Ui picks a font and the sizes for it.
 
+/// The modifier keys held with a key press ([UiInput.Pressed] with modifiers, [UiInput.ModifiersAt]); they combine
+/// with `|`: `KeyModifiers.Ctrl | KeyModifiers.Shift`.
+enum KeyModifiers : int32
+{
+    /// No modifier key.
+    None = 0,
+    /// A Ctrl key.
+    Ctrl = 1,
+    /// A Shift key.
+    Shift = 2,
+    /// An Alt key.
+    Alt = 4
+}
+
+// Removes the first press of a key (a popup took it).
+UiInput _UiRemoveKey(UiInput input, Key key)
+{
+    if (!input.Keys.IsCreated())
+        return input;
+    int i = input.Keys.IndexOf(key);
+    if (i < 0)
+        return input;
+    input.Keys.RemoveAt(i);
+    if (input.Modifiers.IsCreated() && i < input.Modifiers.Count())
+        input.Modifiers.RemoveAt(i);
+    return input;
+}
+
+// Ctrl, Shift and Alt also when they were held with a key of the frame (that ended before the frame did).
+UiInput _UiStickModifiers(UiInput input)
+{
+    if (!input.Modifiers.IsCreated())
+        return input;
+    foreach (var m in input.Modifiers)
+    {
+        if ((m & KeyModifiers.Ctrl) != KeyModifiers.None)
+            input.Ctrl = true;
+        if ((m & KeyModifiers.Shift) != KeyModifiers.None)
+            input.Shift = true;
+        if ((m & KeyModifiers.Alt) != KeyModifiers.None)
+            input.Alt = true;
+    }
+    return input;
+}
+
+// The modifier keys of these states (for the window layers).
+KeyModifiers _UiModifiers(bool ctrl, bool shift, bool alt)
+{
+    var m = KeyModifiers.None;
+    if (ctrl)
+        m = m | KeyModifiers.Ctrl;
+    if (shift)
+        m = m | KeyModifiers.Shift;
+    if (alt)
+        m = m | KeyModifiers.Alt;
+    return m;
+}
+
 /// The keys that [UiInput.Keys] reports.
 enum Key : int32
 {
@@ -253,13 +311,18 @@ struct UiInput
     int WheelX;
     /// The keys pressed since the last frame, in order, including the repeats of a key that is held.
     List<Key> Keys;
-    /// The characters typed since the last frame (UTF-8).
+    /// The modifier keys held at each key of [UiInput.Keys], in the same order (a [Window] fills it in; use
+    /// [UiInput.AddKey] to add a key with its modifiers). A key without an entry here, in an input that a program
+    /// made, counts with the state of Ctrl, Shift and Alt.
+    List<KeyModifiers> Modifiers;
+    /// The characters typed since the last frame (UTF-8); a window leaves out what was typed with Ctrl.
     string Text;
-    /// A Ctrl key is held down.
+    /// A Ctrl key is held down, or was held with a key pressed since the last frame (so that `Ctrl && Pressed(Key.S)`
+    /// also sees a quick Ctrl+S that ended before the frame; [UiInput.Pressed] with modifiers is exact).
     bool Ctrl;
-    /// A Shift key is held down.
+    /// A Shift key is held down, or was held with a key pressed since the last frame.
     bool Shift;
-    /// An Alt key is held down.
+    /// An Alt key is held down, or was held with a key pressed since the last frame.
     bool Alt;
     /// Seconds since an arbitrary moment, from a monotonic clock (for animations, the blinking of the text cursor,
     /// the delay of tooltips). 0 in an input that a program made itself (no clock).
@@ -289,6 +352,57 @@ struct UiInput
                 return true;
         }
         return false;
+    }
+
+    /// True if the key was pressed since the last frame with exactly these modifier keys held: a shortcut.
+    /// `Pressed(Key.S, KeyModifiers.Ctrl)` is Ctrl+S, but not Ctrl+Shift+S; `KeyModifiers.None` is the key alone.
+    /// It holds also when the whole shortcut (Ctrl down, S down and up, Ctrl up) was within one frame.
+    bool Pressed(Key key, KeyModifiers modifiers)
+    {
+        if (!Keys.IsCreated())
+            return false;
+        for (var i = 0; i < Keys.Count(); i += 1)
+        {
+            if (Keys.Get(i) == key && ModifiersAt(i) == modifiers)
+                return true;
+        }
+        return false;
+    }
+
+    /// The modifier keys held at the key `index` of [UiInput.Keys] (without an entry in [UiInput.Modifiers]: the
+    /// state of Ctrl, Shift and Alt).
+    KeyModifiers ModifiersAt(int index)
+    {
+        if (Modifiers.IsCreated() && index >= 0 && index < Modifiers.Count())
+            return Modifiers.Get(index);
+        return HeldModifiers();
+    }
+
+    /// Ctrl, Shift and Alt as [KeyModifiers].
+    KeyModifiers HeldModifiers()
+    {
+        var m = KeyModifiers.None;
+        if (Ctrl)
+            m = m | KeyModifiers.Ctrl;
+        if (Shift)
+            m = m | KeyModifiers.Shift;
+        if (Alt)
+            m = m | KeyModifiers.Alt;
+        return m;
+    }
+
+    /// Adds a key press with the modifier keys held at it (for an input of your own: tests, a recorded input).
+    void AddKey(Key key, KeyModifiers modifiers)
+    {
+        if (!Keys.IsCreated())
+            Keys = List<Key>.Create();
+        if (!Modifiers.IsCreated())
+            Modifiers = List<KeyModifiers>.Create();
+        var held = HeldModifiers();
+        while (Modifiers.Count() < Keys.Count())
+            Modifiers.Add(held);
+        Keys.Add(key);
+        Modifiers.Add(modifiers);
     }
 }
 
@@ -1048,6 +1162,7 @@ struct _UiState
         InFrame = true;
         if (!In.Keys.IsCreated())
             In.Keys = List<Key>.Create();
+        In = _UiStickModifiers(In); // Ctrl, Shift and Alt also when they were held with a key of the frame
         if (FocusSet)
         {
             Focus = FocusNext;
@@ -1116,7 +1231,9 @@ struct _UiState
         {
             int index = FocusOrder.IndexOf(Focus);
             int count = FocusOrder.Count();
-            int next = index < 0 ? (In.Shift ? count - 1 : 0) : (In.Shift ? (index + count - 1) % count : (index + 1) % count);
+            // Shift with the Tab press (not at the end of the frame)
+            bool back = (In.ModifiersAt(In.Keys.IndexOf(Key.Tab)) & KeyModifiers.Shift) != KeyModifiers.None;
+            int next = index < 0 ? (back ? count - 1 : 0) : (back ? (index + count - 1) % count : (index + 1) % count);
             FocusNext = FocusOrder.Get(next);
             FocusSet = true;
             FocusVisible = true;
@@ -1236,6 +1353,22 @@ struct _UiState
         var text = command.Text;
         for (var i = 0; i < text.Length; i += 1)
             h = unchecked((h ^ (uint32)text[i]) * 16777619u);
+        if (command.Kind == UiCommandKind.Image || command.Kind == UiCommandKind.ImagePart)
+        {
+            // which image (its pixels), which part of it, and how often it changed (Image.Changed)
+            var image = command.Image;
+            h = unchecked((h ^ (uint32)(command.Source.X + command.Source.Y * 65599)) * 16777619u);
+            h = unchecked((h ^ (uint32)(command.Source.Width + command.Source.Height * 65599)) * 16777619u);
+            h = unchecked((h ^ (uint32)(image.Width + image.Height * 65599)) * 16777619u);
+            h = unchecked((h ^ image.Changes) * 16777619u);
+            if (image.Pixels.Length > 0)
+            {
+                unsafe
+                {
+                    h = unchecked((h ^ (uint32)(nuint)&image.Pixels[0]) * 16777619u);
+                }
+            }
+        }
         CommandsHash = h;
     }
 
@@ -1919,7 +2052,7 @@ struct _UiState
         if (In.Pressed(Key.Escape))
         {
             ClosePopupsFrom(Popups.Count() - 1);
-            In.Keys.Remove(Key.Escape);
+            In = _UiRemoveKey(In, Key.Escape);
         }
         if (Popups.Count() > 0 && (In.MousePressed || In.RightPressed))
         {
@@ -2818,9 +2951,13 @@ struct _UiState
 
     void EditKeys(uint32 id, ref string text)
     {
-        foreach (var key in In.Keys)
+        for (var ki = 0; ki < In.Keys.Count(); ki += 1)
         {
-            bool select = In.Shift;
+            var key = In.Keys.Get(ki);
+            // the modifier keys held with this press
+            var mods = In.ModifiersAt(ki);
+            bool ctrl = (mods & KeyModifiers.Ctrl) != KeyModifiers.None;
+            bool select = (mods & KeyModifiers.Shift) != KeyModifiers.None;
             switch (key)
             {
             case Key.Left:
@@ -2854,7 +2991,7 @@ struct _UiState
                 select = false;
                 break;
             case Key.A:
-                if (In.Ctrl)
+                if (ctrl)
                 {
                     Anchor = 0;
                     Caret = text.Length;
@@ -2863,7 +3000,7 @@ struct _UiState
                 break;
             case Key.C:
             case Key.X:
-                if (In.Ctrl && Caret != Anchor)
+                if (ctrl && Caret != Anchor)
                 {
                     Clipboard.SetText(text.Substring(Math.Min(Caret, Anchor), Math.Abs(Caret - Anchor)));
                     if (key == Key.X)
@@ -2876,7 +3013,7 @@ struct _UiState
                 }
                 break;
             case Key.V:
-                if (In.Ctrl)
+                if (ctrl)
                 {
                     text = Insert(text, OneLine(Clipboard.GetText()));
                     select = false;
@@ -2895,7 +3032,9 @@ struct _UiState
                 Anchor = Caret;
             BlinkStart = In.Time;
         }
-        if (In.Text.Length > 0 && !In.Ctrl)
+        // with the modifiers of each key (a window's input, UiInput.AddKey) the text has no characters typed with Ctrl;
+        // in an input of the old kind, Ctrl drops it
+        if (In.Text.Length > 0 && (In.Modifiers.IsCreated() || !In.Ctrl))
         {
             text = Insert(text, OneLine(In.Text));
             Anchor = Caret;

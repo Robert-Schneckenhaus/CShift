@@ -1,0 +1,105 @@
+// Standard library: images in the pens of a screen, as the window of AmigaOS draws them (the routines run on every
+// target): an image with a few colors and transparency in pens, a part of it drawn scaled 2x into a buffer of pens
+// (nearest neighbour, transparent pixels keep the background, clipped), and the hash of the commands of a frame,
+// which changes with the part of an image and with Image.Changed. Main returns the number of failed checks.
+// expect-stdout: 2x ok
+// expect-exit: 0
+
+using System;
+using System.Image;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+int Asked;
+
+// the pens of a screen with four colors
+int PenOf(uint32 rgb)
+{
+    Asked += 1;
+    switch (rgb)
+    {
+    case 0xFFFF0000u: return 1;
+    case 0xFF00FF00u: return 2;
+    case 0xFF0000FFu: return 3;
+    default: return 9;
+    }
+}
+
+string Row(uint8[] buffer, int width, int y)
+{
+    var sb = StringBuilder.Create();
+    for (var x = 0; x < width; x += 1)
+        sb.Append(buffer[y * width + x].ToString());
+    return sb.ToString();
+}
+
+uint32 Hash(Ui ui, Image image, Rect source)
+{
+    ui.BeginCommands(UiInput.Create(), 100, 100, 1.0, Font.Metrics(8, 8, 6));
+    ui.DrawImage(image, source, Rect.Create(10, 10, 32, 32));
+    ui.End();
+    return ui.CommandsHash();
+}
+
+int Main()
+{
+    // 4 x 2: red red green transparent / blue half-transparent(alpha 200) red green
+    var image = Image.Create(4, 2);
+    uint32[] pixels = [0xFFFF0000u, 0xFFFF0000u, 0xFF00FF00u, 0x00000000u,
+                       0xFF0000FFu, 0xC8FF0000u, 0xFFFF0000u, 0x7F00FF00u];
+    for (var i = 0; i < 8; i += 1)
+        image.Pixels[i] = pixels[i];
+    var c = _UiChunkyOf(image, PenOf);
+    Check(c.Transparent, "the image has transparent pixels");
+    Check(c.Pens[0] == 1 && c.Pens[2] == 2 && c.Pens[4] == 3 && c.Pens[5] == 1 && c.Opaque[3] == 0 && c.Opaque[7] == 0,
+          "pens and transparency (alpha < 128)");
+    Check(Asked == 4, $"runs of one color ask once ({Asked})"); // red, green, blue, red again
+    Check(_UiChunkyOpaque(c, Rect.Create(0, 0, 2, 2)) && !_UiChunkyOpaque(c, Rect.Create(2, 0, 2, 1)) &&
+          !_UiChunkyOpaque(c, Rect.Create(3, 1, 2, 1)), "opaque parts");
+
+    // the whole image at 2x into a buffer of 8 x 4 pens with the background 7
+    var buffer = new uint8[8 * 4];
+    for (var i = 0; i < buffer.Length; i += 1)
+        buffer[i] = 7;
+    _UiChunkyPart(c, Rect.Create(0, 0, 4, 2), Rect.Create(10, 20, 8, 4), Rect.Create(10, 20, 8, 4), buffer, 8);
+    bool ok = Row(buffer, 8, 0) == "11112277" && Row(buffer, 8, 1) == "11112277" &&
+              Row(buffer, 8, 2) == "33111177" && Row(buffer, 8, 3) == "33111177";
+    Check(ok, $"2x: {Row(buffer, 8, 0)} {Row(buffer, 8, 1)} {Row(buffer, 8, 2)} {Row(buffer, 8, 3)}");
+    Console.WriteLine($"2x {(ok ? "ok" : "wrong")}");
+
+    // clipped: only the area (13, 21) to (16, 22) of the frame, a buffer of 4 x 2 (the columns 1, 2, 2, 3 of the image)
+    var part = new uint8[4 * 2];
+    _UiChunkyPart(c, Rect.Create(0, 0, 4, 2), Rect.Create(10, 20, 8, 4), Rect.Create(13, 21, 4, 2), part, 4);
+    Check(Row(part, 4, 0) == "1220" && Row(part, 4, 1) == "1110", $"clipped: {Row(part, 4, 0)} {Row(part, 4, 1)}");
+    // a part of the image (the green and the transparent pixel) at 3x, and a source past the image
+    var three = new uint8[6 * 3];
+    _UiChunkyPart(c, Rect.Create(2, 0, 2, 1), Rect.Create(0, 0, 6, 3), Rect.Create(0, 0, 6, 3), three, 6);
+    Check(Row(three, 6, 0) == "222000" && Row(three, 6, 2) == "222000", $"3x: {Row(three, 6, 0)}");
+    var past = new uint8[4 * 2];
+    _UiChunkyPart(c, Rect.Create(3, 1, 2, 1), Rect.Create(0, 0, 4, 2), Rect.Create(0, 0, 4, 2), past, 4);
+    Check(Row(past, 4, 0) == "0000", $"outside of the image: {Row(past, 4, 0)}");
+    // rows padded to 16 pixels (as WritePixelArray8 takes them): the second row starts at 16
+    var padded = new uint8[16 * 2];
+    _UiChunkyPart(c, Rect.Create(0, 0, 4, 2), Rect.Create(0, 0, 4, 2), Rect.Create(0, 0, 4, 2), padded, 16);
+    Check(padded[0] == 1 && padded[2] == 2 && padded[16] == 3 && padded[18] == 1 && padded[4] == 0, "rows of 16 bytes");
+
+    // ---- the hash of the commands: the part and the changes of an image count ----
+    var ui = Ui.Create();
+    uint32 a = Hash(ui, image, Rect.Create(0, 0, 2, 2));
+    Check(Hash(ui, image, Rect.Create(0, 0, 2, 2)) == a, "the same frame: the same hash");
+    Check(Hash(ui, image, Rect.Create(2, 0, 2, 2)) != a, "another part of the image: another hash");
+    image.Changed();
+    Check(image.Changes == 1u && Hash(ui, image, Rect.Create(0, 0, 2, 2)) != a, "Image.Changed: another hash");
+    Check(Hash(ui, image.Clone(), Rect.Create(0, 0, 2, 2)) != Hash(ui, image, Rect.Create(0, 0, 2, 2)), "another image: another hash");
+    return Failures;
+}

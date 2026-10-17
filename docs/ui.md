@@ -200,7 +200,7 @@ using (ui.Popup("tile"))                  // the widgets inside only do somethin
 
 **A menu bar** is a row of menus, each a popup below its title; a press on the title opens it, and while one is open
 the mouse moving along the bar opens the others. The shortcuts are only shown: the program handles the keys itself
-(`ui.Input().Ctrl && ui.Input().Pressed(Key.S)`).
+(`ui.Input().Pressed(Key.S, KeyModifiers.Ctrl)`, see [The mouse and the keys](#the-mouse-and-the-keys)).
 
 ```csharp
 using (ui.MenuBar())
@@ -254,7 +254,7 @@ Inside a popup or a dialog, draw with the methods of the Ui, which draw into its
 `ui.DrawImage` (also scaled: `ui.DrawImage(image, source, target)`). `ui.Canvas()` draws into the frame below the
 layers.
 
-## The mouse
+## The mouse and the keys
 
 Every widget, and every `ui.Area`, takes the mouse. What the mouse did with the one placed last:
 
@@ -270,6 +270,23 @@ button (`MouseDown`, `MousePressed`, `MouseReleased`), the right one (`RightDown
 the middle one (`MiddleDown`, `MiddlePressed`, `MiddleReleased`), the wheel (`Wheel`, and `WheelX` sideways), the
 modifier keys (`Ctrl`, `Shift`, `Alt`), the keys pressed (`Keys`, `Pressed(Key.Plus)`) and the text typed (`Text`). A
 press of any button gets a frame of its own.
+
+**Shortcuts.** A frame collects all keys pressed since the last one, so a quick Ctrl+S (Ctrl down, S down and up, Ctrl
+up) can be over before the frame is made - on a slow machine (a frame of a few tenths of a second on an A1200) that is
+a normal keystroke. Each key press keeps the modifier keys held at it (`Modifiers`, `ModifiersAt(i)`), and
+`Pressed(key, modifiers)` asks for a shortcut with exactly these modifiers: `Pressed(Key.S, KeyModifiers.Ctrl)` is
+Ctrl+S but not Ctrl+Shift+S, which is `Pressed(Key.S, KeyModifiers.Ctrl | KeyModifiers.Shift)`. `Ctrl`, `Shift` and
+`Alt` are true when the key is held at the end of the frame or was held with a key pressed in it, so the older
+`Ctrl && Pressed(Key.S)` works too (but also matches Ctrl+Shift+S). The text box takes the modifiers of each key
+(Shift+arrow selects, Ctrl+A/C/X/V), and so does Tab with Shift. An input that a program makes for a test adds keys
+with their modifiers with `input.AddKey(Key.S, KeyModifiers.Ctrl)`; keys added to `Keys` alone count with `Ctrl`,
+`Shift` and `Alt`.
+
+```csharp
+var input = ui.Input();
+if (input.Pressed(Key.S, KeyModifiers.Ctrl)) Save(ref app);
+if (input.Pressed(Key.S, KeyModifiers.Ctrl | KeyModifiers.Shift)) SaveAs(ref app);
+```
 
 `ui.SetCursor(cursor)` sets the mouse pointer for the frame, whatever the widgets ask for: `Cursor.Arrow`, `Text`,
 `Hand`, `Crosshair` (pointing at a tile) and `Move` (moving something):
@@ -443,13 +460,36 @@ The window is on the Workbench screen and can be moved, resized and closed. It n
 intuition.library 39); older versions get `UiError.NotSupported`. What differs from the desktop: the mouse is followed
 only while its button is held (dragging a slider, selecting text), so nothing lights up under it (as with the gadgets of
 AmigaOS) and moving it costs no frame; the text cursor does not blink (the Ui asks for no frames of its own:
-`UiInput.Steady`), while `ui.RequestFrame` works (it waits for the window and `timer.device` together),
-images (`ui.Image`, `DrawImage`) are not drawn, the mouse pointer keeps its shape, and the clipboard stays inside the
-program. The right mouse button is the menu button (the window has no menus of Intuition), the middle one is reported
+`UiInput.Steady`), while `ui.RequestFrame` works (it waits for the window and `timer.device` together), a whole
+frame given as an image (`window.Show(image)`) is not shown, the mouse pointer keeps its shape, and the clipboard stays
+inside the program. The right mouse button is the menu button (the window has no menus of Intuition), the middle one is reported
 too; nothing lights up under the mouse, so tooltips do not show, and the rest of the window is not dimmed behind a
 modal dialog (it still gets no input). The keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys, F1 to F10,
 Ctrl with a letter, `+`, `-`, `,` and `.` (the digits of the number pad come as the digits), and the wheel of
-NewMouse (no horizontal wheel).
+NewMouse (no horizontal wheel). The modifier keys of each key press come from the qualifier of its message, so a
+shortcut typed during a slow frame is not lost (`Pressed(Key.S, KeyModifiers.Ctrl)`).
+
+**Images.** `ui.Image`, `ui.DrawImage` and `Canvas.DrawImage` of a frame with commands are drawn, also scaled and
+clipped. The window keeps each image in the pens of the screen: one byte per pixel, the pen that `ObtainBestPenA`
+gives for its color (each color is asked for once, and the pens are released with the window). Pixels with an alpha
+below 128 are transparent; there is no blending. This copy is made the first time the image is drawn and kept for the
+next frames (the 32 images drawn last), so a frame of hundreds of tiles of one tile set maps no colors; a program that
+changes the pixels of an image afterwards calls `image.Changed()`, and the copy is made again (`Image.Changes` is
+also part of `Ui.CommandsHash`, so the frame is drawn again). A part is drawn by scaling it (nearest neighbour, every
+whole zoom factor copies rows) into a buffer of pens that is written into the frame's bitmap with
+`WriteChunkyPixels` (graphics.library 40, AmigaOS 3.1) or `WritePixelArray8`; if the part has transparent pixels, the
+background is read first (`ReadPixelArray8`) and kept where they are.
+
+The colors are those of the screen: on the Workbench with 8 or 16 colors an image becomes a rough picture in them (a
+tile set looks like a sketch of itself), with 256 colors (AGA, or a graphics card) it comes close. Memory: the copy in
+pens takes one byte per pixel besides the 4 of the image - a tile set of 1024 x 640 takes 640 KB more, next to its
+2.5 MB as an `Image`; on a machine with little memory, an image of only the tiles in use is the better choice.
+
+How fast: in FS-UAE (an A1200 with the AROS ROM, the 4 colors of its Workbench), an area of 320 x 192 full of tiles
+of 32 x 32 (a tile set of 16 x 16 at zoom 2; 60 tiles, all of them different from the frame before) takes about 1.2 s
+per frame, of which about 0.6 s is the writing of the pens by AROS (`WriteChunkyPixels`), about 0.4 s the scaling
+and 0.15 s the commands of the 60 tiles; the rest of such a frame takes about 0.1 s. A 640 x 400 area is about 4 times as much. This was not
+measured on a real A1200 with AmigaOS 3.x, whose `WriteChunkyPixels` may well be faster than the one of AROS.
 
 **Speed.** A 68020 at 14 MHz (A1200) computes a frame of [demo-ui](../demo-ui/README.md) (about 30 widgets) in about a
 quarter of a second; drawing it takes another tenth. A frame that draws the same as the one in the window (same
@@ -461,8 +501,9 @@ out of the code that runs for every frame too (`$"{x:F0}"` of a double costs som
 
 `ui.BeginCommands(input, width, height, scale, font)` starts a frame that is not drawn but recorded: after `ui.End()`,
 `ui.Commands()` holds the drawing operations of the frame in order (`UiCommand`: `Clear`, `FillRect`,
-`FillRoundRect`, `StrokeRoundRect`, `FillCircle`, `Line`, `Text`, `Image`, `ImagePart` (a part of an image, scaled),
-`Clip`). The layers of popups and dialogs come after the rest of the frame. That is how the window of AmigaOS
+`FillRoundRect`, `StrokeRoundRect`, `FillCircle`, `Line`, `Text`, `Image`, `ImagePart` (a part of an image, scaled:
+`Source` is the part, `Rect` where it goes), `Clip`). A command of an image holds the `Image` itself (its pixels are
+shared, not copied); `Ui.CommandsHash` includes which image it is, the part and `Image.Changes`. The layers of popups and dialogs come after the rest of the frame. That is how the window of AmigaOS
 works, and how a renderer of your own gets the frames (a terminal, a display without pixels to spare, a test).
 `font` gives the sizes of the text; `Font.Metrics(width, height, ascent)` is a font of which only the sizes are known.
 
