@@ -29,6 +29,9 @@ struct App
     int MenuTask;        // the task whose context menu is open
     bool Confirm;        // the dialog before "Remove done" is shown
     bool ConfirmQuit;    // the dialog before quitting with open tasks is shown
+    int FileMode;        // the file dialog that is shown: 0 none, 1 import tasks, 2 export them
+    string FilePath;     // the file of the last import or export
+    string Message;      // what the last import or export did
     bool Busy;           // the spinner turns
     Image Icon;          // two tiles of 16 x 16 pixels (a checked and an open box), drawn twice as large
     bool Quit;
@@ -38,6 +41,38 @@ void SetDark(Ui ui, ref App app, bool dark)
 {
     app.Dark = dark;
     ui.SetTheme(app.Dark ? Theme.Dark() : Theme.Light());
+}
+
+// Adds the tasks of a text file (one per line, "[x] " before a done one); tells what it did.
+string ImportTasks(ref App app)
+{
+    var read = File.ReadAllText(app.FilePath);
+    if (read is not string text)
+        return "Cannot read " + app.FilePath;
+    int count = 0;
+    foreach (var line in text.Split('\n'))
+    {
+        var title = line.Trim();
+        bool done = title.StartsWith("[x] ");
+        if (done)
+            title = title[4..].Trim();
+        if (title.Length == 0)
+            continue;
+        app.Tasks.Add(Task { Title = title.ToString(), Done = done, Priority = 1 });
+        count += 1;
+    }
+    return $"{count} tasks imported";
+}
+
+// Writes the tasks into a text file (in the browser: a download).
+string ExportTasks(ref App app)
+{
+    var sb = StringBuilder.Create();
+    foreach (var task in app.Tasks)
+        sb.Append((task.Done ? "[x] " : "") + task.Title + "\n");
+    if (File.WriteAllText(app.FilePath, sb.ToString()) is error e)
+        return "Cannot write " + app.FilePath;
+    return $"{app.Tasks.Count()} tasks exported to {Path.GetFileName(app.FilePath)}";
 }
 
 // The icon: a box with a check mark and an empty box, side by side, with transparent corners (16 x 16 each).
@@ -117,6 +152,10 @@ void Draw(Ui ui, ref App app)
     {
         using (ui.Menu("File"))
         {
+            if (ui.MenuItem("Import tasks..."))
+                app.FileMode = 1;
+            if (ui.MenuItem("Export tasks..."))
+                app.FileMode = 2;
             if (ui.MenuItem("Remove done..."))
                 app.Confirm = true;
             if (ui.MenuItem("Quit", "Ctrl+Q"))
@@ -267,6 +306,21 @@ void Draw(Ui ui, ref App app)
         }
     }
 
+    // importing and exporting the tasks: a text file, one task per line ("[x] " before a done one); in the browser the
+    // file comes from the browser's file chooser, and the export is a download
+    if (app.FileMode != 0)
+    {
+        bool import = app.FileMode == 1;
+        var result = ui.FileDialog("tasks", import ? "Import tasks" : "Export tasks", ref app.FilePath,
+                                   import ? FileDialogMode.Open : FileDialogMode.Save);
+        if (result == UiDialogResult.Ok)
+            app.Message = import ? ImportTasks(ref app) : ExportTasks(ref app);
+        if (result != UiDialogResult.None)
+            app.FileMode = 0;
+    }
+    if (app.Message.Length > 0)
+        ui.Note(app.Message);
+
     if (app.ConfirmQuit)
     {
         using (ui.Modal("quit", "Quit?"))
@@ -314,7 +368,7 @@ int Main(string[] args)
     window.ConfirmClose(true); // closing the window asks first (AskQuit)
     var ui = Ui.Create();
     var app = App { Tasks = List<Task>.Create(), NewTitle = "", Selected = -1, Zoom = 1.0, Priorities = List<string>.Create(), MenuTask = -1,
-                    Icon = MakeIcon() };
+                    Icon = MakeIcon(), FilePath = "tasks.txt", Message = "" };
     app.Priorities.Add("Low");
     app.Priorities.Add("Normal");
     app.Priorities.Add("High");

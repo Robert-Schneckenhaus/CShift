@@ -90,6 +90,15 @@ jobs:
       - name: Run tests
         run: PATH="$LLVM_PREFIX/bin:$PATH" CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
+      # System.Ui in real browsers: Chromium and Firefox of Playwright (tests/ui-browser-check.mjs; run_tests.sh skips it
+      # where Playwright is not installed)
+      - name: System.Ui in Chromium and Firefox (Playwright)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium firefox
+          build/stage2/cshiftc publish tests/ui/browser.cshift -o "$RUNNER_TEMP/ui-browser.html"
+          node tests/ui-browser-check.mjs "$RUNNER_TEMP/ui-browser.html"
+
       # System.Ui with a real window: X11 (libX11 is loaded at run time) under a virtual X server
       - name: Open a window (X11, Xvfb)
         run: |

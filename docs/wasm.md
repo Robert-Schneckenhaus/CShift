@@ -110,7 +110,7 @@ python3 -m http.server                    # open http://localhost:8000/
 
 | | In the browser |
 |---|---|
-| WASI | the console goes to the page (and to `console`), the clock, arguments, an in-memory file system with the files given to `run()` (`files: { "/data/map.json": "data/map.json" }`: fetched before the start; `publish` puts the `assets` there) |
+| WASI | the console goes to the page (and to `console`), the clock, arguments, an in-memory file system with the files given to `run()` (`files: { "/data/map.json": "data/map.json" }`: fetched before the start; `publish` puts the `assets` there). The user's files that `Ui.FileDialog` opens with the browser's file chooser are copied into `/home/web_user/files/`; the files that the program writes into `/home/web_user/downloads/` become downloads when it waits for input (or ends); `run()`'s option `onDownload(name, bytes)` gets them instead ([ui.md](ui.md#in-the-browser)) |
 | GLFW | the window is the `<canvas>`; keyboard, mouse, wheel and character callbacks; `glfwGetKey`, `glfwGetCursorPos`, `glfwGetTime`, the framebuffer size. Esc and `glfwSetWindowShouldClose` end the loop as on the desktop. |
 | OpenGL | WebGL 2: the functions of OpenGL 3.3 core that WebGL 2 has, called directly (`extern "C" void glClear(uint32 mask);`) or through `glfwGetProcAddress`; GLSL `#version 330 core` becomes `#version 300 es`. From OpenGL 1.1: `glDrawPixels`, `glPixelZoom`, `glRasterPos2f` (a software renderer's picture, drawn as a texture). |
 | the loop | `glfwPollEvents` (and `glfwWaitEvents`) suspends the program until the browser's next frame |

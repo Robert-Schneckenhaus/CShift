@@ -35,6 +35,9 @@ extern "C" void cshift_ui_title(char* title);
 extern "C" void cshift_ui_close();
 extern "C" void cshift_ui_clipboard_set(char* text, int length);
 extern "C" int cshift_ui_clipboard_get(char* buffer, int capacity);
+extern "C" void cshift_ui_file_arm(int mode, int x, int y, int width, int height);
+extern "C" int cshift_ui_file_result(char* buffer, int capacity);
+extern "C" void cshift_ui_confirm_close(int confirm);
 
 bool _UiWebOpen;
 
@@ -147,8 +150,49 @@ struct _UiOs
         }
     }
 
-    // the page cannot be closed by the program: closing the tab is not asked about
-    static void ConfirmClose(bool confirm) { }
+    // the page cannot be kept open by the program: with confirm, closing the tab (or leaving the page) makes the browser
+    // ask the user with a question of its own (beforeunload); the program gets no CloseRequested
+    static void ConfirmClose(bool confirm)
+    {
+        if (_UiWebOpen)
+            cshift_ui_confirm_close(confirm ? 1 : 0);
+    }
+
+    // the user's files come through the browser's file chooser (Ui.FileDialog)
+    static bool FilePicker() { return _UiWebOpen; }
+
+    // the button that opens the browser's file chooser, in this frame (mode: FileDialogMode)
+    static void FileArm(int mode, Rect button)
+    {
+        if (_UiWebOpen)
+            cshift_ui_file_arm(mode, button.X, button.Y, button.Width, button.Height);
+    }
+
+    // what the file chooser gave: -1 nothing yet, 0 cancelled, 1 the paths of the files (a folder: the folder first)
+    static int FileResult(List<string> paths)
+    {
+        if (!_UiWebOpen)
+            return -1;
+        unsafe
+        {
+            var buffer = new uint8[4096];
+            int length = cshift_ui_file_result((char*)&buffer[0], buffer.Length);
+            if (length > buffer.Length)
+            {
+                buffer = new uint8[length];
+                length = cshift_ui_file_result((char*)&buffer[0], buffer.Length);
+            }
+            if (length < 0)
+                return length == -2 ? 0 : -1; // -1: nothing, -2: cancelled
+            string text = string.FromBytes(buffer[..Math.Clamp(length, 0, buffer.Length)].ToArray());
+            foreach (var line in text.Split('\n'))
+            {
+                if (line.Length > 0)
+                    paths.Add(line.ToString());
+            }
+            return 1;
+        }
+    }
 
     static void Close()
     {

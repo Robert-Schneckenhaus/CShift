@@ -6,6 +6,43 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- `System.Ui`: **the user's files in the browser.** `Ui.FileDialog(id, title, ref path, mode)` with `FileDialogMode`
+  `Open` (the call without a mode), `OpenMany`, `Save` and `Folder`, and `Ui.FileDialogPaths(id)` for the files of
+  the last OK.
+  - On the desktop: `OpenMany` chooses several files with clicks, `Save` focuses the name and asks before replacing a
+    file, `Folder` lists only folders and chooses the one shown.
+  - In the browser (`--backend wasm`), opening uses the browser's file chooser: the dialog tells the page where its
+    button "Choose file..." is, and the page opens the chooser in the handler of the click on it, the only moment a
+    browser allows it. The chosen files are copied into `/home/web_user/files/` (several side by side; a folder with
+    its own folders), and `path` is the first file (the folder). "Files of the page" still shows the page's own files.
+  - Saving in the browser asks only for a name and gives `/home/web_user/downloads/<name>`: a file written there and
+    closed is offered as a download when the program waits for input again, once per file, also when it was written
+    in several steps. `run()` of web/cshift.js takes `onDownload(name, bytes)` to get them instead.
+  - `Window.ConfirmClose(true)` in the browser makes it ask before the tab is closed (`beforeunload`, with the
+    browser's own question).
+- `System.Ui`: **reliable mouse and touch input in the browser.** The canvas takes pointer events, so touch (phones,
+  tablets), pens and touchpads work like the mouse: before, a finger on a slider scrolled the page instead. While a
+  button is held the canvas captures the pointer (a drag goes on outside of it), the buttons follow `event.buttons`
+  (a missed release does not leave one stuck) and are let go when the window loses the focus, and the browser neither
+  scrolls, zooms, selects text nor drags the canvas (`touch-action: none`, `user-select: none`). The position takes
+  the border of the canvas and CSS scaling into account (any device pixel ratio, a smaller canvas on a phone).
+- `System.Ui`: **a click within one frame.** When the button goes down and up again before the frame is made (a slow
+  frame, a tap), a slider now takes the value at the click, a scroll bar jumps, the text cursor goes there, and
+  `Ui.Held()`/`Ui.RightHeld()` are true in that frame (and in the frame of the release). A click or a key gets one more
+  frame at once, so what it changed above the widget is shown without waiting for the next input; a file dialog that
+  closes does too.
+- [demo-ui](demo-ui/README.md): File > Import tasks... and Export tasks... (a text file, one task per line): in the
+  browser the file comes from the browser's file chooser, and the export is a download.
+
+### Tools
+- Tests: `stdlib_ui_click` (a quick click on a slider, an area, a text box, a scroll bar), the modes of
+  `stdlib_ui_filedialog`, and `tests/ui-browser-check.mjs`: `tests/ui/browser.cshift` published as a page and driven
+  in real browsers with Playwright at the pixel ratios 1, 1.25, 1.5 and 2 - dragging a slider with the mouse and by
+  touch, a quick click, a click of 100 ms and a tap, opening one file, two files and a folder with the file chooser,
+  and saving a download. Checked here with Chromium (Firefox and WebKit are not installed in this environment); CI
+  installs Playwright with Chromium and Firefox and runs it in both. Not checked: Edge, Safari, real phones, pens.
+
 ## [0.36] - 2026-10-17
 
 ### Standard library
