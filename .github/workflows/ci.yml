@@ -97,7 +97,7 @@ jobs:
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium firefox
           build/stage2/cshiftc publish tests/ui/browser.cshift -o "$RUNNER_TEMP/ui-browser.html"
-          node tests/ui-browser-check.mjs "$RUNNER_TEMP/ui-browser.html"
+          CSHIFT_BROWSERS=chromium,firefox node tests/ui-browser-check.mjs "$RUNNER_TEMP/ui-browser.html"
 
       # System.Ui with a real window: X11 (libX11 is loaded at run time) under a virtual X server
       - name: Open a window (X11, Xvfb)
