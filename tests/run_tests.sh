@@ -188,7 +188,16 @@ done
 # Elsewhere (no libasound, no sound device, another target) the program only has to end well.
 echo "== audio"
 mkdir -p "$TMP/audio-home"
-if ! "$COMPILER" $OPT "${CC_ARGS[@]}" "$DIR/audio/tone.cshift" -o "$TMP/audio.exe" 2> "$TMP/audio.err"; then
+case "${CSHIFT_TARGET:-}:${CSHIFT_BACKEND:-}" in
+    wasm32-*:wasm) audio_skip="" ;;
+    # the functions of the browser (cshift_audio_*) are imports that only the wasm backend makes; clang's wasm-ld
+    # cannot link them (as for System.Ui)
+    wasm32-*) audio_skip="for ${CSHIFT_TARGET} with clang (System.Audio in the browser needs --backend wasm)" ;;
+    *) audio_skip="" ;;
+esac
+if [ -n "$audio_skip" ]; then
+    echo "audio: skipped $audio_skip"
+elif ! "$COMPILER" $OPT "${CC_ARGS[@]}" "$DIR/audio/tone.cshift" -o "$TMP/audio.exe" 2> "$TMP/audio.err"; then
     report_fail "audio" "compilation failed: $(head -n 3 "$TMP/audio.err" | tr '\n' ' ')"
 else
     printf 'pcm.!default { type file; slave.pcm "null"; file "%s/played-%%c.raw"; format "raw" }\n' "$TMP/audio-home" \
