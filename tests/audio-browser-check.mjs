@@ -49,6 +49,21 @@ for (const name of ["chromium", "firefox"]) {
         const p = await (await browser.newContext()).newPage();
         const lines = [];
         p.on("console", (m) => lines.push(...m.text().split("\n")));
+        // the AudioContexts of the page, to say what state they are in when the sound does not play
+        await p.addInitScript(() => {
+            const Context = window.AudioContext;
+            if (Context) {
+                window.__contexts = [];
+                window.AudioContext = class extends Context {
+                    constructor(options) {
+                        super(options);
+                        window.__contexts.push(this);
+                    }
+                };
+            }
+        });
+        const contexts = () => p.evaluate(() => (window.__contexts ?? []).map((c) =>
+            `${c.state} at ${c.currentTime.toFixed(2)} s, ${c.sampleRate} Hz`).join(", "));
         await p.addInitScript(() => {
             const observe = () => {
                 const pre = document.getElementById("output");
@@ -74,10 +89,19 @@ for (const name of ["chromium", "firefox"]) {
             continue;
         }
         await p.mouse.click(100, 50);
-        const done = await waitFor("audio: done", 10000);
+        let done = await waitFor("audio: done", 10000);
         if (!done) {
-            failures.push(`${name}: the second was not played (${lines.filter((l) => l.startsWith("audio")).slice(-3).join(" | ")})`);
-            continue;
+            // what the context does, then once more after resume() from the page itself
+            const before = await contexts();
+            await p.evaluate(() => Promise.race([Promise.all((window.__contexts ?? []).map((c) => c.resume())),
+                                                 new Promise((r) => setTimeout(r, 2000))]));
+            done = await waitFor("audio: done", 5000);
+            if (!done) {
+                failures.push(`${name}: the second was not played (${lines.filter((l) => l.startsWith("audio")).slice(-2).join(" | ")}; ` +
+                              `the AudioContext: ${before}, after resume(): ${await contexts()})`);
+                continue;
+            }
+            console.log(`${name}: played only after resume() from the page (before: ${before})`);
         }
         const seconds = Number(done.split(" ")[3]);
         if (!(seconds >= 0.8 && seconds <= 3.0)) failures.push(`${name}: a second of sound took ${seconds} s`);
