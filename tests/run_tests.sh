@@ -32,7 +32,9 @@
 #   3b. tests/query/*.cshift                 -> "cshiftc query" (hover, definition) and "cshiftc check"; the tests of the
 #      VS Code extension (vscode-extension/test, if node is installed); tests/publish/*/: "cshiftc publish", the page
 #      run by node (tests/publish-run.mjs); "cshiftc serve" (tests/serve-check.mjs); System.Ui in the browser
-#      (tests/ui/web.cshift, run by tests/ui-web-check.mjs).
+#      (tests/ui/web.cshift, run by tests/ui-web-check.mjs); System.Audio in the browser (tests/audio-web-check.mjs,
+#      tests/audio-browser-check.mjs).
+#   2b. tests/audio/tone.cshift              -> System.Audio: on Linux the samples must arrive in ALSA's file plugin.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -179,6 +181,30 @@ for file in "$DIR"/cases/*.cshift; do
         report_ok "$name"
     fi
 done
+
+# --- 2b. System.Audio (tests/audio/tone.cshift) -----------------------------------------------------------------
+# The program plays a pattern and saves what it wrote. On Linux the sound goes into the file plugin of ALSA (a HOME of
+# its own with an .asoundrc; %c: a file per number of channels), and the file must hold the samples the program wrote.
+# Elsewhere (no libasound, no sound device, another target) the program only has to end well.
+echo "== audio"
+mkdir -p "$TMP/audio-home"
+if ! "$COMPILER" $OPT "${CC_ARGS[@]}" "$DIR/audio/tone.cshift" -o "$TMP/audio.exe" 2> "$TMP/audio.err"; then
+    report_fail "audio" "compilation failed: $(head -n 3 "$TMP/audio.err" | tr '\n' ' ')"
+else
+    printf 'pcm.!default { type file; slave.pcm "null"; file "%s/played-%%c.raw"; format "raw" }\n' "$TMP/audio-home" \
+        > "$TMP/audio-home/.asoundrc"
+    HOME="$TMP/audio-home" "${RUNNER[@]}" "$TMP/audio.exe" "$TMP/audio-home/written.raw" > "$TMP/audio.out" 2> "$TMP/audio.err"
+    code=$?
+    if [ "$code" -ne 0 ]; then
+        report_fail "audio" "exit code $code: $(tr -d '\r' < "$TMP/audio.out" | tr '\n' ' ')"
+    elif grep -q "frames played" "$TMP/audio.out" && [ -f "$TMP/audio-home/played-2.raw" ] &&
+         ! cmp -s "$TMP/audio-home/played-2.raw" "$TMP/audio-home/written.raw"; then
+        report_fail "audio" "ALSA got other samples than the program wrote"
+    else
+        report_ok "audio"
+        echo "audio: $(tr -d '\r' < "$TMP/audio.out" | head -n 1 | sed 's/^audio: //')$([ -f "$TMP/audio-home/played-2.raw" ] && echo ", the same samples in ALSA's file")"
+    fi
+fi
 
 # --- 3. projects (cshiftc new/build/run with cshift.json) -----------------------
 #   tests/projects/<name>/ is copied to a temp directory first (builds create bin/ or out/).
@@ -477,6 +503,29 @@ elif [ -n "$NODE" ]; then
         report_fail "ui in the browser" "$(head -n 3 "$TMP/ui-web.out" | tr '\n' ' ')"
     else
         report_ok "ui in the browser"
+    fi
+    # System.Audio in the browser: tests/audio/tone.cshift from the wasm backend, with web/cshift.js and a pretended
+    # AudioContext (tests/audio-web-check.mjs compares the AudioBuffers with what the program wrote)
+    check=("$DIR/audio-web-check.mjs" "$TMP/audio-web.wasm")
+    if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/audio-web-check.mjs")" "$(cygpath -w "$TMP/audio-web.wasm")"); fi
+    if ! "$COMPILER" --backend wasm --target wasm32-wasi "$DIR/audio/tone.cshift" -o "$TMP/audio-web.wasm" > /dev/null 2> "$TMP/audio-web.err"; then
+        report_fail "audio in the browser" "compilation failed: $(head -n 3 "$TMP/audio-web.err" | tr '\n' ' ')"
+    elif ! "$NODE" --no-warnings "${check[@]}" > "$TMP/audio-web.out" 2>&1; then
+        report_fail "audio in the browser" "$(head -n 4 "$TMP/audio-web.out" | tr '\n' ' ')"
+    else
+        report_ok "audio in the browser"
+    fi
+    # System.Audio in real browsers (Playwright): tests/audio/browser.cshift, a second of sound with Web Audio
+    check=("$DIR/audio-browser-check.mjs" "$TMP/audio-browser.html")
+    if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/audio-browser-check.mjs")" "$(cygpath -w "$TMP/audio-browser.html")"); fi
+    if ! "$COMPILER" publish "$DIR/audio/browser.cshift" -o "$TMP/audio-browser.html" > /dev/null 2> "$TMP/audio-browser.err"; then
+        report_fail "audio in real browsers" "publish failed: $(head -n 3 "$TMP/audio-browser.err" | tr '\n' ' ')"
+    elif ! "$NODE" --no-warnings "${check[@]}" > "$TMP/audio-browser.out" 2>&1; then
+        report_fail "audio in real browsers" "$(grep -E 'FAILED|Error' "$TMP/audio-browser.out" | head -n 4 | tr '\n' ' ')"
+    elif grep -q "skipped" "$TMP/audio-browser.out"; then
+        echo "audio in real browsers: $(tail -n 1 "$TMP/audio-browser.out")"
+    else
+        report_ok "audio in real browsers ($(tail -n 1 "$TMP/audio-browser.out" | sed 's/.*(//; s/)//'))"
     fi
     # System.Ui in real browsers (Playwright, if it is installed): tests/ui/browser.cshift as a page of "cshiftc
     # publish", driven by tests/ui-browser-check.mjs (the mouse, touch, pixel ratios, the file chooser, a download)

@@ -1,0 +1,184 @@
+// Sound output: AudioOutput plays 16-bit samples. The operating system's part is _AudioOs, with one version per layer:
+// stdlib/os/posix/audio.cshift (Linux: ALSA, loaded when the output opens), stdlib/os/windows/audio.cshift (waveOut),
+// stdlib/os/wasi/audio.cshift (the browser: Web Audio, given by web/cshift.js) and stdlib/amiga/audio.cshift (none yet).
+
+namespace System.Audio;
+
+using System;
+
+//! Sound output: [AudioOutput] plays samples that the program makes (a synthesizer, a music player, the sounds of a
+//! game). Windows (waveOut), Linux (ALSA; with PulseAudio or PipeWire through their ALSA plugin) and the browser (Web
+//! Audio, --backend wasm). The program writes the samples ahead of time into a buffer of the output and refills it
+//! regularly, for example once a frame of a [System.Ui.Window] (with [System.Ui.Ui.RequestFrame]); no thread is
+//! needed.
+
+/// The errors of opening an [AudioOutput].
+error AudioError
+{
+    /// The target has no sound output: WebAssembly outside of a browser, AmigaOS.
+    NotSupported = 1,
+    /// There is no device to play on (Linux: libasound is missing, or no sound card or sound server; macOS, which
+    /// has no ALSA, for now).
+    NoDevice = 2,
+    /// The device refused the format (the sample rate or the number of channels), or it is in use.
+    CannotOpen = 3
+}
+
+/// The sound output: signed 16-bit samples at a sample rate, with 1 (mono) or 2 (stereo, left and right
+/// interleaved) channels. One output at a time.
+///
+/// ```
+/// using var output = try AudioOutput.Open(44100, 1);
+/// var samples = new int16[output.Writable()];
+/// for (var i = 0; i < samples.Length; i += 1)
+///     samples[i] = (int16)(8000.0 * Math.Sin(2.0 * Math.PI * 440.0 * (double)i / 44100.0));   // A4
+/// output.Write(samples);
+/// while (output.Queued() > 0) ...   // the program goes on while it plays
+/// ```
+///
+/// A frame is one sample of each channel. [AudioOutput.Writable] says how many frames fit into the buffer now:
+/// writing more ahead does not wait, it only takes what fits. When the buffer runs empty, the output plays silence
+/// until the next write. [AudioOutput.Queued] is the number of frames written but not heard yet, so the frame being
+/// heard is the number of frames written minus that (to show where a song is).
+struct AudioOutput : IDisposable
+{
+    bool _open;
+    int _rate;
+    int _channels;
+
+    /// Opens the output for `sampleRate` frames a second (8000 to 192000; 44100 and 48000 work everywhere) and
+    /// `channels` channels (1 or 2), with a buffer of about a quarter of a second.
+    /// @error AudioError.NotSupported the target has no sound output.
+    /// @error AudioError.NoDevice there is no sound device.
+    /// @error AudioError.CannotOpen the device does not take the format, or another output is open.
+    /// @panics when `sampleRate` or `channels` is out of range.
+    static AudioError<AudioOutput> Open(int sampleRate, int channels)
+    {
+        return Open(sampleRate, channels, 250);
+    }
+
+    /// Opens the output with a buffer of `bufferMilliseconds` (20 to 2000): a longer buffer needs to be refilled less
+    /// often, a shorter one is heard sooner after a write.
+    /// @error AudioError.NotSupported the target has no sound output.
+    /// @error AudioError.NoDevice there is no sound device.
+    /// @error AudioError.CannotOpen the device does not take the format, or another output is open.
+    /// @panics when `sampleRate`, `channels` or `bufferMilliseconds` is out of range.
+    static AudioError<AudioOutput> Open(int sampleRate, int channels, int bufferMilliseconds)
+    {
+        if (sampleRate < 8000 || sampleRate > 192000)
+            Environment.Panic("AudioOutput.Open: the sample rate " + sampleRate + " is not in 8000..192000");
+        if (channels < 1 || channels > 2)
+            Environment.Panic("AudioOutput.Open: " + channels + " channels (1 or 2)");
+        if (bufferMilliseconds < 20 || bufferMilliseconds > 2000)
+            Environment.Panic("AudioOutput.Open: a buffer of " + bufferMilliseconds + " ms is not in 20..2000");
+        if (!_AudioOs.Supported())
+            return error("this target has no sound output", AudioError.NotSupported);
+        int frames = (int)((int64)sampleRate * bufferMilliseconds / 1000);
+        switch (_AudioOs.Open(sampleRate, channels, frames))
+        {
+        case 0:
+            return AudioOutput { _open = true, _rate = sampleRate, _channels = channels };
+        case 1:
+            return error("this target has no sound output", AudioError.NotSupported);
+        case 2:
+            return error("there is no sound device", AudioError.NoDevice);
+        case 4:
+            return error("only one sound output can be open at a time", AudioError.CannotOpen);
+        default:
+            return error("the sound device does not take " + sampleRate + " Hz with " + channels + " channels",
+                         AudioError.CannotOpen);
+        }
+    }
+
+    /// The frames a second.
+    int SampleRate() { return _rate; }
+
+    /// The channels (1 or 2).
+    int Channels() { return _channels; }
+
+    /// True until [AudioOutput.Close].
+    bool IsOpen() { return _open; }
+
+    /// The number of frames that can be written now (0 while paused).
+    int Writable()
+    {
+        if (!_open)
+            return 0;
+        return _AudioOs.Writable();
+    }
+
+    /// Writes samples (`channels` per frame, interleaved): as many frames as [AudioOutput.Writable] allows now. Returns
+    /// the number of frames written; the rest of the samples were not taken.
+    int Write(ReadOnlySlice<int16> samples)
+    {
+        if (!_open)
+            return 0;
+        int frames = Math.Min(samples.Length / _channels, _AudioOs.Writable());
+        if (frames <= 0)
+            return 0;
+        unsafe
+        {
+            return _AudioOs.Write((int16*)samples.Ptr(), frames);
+        }
+    }
+
+    /// Writes 8-bit signed samples (a byte from -128 to 127 each, as on the Amiga): like [AudioOutput.Write], they
+    /// become 16-bit samples (times 256).
+    int WriteSigned8(ReadOnlySlice<uint8> samples)
+    {
+        if (!_open)
+            return 0;
+        int frames = Math.Min(samples.Length / _channels, _AudioOs.Writable());
+        if (frames <= 0)
+            return 0;
+        int count = frames * _channels;
+        var wide = new int16[count];
+        for (var i = 0; i < count; i += 1)
+            wide[i] = (int16)((int)(int8)samples[i] * 256);
+        unsafe
+        {
+            return _AudioOs.Write(&wide[0], frames);
+        }
+    }
+
+    /// The number of frames written but not heard yet.
+    int Queued()
+    {
+        if (!_open)
+            return 0;
+        return _AudioOs.Queued();
+    }
+
+    /// Pauses the output: what is queued is kept and plays on with [AudioOutput.Resume].
+    void Pause()
+    {
+        if (_open)
+            _AudioOs.Pause(true);
+    }
+
+    /// Goes on after [AudioOutput.Pause].
+    void Resume()
+    {
+        if (_open)
+            _AudioOs.Pause(false);
+    }
+
+    /// Drops the frames that are queued: the output is silent at once (to stop a song). It also ends a pause.
+    void Clear()
+    {
+        if (_open)
+            _AudioOs.Clear();
+    }
+
+    /// Stops the output; another one can be opened then. The same as [AudioOutput.Dispose].
+    void Close()
+    {
+        if (!_open)
+            return;
+        _open = false;
+        _AudioOs.Close();
+    }
+
+    /// Stops the output.
+    void Dispose() { Close(); }
+}

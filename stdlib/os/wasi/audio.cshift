@@ -1,0 +1,66 @@
+// The sound part of the operating system layer on WebAssembly for System.Audio (stdlib/audio.cshift). In the browser it
+// is Web Audio: the functions below are imported from "env" and given by web/cshift.js. Each write becomes an
+// AudioBuffer that is started right after the one before it (on the clock of the AudioContext), so the program does
+// not need a thread or a worklet. Browsers start the sound only after the user clicked or pressed a key on the page:
+// until then the output waits (the context is suspended), and Queued stays where it is. Without a browser (node,
+// wasmtime) cshift_audio_open is missing and the output reports AudioError.NotSupported.
+//
+// The functions of the host:
+//   int cshift_audio_open(int rate, int channels, int frames)   0: open, 1: no Web Audio, 3: the format is refused
+//   int cshift_audio_writable()                                frames that fit into the buffer now
+//   void cshift_audio_write(void* samples, int frames)         interleaved int16 (little endian)
+//   int cshift_audio_queued()                                  frames written but not heard yet
+//   void cshift_audio_pause(int pause), void cshift_audio_clear(), void cshift_audio_close()
+
+namespace System.Audio;
+
+using System;
+
+extern "C" int cshift_audio_open(int rate, int channels, int frames);
+extern "C" int cshift_audio_writable();
+extern "C" void cshift_audio_write(void* samples, int frames);
+extern "C" int cshift_audio_queued();
+extern "C" void cshift_audio_pause(int pause);
+extern "C" void cshift_audio_clear();
+extern "C" void cshift_audio_close();
+
+bool _AudioWebOpen;
+
+struct _AudioOs
+{
+    static bool Supported() { return true; }
+
+    // 0: open, 1: not supported (no browser), 2: no device, 3: the format is refused, 4: an output is already open
+    static int Open(int rate, int channels, int frames)
+    {
+        if (_AudioWebOpen)
+            return 4;
+        int code = cshift_audio_open(rate, channels, frames);
+        if (code == 0)
+            _AudioWebOpen = true;
+        return code;
+    }
+
+    static int Writable() { return cshift_audio_writable(); }
+
+    static int Write(int16* samples, int frames)
+    {
+        unsafe
+        {
+            cshift_audio_write((void*)samples, frames);
+        }
+        return frames;
+    }
+
+    static int Queued() { return cshift_audio_queued(); }
+    static void Pause(bool pause) { cshift_audio_pause(pause ? 1 : 0); }
+    static void Clear() { cshift_audio_clear(); }
+
+    static void Close()
+    {
+        if (!_AudioWebOpen)
+            return;
+        cshift_audio_close();
+        _AudioWebOpen = false;
+    }
+}

@@ -1,0 +1,241 @@
+// The sound part of the operating system layer on Windows for System.Audio (stdlib/audio.cshift), with waveOut of
+// winmm (on Windows 10 and 11 it plays through WASAPI, the shared mode of the default device). The samples are copied
+// into a ring of native memory of the size of the buffer; each write hands its frames to waveOutWrite in blocks of at
+// most an eighth of the buffer (a WAVEHDR each, at most _AudioBlocks of them in flight), so that the space of the
+// first blocks is free again while the others still play. Writable is what is left of the ring and of the headers;
+// Queued is what was handed over minus the position of the device (waveOutGetPosition).
+
+namespace System.Audio;
+
+using System;
+
+link "winmm";
+
+extern "C" uint32 waveOutOpen(void** device, uint32 deviceId, void* format, nuint callback, nuint instance, uint32 flags);
+extern "C" uint32 waveOutClose(void* device);
+extern "C" uint32 waveOutPrepareHeader(void* device, void* header, uint32 size);
+extern "C" uint32 waveOutUnprepareHeader(void* device, void* header, uint32 size);
+extern "C" uint32 waveOutWrite(void* device, void* header, uint32 size);
+extern "C" uint32 waveOutReset(void* device);
+extern "C" uint32 waveOutPause(void* device);
+extern "C" uint32 waveOutRestart(void* device);
+extern "C" uint32 waveOutGetPosition(void* device, void* time, uint32 size);
+extern "C" void* malloc(nuint size);
+extern "C" void free(void* memory);
+
+// the blocks that can be in flight at once
+const int _AudioBlocks = 32;
+
+// The state of the output (zero until the first Open).
+struct _AudioWave
+{
+    bool Open;
+    bool Paused;
+    void* Device;
+    int Channels;
+    int Capacity;          // the frames of the ring
+    uint8* Ring;           // Capacity frames of 16-bit samples
+    uint8* Headers;        // _AudioBlocks WAVEHDRs
+    int HeaderSize;
+    bool[] Busy;           // the header was handed to waveOutWrite (and is prepared)
+    int[] Frames;          // the frames of each busy header
+    int Next;              // the header the next block takes
+    int WriteAt;           // the frame of the ring the next block starts at
+    int64 Submitted;       // the frames handed over since the last reset
+}
+
+_AudioWave _AudioW;
+
+// the fields of a WAVEHDR: lpData, dwBufferLength, dwBytesRecorded, dwUser, dwFlags, dwLoops, lpNext, reserved
+int _AudioFlagsOffset() { return (int)sizeof(nint) * 2 + 8; }
+
+struct _AudioOs
+{
+    static bool Supported() { return true; }
+
+    // 0: open, 2: no device, 3: the format is refused, 4: an output is already open
+    static int Open(int rate, int channels, int frames)
+    {
+        if (_AudioW.Open)
+            return 4;
+        unsafe
+        {
+            // WAVEFORMATEX: PCM, 16 bits
+            var format = new uint8[18];
+            uint8* f = &format[0];
+            *(uint16*)f = 1;
+            *(uint16*)(f + 2) = (uint16)channels;
+            *(uint32*)(f + 4) = (uint32)rate;
+            *(uint32*)(f + 8) = (uint32)(rate * channels * 2);
+            *(uint16*)(f + 12) = (uint16)(channels * 2);
+            *(uint16*)(f + 14) = 16;
+            *(uint16*)(f + 16) = 0;
+            void* device = null;
+            // WAVE_MAPPER (the default device), no callback
+            uint32 result = waveOutOpen(&device, 0xFFFFFFFF, f, 0, 0, 0);
+            if (result == 2 || result == 6) // MMSYSERR_BADDEVICEID, MMSYSERR_NODRIVER
+                return 2;
+            if (result != 0 || device == null)
+                return 3;
+            int p = (int)sizeof(nint);
+            _AudioW.HeaderSize = 4 * p + 16; // 48 bytes with 64-bit pointers, 32 with 32-bit ones
+            _AudioW.Device = device;
+            _AudioW.Channels = channels;
+            _AudioW.Capacity = frames;
+            _AudioW.Ring = (uint8*)malloc((nuint)(frames * channels * 2));
+            _AudioW.Headers = (uint8*)malloc((nuint)(_AudioBlocks * _AudioW.HeaderSize));
+            for (var i = 0; i < _AudioBlocks * _AudioW.HeaderSize; i += 1)
+                _AudioW.Headers[i] = 0;
+        }
+        _AudioW.Busy = new bool[_AudioBlocks];
+        _AudioW.Frames = new int[_AudioBlocks];
+        _AudioW.Next = 0;
+        _AudioW.WriteAt = 0;
+        _AudioW.Submitted = 0;
+        _AudioW.Paused = false;
+        _AudioW.Open = true;
+        return 0;
+    }
+
+    // gives back the headers whose blocks were played (WHDR_DONE); returns the frames still in flight
+    static int Reap()
+    {
+        int inFlight = 0;
+        unsafe
+        {
+            for (var i = 0; i < _AudioBlocks; i += 1)
+            {
+                if (!_AudioW.Busy[i])
+                    continue;
+                uint8* h = _AudioW.Headers + i * _AudioW.HeaderSize;
+                if ((*(uint32*)(h + _AudioFlagsOffset()) & 1) != 0)
+                {
+                    waveOutUnprepareHeader(_AudioW.Device, h, (uint32)_AudioW.HeaderSize);
+                    _AudioW.Busy[i] = false;
+                }
+                else
+                    inFlight += _AudioW.Frames[i];
+            }
+        }
+        return inFlight;
+    }
+
+    static int Writable()
+    {
+        if (_AudioW.Paused)
+            return 0;
+        int inFlight = Reap();
+        if (_AudioW.Busy[_AudioW.Next])
+            return 0;
+        return _AudioW.Capacity - inFlight;
+    }
+
+    // hands `frames` frames of the ring from WriteAt on to the device as one block
+    static bool Submit(int frames)
+    {
+        int i = _AudioW.Next;
+        if (_AudioW.Busy[i])
+            return false;
+        unsafe
+        {
+            uint8* h = _AudioW.Headers + i * _AudioW.HeaderSize;
+            for (var b = 0; b < _AudioW.HeaderSize; b += 1)
+                h[b] = 0;
+            *(uint8**)h = _AudioW.Ring + _AudioW.WriteAt * _AudioW.Channels * 2;
+            *(uint32*)(h + (int)sizeof(nint)) = (uint32)(frames * _AudioW.Channels * 2);
+            if (waveOutPrepareHeader(_AudioW.Device, h, (uint32)_AudioW.HeaderSize) != 0)
+                return false;
+            if (waveOutWrite(_AudioW.Device, h, (uint32)_AudioW.HeaderSize) != 0)
+            {
+                waveOutUnprepareHeader(_AudioW.Device, h, (uint32)_AudioW.HeaderSize);
+                return false;
+            }
+        }
+        _AudioW.Busy[i] = true;
+        _AudioW.Frames[i] = frames;
+        _AudioW.Next = (i + 1) % _AudioBlocks;
+        _AudioW.WriteAt = (_AudioW.WriteAt + frames) % _AudioW.Capacity;
+        _AudioW.Submitted += frames;
+        return true;
+    }
+
+    static int Write(int16* samples, int frames)
+    {
+        int written = 0;
+        unsafe
+        {
+            // blocks of an eighth of the buffer at most, and none wraps around the end of the ring
+            int block = Math.Max(1, _AudioW.Capacity / 8);
+            while (written < frames)
+            {
+                int n = Math.Min(Math.Min(frames - written, block), _AudioW.Capacity - _AudioW.WriteAt);
+                uint8* to = _AudioW.Ring + _AudioW.WriteAt * _AudioW.Channels * 2;
+                uint8* from = (uint8*)(samples + written * _AudioW.Channels);
+                for (var b = 0; b < n * _AudioW.Channels * 2; b += 1)
+                    to[b] = from[b];
+                if (!Submit(n))
+                    break;
+                written += n;
+            }
+        }
+        return written;
+    }
+
+    static int Queued()
+    {
+        int inFlight = Reap();
+        if (inFlight == 0)
+            return 0;
+        unsafe
+        {
+            // MMTIME with TIME_SAMPLES
+            var time = new uint8[16];
+            uint8* t = &time[0];
+            *(uint32*)t = 2;
+            if (waveOutGetPosition(_AudioW.Device, t, 12) != 0 || *(uint32*)t != 2)
+                return inFlight;
+            int64 played = (int64)*(uint32*)(t + 4);
+            return (int)Math.Max(0, Math.Min(_AudioW.Submitted - played, (int64)inFlight));
+        }
+    }
+
+    static void Pause(bool pause)
+    {
+        if (pause == _AudioW.Paused)
+            return;
+        _AudioW.Paused = pause;
+        if (pause)
+            waveOutPause(_AudioW.Device);
+        else
+            waveOutRestart(_AudioW.Device);
+    }
+
+    static void Clear()
+    {
+        // all blocks are marked as done, and the position starts again at 0
+        waveOutReset(_AudioW.Device);
+        Reap();
+        _AudioW.Submitted = 0;
+        if (_AudioW.Paused)
+        {
+            waveOutRestart(_AudioW.Device);
+            _AudioW.Paused = false;
+        }
+    }
+
+    static void Close()
+    {
+        if (!_AudioW.Open)
+            return;
+        waveOutReset(_AudioW.Device);
+        Reap();
+        waveOutClose(_AudioW.Device);
+        unsafe
+        {
+            free(_AudioW.Ring);
+            free(_AudioW.Headers);
+        }
+        _AudioW.Device = null;
+        _AudioW.Open = false;
+    }
+}

@@ -1,0 +1,58 @@
+// System.Audio in a real browser: published with "cshiftc publish" and run by tests/audio-browser-check.mjs
+// (Playwright). The program plays a second of a tone, refilling the output in each frame (Ui.RequestFrame), and says
+// how long it took until all was heard: the time of the browser's sound clock, so about a second.
+
+using System;
+using System.Audio;
+using System.Ui;
+
+int Main()
+{
+    var opened = Window.Open("audio", 200, 100);
+    if (opened is not Window window)
+    {
+        Console.WriteLine("error: " + opened.Message);
+        return 1;
+    }
+    AudioOutput output;
+    switch (AudioOutput.Open(44100, 1))
+    {
+    case AudioOutput o:
+        output = o;
+        break;
+    case error e:
+        Console.WriteLine("audio: " + e.Message);
+        return 1;
+    }
+    Console.WriteLine("audio: open");
+    var ui = Ui.Create();
+    int total = 0;
+    double start = -1.0;
+    bool done = false;
+    while (window.Update())
+    {
+        ui.Begin(window);
+        double now = ui.Input().Time;
+        int n = Math.Min(output.Writable(), 44100 - total);
+        if (n > 0)
+        {
+            if (start < 0.0)
+                start = now;
+            var s = new int16[n];
+            for (var i = 0; i < n; i += 1)
+                s[i] = (int16)((total + i) * 41 % 4000 - 2000);
+            total += output.Write(s);
+        }
+        if (!done && total == 44100 && output.Queued() == 0)
+        {
+            done = true;
+            Console.WriteLine($"audio: done {total} {now - start:F2}");
+        }
+        ui.Label(done ? "done" : $"{total}");
+        if (!done)
+            ui.RequestFrame(10);
+        window.Show(ui);
+    }
+    output.Close();
+    return 0;
+}

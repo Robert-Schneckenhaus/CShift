@@ -1,0 +1,18 @@
+// The sound part of the layer of AmigaOS for System.Audio (stdlib/audio.cshift): not yet (Paula through audio.device
+// would be the way), so the output reports AudioError.NotSupported.
+
+namespace System.Audio;
+
+using System;
+
+struct _AudioOs
+{
+    static bool Supported() { return false; }
+    static int Open(int rate, int channels, int frames) { return 1; }
+    static int Writable() { return 0; }
+    static int Write(int16* samples, int frames) { return 0; }
+    static int Queued() { return 0; }
+    static void Pause(bool pause) { }
+    static void Clear() { }
+    static void Close() { }
+}

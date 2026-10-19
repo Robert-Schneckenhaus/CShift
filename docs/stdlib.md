@@ -25,8 +25,9 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `System.Compression` | `compression.cshift` | `Deflate`, `Zlib`, `Gzip`, `Crc32`, `Adler32`, `CompressionError` |
 | `System.Image` | `image.cshift`, `image_png.cshift`, `image_bmp.cshift`, `image_ppm.cshift` | `Image`, `Color`, `ImageFormat`, `ImageError`: PNG, BMP and PPM files |
 | `System.Net` | `net.cshift` | `TcpListener`, `TcpConnection`, `NetError`: TCP connections over IPv4 (`using System.Net;`) |
+| `System.Audio` | `audio.cshift` | `AudioOutput`, `AudioError`: sound output of 16-bit samples, mono or stereo (`using System.Audio;`): Windows (waveOut), Linux (ALSA), the browser (Web Audio) |
 | `System.Ui` | `ui.cshift`, `ui_draw.cshift`, `ui_window.cshift`, `ui_fonts.cshift` | `Ui`, `Window`, `Theme`, `UiInput`, `Key`, `Canvas`, `Font`, `Rect`, `UiCommand`, `Clipboard`, `UiError`: user interfaces in immediate mode, drawn by a software renderer or as drawing commands; windows on Windows (Win32), Linux (X11), in the browser (a canvas) and on AmigaOS (Intuition), see [ui.md](ui.md) |
-| `System` | `os/…`, `amiga/os.cshift` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets); the compiler adds the one of the target |
+| `System` | `os/…`, `amiga/os.cshift` | the operating system layer (`_Os`: clock, time zone, file times, seeking; `_Net`: sockets; `_AudioOs`: the sound output); the compiler adds the one of the target |
 | `Amiga` | `amiga/hardware.cshift` | `Hardware`: the Amiga's custom chips (take over the machine, copper, vertical blank, chip memory); only for `m68k-amigaos`, see [amiga.md](amiga.md#the-custom-chips-amigahardware) |
 | `Amiga` | `amiga/graphics.cshift` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
 
@@ -114,6 +115,7 @@ Error<string> Load(string path)
 | `ParseError` | `Invalid` (1), `OutOfRange` (2) | `ParseInt`, `ParseInt64`, `ParseDouble` |
 | `EncodingError` | `OutOfBounds` (1), `NotAscii` (2), `InvalidUtf8` (3) | `Encoding.GetString` |
 | `NetError` (`System.Net`) | `CannotResolve` (1), `CannotConnect` (2), `CannotListen` (3), `ConnectionLost` (4), `NotSupported` (5) | `TcpListener`, `TcpConnection` |
+| `AudioError` (`System.Audio`) | `NotSupported` (1), `NoDevice` (2), `CannotOpen` (3) | `AudioOutput.Open` |
 
 A caller can match a code (`case IoError.CannotOpen:`, `if (r is IoError code)`); a typed result converts to a
 plain `Error<T>`, and `try` passes it on from a function returning `Error<T>` or the same typed result.
@@ -136,6 +138,38 @@ using var client = try listener.Accept();
 var request = new uint8[4096];
 int got = try client.Read(request, 0, request.Length);
 try client.WriteText("HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nHello\n");
+```
+
+**`AudioOutput`** (`System.Audio`) — plays sound that the program makes: signed 16-bit samples, 1 or 2 channels
+(interleaved), 8000 to 192000 frames a second. `AudioOutput.Open(sampleRate, channels [, bufferMilliseconds])` (250 ms
+by default; one output at a time). The program writes ahead into the buffer of the output and refills it regularly,
+without a thread: `Writable()` is the number of frames that fit now, `Write(samples)` (or `WriteSigned8(bytes)`, 8-bit
+samples as on the Amiga) takes what fits and returns the frames taken, `Queued()` is the number of frames written but
+not heard yet (the frame being heard: written minus queued). `Pause()`, `Resume()`, `Clear()` (silence at once),
+`Close()`. When the buffer runs empty, the output plays silence until the next write. Windows: waveOut of winmm (through
+WASAPI on Windows 10 and 11). Linux: ALSA's device "default" (PulseAudio or PipeWire through their ALSA plugin),
+libasound is loaded when the output opens. The browser: Web Audio (web/cshift.js), which starts the sound after the
+first click or key on the page; the program has to wait for frames there (a [Window](ui.md) loop with
+`Ui.RequestFrame`), the time of the browser does not pass inside a loop. Elsewhere (macOS: `NoDevice`, AmigaOS,
+WebAssembly outside of a browser: `NotSupported`) opening fails.
+
+```csharp
+using System;
+using System.Audio;
+using System.Ui;
+
+using var output = try AudioOutput.Open(44100, 1);
+int frame = 0;
+while (window.Update())
+{
+    ui.Begin(window);
+    var samples = new int16[output.Writable()];
+    for (var i = 0; i < samples.Length; i += 1)
+        samples[i] = (int16)(8000.0 * Math.Sin(2.0 * Math.PI * 440.0 * (double)(frame + i) / 44100.0));
+    frame += output.Write(samples);
+    ui.RequestFrame(20);   // refill in 20 ms
+    window.Show(ui);
+}
 ```
 
 **`Encoding`** — `Encoding.UTF8()` and `Encoding.ASCII()`: `GetBytes(string)`, `GetString(uint8[] [, start, count])`

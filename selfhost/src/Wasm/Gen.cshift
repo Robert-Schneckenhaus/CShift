@@ -2358,8 +2358,10 @@ struct WasmGen
             {
                 // __wasi_X: X of WASI; anything else: a function of the host (JavaScript), from the module "env"
                 Imports.Add(f.Name);
-                // GLFW, OpenGL and the window of System.Ui are what web/cshift.js gives a program: no warning
-                if (!f.Name.StartsWith("__wasi_") && !f.Name.StartsWith("gl") && !f.Name.StartsWith("cshift_ui_"))
+                // GLFW, OpenGL, the window of System.Ui and the sound of System.Audio are what web/cshift.js gives a
+                // program: no warning
+                if (!f.Name.StartsWith("__wasi_") && !f.Name.StartsWith("gl") && !f.Name.StartsWith("cshift_ui_") &&
+                    !f.Name.StartsWith("cshift_audio_"))
                     Warnings.Add("'" + f.Name + "' is not defined: it is imported from the module \"env\"");
             }
         }

@@ -6,6 +6,27 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Standard library
+- **`System.Audio`: sound output.** `AudioOutput.Open(sampleRate, channels [, bufferMilliseconds])` plays signed
+  16-bit samples, mono or stereo, at 8000 to 192000 Hz. The program writes ahead into the buffer of the output and
+  refills it regularly, for example in the frames of a window, without a thread: `Writable()`, `Write(samples)`,
+  `WriteSigned8(bytes)` (8-bit samples as on the Amiga), `Queued()` (the frames not heard yet, for showing where a
+  song is), `Pause()`, `Resume()`, `Clear()`, `Close()`; errors are `AudioError` (`NotSupported`, `NoDevice`,
+  `CannotOpen`).
+  - Windows: waveOut of winmm (WASAPI on Windows 10 and 11). Linux: ALSA (PulseAudio and PipeWire through their ALSA
+    plugin); libasound is loaded when the output opens, so programs without sound do not need it.
+  - The browser (`--backend wasm`): Web Audio in web/cshift.js (`cshift_audio_*`), each write an AudioBuffer started
+    where the one before it ends. Browsers start the sound after the first click or key on the page. While a page
+    plays sound and is hidden, the program is resumed by a timer instead of the frames of the browser, so it can
+    refill the output.
+  - macOS (no ALSA), AmigaOS and WebAssembly outside of a browser: opening fails (`NoDevice`, `NotSupported`).
+
+### Tests
+- tests/audio/tone.cshift: on Linux the samples must arrive in ALSA's file plugin byte for byte; in the browser
+  without a browser (tests/audio-web-check.mjs, a pretended AudioContext) the AudioBuffers must hold them and follow
+  each other without a gap; in Chromium and Firefox (tests/audio-browser-check.mjs) a second of sound must take about
+  a second. The CI also plays it in real time through PulseAudio.
+
 ## [0.37] - 2026-10-19
 
 ### Standard library

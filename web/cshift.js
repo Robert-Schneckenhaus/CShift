@@ -10,7 +10,8 @@
 //   * the game loop: glfwPollEvents (and glfwWaitEvents) suspends the program until the next frame of the browser
 //     (requestAnimationFrame), the backend saves and restores the functions on the way (selfhost/src/Wasm/Gen.cshift);
 //   * the window of System.Ui (cshift_ui_*, see stdlib/os/wasi/ui.cshift): its frames are drawn on the canvas, the input
-//     of the mouse and the keyboard goes to the program, and cshift_ui_wait suspends it until there is input.
+//     of the mouse and the keyboard goes to the program, and cshift_ui_wait suspends it until there is input;
+//   * the sound output of System.Audio (cshift_audio_*, see stdlib/os/wasi/audio.cshift) with Web Audio.
 //
 //   import { run } from "./cshift.js";
 //   const program = await run("game.wasm", { canvas, files: { "/data/map.json": "data/map.json" }, onOutput });
@@ -151,6 +152,7 @@ class Program {
         this.uiState = null;    // the window of System.Ui (see ui())
         this.downloads = new Set(); // files written in DOWNLOADS: offered as downloads when the program waits
         this.confirmClose = false;
+        this.audioState = null; // the sound output of System.Audio (see audio())
     }
 
     // ---- memory helpers ----
@@ -982,6 +984,104 @@ class Program {
         };
     }
 
+    // ---- System.Audio: the sound output with Web Audio (stdlib/os/wasi/audio.cshift) ----
+    // Each write is an AudioBuffer, started on the clock of the AudioContext right where the one before it ends.
+    audio() {
+        const self = this;
+        const queued = () => {
+            const a = self.audioState;
+            if (!a) return 0;
+            return Math.max(0, Math.round((a.next - a.ctx.currentTime) * a.rate));
+        };
+        const stopAll = (a) => {
+            for (const source of a.sources) {
+                try {
+                    source.stop();
+                } catch {}
+                source.disconnect();
+            }
+            a.sources.clear();
+            a.next = 0;
+        };
+        return {
+            cshift_audio_open(rate, channels, frames) {
+                const Context = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+                if (!Context) return 1;
+                let ctx;
+                try {
+                    // the rate of the program: no resampling between the buffers
+                    ctx = new Context({ sampleRate: rate, latencyHint: "interactive" });
+                } catch {
+                    try {
+                        ctx = new Context({ latencyHint: "interactive" });
+                    } catch {
+                        return 3;
+                    }
+                }
+                const a = { ctx, rate, channels, capacity: frames, next: 0, sources: new Set(), paused: false };
+                // browsers start the sound only after a click or a key on the page
+                a.unlock = () => {
+                    if (!a.paused && ctx.state === "suspended") ctx.resume();
+                };
+                for (const type of ["pointerdown", "keydown", "touchend"]) globalThis.addEventListener?.(type, a.unlock, true);
+                if (ctx.state === "suspended") ctx.resume().catch(() => {});
+                self.audioState = a;
+                return 0;
+            },
+            cshift_audio_writable() {
+                const a = self.audioState;
+                if (!a || a.paused) return 0;
+                return Math.max(0, a.capacity - queued());
+            },
+            cshift_audio_write(samples, frames) {
+                const a = self.audioState;
+                if (!a || frames <= 0) return;
+                const buffer = a.ctx.createBuffer(a.channels, frames, a.rate);
+                const data = new Int16Array(self.memory, samples, frames * a.channels);
+                for (let c = 0; c < a.channels; c++) {
+                    const channel = buffer.getChannelData(c);
+                    for (let i = 0; i < frames; i++) channel[i] = data[i * a.channels + c] / 32768;
+                }
+                const source = a.ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(a.ctx.destination);
+                // after an underrun (or at the start) a little ahead of the clock
+                const now = a.ctx.currentTime;
+                if (a.next < now + 0.005) a.next = now + 0.02;
+                source.start(a.next);
+                a.next += frames / a.rate;
+                a.sources.add(source);
+                source.onended = () => {
+                    a.sources.delete(source);
+                    source.disconnect();
+                };
+            },
+            cshift_audio_queued: queued,
+            cshift_audio_pause(pause) {
+                const a = self.audioState;
+                if (!a) return;
+                a.paused = pause !== 0;
+                if (a.paused) a.ctx.suspend();
+                else a.ctx.resume();
+            },
+            cshift_audio_clear() {
+                const a = self.audioState;
+                if (!a) return;
+                stopAll(a);
+                a.paused = false;
+                a.ctx.resume();
+            },
+            cshift_audio_close() {
+                const a = self.audioState;
+                if (!a) return;
+                stopAll(a);
+                for (const type of ["pointerdown", "keydown", "touchend"]) globalThis.removeEventListener?.(type, a.unlock, true);
+                a.ctx.close();
+                self.audioState = null;
+            },
+        };
+    }
+
     setCallback(kind, cb) {
         const old = this.callbacks[kind] ?? 0;
         this.callbacks[kind] = cb;
@@ -1329,7 +1429,7 @@ class Program {
 
     // ---- start and the frames ----
     async start(module) {
-        const env = { ...this.glfw(), ...this.ui() };
+        const env = { ...this.glfw(), ...this.ui(), ...this.audio() };
         for (const [name, [, f]] of Object.entries(this.glFunctions())) env[name] = f;
         Object.assign(env, this.options.imports ?? {});
         // a function the program needs but nobody has: an error when it is called
@@ -1377,10 +1477,16 @@ class Program {
             return;
         }
         this.instance.exports.__cs_wasm_stop_unwind();
+        // the next frame of the browser; a hidden page has none, so while it plays sound (and the program has to
+        // refill the output) a timer instead
+        const later = (f) => {
+            if (this.audioState && globalThis.document?.hidden) setTimeout(f, 10);
+            else requestAnimationFrame(f);
+        };
         const resume = () => {
             if (this.stopped) return;
             if (this.resumeWhen && !this.resumeWhen()) {
-                requestAnimationFrame(resume); // waiting for input (System.Ui): look again at the next frame
+                later(resume); // waiting for input (System.Ui): look again at the next frame
                 return;
             }
             this.resumeWhen = null;
@@ -1388,7 +1494,7 @@ class Program {
             this.rewinding = true;
             this.step();
         };
-        requestAnimationFrame(resume);
+        later(resume);
     }
 
     // ends the program at its next frame
