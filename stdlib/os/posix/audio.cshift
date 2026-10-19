@@ -1,0 +1,232 @@
+// The sound part of the operating system layer on POSIX systems for System.Audio (stdlib/audio.cshift), with ALSA:
+// libasound is loaded with dlopen when the output opens, so programs without sound neither link nor need it. The
+// device is "default", which is PulseAudio or PipeWire where they run (through their ALSA plugin). It is opened
+// without blocking: a write takes what fits into the buffer, and the output starts once something is written. When
+// the buffer ran empty (an underrun), the device is prepared again at the next look at it. macOS has no ALSA: the
+// output reports that there is no device.
+
+namespace System.Audio;
+
+using System;
+
+extern "C" void* dlopen(char* file, int mode);
+extern "C" void* dlsym(void* handle, char* name);
+
+// The functions of libasound that the output needs.
+struct _AudioAlsaApi
+{
+    Func<void**, char*, int, int, int> Open;
+    Func<void*, int, int, uint32, uint32, int, uint32, int> SetParams;
+    Func<void*, nuint*, nuint*, int> GetParams;
+    Func<void*, nint> AvailUpdate;
+    Func<void*, void*, nuint, nint> Writei;
+    Func<void*, nint*, int> Delay;
+    Func<void*, int, int, int> Recover;
+    Func<void*, int, int> PauseFn;
+    Func<void*, int> Drop;
+    Func<void*, int> Prepare;
+    Func<void*, int> Start;
+    Func<void*, int> State;
+    Func<void*, int> CloseFn;
+}
+
+// The state of the output (zero until the first Open).
+struct _AudioAlsa
+{
+    bool Loaded;
+    bool Open;
+    bool Paused;
+    bool PauseWorks;    // the device pauses (snd_pcm_pause); else a pause only stops the writes
+    void* Pcm;
+    int Channels;
+    int Capacity;       // the frames of the buffer
+}
+
+_AudioAlsaApi _AudioA;
+_AudioAlsa _AudioAs;
+
+void* _AudioAlsaSym(void* lib, string name, ref bool ok)
+{
+    unsafe
+    {
+        void* p = dlsym(lib, name.CStr());
+        if (p == null)
+            ok = false;
+        return p;
+    }
+}
+
+// Loads libasound and looks up its functions; false if it is missing.
+bool _AudioAlsaLoad()
+{
+    if (_AudioAs.Loaded)
+        return true;
+    unsafe
+    {
+        void* lib = dlopen("libasound.so.2".CStr(), 2); // RTLD_NOW
+        if (lib == null)
+            lib = dlopen("libasound.so".CStr(), 2);
+        if (lib == null)
+            return false;
+        bool ok = true;
+        _AudioA.Open = (Func<void**, char*, int, int, int>)_AudioAlsaSym(lib, "snd_pcm_open", ref ok);
+        _AudioA.SetParams = (Func<void*, int, int, uint32, uint32, int, uint32, int>)_AudioAlsaSym(lib, "snd_pcm_set_params", ref ok);
+        _AudioA.GetParams = (Func<void*, nuint*, nuint*, int>)_AudioAlsaSym(lib, "snd_pcm_get_params", ref ok);
+        _AudioA.AvailUpdate = (Func<void*, nint>)_AudioAlsaSym(lib, "snd_pcm_avail_update", ref ok);
+        _AudioA.Writei = (Func<void*, void*, nuint, nint>)_AudioAlsaSym(lib, "snd_pcm_writei", ref ok);
+        _AudioA.Delay = (Func<void*, nint*, int>)_AudioAlsaSym(lib, "snd_pcm_delay", ref ok);
+        _AudioA.Recover = (Func<void*, int, int, int>)_AudioAlsaSym(lib, "snd_pcm_recover", ref ok);
+        _AudioA.PauseFn = (Func<void*, int, int>)_AudioAlsaSym(lib, "snd_pcm_pause", ref ok);
+        _AudioA.Drop = (Func<void*, int>)_AudioAlsaSym(lib, "snd_pcm_drop", ref ok);
+        _AudioA.Prepare = (Func<void*, int>)_AudioAlsaSym(lib, "snd_pcm_prepare", ref ok);
+        _AudioA.Start = (Func<void*, int>)_AudioAlsaSym(lib, "snd_pcm_start", ref ok);
+        _AudioA.State = (Func<void*, int>)_AudioAlsaSym(lib, "snd_pcm_state", ref ok);
+        _AudioA.CloseFn = (Func<void*, int>)_AudioAlsaSym(lib, "snd_pcm_close", ref ok);
+        if (!ok)
+            return false;
+    }
+    _AudioAs.Loaded = true;
+    return true;
+}
+
+// the states of a PCM (snd_pcm_state_t)
+const int _AlsaPrepared = 2;
+const int _AlsaRunning = 3;
+const int _AlsaXrun = 4;
+const int _AlsaPaused = 6;
+const int _AlsaSuspended = 7;
+
+struct _AudioOs
+{
+    static bool Supported() { return true; }
+
+    // 0: open, 2: no device, 3: the format is refused, 4: an output is already open
+    static int Open(int rate, int channels, int frames)
+    {
+        if (_AudioAs.Open)
+            return 4;
+        if (!_AudioAlsaLoad())
+            return 2;
+        unsafe
+        {
+            void* pcm = null;
+            // SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK
+            if (_AudioA.Open(&pcm, "default".CStr(), 0, 1) < 0 || pcm == null)
+                return 2;
+            // SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED, resampling allowed, the latency in microseconds
+            uint32 latency = (uint32)((int64)frames * 1000000 / rate);
+            if (_AudioA.SetParams(pcm, 2, 3, (uint32)channels, (uint32)rate, 1, latency) < 0)
+            {
+                _AudioA.CloseFn(pcm);
+                return 3;
+            }
+            nuint buffer = 0;
+            nuint period = 0;
+            int capacity = frames;
+            if (_AudioA.GetParams(pcm, &buffer, &period) >= 0 && buffer > 0)
+                capacity = (int)buffer;
+            _AudioAs.Pcm = pcm;
+            _AudioAs.Channels = channels;
+            _AudioAs.Capacity = capacity;
+        }
+        _AudioAs.Open = true;
+        _AudioAs.Paused = false;
+        _AudioAs.PauseWorks = true;
+        return 0;
+    }
+
+    // after an underrun (or a suspend of the computer) the device is prepared again
+    static void Recover()
+    {
+        int state = _AudioA.State(_AudioAs.Pcm);
+        if (state == _AlsaXrun || state == _AlsaSuspended)
+            _AudioA.Recover(_AudioAs.Pcm, state == _AlsaXrun ? -32 : -86, 1); // -EPIPE, -ESTRPIPE
+    }
+
+    static int Writable()
+    {
+        if (_AudioAs.Paused)
+            return 0;
+        Recover();
+        nint avail = _AudioA.AvailUpdate(_AudioAs.Pcm);
+        if (avail < 0)
+        {
+            _AudioA.Recover(_AudioAs.Pcm, (int)avail, 1);
+            avail = _AudioA.AvailUpdate(_AudioAs.Pcm);
+            if (avail < 0)
+                return 0;
+        }
+        return Math.Min((int)avail, _AudioAs.Capacity);
+    }
+
+    static int Write(int16* samples, int frames)
+    {
+        int written = 0;
+        unsafe
+        {
+            while (written < frames)
+            {
+                nint n = _AudioA.Writei(_AudioAs.Pcm, (void*)(samples + written * _AudioAs.Channels), (nuint)(frames - written));
+                if (n == -11) // -EAGAIN: the buffer is full
+                    break;
+                if (n < 0)
+                {
+                    if (_AudioA.Recover(_AudioAs.Pcm, (int)n, 1) < 0)
+                        break;
+                    continue;
+                }
+                written += (int)n;
+            }
+        }
+        // the output starts by itself only once its buffer is full
+        if (written > 0 && _AudioA.State(_AudioAs.Pcm) == _AlsaPrepared)
+            _AudioA.Start(_AudioAs.Pcm);
+        return written;
+    }
+
+    static int Queued()
+    {
+        int state = _AudioA.State(_AudioAs.Pcm);
+        if (state != _AlsaPrepared && state != _AlsaRunning && state != _AlsaPaused)
+            return 0;
+        unsafe
+        {
+            nint delay = 0;
+            if (_AudioA.Delay(_AudioAs.Pcm, &delay) < 0)
+                return 0;
+            return (int)Math.Max(0, Math.Min((int64)delay, (int64)_AudioAs.Capacity));
+        }
+    }
+
+    static void Pause(bool pause)
+    {
+        if (pause == _AudioAs.Paused)
+            return;
+        _AudioAs.Paused = pause;
+        if (!_AudioAs.PauseWorks)
+            return;
+        int state = _AudioA.State(_AudioAs.Pcm);
+        if (pause ? state == _AlsaRunning : state == _AlsaPaused)
+        {
+            if (_AudioA.PauseFn(_AudioAs.Pcm, pause ? 1 : 0) < 0 && pause)
+                _AudioAs.PauseWorks = false; // the device cannot pause: what is queued plays out
+        }
+    }
+
+    static void Clear()
+    {
+        _AudioA.Drop(_AudioAs.Pcm);
+        _AudioA.Prepare(_AudioAs.Pcm);
+        _AudioAs.Paused = false;
+    }
+
+    static void Close()
+    {
+        if (!_AudioAs.Open)
+            return;
+        _AudioA.Drop(_AudioAs.Pcm);
+        _AudioA.CloseFn(_AudioAs.Pcm);
+        _AudioAs.Pcm = null;
+        _AudioAs.Open = false;
+    }
+}

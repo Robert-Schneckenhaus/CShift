@@ -1,0 +1,147 @@
+// System.Audio: plays 0.5 s of a pattern in stereo (left and right differ), most of it with Write and the end with
+// WriteSigned8, pauses on the way, and waits until all was heard. With a path as argument it also saves the samples
+// it wrote (16-bit little endian), for comparing them with what the device got (tests/run_tests.sh: the file plugin
+// of ALSA; tests/audio-web-check.mjs: the AudioBuffers of a pretended Web Audio). Without a sound device it says so
+// and ends with 0.
+
+using System;
+using System.Audio;
+
+const int Rate = 44100;
+const int Frames = 22050;
+const int Signed8From = 20000; // the frames from here on are written as 8-bit samples
+
+int16 Left(int i) { return (int16)((i * 37) % 2000 - 1000); }
+int16 Right(int i) { return (int16)((i * 91) % 3000 - 1500); }
+uint8 Byte8(int i, int channel) { return (uint8)((i * (channel == 0 ? 7 : 13)) % 256); }
+
+int Main(string[] args)
+{
+    AudioOutput output;
+    switch (AudioOutput.Open(Rate, 2, 100))
+    {
+    case AudioOutput o:
+        output = o;
+        break;
+    case AudioError.NotSupported:
+        Console.WriteLine("audio: not supported");
+        return 0;
+    case AudioError.NoDevice:
+        Console.WriteLine("audio: no device");
+        return 0;
+    case error e:
+        Console.WriteLine("audio: " + e.Message);
+        return 1;
+    }
+    if (output.SampleRate() != Rate || output.Channels() != 2 || !output.IsOpen())
+    {
+        Console.WriteLine("audio: wrong format");
+        return 1;
+    }
+    // one output at a time
+    switch (AudioOutput.Open(Rate, 2))
+    {
+    case AudioError.CannotOpen:
+        break;
+    default:
+        Console.WriteLine("audio: a second output opened");
+        return 1;
+    }
+    var written = List<uint8>.Create();
+    int total = 0;
+    bool paused = false;
+    int waits = 0;
+    while (total < Frames)
+    {
+        int n = Math.Min(output.Writable(), (total < Signed8From ? Signed8From : Frames) - total);
+        if (n > 4410 + 64)
+        {
+            Console.WriteLine("audio: " + n + " frames writable, more than the buffer");
+            return 1;
+        }
+        if (n > 0)
+        {
+            int got;
+            if (total < Signed8From)
+            {
+                var s = new int16[n * 2];
+                for (var i = 0; i < n; i += 1)
+                {
+                    s[2 * i] = Left(total + i);
+                    s[2 * i + 1] = Right(total + i);
+                }
+                got = output.Write(s);
+            }
+            else
+            {
+                var s = new uint8[n * 2];
+                for (var i = 0; i < n; i += 1)
+                {
+                    s[2 * i] = Byte8(total + i, 0);
+                    s[2 * i + 1] = Byte8(total + i, 1);
+                }
+                got = output.WriteSigned8(s);
+            }
+            for (var i = total; i < total + got; i += 1)
+            {
+                for (var c = 0; c < 2; c += 1)
+                {
+                    int v = i < Signed8From ? (int)(c == 0 ? Left(i) : Right(i)) : (int)(int8)Byte8(i, c) * 256;
+                    written.Add((uint8)(v & 0xFF));
+                    written.Add((uint8)((v >> 8) & 0xFF));
+                }
+            }
+            total += got;
+        }
+        if (!paused && total >= Frames / 2)
+        {
+            paused = true;
+            output.Pause();
+            if (output.Writable() != 0)
+            {
+                Console.WriteLine("audio: writable while paused");
+                return 1;
+            }
+            Thread.Sleep(30);
+            output.Resume();
+        }
+        Thread.Sleep(5);
+        waits += 1;
+        if (waits > 2000)
+        {
+            Console.WriteLine("audio: the output does not play (" + total + " frames written)");
+            return 1;
+        }
+    }
+    waits = 0;
+    while (output.Queued() > 0)
+    {
+        Thread.Sleep(5);
+        waits += 1;
+        if (waits > 1000)
+        {
+            Console.WriteLine("audio: " + output.Queued() + " frames are not heard");
+            return 1;
+        }
+    }
+    output.Close();
+    if (output.Writable() != 0 || output.Write(new int16[2]) != 0)
+    {
+        Console.WriteLine("audio: a closed output takes samples");
+        return 1;
+    }
+    // closed: another one can be opened
+    switch (AudioOutput.Open(Rate, 1))
+    {
+    case AudioOutput again:
+        again.Close();
+        break;
+    default:
+        Console.WriteLine("audio: cannot open again");
+        return 1;
+    }
+    if (args.Length > 0)
+        File.WriteAllBytes(args[0], written.ToArray());
+    Console.WriteLine("audio: " + total + " frames played");
+    return 0;
+}

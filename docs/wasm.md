@@ -149,6 +149,7 @@ indexes inside the runtime. The differences are those of the platform:
 | Threads | none: `start` is a compile error. `Mutex<T>` works (there is nothing to lock against). |
 | Other programs | none: `Process.Run` returns -1, `Process.RunCapture` returns nothing. |
 | Network | none: `TcpListener` and `TcpConnection` (`System.Net`) return `NetError.NotSupported`. |
+| Sound | `AudioOutput` (`System.Audio`) plays with Web Audio in the browser (after the first click or key on the page; refill it in the frames of a window); without a browser it is `AudioError.NotSupported`. |
 | Files and directories | through WASI: the runtime decides what the program sees (wasmtime `--dir`, node's `preopens`). The program starts in the directory in the environment variable `PWD` if the host sets it (otherwise in `/`). |
 | Time | `DateTime.Now` is UTC: WASI has no time zones. |
 | Panics, exit codes | as on other targets (a panic exits with 101). |

@@ -25,6 +25,9 @@ for (const entry of WebAssembly.Module.imports(module)) {
     if (entry.module === 'env')
         host[entry.name] = () => { throw new Error(`the program called '${entry.name}', which node does not have`); };
 }
+// System.Audio: node has no sound output (AudioError.NotSupported)
+if ('cshift_audio_open' in host)
+    host.cshift_audio_open = () => 1;
 let instance;
 let data = 0;
 let suspended = false;
