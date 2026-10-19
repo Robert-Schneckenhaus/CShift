@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.37] - 2026-10-19
+
 ### Standard library
 - `System.Ui`: **the user's files in the browser.** `Ui.FileDialog(id, title, ref path, mode)` with `FileDialogMode`
   `Open` (the call without a mode), `OpenMany`, `Save` and `Folder`, and `Ui.FileDialogPaths(id)` for the files of
