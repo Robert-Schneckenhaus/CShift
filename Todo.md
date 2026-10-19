@@ -43,16 +43,26 @@ the git log.
 ## Standard library
 
 - [ ] **`System.Ui`, the next steps** ([docs/ui.md](docs/ui.md)), most useful first:
+      - testing on real devices: phones (Android, iOS), Safari and Edge, pens; Playwright covers Chromium and Firefox
+        (tests/ui-browser-check.mjs), the rest is untested;
+      - the keyboard on phones and tablets: a canvas opens no on-screen keyboard, so text boxes cannot be typed into
+        (a hidden `<input>` that gets the focus while a text box has it, and gives its text to the program);
       - the clipboard on Linux (X11 selections: `SelectionRequest` events answered by the window) and on AmigaOS
         (clipboard.device, IFF FTXT);
-      - AmigaOS: images (remapped to the pens of the screen, `WriteChunkyPixels`), a blinking text cursor
-        (timer.device in the wait, also for the delay of tooltips), the shape of the mouse pointer, the dimming behind
-        modal dialogs, AmigaOS 2.x (fixed pens, no `AllocBitMap`);
+      - AmigaOS: faster images (an area of 320 x 192 full of 32 x 32 tiles takes about 1.2 s per frame in FS-UAE with
+        the AROS ROM: planar bitmaps per image made once, drawn with the blitter, `BltMaskBitMapRastPort` for
+        transparency), a blinking text cursor and the delay of tooltips (timer.device is in the wait already:
+        `UiInput.Steady` turns them off for now), the shape of the mouse pointer, the dimming behind modal dialogs,
+        a whole frame as an image (`Window.Show(image)`), AmigaOS 2.x (fixed pens, no `AllocBitMap`); none of it
+        checked on a real Amiga with AmigaOS 3.x yet;
       - text from TrueType fonts (proportional, smooth): a rasterizer in CShift and a font with a free license embedded
         with `embed` (`ReadOnlySlice<uint8>`); the bitmap fonts stay for small targets;
       - repainting while Windows resizes the window (in its modal loop WM_PAINT shows the last frame; the new area
         stays empty until the drag ends), several windows, multi-line text boxes, input methods (dead keys and compose
-        on X11: XIM).
+        on X11: XIM);
+      - in the browser: touch for GLFW programs (games still take mouse events only), the file chooser from the
+        keyboard (Enter on "Choose file..." does not open it: browsers need a click there), folders on phones (no
+        `webkitdirectory`).
 
 - [ ] `System.Image`: GIF and JPEG decoding; a palette (and its PNG/BMP form) kept in `Image` for indexed images.
 - [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
