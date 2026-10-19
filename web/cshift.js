@@ -31,6 +31,21 @@ class ExitStatus {
 // The file system: directories are Maps of names to nodes, files hold their bytes
 // ---------------------------------------------------------------------------------------------------------------
 
+// where the browser's file chooser puts the user's files (Ui.FileDialog), and the folder whose files become downloads
+const FILES = "/home/web_user/files";
+const DOWNLOADS = "/home/web_user/downloads";
+
+// a path without "." and ".." (absolute)
+function normalPath(path) {
+    const parts = [];
+    for (const p of path.split("/")) {
+        if (p.length === 0 || p === ".") continue;
+        if (p === "..") parts.pop();
+        else parts.push(p);
+    }
+    return "/" + parts.join("/");
+}
+
 function newDir() {
     return { dir: new Map(), mtime: Date.now() };
 }
@@ -134,6 +149,8 @@ class Program {
         this.stopped = false;
         this.resumeWhen = null; // a frame of the browser resumes the program only when this gives true (or is null)
         this.uiState = null;    // the window of System.Ui (see ui())
+        this.downloads = new Set(); // files written in DOWNLOADS: offered as downloads when the program waits
+        this.confirmClose = false;
     }
 
     // ---- memory helpers ----
@@ -181,6 +198,40 @@ class Program {
             dir = next;
         }
         dir.dir.set(parts[parts.length - 1], newFile(data));
+    }
+    // the node of an absolute path (null if there is none)
+    nodeOf(path) {
+        let node = this.root;
+        for (const part of splitPath(path)) {
+            node = node.dir?.get(part);
+            if (!node) return null;
+        }
+        return node;
+    }
+    // the files written in DOWNLOADS since the last time, as downloads of the browser (options.onDownload(name, bytes)
+    // gets them instead, if it is given): once per file, also when it was written in several steps
+    flushDownloads() {
+        for (const path of this.downloads) {
+            const node = this.nodeOf(path);
+            if (!node?.data) continue;
+            const name = path.slice(path.lastIndexOf("/") + 1);
+            const data = node.data.slice();
+            if (this.options.onDownload) {
+                this.options.onDownload(name, data);
+                continue;
+            }
+            if (!globalThis.document) continue;
+            const url = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }
+        this.downloads.clear();
     }
     // the node of a path relative to a directory fd: { parent, name, node }
     lookup(fd, path) {
@@ -273,6 +324,7 @@ class Program {
                 } else {
                     const f = self.fds.get(fd);
                     if (!f || !f.node.data) return WASI_EBADF;
+                    f.written = true;
                     if (f.append) f.pos = f.node.data.length;
                     const end = f.pos + total;
                     if (end > f.node.data.length) {
@@ -308,6 +360,8 @@ class Program {
                 return ok;
             },
             fd_close(fd) {
+                const f = self.fds.get(fd);
+                if (f?.written && f.path?.startsWith(DOWNLOADS + "/")) self.downloads.add(f.path);
                 self.fds.delete(fd);
                 return ok;
             },
@@ -393,7 +447,9 @@ class Program {
                 if ((oflags & 2) && !node.dir) return WASI_ENOTDIR;
                 if (node.data && (oflags & 8)) node.data = new Uint8Array(0);
                 const id = self.nextFd++;
-                self.fds.set(id, { node, pos: 0, append: (fdflags & 1) !== 0 });
+                const text = self.text(path, pathLength);
+                const where = normalPath((self.fds.get(fd)?.path ?? "/") + "/" + text);
+                self.fds.set(id, { node, pos: 0, append: (fdflags & 1) !== 0, path: where });
                 self.view().setUint32(out, id, true);
                 return ok;
             },
@@ -586,13 +642,53 @@ class Program {
         const self = this;
         const v = () => self.view();
         const encoder = new TextEncoder();
+        // the browser's file chooser (mode: FileDialogMode, 0 a file, 1 several, 3 a folder): the chosen files are copied
+        // into FILES (a folder with its own folders), and the program gets their paths (a folder: the folder first)
+        const chooseFiles = (ui, mode) => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.multiple = mode === 1 || mode === 3;
+            if (mode === 3) input.webkitdirectory = true;
+            input.style.display = "none";
+            document.body.appendChild(input);
+            const answer = (result) => {
+                input.remove();
+                ui.fileResult = result;
+                ui.input = true;
+            };
+            input.addEventListener("change", async () => {
+                const files = [...(input.files ?? [])];
+                if (files.length === 0) return answer({ cancel: true });
+                const paths = [];
+                for (const file of files) {
+                    const name = mode === 3 && file.webkitRelativePath ? file.webkitRelativePath : file.name;
+                    const path = normalPath(FILES + "/" + name);
+                    self.addFile(path, new Uint8Array(await file.arrayBuffer()));
+                    paths.push(path);
+                }
+                if (mode === 3) {
+                    const first = files[0].webkitRelativePath || files[0].name;
+                    paths.unshift(normalPath(FILES + "/" + (first.includes("/") ? first.slice(0, first.indexOf("/")) : "")));
+                }
+                answer({ paths });
+            });
+            input.addEventListener("cancel", () => answer({ cancel: true }));
+            input.click();
+        };
         const listen = (ui) => {
             const canvas = self.canvas;
             canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
+            // the pixel of the canvas under the pointer: client coordinates (the visible part of the page, so scrolling
+            // does not matter) over the box of the canvas without its border, scaled by its pixels per CSS pixel (which
+            // need not be whole: 1.25 at 125 %, and a canvas that CSS makes smaller on a phone)
             const position = (e) => {
                 const r = canvas.getBoundingClientRect();
-                ui.x = Math.floor(((e.clientX - r.left) * canvas.width) / (r.width || canvas.width));
-                ui.y = Math.floor(((e.clientY - r.top) * canvas.height) / (r.height || canvas.height));
+                const left = r.left + (canvas.clientLeft ?? 0);
+                const top = r.top + (canvas.clientTop ?? 0);
+                const width = canvas.clientWidth || r.width || canvas.width;
+                const height = canvas.clientHeight || r.height || canvas.height;
+                ui.x = Math.floor(((e.clientX - left) * canvas.width) / width);
+                ui.y = Math.floor(((e.clientY - top) * canvas.height) / height);
             };
             const mods = (e) => {
                 ui.ctrl = e.ctrlKey || e.metaKey;
@@ -602,39 +698,113 @@ class Program {
             // a key code with the modifier keys held at it: bit 16 says that they are there, then Ctrl (17), Shift (18),
             // Alt (19) - KeyModifiers << 17 (stdlib/os/wasi/ui.cshift)
             const withMods = (code) => code | 0x10000 | (ui.ctrl ? 0x20000 : 0) | (ui.shift ? 0x40000 : 0) | (ui.alt ? 0x80000 : 0);
-            canvas.addEventListener("mousemove", (e) => {
-                position(e);
-                ui.input = true;
-            });
-            // the buttons: 0 left, 1 middle, 2 right (MouseEvent.button)
-            const buttons = [["down", "pressed", "released"], ["middleDown", "middlePressed", "middleReleased"],
-                             ["rightDown", "rightPressed", "rightReleased"]];
-            canvas.addEventListener("mousedown", (e) => {
-                const b = buttons[e.button];
-                if (!b) return;
-                canvas.focus();
-                e.preventDefault();
-                position(e);
-                mods(e);
+            // the buttons: 0 left, 1 middle, 2 right (MouseEvent.button), with their bits in MouseEvent.buttons
+            const buttons = [["down", "pressed", "released", 1], ["middleDown", "middlePressed", "middleReleased", 4],
+                             ["rightDown", "rightPressed", "rightReleased", 2]];
+            const press = (b) => {
                 ui[b[0]] = ui[b[1]] = true;
                 ui.input = true;
-            });
-            // a button may go up outside of the canvas
-            (canvas.ownerDocument ?? canvas).addEventListener("mouseup", (e) => {
-                const b = buttons[e.button];
-                if (!b || !ui[b[0]]) return;
-                position(e);
+            };
+            const release = (b) => {
+                if (!ui[b[0]]) return;
                 ui[b[0]] = false;
                 ui[b[2]] = true;
                 ui.input = true;
+            };
+            // the buttons that are not held any more go up (a release that was missed: outside of the window, the focus
+            // was lost)
+            const sync = (held) => {
+                for (const b of buttons) if (ui[b[0]] && (held & b[3]) === 0) release(b);
+            };
+            const releaseAll = () => sync(0);
+            // nothing of the page reacts to the canvas: no scrolling or zooming by touch, no selection, no drag of its
+            // image, no menu of a long touch
+            if (canvas.style) {
+                canvas.style.touchAction = "none";
+                canvas.style.userSelect = canvas.style.webkitUserSelect = "none";
+                canvas.style.webkitTouchCallout = "none";
+            }
+            canvas.addEventListener("dragstart", (e) => e.preventDefault());
+            canvas.addEventListener("selectstart", (e) => e.preventDefault());
+            if (globalThis.PointerEvent) {
+                // pointer events: the mouse, a touchpad, a pen and touch alike; the canvas captures the pointer while a
+                // button is held, so a drag goes on outside of it and its release arrives
+                canvas.addEventListener("pointermove", (e) => {
+                    position(e);
+                    if (e.pointerType === "mouse") sync(e.buttons);
+                    ui.input = true;
+                });
+                canvas.addEventListener("pointerdown", (e) => {
+                    const b = buttons[e.button];
+                    if (!b) return;
+                    canvas.focus();
+                    e.preventDefault();
+                    position(e);
+                    mods(e);
+                    try {
+                        canvas.setPointerCapture(e.pointerId);
+                    } catch {
+                        // a pointer that cannot be captured: its release may still come to the canvas
+                    }
+                    press(b);
+                });
+                canvas.addEventListener("pointerup", (e) => {
+                    const b = buttons[e.button];
+                    position(e);
+                    if (b) release(b);
+                    else releaseAll();
+                });
+                // the browser took the touch over (a gesture of its own): the button goes up where it was
+                canvas.addEventListener("pointercancel", releaseAll);
+                canvas.addEventListener("pointerleave", (e) => {
+                    // a finger lifts off and leaves at once: its press and release are still seen at its place
+                    if (e.pointerType !== "mouse" || ui.down || ui.rightDown || ui.middleDown) return;
+                    ui.x = ui.y = -1;
+                    ui.input = true;
+                });
+            } else {
+                // a browser without pointer events: the mouse alone
+                canvas.addEventListener("mousemove", (e) => {
+                    position(e);
+                    ui.input = true;
+                });
+                canvas.addEventListener("mousedown", (e) => {
+                    const b = buttons[e.button];
+                    if (!b) return;
+                    canvas.focus();
+                    e.preventDefault();
+                    position(e);
+                    mods(e);
+                    press(b);
+                });
+                // a button may go up outside of the canvas
+                (canvas.ownerDocument ?? canvas).addEventListener("mouseup", (e) => {
+                    const b = buttons[e.button];
+                    if (!b || !ui[b[0]]) return;
+                    position(e);
+                    release(b);
+                });
+                canvas.addEventListener("mouseleave", () => {
+                    if (ui.down || ui.rightDown || ui.middleDown) return;
+                    ui.x = ui.y = -1;
+                    ui.input = true;
+                });
+            }
+            // the file chooser of the browser opens only while it handles a click of the user: a click on the button of a
+            // file dialog (Ui.FileDialog tells where it is, cshift_ui_file_arm) opens it here, in the click's handler
+            canvas.addEventListener("click", (e) => {
+                const a = ui.fileArm;
+                if (!a || !globalThis.document) return;
+                const r = canvas.getBoundingClientRect();
+                const x = ((e.clientX - r.left - (canvas.clientLeft ?? 0)) * canvas.width) / (canvas.clientWidth || r.width || canvas.width);
+                const y = ((e.clientY - r.top - (canvas.clientTop ?? 0)) * canvas.height) / (canvas.clientHeight || r.height || canvas.height);
+                if (x < a.x || y < a.y || x >= a.x + a.width || y >= a.y + a.height) return;
+                chooseFiles(ui, a.mode);
             });
             // the right button is the program's, not the browser's menu
             canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-            canvas.addEventListener("mouseleave", () => {
-                if (ui.down || ui.rightDown || ui.middleDown) return;
-                ui.x = ui.y = -1;
-                ui.input = true;
-            });
+            // the window lost the focus (another window, a dialog of the browser): no button stays held
+            globalThis.addEventListener?.("blur", releaseAll);
             canvas.addEventListener("wheel", (e) => {
                 e.preventDefault();
                 ui.wheelDelta -= e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY;
@@ -676,6 +846,7 @@ class Program {
                 self.rewinding = false;
                 return;
             }
+            self.flushDownloads(); // the files the program saved since its last frame
             const ui = self.uiState;
             const until = ms < 0 ? Infinity : performance.now() + ms;
             self.resumeWhen = () => !ui || ui.input || ui.closed || performance.now() >= until;
@@ -729,6 +900,7 @@ class Program {
                 ui.rightPressed = ui.rightReleased = ui.middlePressed = ui.middleReleased = false;
                 ui.wheel = ui.wheelX = 0;
                 ui.input = ui.keys.length > 0 || ui.text.length > 0;
+                ui.armed = false; // the program tells it again if its dialog is still there (see cshift_ui_present)
                 return count;
             },
             cshift_ui_width: () => self.canvas.width,
@@ -736,6 +908,11 @@ class Program {
             cshift_ui_scale: () => self.uiState?.ratio ?? 1,
             cshift_ui_present(pixels, width, height) {
                 const ui = self.uiState;
+                // a frame without a file dialog: its button is gone
+                if (!ui.armed) {
+                    ui.fileArm = null;
+                    if (self.canvas.dataset) delete self.canvas.dataset.fileButton;
+                }
                 if (!ui.image || ui.image.width !== width || ui.image.height !== height) ui.image = ui.context.createImageData(width, height);
                 // ARGB (little endian: B, G, R, A) to the R, G, B, A of a canvas
                 const source = new Uint32Array(self.memory, pixels, width * height);
@@ -760,6 +937,42 @@ class Program {
                 const value = new TextDecoder().decode(self.u8().slice(text, text + length));
                 if (self.uiState) self.uiState.clipboard = value;
                 globalThis.navigator?.clipboard?.writeText(value).catch(() => {});
+            },
+            // the button of a file dialog that opens the browser's file chooser (a click on it, see listen)
+            cshift_ui_file_arm(mode, x, y, width, height) {
+                if (!self.uiState) return;
+                self.uiState.fileArm = { mode, x, y, width, height };
+                self.uiState.armed = true;
+                // where the button is, in pixels of the canvas (for tests and other automation of the page)
+                if (self.canvas.dataset) self.canvas.dataset.fileButton = `${x},${y},${width},${height}`;
+            },
+            // what the file chooser gave: -1 nothing yet, -2 cancelled, else the length of the paths (one per line; with
+            // more than capacity, nothing is taken: the program asks again with room for it)
+            cshift_ui_file_result(buffer, capacity) {
+                const ui = self.uiState;
+                const r = ui?.fileResult;
+                if (!r) return -1;
+                if (r.cancel) {
+                    ui.fileResult = null;
+                    return -2;
+                }
+                const bytes = encoder.encode(r.paths.join("\n"));
+                if (bytes.length > capacity) return bytes.length;
+                self.u8().set(bytes, buffer);
+                ui.fileResult = null;
+                return bytes.length;
+            },
+            // Window.ConfirmClose: the browser asks before the page is closed or left (with a text of its own)
+            cshift_ui_confirm_close(confirm) {
+                self.confirmClose = confirm !== 0;
+                if (!self.beforeUnload && globalThis.addEventListener) {
+                    self.beforeUnload = (e) => {
+                        if (!self.confirmClose) return;
+                        e.preventDefault();
+                        e.returnValue = "";
+                    };
+                    globalThis.addEventListener("beforeunload", self.beforeUnload);
+                }
             },
             cshift_ui_clipboard_get(buffer, capacity) {
                 const bytes = encoder.encode(self.uiState?.clipboard ?? "");
@@ -1128,7 +1341,7 @@ class Program {
             }
         }
         this.instance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1: this.wasi(), env });
-        this.fds.set(3, { node: this.root, pos: 0 });
+        this.fds.set(3, { node: this.root, pos: 0, path: "/" });
         if (this.instance.exports.__cs_wasm_start_unwind) {
             const size = 1 << 16;
             this.asyncData = this.instance.exports.malloc(size + 8);
@@ -1159,6 +1372,7 @@ class Program {
             return;
         }
         if (!this.suspended) {
+            this.flushDownloads();
             this.resolveExit(0);
             return;
         }
@@ -1190,7 +1404,8 @@ class Program {
  * ({ path: URL string | Uint8Array | ArrayBuffer }, fetched before the start), onOutput(text, isError), imports
  * (more functions of "env"), pixelRatio, setTitle (false: the window title does not become the page's title),
  * resizeCanvas (false: the canvas keeps its size on the page; glfwCreateWindow sets only its pixels), onWindow(width,
- * height, title) (called when the program opens its window, e.g. to show the canvas).
+ * height, title) (called when the program opens its window, e.g. to show the canvas), onDownload(name, bytes) (gets
+ * the files that the program saved in /home/web_user/downloads, instead of the browser's downloads).
  * @returns the program: program.exited is a promise of the exit code, program.stop() ends it.
  */
 export async function run(wasm, options = {}) {

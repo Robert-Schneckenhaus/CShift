@@ -1,0 +1,109 @@
+// System.Ui in a real browser: published with "cshiftc publish" and driven by tests/ui-browser-check.mjs (Playwright).
+// The program tells where its widgets are and what it got: the value of a slider, clicks and the frames of Held of an
+// area, the files opened with the browser's file chooser (one, several, a folder) and a file saved as a download.
+
+using System;
+using System.Ui;
+
+struct App
+{
+    double Value;
+    int Clicks;
+    int Held;          // presses seen with Held (one per press)
+    int Mode;          // 0 no dialog, else 1 + FileDialogMode
+    string Path;
+}
+
+int Main()
+{
+    var opened = Window.Open("browser", 360, 300);
+    if (opened is not Window window)
+    {
+        Console.WriteLine("error: " + opened.Message);
+        return 1;
+    }
+    var ui = Ui.Create();
+    var app = App { Path = "" };
+    int frames = 0;
+    double shown = -1.0;
+    string lastLayout = "";
+    while (window.Update())
+    {
+        ui.Begin(window);
+        ui.Slider("value", ref app.Value, 0.0, 100.0);
+        var slider = ui.LastRect();
+        var area = ui.Area(200, 60);
+        if (ui.Clicked())
+        {
+            app.Clicks += 1;
+            Console.WriteLine($"click {app.Clicks}");
+        }
+        // a press that the area holds (one line per press)
+        if (ui.Held() && ui.Input().MousePressed)
+        {
+            app.Held += 1;
+            Console.WriteLine($"held {app.Held}");
+        }
+        Rect[] buttons = new Rect[4];
+        using (ui.Row())
+        {
+            string[] names = ["Open", "Many", "Save", "Folder"];
+            for (var i = 0; i < 4; i += 1)
+            {
+                if (ui.Button(names[i]))
+                {
+                    app.Mode = 1 + i;
+                    if (i == 2)
+                        app.Path = ""; // to save: a new name
+                }
+                buttons[i] = ui.LastRect();
+            }
+        }
+        if (app.Mode > 0)
+        {
+            var mode = (FileDialogMode)(app.Mode - 1);
+            var result = ui.FileDialog("file", "File", ref app.Path, mode);
+            if (result == UiDialogResult.Ok)
+            {
+                if (mode == FileDialogMode.Save)
+                {
+                    // written twice before the next frame: still one download (of the last content)
+                    try File.WriteAllText(app.Path, "draft");
+                    try File.WriteAllText(app.Path, "saved by the program");
+                    Console.WriteLine($"saved {app.Path}");
+                }
+                else if (mode == FileDialogMode.Folder)
+                    Console.WriteLine($"folder {app.Path} {Directory.GetEntries(app.Path).Count()}");
+                else
+                {
+                    var paths = ui.FileDialogPaths("file");
+                    var text = File.ReadAllText(paths.Get(0));
+                    Console.WriteLine($"opened {paths.Count()} {app.Path} {(text is string t ? t.Trim().ToString() : "?")}");
+                }
+                app.Mode = 0;
+            }
+            else if (result == UiDialogResult.Cancel)
+            {
+                Console.WriteLine("cancelled");
+                app.Mode = 0;
+            }
+        }
+        // where the widgets are, whenever it changes (the layout settles in the first frames)
+        string layout = $"layout {window.Scale():F2} slider {slider.X} {slider.Y} {slider.Width} {slider.Height} area {area.X} {area.Y} {area.Width} {area.Height}";
+        for (var i = 0; i < 4; i += 1)
+            layout += $" {buttons[i].X + buttons[i].Width / 2} {buttons[i].Y + buttons[i].Height / 2}";
+        if (layout != lastLayout && app.Mode == 0)
+        {
+            Console.WriteLine(layout);
+            lastLayout = layout;
+        }
+        if ((int)Math.Round(app.Value) != (int)Math.Round(shown))
+        {
+            shown = app.Value;
+            Console.WriteLine($"slider {(int)Math.Round(app.Value)}");
+        }
+        window.Show(ui);
+        frames += 1;
+    }
+    return 0;
+}

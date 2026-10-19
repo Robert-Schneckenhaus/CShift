@@ -406,6 +406,19 @@ struct UiInput
     }
 }
 
+/// What a [Ui.FileDialog] chooses.
+enum FileDialogMode : int32
+{
+    /// A file to open (in the browser: one of the user's files, by the browser's file chooser).
+    Open,
+    /// One or more files to open: [Ui.FileDialogPaths] has them all, `path` the first.
+    OpenMany,
+    /// A file to save: asks before replacing one (in the browser: only a name, the file becomes a download).
+    Save,
+    /// A folder (in the browser: one of the user's folders with all its files).
+    Folder
+}
+
 /// What the user did with a dialog of [Ui.FileDialog].
 enum UiDialogResult : int32
 {
@@ -702,11 +715,17 @@ struct Ui
         return _S[0].LastId != 0u && _S[0].RightActive == _S[0].LastId && _S[0].In.RightReleased && _S[0].LastHot;
     }
 
-    /// True while the left button that went down on the widget placed last is held (dragging, painting into an area).
-    bool Held() { return _S[0].LastId != 0u && _S[0].Active == _S[0].LastId && _S[0].In.MouseDown; }
+    /// True while the left button that went down on the widget placed last is held (dragging, painting into an area),
+    /// also in the frame in which it went down and up again (a quick click on a slow frame) and in the frame of its
+    /// release.
+    bool Held() { return _S[0].LastId != 0u && _S[0].Dragging(_S[0].LastId); }
 
-    /// True while the right button that went down on the widget placed last is held.
-    bool RightHeld() { return _S[0].LastId != 0u && _S[0].RightActive == _S[0].LastId && _S[0].In.RightDown; }
+    /// True while the right button that went down on the widget placed last is held (as [Ui.Held]).
+    bool RightHeld()
+    {
+        return _S[0].LastId != 0u && _S[0].RightActive == _S[0].LastId &&
+               (_S[0].In.RightDown || _S[0].In.RightPressed || _S[0].In.RightReleased);
+    }
 
     /// The mouse pointer for this frame, whatever the widgets under it ask for (call it after the [Ui.Area] it is
     /// for, while that is hovered: `if (ui.Hovered()) ui.SetCursor(Cursor.Crosshair);`).
@@ -815,7 +834,35 @@ struct Ui
     /// folder of `path` and shows it as long as the program draws it; `path` becomes the chosen file when it returns
     /// [UiDialogResult.Ok]: `if (app.Opening) { var r = ui.FileDialog("open", "Open map", ref app.Path); if (r !=
     /// UiDialogResult.None) app.Opening = false; }`.
-    UiDialogResult FileDialog(string id, string title, ref string path) { return _S[0].FileDialog(id, title, ref path); }
+    UiDialogResult FileDialog(string id, string title, ref string path)
+    {
+        return _S[0].FileDialog(id, title, ref path, FileDialogMode.Open);
+    }
+
+    /// The same for a mode: [FileDialogMode.Open] (as above), [FileDialogMode.OpenMany] (several files: click them,
+    /// [Ui.FileDialogPaths] has them after OK), [FileDialogMode.Save] (asks before replacing a file) or
+    /// [FileDialogMode.Folder] (only folders; OK chooses the folder shown).
+    ///
+    /// In the browser (`--backend wasm`) the user's files are not in the file system of the page, so the dialog
+    /// works with the browser: to open, it shows a button that opens the browser's file chooser; the chosen files
+    /// (or the folder with all its files) are copied into `/home/web_user/files/`, and `path` is the first of them
+    /// (the folder). To save, it asks only for a name and gives `/home/web_user/downloads/<name>`: when the program has
+    /// written that file and waits for input again, the page offers it as a download. "Files of the page" shows the
+    /// dialog of widgets for the files of the page itself.
+    UiDialogResult FileDialog(string id, string title, ref string path, FileDialogMode mode)
+    {
+        return _S[0].FileDialog(id, title, ref path, mode);
+    }
+
+    /// The files chosen with the dialog `id` when it last returned [UiDialogResult.Ok] (several with
+    /// [FileDialogMode.OpenMany], else one; empty before).
+    List<string> FileDialogPaths(string id)
+    {
+        var found = _S[0].FileDialogResults.TryGet(_UiState.GlobalId("#file:" + id));
+        if (found is List<string> paths)
+            return paths;
+        return List<string>.Create();
+    }
 
     // ---- widgets ----
 
@@ -966,6 +1013,10 @@ struct _UiRowMemo : IEquatable<_UiRowMemo>
     }
 }
 
+// Where the browser puts the user's files that were chosen to open, and the files that become downloads
+const string _UiFiles = "/home/web_user/files";
+const string _UiDownloads = "/home/web_user/downloads";
+
 // The state of a file dialog (Ui.FileDialog): the folder it shows and its entries, the name of the file.
 struct _UiFileDialog
 {
@@ -975,6 +1026,10 @@ struct _UiFileDialog
     string Listed;            // the folder whose entries are in Entries
     List<string> Entries;     // folders first (with a "/" at the end), then the files
     int Frame;                // the frame it was drawn last
+    List<string> Chosen;      // OpenMany: the files clicked
+    bool Replace;             // Save: the file exists, the dialog asks
+    bool Local;               // in the browser: the dialog of widgets for the files of the page
+    bool Fresh;               // shown for the first frame: the name gets the focus (to save)
 }
 
 struct _UiScroll
@@ -1067,6 +1122,7 @@ struct _UiState
     string IntText;
     int FrameNumber;            // counts the frames (a file dialog knows that it was opened again)
     Dictionary<uint32, _UiFileDialog> FileDialogs;
+    Dictionary<uint32, List<string>> FileDialogResults; // the files of the last OK of each dialog
 
     static _UiState Create()
     {
@@ -1091,7 +1147,7 @@ struct _UiState
             PopupSizes = Dictionary<uint32, Rect>.Create(),
             TooltipText = "",
             IntText = "",
-            FileDialogs = Dictionary<uint32, _UiFileDialog>.Create()
+            FileDialogs = Dictionary<uint32, _UiFileDialog>.Create(), FileDialogResults = Dictionary<uint32, List<string>>.Create()
         };
     }
 
@@ -1268,6 +1324,10 @@ struct _UiState
         }
         DrawTooltip();
         DrawLayers();
+        // a click or a key changes what the program shows, also above the widget that got it: one more frame shows it,
+        // without waiting for the next input (a touch ends without moving the mouse)
+        if (!In.Steady && (In.MouseReleased || In.RightReleased || In.MiddleReleased || In.Keys.Count() > 0))
+            Again = true;
         if (Again)
             WaitMs = 0;
     }
@@ -1894,7 +1954,7 @@ struct _UiState
             {
                 DragOffset = thumb.Contains(In.MouseX, In.MouseY) ? In.MouseY - thumb.Y : thumbHeight / 2;
             }
-            if (Active == barId && In.MouseDown)
+            if (Dragging(barId))
                 offset = (int)((int64)(In.MouseY - DragOffset - track.Y) * maxOffset / room);
             offset = Math.Clamp(offset, 0, maxOffset);
             thumbY = track.Y + (int)((int64)room * offset / maxOffset);
@@ -1914,7 +1974,7 @@ struct _UiState
             bool hot = Interact(barXId, trackX, false);
             if (hot && In.MousePressed)
                 DragOffset = thumb.Contains(In.MouseX, In.MouseY) ? In.MouseX - thumb.X : thumbWidth / 2;
-            if (Active == barXId && In.MouseDown)
+            if (Dragging(barXId))
                 offsetX = (int)((int64)(In.MouseX - DragOffset - trackX.X) * maxOffsetX / room);
             offsetX = Math.Clamp(offsetX, 0, maxOffsetX);
             thumb.X = trackX.X + (int)((int64)room * offsetX / maxOffsetX);
@@ -2008,6 +2068,13 @@ struct _UiState
     bool Clicked(uint32 id, bool hot)
     {
         return Active == id && In.MouseReleased && hot;
+    }
+
+    // the left button went down on the widget and is held, or went down and up again in this frame (a quick click on a
+    // slow frame), or comes up now (its last position counts): a slider, a scroll bar, the selection of a text follow it
+    bool Dragging(uint32 id)
+    {
+        return Active == id && (In.MouseDown || In.MousePressed || In.MouseReleased);
     }
 
     bool Activated(uint32 id)
@@ -2473,19 +2540,111 @@ struct _UiState
 
     // ---- the file dialog ----
 
-    UiDialogResult FileDialog(string name, string title, ref string path)
+    UiDialogResult FileDialog(string name, string title, ref string path, FileDialogMode mode)
     {
         uint32 id = IdOf("#file:" + name);
         var d = FileDialogs.GetOrDefault(id, _UiFileDialog { Frame = -10 });
         if (d.Frame < FrameNumber - 1)
         {
             // (again) shown: from the folder of the path
-            string folder = Path.GetDirectory(path);
+            string folder = mode == FileDialogMode.Folder ? path : Path.GetDirectory(path);
             if (folder.Length == 0 || !Directory.Exists(folder))
                 folder = Directory.GetCurrentDirectory();
-            d = _UiFileDialog { Folder = folder, FolderText = folder, Name = Path.GetFileName(path), Listed = "", Entries = List<string>.Create() };
+            d = _UiFileDialog { Folder = folder, FolderText = folder, Name = mode == FileDialogMode.Folder ? "" : Path.GetFileName(path),
+                                Listed = "", Entries = List<string>.Create(), Chosen = List<string>.Create(), Fresh = true };
         }
         d.Frame = FrameNumber;
+        var result = UiDialogResult.None;
+        var chosen = List<string>.Create();
+        if (_UiOs.FilePicker() && !d.Local)
+            result = BrowserFileDialog(name, title, ref path, mode, ref d, chosen);
+        else
+            result = WidgetFileDialog(name, title, ref path, mode, ref d, chosen);
+        d.Fresh = false;
+        if (result == UiDialogResult.Ok)
+            FileDialogResults.Set(GlobalId("#file:" + name), chosen);
+        if (result != UiDialogResult.None)
+        {
+            d.Frame = -10; // closed: the next time it starts from the path again
+            Again = true;  // the next frame without it, at once (the browser's chooser answers without input)
+        }
+        FileDialogs.Set(id, d);
+        return result;
+    }
+
+    // The dialog in the browser: the browser's file chooser for the user's files (a click on the button opens it, see
+    // _UiOs.FileArm), a name for a download.
+    UiDialogResult BrowserFileDialog(string name, string title, ref string path, FileDialogMode mode, ref _UiFileDialog d, List<string> chosen)
+    {
+        var result = UiDialogResult.None;
+        BeginModal(name, title);
+        if (mode == FileDialogMode.Save)
+        {
+            Paragraph("The file is saved as a download of the browser.");
+            string fileName = d.Name;
+            TextBox("name", ref fileName);
+            FocusFirst(d.Fresh);
+            d.Name = fileName;
+            bool submit = Submitted("name");
+            BeginLayout(1, 0);
+            if ((Button("Save") || submit) && d.Name.Trim().Length > 0)
+            {
+                Directory.Create(_UiDownloads);
+                path = Path.Combine(_UiDownloads, Path.GetFileName(d.Name.Trim().ToString()));
+                chosen.Add(path);
+                result = UiDialogResult.Ok;
+            }
+        }
+        else
+        {
+            Paragraph(mode == FileDialogMode.Folder ? "Choose a folder of your computer: its files are copied into the page." :
+                 mode == FileDialogMode.OpenMany ? "Choose files of your computer." : "Choose a file of your computer.");
+            Button(mode == FileDialogMode.Folder ? "Choose folder..." : mode == FileDialogMode.OpenMany ? "Choose files..." : "Choose file...");
+            // a click on this button opens the browser's file chooser while the browser handles the click (it opens only
+            // then): the page is told where the button is
+            if (Skip == 0)
+                _UiOs.FileArm((int)mode, Last);
+            var paths = List<string>.Create();
+            int answer = _UiOs.FileResult(paths);
+            if (answer == 1 && paths.Count() > 0)
+            {
+                // the files (the folder: the page gives it first, then its files)
+                path = paths.Get(0);
+                if (mode == FileDialogMode.Folder)
+                    chosen.Add(path);
+                else
+                {
+                    foreach (var p in paths)
+                        chosen.Add(p);
+                }
+                result = UiDialogResult.Ok;
+            }
+            else if (answer == 0)
+                result = UiDialogResult.Cancel;
+            BeginLayout(1, 0);
+            if (Button("Files of the page"))
+                d.Local = true;
+        }
+        if (Button("Cancel") || (Skip == 0 && !KeysBlocked(0u) && In.Pressed(Key.Escape)))
+            result = UiDialogResult.Cancel;
+        EndScope();
+        EndScope();
+        return result;
+    }
+
+    // The widget placed last gets the keyboard focus (when `now`): the name of a file to save, typed at once.
+    void FocusFirst(bool now)
+    {
+        if (!now || LastId == 0u)
+            return;
+        FocusNext = LastId;
+        FocusSet = true;
+        Again = true;
+    }
+
+    // The dialog of widgets: folders and files of the file system.
+    UiDialogResult WidgetFileDialog(string name, string title, ref string path, FileDialogMode mode, ref _UiFileDialog d, List<string> chosen)
+    {
         if (d.Listed != d.Folder)
         {
             d.FolderText = d.Folder;
@@ -2495,12 +2654,13 @@ struct _UiState
             {
                 if (Directory.Exists(Path.Combine(d.Folder, entry)))
                     d.Entries.Add(entry + "/");
-                else
+                else if (mode != FileDialogMode.Folder)
                     files.Add(entry);
             }
             foreach (var file in files)
                 d.Entries.Add(file);
             d.Listed = d.Folder;
+            d.Chosen = List<string>.Create();
         }
         var result = UiDialogResult.None;
         BeginModal(name, title);
@@ -2523,33 +2683,82 @@ struct _UiState
             string entry = d.Entries.Get(i);
             BeginId(i.ToString());
             bool folder = entry.EndsWith("/");
-            if (ListItem(entry, !folder && entry == d.Name))
+            bool selected = !folder && (mode == FileDialogMode.OpenMany ? d.Chosen.Contains(entry) : entry == d.Name);
+            if (ListItem(entry, selected))
             {
                 if (folder)
                     d.Folder = Path.Combine(d.Folder, entry.Substring(0, entry.Length - 1));
+                else if (mode == FileDialogMode.OpenMany)
+                {
+                    // a click adds the file or takes it away again
+                    if (d.Chosen.Contains(entry))
+                        d.Chosen.Remove(entry);
+                    else
+                        d.Chosen.Add(entry);
+                    d.Name = d.Chosen.Count() > 0 ? d.Chosen.Get(0) : "";
+                }
                 else
+                {
                     d.Name = entry;
+                    d.Replace = false;
+                }
             }
             EndScope();
         }
         EndScope();
-        string fileName = d.Name;
-        TextBox("name", ref fileName);
-        d.Name = fileName;
-        bool submit = Submitted("name");
-        BeginLayout(1, 0);
-        if ((Button("OK") || submit) && d.Name.Length > 0)
+        bool submit = false;
+        if (mode == FileDialogMode.Folder)
+            Label(d.Folder, true);
+        else if (mode == FileDialogMode.OpenMany && d.Chosen.Count() > 1)
+            Label($"{d.Chosen.Count()} files", true);
+        else
         {
-            path = Path.Combine(d.Folder, d.Name);
+            string fileName = d.Name;
+            TextBox("name", ref fileName);
+            FocusFirst(d.Fresh && mode == FileDialogMode.Save);
+            if (fileName != d.Name)
+                d.Replace = false;
+            d.Name = fileName;
+            submit = Submitted("name");
+        }
+        if (d.Replace)
+            Paragraph($"{d.Name} exists already. Replace it?");
+        BeginLayout(1, 0);
+        bool ok = Button(d.Replace ? "Replace" : "OK") || submit;
+        if (ok && mode == FileDialogMode.Folder)
+        {
+            path = d.Folder;
+            chosen.Add(path);
             result = UiDialogResult.Ok;
         }
+        else if (ok && d.Name.Length > 0)
+        {
+            string file = Path.Combine(d.Folder, d.Name);
+            if (mode == FileDialogMode.Save && !d.Replace && File.Exists(file))
+                d.Replace = true; // asks first
+            else
+            {
+                path = file;
+                if (mode == FileDialogMode.OpenMany && d.Chosen.Count() > 0)
+                {
+                    foreach (var entry in d.Chosen)
+                        chosen.Add(Path.Combine(d.Folder, entry));
+                    path = chosen.Get(0);
+                }
+                else
+                    chosen.Add(file);
+                result = UiDialogResult.Ok;
+            }
+        }
         if (Button("Cancel") || (Skip == 0 && !KeysBlocked(0u) && In.Pressed(Key.Escape)))
-            result = UiDialogResult.Cancel;
+        {
+            if (d.Replace)
+                d.Replace = false; // back to the name
+            else
+                result = UiDialogResult.Cancel;
+        }
         EndScope();
         EndScope();
-        if (result != UiDialogResult.None)
-            d.Frame = -10; // closed: the next time it starts from the path again
-        FileDialogs.Set(id, d);
         return result;
     }
 
@@ -2776,7 +2985,7 @@ struct _UiState
         int thumb = Px(8);
         int left = r.X + thumb;
         int width = Math.Max(1, r.Width - 2 * thumb);
-        if (Active == id && In.MouseDown && range != 0)
+        if (Dragging(id) && range != 0)
             value = min + (double)(In.MouseX - left) / (double)width * range;
         if (HasKeys(id) && range != 0)
         {
@@ -2890,7 +3099,7 @@ struct _UiState
         {
             Caret = Math.Clamp(Caret, 0, text.Length);
             Anchor = Math.Clamp(Anchor, 0, text.Length);
-            if (Active == id && In.MouseDown)
+            if (Dragging(id))
             {
                 int column = Math.Max(0, (In.MouseX - inner.X + ScrollX + cw / 2) / Math.Max(1, cw));
                 int at = ByteOfChar(text, column);

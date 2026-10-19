@@ -248,6 +248,17 @@ if (app.Opening)
 }
 ```
 
+`ui.FileDialog(id, title, ref path, mode)` chooses something else (`FileDialogMode`):
+
+| Mode | The dialog | In the browser |
+|---|---|---|
+| `Open` (the call without a mode) | one file | the browser's file chooser |
+| `OpenMany` | several files: a click adds a file or takes it away; `ui.FileDialogPaths(id)` has them all, `path` the first | the chooser with several files |
+| `Save` | a file to write: the name gets the focus, and an existing file is replaced only after "Replace" | only a name: the file becomes a download |
+| `Folder` | only folders; OK chooses the folder shown | the chooser of a folder, with all its files |
+
+`ui.FileDialogPaths(id)` gives the files of the last OK of the dialog `id` (one in the other modes).
+
 `ui.Tooltip(text)` after a widget shows the text next to the mouse when it rests on the widget for half a second.
 
 Inside a popup or a dialog, draw with the methods of the Ui, which draw into its layer: `ui.FillRect`, `ui.DrawText`,
@@ -437,8 +448,37 @@ cshiftc publish demo-ui        # bin/demo-ui.html: open it in a browser
 The scale is the page's `devicePixelRatio` (the canvas has that many pixels per CSS pixel; the option `pixelRatio`
 of `run` sets another). Ctrl+C and Ctrl+X put the selected text on the system clipboard; Ctrl+V pastes from it (the
 browser gives the text with its paste event). The page cannot be closed by the program; `window.Dispose()` stops
-the input, and `window.ConfirmClose` has no effect (closing the tab is not asked about). `ui.RequestFrame` resumes
-the program after the time (at the browser's next animation frame).
+the input. `window.ConfirmClose(true)` makes the browser ask before the tab is closed or the page left
+(`beforeunload`): the browser shows a question of its own (no text of the program), only after the user has done
+something on the page, and the program gets no `CloseRequested`; `ConfirmClose(false)` (no unsaved changes) stops it.
+`ui.RequestFrame` resumes the program after the time (at the browser's next animation frame).
+
+**The user's files.** The program sees only the file system of the page (in memory: the `assets` of `cshift.json`,
+and what it writes), so `ui.FileDialog` works with the browser:
+
+- To open (`Open`, `OpenMany`, `Folder`), the dialog shows a button "Choose file..." (files, folder). A browser opens
+  its file chooser only while it handles a click of the user, so the page opens it itself: the dialog tells the page
+  where the button is, and a click on it opens the chooser in the handler of that click (Chrome, Edge, Firefox and
+  Safari all allow that; a press of Enter on the button does not open it). The chosen files are copied into
+  `/home/web_user/files/` and `path` is the first of them; several files land side by side, so a program can read the
+  neighbours of the file it opened (`Monster_char.amb`, then `Monster_gfx.amb` from the same folder, if the user chose
+  both). A folder (`webkitdirectory`; not on phones) lands with its own folders as `/home/web_user/files/<folder>/...`,
+  and `path` is that folder. Cancel in the browser's chooser cancels the dialog (browsers that do not report it leave
+  the dialog open: its Cancel). "Files of the page" shows the dialog of widgets for the page's own files.
+- To save (`Save`), the dialog asks only for a name and gives `/home/web_user/downloads/<name>`. Every file that the
+  program writes into `/home/web_user/downloads/` and closes is offered as a download (`<a download>` of a `Blob`) when
+  the program waits for input again: once per file, also when it was written in several steps before that. The file
+  stays in the page's memory.
+
+**The mouse, touch and pens.** The canvas takes pointer events: the mouse, a touchpad, a pen and a finger work alike
+(a finger is the left button: a tap is a click, dragging moves a slider or paints). While a button is held the canvas
+captures the pointer, so a drag goes on outside of it and its release arrives; the state of the buttons follows
+`event.buttons` (a release outside of the window is not missed), and a button is let go when the window loses the
+focus. On the canvas the browser neither scrolls nor zooms by touch, selects text or drags the picture
+(`touch-action: none`, `user-select: none`). The position is the canvas pixel under the pointer, with any device
+pixel ratio (1.25 at 125 %), a scrolled page and a canvas that CSS makes smaller (a phone). Widgets also react to a
+click that went down and up within one frame (a slow frame, a tap), and a click or a key gets one more frame at once,
+so what it changed is shown without waiting for the next input.
 
 This needs `--backend wasm`, which can suspend a program; with `--target wasm32-wasi` (LLVM) a program that opens a
 window does not link. Under node or wasmtime there is no canvas: `Window.Open` reports `UiError.NotSupported`.

@@ -7,7 +7,10 @@ removed, tooltips, a panel with a theme switch, a spinner that turns while "Busy
 without input, no busy loop), a zoom slider (and Ctrl+Plus, Ctrl+Minus) and wrapped text. Quitting (File > Quit,
 Ctrl+Q or closing the window: `window.ConfirmClose(true)`) asks first while some tasks are not done. The shortcuts
 are asked for with the modifier keys of the key press (`input.Pressed(Key.Q, KeyModifiers.Ctrl)`), and the icon next
-to the title is a part of an image drawn twice as large (`ui.DrawImage`), also on the Amiga. The
+to the title is a part of an image drawn twice as large (`ui.DrawImage`), also on the Amiga.
+File > Import tasks... reads a text file (one task per line, `[x] ` before a done one) and Export tasks... writes one
+(`ui.FileDialog` with `FileDialogMode.Open` and `Save`): in the browser the file comes from the browser's file chooser,
+and the export is a download. The
 program's state is the struct `App`; `Draw` describes the window for it in every frame and changes it where the user
 did something - there are no widget objects or callbacks.
 

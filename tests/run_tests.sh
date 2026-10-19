@@ -478,6 +478,19 @@ elif [ -n "$NODE" ]; then
     else
         report_ok "ui in the browser"
     fi
+    # System.Ui in real browsers (Playwright, if it is installed): tests/ui/browser.cshift as a page of "cshiftc
+    # publish", driven by tests/ui-browser-check.mjs (the mouse, touch, pixel ratios, the file chooser, a download)
+    check=("$DIR/ui-browser-check.mjs" "$TMP/ui-browser.html")
+    if command -v cygpath > /dev/null 2>&1; then check=("$(cygpath -w "$DIR/ui-browser-check.mjs")" "$(cygpath -w "$TMP/ui-browser.html")"); fi
+    if ! "$COMPILER" publish "$DIR/ui/browser.cshift" -o "$TMP/ui-browser.html" > /dev/null 2> "$TMP/ui-browser.err"; then
+        report_fail "ui in real browsers" "publish failed: $(head -n 3 "$TMP/ui-browser.err" | tr '\n' ' ')"
+    elif ! "$NODE" --no-warnings "${check[@]}" > "$TMP/ui-browser.out" 2>&1; then
+        report_fail "ui in real browsers" "$(grep -E 'FAILED|Error' "$TMP/ui-browser.out" | head -n 4 | tr '\n' ' ')"
+    elif grep -q "skipped" "$TMP/ui-browser.out"; then
+        echo "ui in real browsers: $(tail -n 1 "$TMP/ui-browser.out")"
+    else
+        report_ok "ui in real browsers ($(tail -n 1 "$TMP/ui-browser.out" | sed 's/.*(//; s/)//'))"
+    fi
 else
     echo "publish: skipped (node not found)"
 fi

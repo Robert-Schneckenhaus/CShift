@@ -1,0 +1,105 @@
+// Standard library: a click within one frame (the button went down and up again before the frame was made, as with
+// slow frames or a touch): a slider takes the value at the click, a scroll bar jumps, the text cursor goes to the
+// click, Ui.Held is true for an area in that frame, and the frame after a click comes at once (WaitMilliseconds 0).
+// Main returns the number of failed checks.
+// expect-stdout: slider 75
+// expect-exit: 0
+
+using System;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+UiInput At(int x, int y)
+{
+    var input = UiInput.Create();
+    input.MouseX = x;
+    input.MouseY = y;
+    return input;
+}
+
+// pressed and released within the frame: the button is up at its end
+UiInput QuickClick(int x, int y)
+{
+    var input = At(x, y);
+    input.MousePressed = true;
+    input.MouseReleased = true;
+    return input;
+}
+
+struct Rects
+{
+    Rect Slider;
+    Rect Area;
+    Rect Text;
+    Rect Scroll;
+    bool Held;
+}
+
+double Value;
+string Name;
+
+void Frame(Ui ui, UiInput input, ref Rects rects)
+{
+    ui.Begin(input, 400, 400, 1.0);
+    ui.Slider("value", ref Value, 0.0, 100.0);
+    rects.Slider = ui.LastRect();
+    rects.Area = ui.Area(100, 40);
+    rects.Held = ui.Held();
+    ui.TextBox("name", ref Name);
+    rects.Text = ui.LastRect();
+    using (ui.Scroll("list", 100))
+    {
+        for (var i = 0; i < 50; i += 1)
+            ui.Label($"Line {i}");
+    }
+    rects.Scroll = ui.LastRect();
+    ui.End();
+}
+
+int Main()
+{
+    var ui = Ui.Create();
+    var rects = Rects { };
+    Value = 0.0;
+    Name = "abcdefgh";
+    for (var i = 0; i < 4; i += 1)
+        Frame(ui, At(-1, -1), ref rects);
+
+    // the slider: a quick click at three quarters of its track (the track is inside the thumb's margins)
+    int thumb = 8;
+    int x = rects.Slider.X + thumb + (rects.Slider.Width - 2 * thumb) * 3 / 4;
+    Frame(ui, QuickClick(x, rects.Slider.Y + rects.Slider.Height / 2), ref rects);
+    Console.WriteLine($"slider {(int)Math.Round(Value)}");
+    Check(ui.WaitMilliseconds() == 0, "the frame after a click comes at once");
+    Frame(ui, At(-1, -1), ref rects);
+    Check(ui.WaitMilliseconds() != 0, "and only one");
+
+    // an area: Held in the frame of a quick click
+    Frame(ui, QuickClick(rects.Area.X + 5, rects.Area.Y + 5), ref rects);
+    Check(rects.Held, "Held in the frame of a quick click");
+    Frame(ui, At(rects.Area.X + 5, rects.Area.Y + 5), ref rects);
+    Check(!rects.Held, "not Held after it");
+
+    // the text box: a quick click puts the cursor there (typing then inserts at it)
+    Frame(ui, QuickClick(rects.Text.X + 6 + 7 * 3, rects.Text.Y + rects.Text.Height / 2), ref rects);
+    var typed = At(-1, -1);
+    typed.Text = "X";
+    Frame(ui, typed, ref rects);
+    Check(Name.IndexOf("X") > 0 && Name.IndexOf("X") < Name.Length - 1, $"the cursor at the click: {Name}");
+
+    // the scroll bar: a quick click near its bottom scrolls down
+    Frame(ui, QuickClick(rects.Scroll.X + rects.Scroll.Width - 5, rects.Scroll.Y + rects.Scroll.Height - 12), ref rects);
+    Frame(ui, At(-1, -1), ref rects);
+    Check(ui.ScrollY("list") > 0, $"the scroll bar: {ui.ScrollY("list")}");
+    return Failures;
+}

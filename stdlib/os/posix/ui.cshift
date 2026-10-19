@@ -529,6 +529,11 @@ struct _UiOs
         }
     }
 
+    // the user's files come from the file system itself (the browser has a chooser of its own: os/wasi/ui.cshift)
+    static bool FilePicker() { return false; }
+    static void FileArm(int mode, Rect button) { }
+    static int FileResult(List<string> paths) { return -1; }
+
     static void ConfirmClose(bool confirm) { _UiXw.Confirm = confirm; }
 
     static void Close()

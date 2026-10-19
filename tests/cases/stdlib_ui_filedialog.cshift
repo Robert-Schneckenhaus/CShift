@@ -1,8 +1,11 @@
 // Standard library: Ui.FileDialog without a window - the folders and files of a folder, into a folder and Up again,
-// choosing a file and OK, Cancel, Escape. The program runs in a temporary directory. Main returns the number of failed
+// choosing a file and OK, Cancel, Escape; the modes: OpenMany (several files, Ui.FileDialogPaths), Save (asks before
+// replacing a file), Folder (only folders, OK chooses the folder shown). The program runs in a temporary directory. Main returns the number of failed
 // checks.
 // skip-target: m68k-linux (qemu-m68k: readdir of a 32-bit program fails on the 64-bit directory cookies of ext4)
 // expect-stdout: chosen maps/b.map
+// expect-stdout: many 2
+// expect-stdout: folder maps/sub
 // expect-exit: 0
 
 using System;
@@ -47,23 +50,39 @@ Rect TextAt(Ui ui, string text)
     return Rect.Create(-100, -100, 0, 0);
 }
 
+FileDialogMode Mode = FileDialogMode.Open;
+
 UiDialogResult Frame(Ui ui, UiInput input, ref string path)
 {
     ui.BeginCommands(input, 640, 480, 1.0, Font.Fixed7x13());
-    var result = ui.FileDialog("open", "Open map", ref path);
+    var result = Mode == FileDialogMode.Open ? ui.FileDialog("open", "Open map", ref path) : ui.FileDialog("open", "Open map", ref path, Mode);
     ui.End();
     return result;
 }
 
 void Settle(Ui ui, ref string path)
 {
-    for (var i = 0; i < 4; i += 1)
+    for (var i = 0; i < 6; i += 1)
     {
         Frame(ui, At(-1, -1), ref path);
         if (ui.WaitMilliseconds() != 0)
             return;
     }
 }
+
+// a click on a text of the dialog (then the frames that follow it)
+UiDialogResult ClickOn(Ui ui, string text, ref string path)
+{
+    var r = TextAt(ui, text);
+    if (r.Y < 0)
+        Console.WriteLine("FAILED: no " + text);
+    var result = Frame(ui, Click(r.X + 4, r.Y + 4), ref path);
+    if (result == UiDialogResult.None)
+        Settle(ui, ref path);
+    return result;
+}
+
+string Relative(string path) { return Path.GetRelativePath(Directory.GetCurrentDirectory(), path); }
 
 int Main()
 {
@@ -101,5 +120,37 @@ int Main()
     var escape = At(-1, -1);
     escape.Keys.Add(Key.Escape);
     Check(Frame(ui, escape, ref other) == UiDialogResult.Cancel, "Escape");
+    Check(ui.FileDialogPaths("open").Count() == 1 && Relative(ui.FileDialogPaths("open").Get(0)) == "maps/b.map", "the paths of Open");
+
+    // ---- OpenMany: two files ----
+    Mode = FileDialogMode.OpenMany;
+    string many = "maps/a.map";
+    Settle(ui, ref many);
+    ClickOn(ui, "a.map", ref many); // a.map was the name: a click adds it to the chosen ones
+    ClickOn(ui, "b.map", ref many);
+    Check(ClickOn(ui, "OK", ref many) == UiDialogResult.Ok, "OpenMany: OK");
+    var paths = ui.FileDialogPaths("open");
+    Console.WriteLine($"many {paths.Count()}");
+    Check(paths.Count() == 2 && Relative(paths.Get(0)) == "maps/a.map" && Relative(paths.Get(1)) == "maps/b.map" && Relative(many) == "maps/a.map",
+          "OpenMany: both files, the first in path");
+
+    // ---- Save: asks before replacing ----
+    Mode = FileDialogMode.Save;
+    string save = "maps/b.map";
+    Settle(ui, ref save);
+    Check(ClickOn(ui, "OK", ref save) == UiDialogResult.None && TextAt(ui, "Replace").Y > 0, "Save: asks before replacing b.map");
+    Check(ClickOn(ui, "Replace", ref save) == UiDialogResult.Ok && Relative(save) == "maps/b.map", "Save: Replace");
+    string fresh = "maps/new.map";
+    Settle(ui, ref fresh);
+    Check(ClickOn(ui, "OK", ref fresh) == UiDialogResult.Ok && Relative(fresh) == "maps/new.map", "Save: a new file at once");
+
+    // ---- Folder: only folders, OK chooses the one shown ----
+    Mode = FileDialogMode.Folder;
+    string folder = "maps";
+    Settle(ui, ref folder);
+    Check(TextAt(ui, "a.map").Y < 0 && TextAt(ui, "sub/").Y > 0, "Folder: only folders");
+    ClickOn(ui, "sub/", ref folder);
+    Check(ClickOn(ui, "OK", ref folder) == UiDialogResult.Ok, "Folder: OK");
+    Console.WriteLine($"folder {Relative(folder)}");
     return Failures;
 }
