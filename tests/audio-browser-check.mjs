@@ -33,7 +33,12 @@ const tested = [];
 for (const name of ["chromium", "firefox"]) {
     let browser;
     try {
-        browser = await playwright[name].launch();
+        // Firefox: sound without a click of the user, and without a sound device (a runner of the CI) a context that
+        // plays into nothing on a clock of its own (else its clock stands still); Chromium headless has both anyway
+        browser = await playwright[name].launch(name === "firefox" ? {
+            firefoxUserPrefs: { "media.autoplay.default": 0, "media.autoplay.blocking_policy": 0,
+                                "media.cubeb.force_null_context": true },
+        } : {});
     } catch {
         if (required.includes(name)) failures.push(`${name}: cannot be started`);
         else console.log(`${name}: not installed`);
@@ -71,7 +76,7 @@ for (const name of ["chromium", "firefox"]) {
         await p.mouse.click(100, 50);
         const done = await waitFor("audio: done", 10000);
         if (!done) {
-            failures.push(`${name}: the second was not played`);
+            failures.push(`${name}: the second was not played (${lines.filter((l) => l.startsWith("audio")).slice(-3).join(" | ")})`);
             continue;
         }
         const seconds = Number(done.split(" ")[3]);
