@@ -2,7 +2,8 @@
 // Playwright, in every browser of Playwright that is installed (Chromium, Firefox, WebKit), at the pixel ratios 1, 1.25,
 // 1.5 and 2. It drags the slider with the mouse, clicks the area quickly and with a 100 ms press, drags the slider by
 // touch (Chromium), opens files with the browser's file chooser (one, several, a folder) and saves a download.
-// Without Playwright it says so and ends with 0.
+// Without Playwright it says so and ends with 0. CSHIFT_BROWSERS (e.g. "chromium,firefox", in CI) names browsers that
+// must be there: one that cannot be started is then a failure.
 //
 //   cshiftc publish tests/ui/browser.cshift -o browser.html && node tests/ui-browser-check.mjs browser.html
 
@@ -216,6 +217,9 @@ for (const name of ["chromium", "firefox", "webkit"]) {
     }
 }
 await rm(files, { recursive: true, force: true });
+for (const name of (process.env.CSHIFT_BROWSERS ?? "").split(",").filter((n) => n.length > 0)) {
+    if (!tested.includes(name)) fail(`${name} was asked for (CSHIFT_BROWSERS) but cannot be started`);
+}
 if (tested.length === 0) {
     console.log("ui in a real browser: skipped (no browser of Playwright installed)");
     process.exit(0);
