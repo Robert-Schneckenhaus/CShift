@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.38] - 2026-10-19
+
 ### Standard library
 - **`System.Audio`: sound output.** `AudioOutput.Open(sampleRate, channels [, bufferMilliseconds])` plays signed
   16-bit samples, mono or stereo, at 8000 to 192000 Hz. The program writes ahead into the buffer of the output and
