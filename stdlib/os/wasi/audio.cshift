@@ -1,9 +1,10 @@
 // The sound part of the operating system layer on WebAssembly for System.Audio (stdlib/audio.cshift). In the browser it
 // is Web Audio: the functions below are imported from "env" and given by web/cshift.js. Each write becomes an
 // AudioBuffer that is started right after the one before it (on the clock of the AudioContext), so the program does
-// not need a thread or a worklet. Browsers start the sound only after the user clicked or pressed a key on the page:
-// until then the output waits (the context is suspended), and Queued stays where it is. Without a browser (node,
-// wasmtime) cshift_audio_open is missing and the output reports AudioError.NotSupported.
+// not need a thread or a worklet. As for System.Ui, the imports need --backend wasm (clang's wasm-ld cannot link them).
+// Browsers start the sound only after the user clicked or pressed a key on the page: until then the output waits (the
+// context is suspended), and Queued stays where it is. Without a browser (node, wasmtime) cshift_audio_open is missing
+// and the output reports AudioError.NotSupported.
 //
 // The functions of the host:
 //   int cshift_audio_open(int rate, int channels, int frames)   0: open, 1: no Web Audio, 3: the format is refused

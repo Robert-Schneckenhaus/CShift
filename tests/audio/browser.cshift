@@ -28,6 +28,7 @@ int Main()
     var ui = Ui.Create();
     int total = 0;
     double start = -1.0;
+    double shown = 0.0;
     bool done = false;
     while (window.Update())
     {
@@ -47,6 +48,12 @@ int Main()
         {
             done = true;
             Console.WriteLine($"audio: done {total} {now - start:F2}");
+        }
+        // where it is, once a second (for the message of a check that fails)
+        if (!done && start >= 0.0 && now - shown >= 1.0)
+        {
+            shown = now;
+            Console.WriteLine($"audio: {total} written, {output.Queued()} queued");
         }
         ui.Label(done ? "done" : $"{total}");
         if (!done)

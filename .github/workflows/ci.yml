@@ -99,12 +99,6 @@ jobs:
           build/stage2/cshiftc publish tests/ui/browser.cshift -o "$RUNNER_TEMP/ui-browser.html"
           CSHIFT_BROWSERS=chromium,firefox node tests/ui-browser-check.mjs "$RUNNER_TEMP/ui-browser.html"
 
-      # System.Audio in real browsers: a second of sound with Web Audio (tests/audio-browser-check.mjs)
-      - name: System.Audio in Chromium and Firefox (Playwright)
-        run: |
-          build/stage2/cshiftc publish tests/audio/browser.cshift -o "$RUNNER_TEMP/audio-browser.html"
-          CSHIFT_BROWSERS=chromium,firefox node tests/audio-browser-check.mjs "$RUNNER_TEMP/audio-browser.html"
-
       # System.Audio in real time: ALSA (libasound is loaded at run time) through PulseAudio with a sink that plays
       # into nothing, at the speed of a sound card
       - name: Play sound (ALSA, PulseAudio)
@@ -115,6 +109,13 @@ jobs:
           PATH="$LLVM_PREFIX/bin:$PATH" build/stage2/cshiftc tests/audio/tone.cshift -o "$RUNNER_TEMP/tone"
           "$RUNNER_TEMP/tone" | tee "$RUNNER_TEMP/tone.out"
           grep -q "frames played" "$RUNNER_TEMP/tone.out"
+
+      # System.Audio in real browsers: a second of sound with Web Audio (tests/audio-browser-check.mjs), with the
+      # PulseAudio of the step before as the sound device
+      - name: System.Audio in Chromium and Firefox (Playwright)
+        run: |
+          build/stage2/cshiftc publish tests/audio/browser.cshift -o "$RUNNER_TEMP/audio-browser.html"
+          CSHIFT_BROWSERS=chromium,firefox node tests/audio-browser-check.mjs "$RUNNER_TEMP/audio-browser.html"
 
       # System.Ui with a real window: X11 (libX11 is loaded at run time) under a virtual X server
       - name: Open a window (X11, Xvfb)

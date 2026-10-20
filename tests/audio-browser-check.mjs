@@ -1,7 +1,9 @@
 // System.Audio in real browsers: a page of "cshiftc publish" of tests/audio/browser.cshift, opened as a file (file://)
 // with Playwright in Chromium and Firefox (those that are installed). The page is clicked first (browsers start the
 // sound only after the user did something on the page), then the program plays a second of a tone with Web Audio:
-// it must take about a second (the output plays in real time, and does not end before the sound was heard). Without
+// it must take about a second (the output plays in real time, and does not end before the sound was heard). The
+// Firefox of Playwright on the runners of the CI keeps its AudioContext suspended (no sound output there): then it
+// only checks that the output opened and took a whole buffer, and says so. Without
 // Playwright it says so and ends with 0. CSHIFT_BROWSERS (e.g. "chromium,firefox", in CI) names browsers that must be
 // there.
 //
@@ -33,7 +35,10 @@ const tested = [];
 for (const name of ["chromium", "firefox"]) {
     let browser;
     try {
-        browser = await playwright[name].launch();
+        // Firefox: sound without a click of the user (Chromium headless allows it anyway)
+        browser = await playwright[name].launch(name === "firefox" ? {
+            firefoxUserPrefs: { "media.autoplay.default": 0, "media.autoplay.blocking_policy": 0 },
+        } : {});
     } catch {
         if (required.includes(name)) failures.push(`${name}: cannot be started`);
         else console.log(`${name}: not installed`);
@@ -44,6 +49,21 @@ for (const name of ["chromium", "firefox"]) {
         const p = await (await browser.newContext()).newPage();
         const lines = [];
         p.on("console", (m) => lines.push(...m.text().split("\n")));
+        // the AudioContexts of the page, to say what state they are in when the sound does not play
+        await p.addInitScript(() => {
+            const Context = window.AudioContext;
+            if (Context) {
+                window.__contexts = [];
+                window.AudioContext = class extends Context {
+                    constructor(options) {
+                        super(options);
+                        window.__contexts.push(this);
+                    }
+                };
+            }
+        });
+        const contexts = () => p.evaluate(() => (window.__contexts ?? []).map((c) =>
+            `${c.state} at ${c.currentTime.toFixed(2)} s, ${c.sampleRate} Hz`).join(", "));
         await p.addInitScript(() => {
             const observe = () => {
                 const pre = document.getElementById("output");
@@ -69,10 +89,29 @@ for (const name of ["chromium", "firefox"]) {
             continue;
         }
         await p.mouse.click(100, 50);
-        const done = await waitFor("audio: done", 10000);
+        let done = await waitFor("audio: done", 10000);
         if (!done) {
-            failures.push(`${name}: the second was not played`);
-            continue;
+            // what the context does, then once more after resume() from the page itself
+            const before = await contexts();
+            await p.evaluate(() => Promise.race([Promise.all((window.__contexts ?? []).map((c) => c.resume())),
+                                                 new Promise((r) => setTimeout(r, 2000))]));
+            done = await waitFor("audio: done", 5000);
+            const after = await contexts();
+            // the Firefox of Playwright on the runners of the CI keeps every AudioContext suspended (also after
+            // resume()): it has no sound output there. Then only the writes are checked: the output opened and took
+            // a whole buffer; the sound itself is checked in Chromium.
+            const written = lines.filter((l) => / written, /.test(l)).pop();
+            if (!done && name === "firefox" && /^suspended at 0\.00 s/.test(after) && written &&
+                Number(written.split(" ")[1]) >= 11025) {
+                console.log(`${name}: ok without sound (${written.slice(7)}; its AudioContext stays suspended: ${after})`);
+                continue;
+            }
+            if (!done) {
+                failures.push(`${name}: the second was not played (${lines.filter((l) => l.startsWith("audio")).slice(-2).join(" | ")}; ` +
+                              `the AudioContext: ${before}, after resume(): ${after})`);
+                continue;
+            }
+            console.log(`${name}: played only after resume() from the page (before: ${before})`);
         }
         const seconds = Number(done.split(" ")[3]);
         if (!(seconds >= 0.8 && seconds <= 3.0)) failures.push(`${name}: a second of sound took ${seconds} s`);
