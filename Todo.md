@@ -64,6 +64,13 @@ the git log.
         keyboard (Enter on "Choose file..." does not open it: browsers need a click there), folders on phones (no
         `webkitdirectory`).
 
+- [ ] **`System.Audio`, the next steps** (0.38 has `AudioOutput` on Windows, Linux and in the browser):
+      - checking on real machines: waveOut was tested under Wine only, and Firefox in the CI has no sound output (its
+        AudioContext stays suspended, so tests/audio-browser-check.mjs checks only the writes there);
+      - macOS (Core Audio, e.g. an AudioQueue) and AmigaOS (audio.device or Paula directly: 8-bit samples, a period
+        per channel), both report no output for now;
+      - float samples and more than 2 channels; a callback on a thread of its own for programs that need less than
+        the 20 ms or so of a frame-driven refill.
 - [ ] `System.Image`: GIF and JPEG decoding; a palette (and its PNG/BMP form) kept in `Image` for indexed images.
 - [ ] More encodings (Latin-1, UTF-16) as new `EncodingKind`s.
 - [ ] The rest of the byte functions on slices: `Encoding.GetString`, `string.FromBytes` and `FileStream.Read`
