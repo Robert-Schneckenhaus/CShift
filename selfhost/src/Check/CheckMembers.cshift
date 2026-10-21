@@ -104,7 +104,7 @@ Value CheckMember(const ref Compiler cg, Expr e)
                 int et = GetEnumType(cg, entry.Index);
                 var einfo = GetEnumInfo(cg, et);
                 int member = FindEnumMember(einfo, m.Name);
-                IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, types.Name(et));
+                IndexTypeNameExpr(cg, m.Object, entry, types.Name(et));
                 if (member < 0)
                 {
                     CheckError(cg, e.Loc, "enum '" + types.Name(et) + "' has no member '" + m.Name + "'");
@@ -116,7 +116,7 @@ Value CheckMember(const ref Compiler cg, Expr e)
             if (isTypeName || IsNamespace(cg, file, dotted))
             {
                 if (isTypeName)
-                    IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, dotted);
+                    IndexTypeNameExpr(cg, m.Object, entry, dotted);
                 else
                     IndexNamespace(cg, m.Object, dotted);
                 int c = LookupConst(cg, file, dotted + "." + m.Name);
@@ -261,7 +261,7 @@ Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m
                 CheckArgs(cg, call.Args, ref known);
                 return UnknownValue(cg); // List<Foo>.Create() with an unknown Foo
             }
-            IndexTypeName(cg, m.Object.Loc, TypeNameLength(cg, m.Object, dotted), entry, types.Name(st));
+            IndexTypeNameExpr(cg, m.Object, entry, types.Name(st));
             var scands = MethodCandidates(cg, st, m.Name);
             var targs = CheckArgsFor(cg, call.Args, scands, ref known);
             if (scands.Length == 0)
@@ -343,7 +343,7 @@ Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m
     if (types.IsUnknown(t) || m.ViaArrow || (IsCallableType(cg, t) && m.Name == "Invoke"))
         return UnknownValue(cg);
     if (types.Kind(t) == TypeKind.Interface)
-        return CheckInterfaceCall(cg, t, m.Name, args, known, e.Loc);
+        return CheckInterfaceCall(cg, t, m.Name, args, known, e.Loc, m.NameLoc);
     if (IsUnionType(cg, t))
     {
         // a method of one of the union's interfaces (see EmitUnionCall)
@@ -360,7 +360,7 @@ Value CheckMemberCall(const ref Compiler cg, Expr e, CallExpr call, MemberExpr m
                     if (why.Length > 0)
                         CheckError(cg, e.Loc, ReadOnlyError(cg, m.Name, t, why));
                 }
-                return CheckInterfaceCall(cg, iface, m.Name, args, known, e.Loc);
+                return CheckInterfaceCall(cg, iface, m.Name, args, known, e.Loc, m.NameLoc);
             }
         }
         CheckError(cg, e.Loc, "union '" + types.Name(t) + "' has no method '" + m.Name + "' (it can call the methods of the interfaces it lists)");
@@ -920,6 +920,8 @@ Value CheckStructInitOf(const ref Compiler cg, Expr e, int t)
         else if (!seen.Add(f.Name))
             why = "field '" + f.Name + "' is initialized twice";
         ReportIf(cg, f.Loc, why);
+        if (p.Found)
+            IndexField(cg, f.Loc, t, f.Name); // the name in 'Point { X = 1 }'
         Value v = why.Length == 0 ? CheckExprAs(cg, f.Value, p.Type) : CheckRValue(cg, f.Value);
         if (why.Length == 0)
             CheckConversion(cg, v, p.Type, cg.Tree.StartOf(f.Value));
@@ -928,7 +930,7 @@ Value CheckStructInitOf(const ref Compiler cg, Expr e, int t)
 }
 
 // iface.Method(args) (see EmitInterfaceCall).
-Value CheckInterfaceCall(const ref Compiler cg, int iface, string name, Arg[] args, bool known, SourceLoc loc)
+Value CheckInterfaceCall(const ref Compiler cg, int iface, string name, Arg[] args, bool known, SourceLoc loc, SourceLoc nameLoc)
 {
     if (!known)
         return UnknownValue(cg);
@@ -938,5 +940,6 @@ Value CheckInterfaceCall(const ref Compiler cg, int iface, string name, Arg[] ar
         CheckError(cg, loc, "interface '" + cg.Types.Name(iface) + "' has no method '" + name + "' that takes these arguments");
         return UnknownValue(cg);
     }
+    IndexInterfaceMethod(cg, nameLoc, iface, chosen);
     return Rvalue(InterfaceMethod(cg, iface, chosen).Ret, "", false);
 }

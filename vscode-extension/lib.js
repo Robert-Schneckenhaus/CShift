@@ -74,6 +74,44 @@ const KEYWORDS = new Set([
     "unsafe", "using", "var", "while", "void", "static",
 ]);
 
+// ---------------------------------------------------------------------------
+// Renaming: the places come from 'cshiftc query --rename' (every place where the name is written, the declaration and
+// the methods linked through interfaces included)
+// ---------------------------------------------------------------------------
+
+// The words a new name cannot be: the keywords of the lexer, the contextual ones and the built-in types.
+const RESERVED = new Set([
+    ...KEYWORDS, "in", "new", "try", "is", "ref", "true", "false", "null", "this", "sizeof", "unchecked", "error",
+    "not", "link", "bool", "char", "string", "int", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+    "nint", "nuint", "float", "double",
+]);
+
+// Why 'name' cannot be the new name ("" if it can): it must be letters, digits and '_', not start with a digit, and not
+// be a keyword or a built-in type.
+function renameProblem(name) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+        return "'" + name + "' is not a name (letters, digits and '_', not starting with a digit)";
+    if (RESERVED.has(name))
+        return "'" + name + "' is a keyword or a built-in type of CShift";
+    return "";
+}
+
+// The text edits of a rename: for each place ({file, line, col, length}, columns in bytes) the range in characters
+// that is replaced. lineText(file, line) gives the current text of a line; a place where it is not the old name any more
+// (the file changed after the query) is a problem, and nothing should be renamed.
+function renameEdits(places, oldName, lineText) {
+    const edits = [];
+    for (const p of places) {
+        const text = lineText(p.file, p.line);
+        const start = characterOf(text, p.col);
+        const end = characterOf(text, p.col + p.length);
+        if (text.substring(start, end) !== oldName)
+            return { edits: [], problem: "the file " + path.basename(p.file) + " changed (line " + p.line + "); try again" };
+        edits.push({ file: p.file, line: p.line - 1, start, end });
+    }
+    return { edits, problem: "" };
+}
+
 // Where the underline of an error that cshiftc reports at character 'start' of a line ends (exclusive). cshiftc gives
 // only the start: of an expression (a name with its members, calls and indexes, a literal, a cast) just that is marked,
 // 'Bar(foo[i])' in 'foo[i] = Bar(foo[i]);'. At a keyword or a declaration ('int Sign(int x)') the rest of the line is.
@@ -210,8 +248,9 @@ async function queryJson(compiler, project, file, args, dirty, tempDir) {
     }
 }
 
-// 'cshiftc query --at <file> <line> <col> [--references] [--members]' -> { hover, definition: { file, line, col },
-// references: [{ file, line, col, length }], members: [{ name, kind, detail }] } or null.
+// 'cshiftc query --at <file> <line> <col> [--references] [--members] [--rename]' -> { hover, definition: { file, line,
+// col }, references: [{ file, line, col, length }], members: [{ name, kind, detail }], at: { line, col, length },
+// rename: { places: [{ file, line, col, length }] } or { error } } or null.
 async function query(compiler, project, file, line, col, dirty, tempDir, extra) {
     const answer = await queryJson(compiler, project, file, ["--at", file, String(line), String(col), ...(extra || [])], dirty, tempDir);
     return answer && answer.hover ? answer : null;
@@ -339,6 +378,6 @@ function lldbConfiguration(config, build, script) {
 module.exports = {
     samePath, projectSources, projectContains, findProject, byteColumn, characterOf, errorRangeEnd, overlayArgs, parseDiagnostics,
     run, query, queryJson, outline, memberContext, check, projectName, debugTarget, debugBuild, findLldbScript,
-    lldbConfiguration,
+    lldbConfiguration, renameProblem, renameEdits,
     tempDirectory: () => path.join(os.tmpdir(), "cshift-vscode-" + process.pid),
 };

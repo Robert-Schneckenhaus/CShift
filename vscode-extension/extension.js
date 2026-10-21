@@ -1,4 +1,4 @@
-// The CShift extension: hover, go to definition, find all references, the outline, completion after '.' and the errors
+// The CShift extension: hover, go to definition, find all references, renaming, the outline, completion after '.' and the errors
 // of the program, from cshiftc (the compiler's 'query' and 'check' commands, which run the front end without generating
 // code), and debugging (F5) through CodeLLDB. The work that does not need VS Code is in lib.js.
 "use strict";
@@ -114,6 +114,48 @@ const referenceProvider = {
         if (!answer || !answer.references)
             return null;
         return answer.references.map(locationOf);
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Rename (F2)
+// ---------------------------------------------------------------------------
+
+async function renameAnswer(document, position) {
+    if (document.uri.scheme !== "file")
+        throw new Error("Only a CShift file on disk can be renamed in.");
+    const file = document.uri.fsPath;
+    const lineText = document.lineAt(position.line).text;
+    const answer = await lib.query(compilerPath(), lib.findProject(projectFiles, file), file, position.line + 1,
+        lib.byteColumn(lineText, position.character), dirtyDocuments(), tempDir, ["--rename"]);
+    if (!answer || !answer.at)
+        throw new Error("There is no name to rename here.");
+    if (!answer.rename)
+        throw new Error("Renaming needs cshiftc 0.39 or later ('cshift.compilerPath').");
+    if (answer.rename.error)
+        throw new Error("This cannot be renamed: " + answer.rename.error + ".");
+    const start = lib.characterOf(lineText, answer.at.col);
+    const end = lib.characterOf(lineText, answer.at.col + answer.at.length);
+    return { answer, range: new vscode.Range(position.line, start, position.line, end) };
+}
+
+const renameProvider = {
+    async prepareRename(document, position) {
+        const { range } = await renameAnswer(document, position);
+        return { range, placeholder: document.getText(range) };
+    },
+    async provideRenameEdits(document, position, newName) {
+        const problem = lib.renameProblem(newName);
+        if (problem.length > 0)
+            throw new Error(problem);
+        const { answer, range } = await renameAnswer(document, position);
+        const result = lib.renameEdits(answer.rename.places, document.getText(range), lineOf);
+        if (result.problem.length > 0)
+            throw new Error(result.problem);
+        const edit = new vscode.WorkspaceEdit();
+        for (const e of result.edits)
+            edit.replace(vscode.Uri.file(e.file), new vscode.Range(e.line, e.start, e.line, e.end), newName);
+        return edit;
     },
 };
 
@@ -303,6 +345,7 @@ async function activate(context) {
         vscode.languages.registerHoverProvider(selector, hoverProvider),
         vscode.languages.registerDefinitionProvider(selector, definitionProvider),
         vscode.languages.registerReferenceProvider(selector, referenceProvider),
+        vscode.languages.registerRenameProvider(selector, renameProvider),
         vscode.languages.registerDocumentSymbolProvider(selector, symbolProvider),
         vscode.languages.registerCompletionItemProvider(selector, completionProvider, "."),
         vscode.workspace.onDidOpenTextDocument(checkDocument),

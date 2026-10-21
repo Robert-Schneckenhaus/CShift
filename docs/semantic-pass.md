@@ -83,10 +83,12 @@ message of the failed inference names it.
 **Tooling.** `cshiftc check` runs the front end (declarations and the checker, `CgState.FrontEndOnly`) and reports the
 errors without generating anything. `cshiftc query --at <file> <line> <col>` does the same with the symbol index
 (`CgState.Indexing`, `Check/Index.cshift`): every name the checker resolves (locals, parameters, fields, constants,
-globals, functions and methods, the functions the language provides, types, enum members; variables, parameters and
-functions also where they are declared) is recorded with its place, the place of its declaration and a hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
+globals, functions and methods, the functions the language provides, types, enum members; every declaration also
+where its name is written, `IndexDeclarations`) is recorded with its place, the place of its declaration and a hover text, and the answer for the position is written as JSON (`{"hover": ..., "definition": {"file", "line",
 "col"}}`). `--references` adds every place where the name is written (`"references"`: the entries with the same
-declaration), `--members` what can follow `name.` (`"members"`: fields, methods, enum members, from the type the index
+declaration), `--rename` the places that renaming it changes (`"rename": {"places": [...]}`: those references, and for
+a method of an interface also the methods of the structs that implement it, and the other way round; `{"error": ...}`
+for a name of the language or the standard library; `"at"` is the name at the position), `--members` what can follow `name.` (`"members"`: fields, methods, enum members, from the type the index
 records for the name), and `--outline <file>` instead of `--at` answers with the declarations of a file
 (`"symbols"`). `--overlay <file> <text file>` replaces a source with the unsaved text of an editor. Columns count bytes
 (UTF-8), like the error messages.

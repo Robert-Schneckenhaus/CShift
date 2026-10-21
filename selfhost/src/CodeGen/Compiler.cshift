@@ -796,7 +796,13 @@ int ResolveType(const ref Compiler cg, int refType, int file, Dictionary<string,
     }
 
     if (cg.St[0].Indexing)
-        IndexTypeName(cg, node.Loc, dotted.Length, entry, dotted);
+    {
+        // 'Geo.Point': its last name, written after the namespace ('Geo.' as written, without spaces)
+        string last = node.Path[node.Path.Length - 1];
+        var at = node.Loc;
+        at.Col += dotted.Length - last.Length;
+        IndexTypeName(cg, at, last.Length, entry, dotted);
+    }
     var typeArgs = new int[node.Args.Length];
     for (var i = 0; i < node.Args.Length; i += 1)
         typeArgs[i] = ResolveValueType(cg, node.Args[i].Id, file, env);

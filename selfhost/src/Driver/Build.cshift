@@ -58,6 +58,7 @@ struct BuildOptions
     int AtLine;
     int AtCol;
     bool References;            // query: also every place where the name is written
+    bool Rename;                // query: the places that renaming the name changes (or why it cannot be renamed)
     bool Members;               // query: what can follow 'name.' (completion)
     bool RequireDocs;           // doc: every public declaration needs a doc comment
     string OutlineFile;         // query: the declarations of this file instead of a position
@@ -159,6 +160,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         }
         else if (a == "--references")
             o.References = true;
+        else if (a == "--rename")
+            o.Rename = true;
         else if (a == "--members")
             o.Members = true;
         else if (a == "--require-docs")
@@ -835,6 +838,7 @@ int Build(BuildOptions o)
         return diag.HasErrors() ? 1 : 0;
     if (o.Mode == "query")
     {
+        IndexDeclarations(cg);
         Console.WriteLine(QueryAnswer(cg, diag, o, tree));
         return 0;
     }
@@ -1112,6 +1116,9 @@ string QueryAnswer(const ref Compiler cg, Diagnostics diag, BuildOptions o, Ast 
                   e.Def.Line.ToString() + ", \"col\": " + e.Def.Col.ToString() + "}";
     if (o.References)
         answer += ", \"references\": " + ReferencesJson(cg, diag, found);
+    if (o.Rename)
+        answer += ", \"at\": {\"line\": " + e.At.Line.ToString() + ", \"col\": " + e.At.Col.ToString() + ", \"length\": " +
+                  e.Length.ToString() + "}, \"rename\": " + RenameJson(cg, diag, found);
     if (o.Members)
         answer += ", \"members\": " + MembersJson(cg, e.Type, e.IsTypeName);
     return answer + "}";

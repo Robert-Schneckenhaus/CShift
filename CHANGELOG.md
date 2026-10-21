@@ -6,6 +6,18 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Tools
+- VS Code: **renaming** (F2) of variables, parameters, fields, functions, methods, types, enum members, constants and
+  globals, in all files of the program. The declaration is renamed too, so are the field names of initializers
+  (`Point { X = 1 }`), and a method of an interface goes together with the methods of the structs that implement it
+  (and the other way round). Names of the language and of the standard library cannot be renamed, the new name must not
+  be a keyword or a built-in type, and when a file changed since the compiler looked at it, nothing is renamed.
+- `cshiftc query --rename`: the places that renaming the name at a position changes (`"rename": {"places": [...]}`), or
+  why it cannot be renamed (`{"error": ...}`). The symbol index now also records every declaration where its name is
+  written (types, fields, enum members, interface methods, globals), the field names of initializers and the methods
+  called through an interface, and a type written with its namespace (`Geo.Point`, also in `Geo.Point.Make()` and
+  `Geo.Point { ... }`) at its name, so `--references` and go to definition find those places as well.
+
 ## [0.38] - 2026-10-19
 
 ### Standard library

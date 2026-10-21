@@ -353,7 +353,7 @@ fi
 
 # --- 3b. cshiftc check / query (the VS Code extension) ---------------------------------------------------------
 #   tests/query/*.cshift: "// query: <line> <col> => <text>": the JSON answer of "cshiftc query --at <file> <line> <col>"
-#   contains <text> (the file alone is the program). "cshiftc check" reports the errors of a program and generates
+#   contains <text> (the file alone is the program); "// rename: ..." the same with --rename. "cshiftc check" reports the errors of a program and generates
 #   nothing: exit code 1 with the messages, 0 for a correct program.
 echo "== query/"
 for f in "$DIR"/query/*.cshift; do
@@ -371,6 +371,19 @@ for f in "$DIR"/query/*.cshift; do
             *) problem="at $qline:$qcol expected '$want', got: $got"; break ;;
         esac
     done < <(directives "$f" "query")
+    # "// rename: <line> <col> => <text>": the answer of "cshiftc query --rename" contains <text>
+    while IFS= read -r line; do
+        [ -n "$problem" ] && break
+        pos="${line%% => *}"
+        want="${line#* => }"
+        qline="${pos%% *}"
+        qcol="${pos##* }"
+        got="$("$COMPILER" query --at "$f" "$qline" "$qcol" --rename "$f" 2> /dev/null | tr -d '\r')"
+        case "$got" in
+            *"$want"*) ;;
+            *) problem="rename at $qline:$qcol expected '$want', got: $got"; break ;;
+        esac
+    done < <(directives "$f" "rename")
     if [ -n "$problem" ]; then report_fail "$name" "$problem"; else report_ok "$name"; fi
 done
 # Names imported from a C header (the ffi project, copied and built in section 3): the hover of the namespace, and go

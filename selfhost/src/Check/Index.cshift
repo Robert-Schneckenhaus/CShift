@@ -331,13 +331,17 @@ void IndexCandidates(const ref Compiler cg, SourceLoc at, int length, Candidate[
     IndexFunction(cg, at, length, GetFuncInstance(cg, c.Entry, c.Owner, env, new int[0], d.Loc));
 }
 
-// The length of the type name that the expression is ('List<int>': the name without type arguments); 0 for a qualified
-// name ('Ns.Type': the expression's place is that of its last '.', not of the name), which is not indexed.
-int TypeNameLength(const ref Compiler cg, Expr e, string dotted)
+// A type name that an expression before '.' is ('Point.Make()', 'List<int>.Create()', 'Geo.Point.Make()'): indexed at
+// its last name, without type arguments (of 'Geo.Point' only 'Point', as a declaration's name).
+void IndexTypeNameExpr(const ref Compiler cg, Expr e, TypeDeclEntry entry, string name)
 {
     if (e.Kind == ExprKind.Name)
-        return cg.Tree.GetName(e).Name.Length;
-    return 0;
+        IndexTypeName(cg, e.Loc, cg.Tree.GetName(e).Name.Length, entry, name);
+    else if (e.Kind == ExprKind.Member)
+    {
+        var m = cg.Tree.GetMember(e);
+        IndexTypeName(cg, m.NameLoc, m.Name.Length, entry, name);
+    }
 }
 
 // A type name as written (a struct, interface, enum or union of the program or the standard library).
@@ -378,6 +382,97 @@ void IndexEnumMember(const ref Compiler cg, SourceLoc at, int length, int enumEn
             def = m.Loc;
     }
     IndexAt(cg, at, length, def, cg.Types.Name(enumType) + "." + info.Names[member] + " = " + info.Values[member].ToString());
+}
+
+// A call of method k of an interface (shape.Area()): its signature; it goes to the method in the interface.
+void IndexInterfaceMethod(const ref Compiler cg, SourceLoc at, int iface, int k)
+{
+    if (!cg.St[0].Indexing)
+        return;
+    var ii = cg.InterfaceInfos.Get(cg.Types.Decl(iface));
+    var m = cg.Interfaces.Get(ii.Entry).Decl.Methods[k];
+    var sig = InterfaceMethod(cg, iface, k);
+    var sb = StringBuilder.Create();
+    sb.Append(HoverType(cg, sig.Ret));
+    sb.Append(' ');
+    sb.Append(cg.Types.Name(iface));
+    sb.Append('.');
+    sb.Append(m.Name);
+    sb.Append('(');
+    for (var i = 0; i < sig.ParamTypes.Length && i < m.Params.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(sig.ParamRefs[i] == 1 ? "ref " : sig.ParamRefs[i] == 2 ? "const ref " : "");
+        sb.Append(HoverType(cg, sig.ParamTypes[i]));
+        sb.Append(' ');
+        sb.Append(m.Params[i].Name);
+    }
+    sb.Append(')');
+    IndexAtTyped(cg, at, m.Name.Length, DeclNameLoc(m), sb.ToString(), sig.Ret, false);
+}
+
+// Where a function or method is declared for the index: its name (the start of the declaration if that is not known).
+SourceLoc DeclNameLoc(FuncDecl d)
+{
+    return d.NameLoc.Line > 0 ? d.NameLoc : d.Loc;
+}
+
+// The declarations of the program (not of the standard library) themselves, with their names where they are written:
+// types, fields, enum members, interface methods and globals (functions, methods, constants and locals are indexed where
+// they are checked). A position on the name
+// of a declaration then finds it as well, and its references include the declaration (renaming).
+void IndexDeclarations(const ref Compiler cg)
+{
+    if (!cg.St[0].Indexing)
+        return;
+    var tree = cg.Tree;
+    for (var i = 0; i < cg.Structs.Count(); i += 1)
+    {
+        if (cg.Files.Get(cg.Structs.Get(i).File).IsPrelude)
+            continue;
+        var d = cg.Structs.Get(i).Decl;
+        IndexAt(cg, d.NameLoc, d.Name.Length, d.Loc, "struct " + d.Name);
+        foreach (var f in d.Fields)
+            IndexAt(cg, f.NameLoc, f.Name.Length, f.Loc, (f.Type.IsNull() ? "?" : tree.TypeToString(f.Type)) + " " + d.Name + "." + f.Name);
+    }
+    for (var i = 0; i < cg.Interfaces.Count(); i += 1)
+    {
+        if (cg.Files.Get(cg.Interfaces.Get(i).File).IsPrelude)
+            continue;
+        var d = cg.Interfaces.Get(i).Decl;
+        IndexAt(cg, d.NameLoc, d.Name.Length, d.Loc, "interface " + d.Name);
+        foreach (var m in d.Methods)
+        {
+            string detail = MethodDetail(cg, m);
+            int space = detail.IndexOf(' ');
+            IndexAt(cg, m.NameLoc, m.Name.Length, DeclNameLoc(m), detail.Substring(0, space + 1) + d.Name + "." + detail.Substring(space + 1));
+        }
+    }
+    for (var i = 0; i < cg.Enums.Count(); i += 1)
+    {
+        if (cg.Files.Get(cg.Enums.Get(i).File).IsPrelude)
+            continue;
+        var d = cg.Enums.Get(i).Decl;
+        IndexAt(cg, d.NameLoc, d.Name.Length, d.Loc, (d.IsError ? "error " : "enum ") + d.Name);
+        int t = GetEnumType(cg, i);
+        for (var k = 0; k < d.Members.Length; k += 1)
+            IndexEnumMember(cg, d.Members[k].Loc, d.Members[k].Name.Length, i, t, k);
+    }
+    for (var i = 0; i < cg.Unions.Count(); i += 1)
+    {
+        if (cg.Files.Get(cg.Unions.Get(i).File).IsPrelude)
+            continue;
+        var d = cg.Unions.Get(i).Decl;
+        IndexAt(cg, d.NameLoc, d.Name.Length, d.Loc, "union " + d.Name);
+    }
+    for (var i = 0; i < cg.Globals.Count(); i += 1)
+    {
+        if (cg.Files.Get(cg.Globals.Get(i).File).IsPrelude)
+            continue;
+        var d = cg.Globals.Get(i).Decl;
+        IndexGlobal(cg, d.Loc, d.Name.Length, i);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +554,112 @@ string ReferencesJson(const ref Compiler cg, Diagnostics diag, int found)
         sb.Append("{" + place + ", \"length\": " + e.Length.ToString() + "}");
     }
     sb.Append("]");
+    return sb.ToString();
+}
+
+// True if the file (an index in Diagnostics.Files) belongs to the standard library.
+bool IsPreludeFile(const ref Compiler cg, int fileId)
+{
+    for (var i = 0; i < cg.Files.Count(); i += 1)
+    {
+        var f = cg.Files.Get(i);
+        if (f.FileId == fileId)
+            return f.IsPrelude;
+    }
+    return false;
+}
+
+bool HasLoc(List<SourceLoc> locs, SourceLoc at)
+{
+    foreach (var l in locs)
+    {
+        if (l.File == at.File && l.Line == at.Line && l.Col == at.Col)
+            return true;
+    }
+    return false;
+}
+
+// The name of a type as written ('Ns.IShape<T>': IShape).
+string PlainTypeName(string written)
+{
+    int lt = written.IndexOf('<');
+    string s = lt >= 0 ? written.Substring(0, lt).ToString() : written;
+    int dot = s.LastIndexOf('.');
+    return dot >= 0 ? s.Substring(dot + 1).ToString() : s;
+}
+
+// The methods that are renamed together: a method of an interface and the methods of the structs that implement the
+// interface, with the same name (else the structs would no longer implement it). Adds them to 'defs' until nothing
+// changes.
+void LinkInterfaceMethods(const ref Compiler cg, List<SourceLoc> defs)
+{
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (var i = 0; i < cg.Structs.Count(); i += 1)
+        {
+            var sd = cg.Structs.Get(i).Decl;
+            foreach (var b in sd.Bases)
+            {
+                string bn = b.IsNull() ? "" : PlainTypeName(cg.Tree.TypeToString(b));
+                for (var k = 0; k < cg.Interfaces.Count(); k += 1)
+                {
+                    var id = cg.Interfaces.Get(k).Decl;
+                    if (id.Name != bn)
+                        continue;
+                    foreach (var im in id.Methods)
+                    {
+                        foreach (var m in sd.Methods)
+                        {
+                            if (m.Name != im.Name || m.IsStatic)
+                                continue;
+                            var a = DeclNameLoc(im);
+                            var c = DeclNameLoc(m);
+                            if (HasLoc(defs, a) != HasLoc(defs, c))
+                            {
+                                defs.Add(HasLoc(defs, a) ? c : a);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// What renaming the name of entry 'found' changes: {"places": [{"file", "line", "col", "length"}, ...]}, every place
+// where it is written (its declaration included; for a method of an interface also the methods that implement it, and
+// the other way round), or {"error": "..."} when it cannot be renamed (a name of the language or of the standard
+// library).
+string RenameJson(const ref Compiler cg, Diagnostics diag, int found)
+{
+    var e = cg.Index.Get(found);
+    if (e.Def.Line <= 0 || e.Def.File < 0 || e.Def.File >= diag.Files.Count() || diag.Files.Get(e.Def.File).StartsWith("<"))
+        return "{\"error\": " + JsonString(e.Def.Line <= 0 ? "a name of the language cannot be renamed"
+                                                                : "a name of the standard library cannot be renamed") + "}";
+    if (IsPreludeFile(cg, e.Def.File))
+        return "{\"error\": \"a name of the standard library cannot be renamed\"}";
+    var defs = List<SourceLoc>.Create();
+    defs.Add(e.Def);
+    LinkInterfaceMethods(cg, defs);
+    var seen = HashSet<string>.Create();
+    var sb = StringBuilder.Create();
+    sb.Append("{\"places\": [");
+    for (var i = 0; i < cg.Index.Count(); i += 1)
+    {
+        var r = cg.Index.Get(i);
+        if (r.Length != e.Length || !HasLoc(defs, r.Def))
+            continue;
+        string place = JsonPlace(cg, diag, r.At);
+        if (place.Length == 0 || seen.Contains(place))
+            continue;
+        seen.Add(place);
+        sb.Append(seen.Count() > 1 ? ", " : "");
+        sb.Append("{" + place + ", \"length\": " + r.Length.ToString() + "}");
+    }
+    sb.Append("]}");
     return sb.ToString();
 }
 

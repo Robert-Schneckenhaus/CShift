@@ -172,3 +172,68 @@ test("debugging: target, build command and the lldb configuration", () => {
     assert.strictEqual(lib.findLldbScript(path.join(__dirname, ".."), null), path.join(__dirname, "..", "..", "tools", "debug", "cshift_lldb.py"));
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("rename: the new name, and the edits of the places", () => {
+    assert.strictEqual(lib.renameProblem("Total_2"), "");
+    assert.match(lib.renameProblem("2nd"), /is not a name/);
+    assert.match(lib.renameProblem("a-b"), /is not a name/);
+    assert.match(lib.renameProblem("while"), /keyword/);
+    assert.match(lib.renameProblem("int32"), /built-in type/);
+    // columns are bytes: 'ü' takes two of them
+    const lines = { 1: "struct Über { int X; }", 2: "Über u = Über { X = 1 };" };
+    const text = (file, line) => lines[line];
+    const places = [{ file: "/a.cshift", line: 1, col: 8, length: 5 }, { file: "/a.cshift", line: 2, col: 1, length: 5 },
+                    { file: "/a.cshift", line: 2, col: 11, length: 5 }];
+    const ok = lib.renameEdits(places, "Über", text);
+    assert.strictEqual(ok.problem, "");
+    assert.deepStrictEqual(ok.edits.map((e) => [e.line, e.start, e.end]), [[0, 7, 11], [1, 0, 4], [1, 9, 13]]);
+    // a place whose text is not the old name any more: nothing is renamed
+    lines[2] = "Uber u = Über { X = 1 };";
+    const stale = lib.renameEdits(places, "Über", text);
+    assert.deepStrictEqual(stale.edits, []);
+    assert.match(stale.problem, /changed/);
+});
+
+test("cshiftc query --rename: the declaration, initializers, interface methods", { skip: !compiler }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
+    const file = path.join(dir, "main.cshift");
+    const saved = "interface IArea\n{\n    int Area();\n}\n\nstruct Box : IArea\n{\n    int W;\n    int Area() { return W; }\n}\n\n" +
+                  "int Main()\n{\n    var b = Box { W = 2 };\n    return b.Area() + b.W;\n}\n";
+    fs.writeFileSync(file, saved);
+    const temp = path.join(dir, "tmp");
+    const places = async (line, col) => {
+        const answer = await lib.query(compiler, null, file, line, col, [], temp, ["--rename"]);
+        return answer.rename.places.map((p) => [p.line, p.col]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    };
+    // the field from its declaration: the initializer and the use
+    assert.deepStrictEqual(await places(8, 9), [[8, 9], [9, 25], [14, 19], [15, 25]]);
+    // the method of the struct: also the method of the interface it implements
+    assert.deepStrictEqual(await places(15, 14), [[3, 9], [9, 9], [15, 14]]);
+    const builtin = await lib.query(compiler, null, file, 15, 5, [], temp, ["--rename"]);
+    assert.strictEqual(builtin, null); // 'return': no name
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("cshiftc query --rename: names of another namespace, written with it", { skip: !compiler }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cshift-lib-"));
+    fs.mkdirSync(path.join(dir, "src"));
+    const project = path.join(dir, "cshift.json");
+    fs.writeFileSync(project, JSON.stringify({ name: "ns", sources: ["src"] }));
+    const geo = path.join(dir, "src", "geo.cshift");
+    const main = path.join(dir, "src", "main.cshift");
+    fs.writeFileSync(geo, "namespace Geo;\n\nstruct Point\n{\n    int X;\n    static Point Make(int x) { return Point { X = x }; }\n}\n\n" +
+                          "enum Kind : uint8 { A, B }\n");
+    fs.writeFileSync(main, "int Main()\n{\n    Geo.Point p = Geo.Point.Make(1);\n    var q = Geo.Point { X = 2 };\n" +
+                           "    Geo.Kind k = Geo.Kind.B;\n    return p.X + q.X;\n}\n");
+    const temp = path.join(dir, "tmp");
+    const places = async (file, line, col) => {
+        const answer = await lib.query(compiler, project, file, line, col, [], temp, ["--rename"]);
+        return answer.rename.places.map((p) => [path.basename(p.file), p.line, p.col])
+            .sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1] || a[2] - b[2]);
+    };
+    // 'Point' in 'Geo.Point' (a type, a call, an initializer): the name after 'Geo.'
+    assert.deepStrictEqual(await places(geo, 3, 8), [["geo.cshift", 3, 8], ["geo.cshift", 6, 12], ["geo.cshift", 6, 39],
+        ["main.cshift", 3, 9], ["main.cshift", 3, 23], ["main.cshift", 4, 17]]);
+    assert.deepStrictEqual(await places(main, 5, 23), [["geo.cshift", 9, 6], ["main.cshift", 5, 9], ["main.cshift", 5, 22]]);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
