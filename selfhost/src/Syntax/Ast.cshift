@@ -445,6 +445,7 @@ struct FuncDecl
 struct FieldDecl
 {
     SourceLoc Loc;
+    SourceLoc NameLoc;    // where the name is written (Loc: the start of the declaration, its type)
     TypeRef Type;
     string Name;
     int64 Offset;         // byte offset for structs with an explicit (C) layout, otherwise -1
@@ -455,6 +456,7 @@ struct FieldDecl
 struct StructDecl
 {
     SourceLoc Loc;
+    SourceLoc NameLoc;    // where the name is written (Loc: the keyword 'struct')
     string Name;
     string[] TypeParams;
     TypeRef[] Bases;      // optional base struct first, then interfaces
@@ -471,6 +473,7 @@ struct StructDecl
 struct InterfaceDecl
 {
     SourceLoc Loc;
+    SourceLoc NameLoc;    // where the name is written (Loc: the keyword 'interface')
     string Name;
     string[] TypeParams;
     FuncDecl[] Methods;
@@ -488,6 +491,7 @@ struct EnumMember
 struct EnumDecl
 {
     SourceLoc Loc;
+    SourceLoc NameLoc;  // where the name is written (Loc: the keyword 'enum' or 'error')
     string Name;
     TypeRef Base;       // null for an error enum (always int32)
     EnumMember[] Members;
@@ -528,6 +532,7 @@ struct ImportDecl
 struct UnionDecl
 {
     SourceLoc Loc;
+    SourceLoc NameLoc;  // where the name is written (Loc: the keyword 'union')
     string Name;
     TypeRef[] Members;
     TypeRef[] Interfaces;

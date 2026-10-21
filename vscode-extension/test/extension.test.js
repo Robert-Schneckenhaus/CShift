@@ -32,9 +32,13 @@ function makeVscode(root, settings) {
     class MarkdownString { constructor() { this.value = ""; } appendCodeblock(code, lang) { this.value += "```" + lang + "\n" + code + "\n```\n"; return this; } }
     class Hover { constructor(contents) { this.contents = [contents]; } }
     class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
+    class WorkspaceEdit {
+        constructor() { this.edits = []; }
+        replace(uri, range, text) { this.edits.push({ file: uri.fsPath, range, text }); }
+    }
     const Uri = { file: (p) => ({ fsPath: p, scheme: "file", toString: () => "file://" + p }) };
     const vscode = {
-        Position, Range, Location, MarkdownString, Hover, Diagnostic, Uri, DocumentSymbol, CompletionItem,
+        Position, Range, Location, MarkdownString, Hover, Diagnostic, Uri, DocumentSymbol, CompletionItem, WorkspaceEdit,
         DiagnosticSeverity: { Error: 0, Warning: 1 },
         SymbolKind: { Struct: 22, Interface: 10, Enum: 9, Class: 4, Function: 11, Method: 5, Field: 7, EnumMember: 21, Constant: 13, Variable: 12 },
         CompletionItemKind: { Field: 4, Method: 1, EnumMember: 19, Property: 9, Text: 0 },
@@ -58,6 +62,7 @@ function makeVscode(root, settings) {
             registerHoverProvider: (sel, p) => { providers.hover = p; return { dispose() {} }; },
             registerDefinitionProvider: (sel, p) => { providers.definition = p; return { dispose() {} }; },
             registerReferenceProvider: (sel, p) => { providers.references = p; return { dispose() {} }; },
+            registerRenameProvider: (sel, p) => { providers.rename = p; return { dispose() {} }; },
             registerDocumentSymbolProvider: (sel, p) => { providers.symbols = p; return { dispose() {} }; },
             registerCompletionItemProvider: (sel, p) => { providers.completion = p; return { dispose() {} }; },
         },
@@ -76,7 +81,7 @@ function makeVscode(root, settings) {
         let text = fs.readFileSync(file, "utf8");
         const doc = {
             uri: Uri.file(file), languageId: "cshift", isDirty: false,
-            getText: () => text,
+            getText: (range) => (range ? text.split("\n")[range.start.line].substring(range.start.character, range.end.character) : text),
             get lineCount() { return text.split("\n").length; },
             lineAt: (n) => ({ text: text.split("\n")[n] }),
             offsetAt: (pos) => text.split("\n").slice(0, pos.line).reduce((sum, l) => sum + l.length + 1, 0) + pos.character,
@@ -119,6 +124,21 @@ test("extension: hover, definition and errors while editing", { skip: !compiler 
     const refs = await env.providers.references.provideReferences(doc, at);
     assert.deepStrictEqual(refs.map((r) => [path.basename(r.uri.fsPath), r.range.start.line]).sort(),
         [["Main.cshift", 5], ["Person.cshift", 6]]);
+
+    // rename (F2): the struct from where it is used, in both files; the field with the name of its initializer
+    const literal = new env.vscode.Position(4, doc.lineAt(4).text.indexOf("Person") + 1);
+    const prepared = await env.providers.rename.prepareRename(doc, literal);
+    assert.strictEqual(prepared.placeholder, "Person");
+    const edit = await env.providers.rename.provideRenameEdits(doc, literal, "Human");
+    assert.deepStrictEqual(edit.edits.map((e) => [path.basename(e.file), e.range.start.line, e.range.start.character, e.text]).sort(),
+        [["Main.cshift", 4, 12, "Human"], ["Person.cshift", 0, 7, "Human"], ["Person.cshift", 6, 16, "Human"]]);
+    const field = new env.vscode.Position(4, doc.lineAt(4).text.indexOf("Name") + 1);
+    const fieldEdit = await env.providers.rename.provideRenameEdits(doc, field, "FullName");
+    assert.deepStrictEqual(fieldEdit.edits.map((e) => [path.basename(e.file), e.range.start.line]).sort(),
+        [["Main.cshift", 4], ["Person.cshift", 2], ["Person.cshift", 8]]);
+    await assert.rejects(env.providers.rename.provideRenameEdits(doc, field, "while"), /keyword/);
+    const console = new env.vscode.Position(5, doc.lineAt(5).text.indexOf("Console") + 1);
+    await assert.rejects(env.providers.rename.prepareRename(doc, console), /cannot be renamed/);
 
     // the outline of Person.cshift
     const personDoc = env.openDocument(path.join(root, "src", "Person.cshift"));

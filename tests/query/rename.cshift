@@ -1,0 +1,65 @@
+// cshiftc query --rename: every place that renaming a name changes (see tests/run_tests.sh, section 3b). The declaration
+// is one of them, also when the position is on it; the field names of initializers; a method of an interface and the
+// methods that implement it go together.
+// rename: 38 8 => "line": 60, "col": 20, "length": 5
+// rename: 38 8 => "line": 45, "col": 39, "length": 5
+// rename: 50 13 => "line": 38, "col": 8, "length": 5
+// rename: 40 9 => "line": 45, "col": 47, "length": 1
+// rename: 40 9 => "line": 59, "col": 23, "length": 1
+// rename: 50 26 => "line": 40, "col": 9, "length": 1
+// rename: 35 9 => "line": 43, "col": 9, "length": 4
+// rename: 35 9 => "line": 65, "col": 44, "length": 4
+// rename: 43 9 => "line": 35, "col": 9, "length": 4
+// rename: 65 44 => "line": 43, "col": 9, "length": 4
+// rename: 27 22 => "line": 61, "col": 38, "length": 3
+// rename: 61 38 => "line": 27, "col": 22, "length": 3
+// rename: 27 6 => "line": 52, "col": 14, "length": 5
+// rename: 31 5 => "line": 53, "col": 9, "length": 7
+// rename: 33 11 => "line": 65, "col": 23, "length": 6
+// rename: 33 11 => "line": 38, "col": 16, "length": 6
+// rename: 59 11 => "line": 61, "col": 29, "length": 1
+// rename: 48 17 => "at": {"line": 48, "col": 17, "length": 1}
+// rename: 61 5 => "error": "a name of the language cannot be renamed"
+// rename: 60 15 => "error": "a name of the standard library cannot be renamed"
+
+using System;
+
+enum Color : uint8 { Red, Green }
+
+const int Limit = 10;
+
+int counter = 0;
+
+interface IShape
+{
+    int Area();
+}
+
+struct Point : IShape
+{
+    int X;
+    int Y;
+
+    int Area() { return X * Y; }
+
+    static Point Make(int x) { return Point { X = x, Y = Limit }; }
+}
+
+int Twice(Point p, Color c)
+{
+    var q = Point.Make(p.X);
+    q.Y = 2;
+    if (c == Color.Green)
+        counter += 1;
+    return q.X + q.Area() + Limit;
+}
+
+int Main()
+{
+    Point p = Point { X = 1, Y = 2 };
+    var all = List<Point>.Create();
+    Console.WriteLine(Twice(p, Color.Red).ToString());
+    return 0;
+}
+
+int Measure(const ref IShape s) { return s.Area(); }

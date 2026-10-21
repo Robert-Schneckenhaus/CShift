@@ -116,6 +116,7 @@ These commands are used by editors and tools. They run the compiler's front end 
 cshiftc check                                   all errors of the project (up to 50), as file:line:column: error: text
 cshiftc query --at src/main.cshift 12 8         the name at line 12, column 8: its type, documentation, definition
 cshiftc query --at src/main.cshift 12 8 --references   the places where it is used
+cshiftc query --at src/main.cshift 12 8 --rename       the places that renaming it changes (or why it cannot be)
 cshiftc query --at src/main.cshift 12 9 --members      what can follow 'name.'
 cshiftc query --outline src/main.cshift         the declarations of the file
 cshiftc doc                                     the documentation of the standard library

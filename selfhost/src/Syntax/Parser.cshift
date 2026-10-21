@@ -336,6 +336,7 @@ struct Parser
     {
         var decl = UnionDecl { Loc = Cur().Loc };
         Advance(); // union
+        decl.NameLoc = Cur().Loc;
         decl.Name = try ExpectIdent("union name");
         var interfaces = List<TypeRef>.Create();
         if (Match(TokenKind.Colon))
@@ -416,6 +417,7 @@ struct Parser
         decl.LayoutAlign = 1;
         Token kw = try Expect(TokenKind.KwStruct, "'struct'");
         decl.Loc = kw.Loc;
+        decl.NameLoc = Cur().Loc;
         decl.Name = try ExpectIdent("struct name");
         decl.TypeParams = new string[0];
         if (Check(TokenKind.Lt))
@@ -475,7 +477,8 @@ struct Parser
                     return error("'thread' can only be used on a method", memberLoc.Pack());
                 if (isUnsafe)
                     return error("'unsafe' can only be used on a method, a function or a statement", memberLoc.Pack());
-                fields.Add(FieldDecl { Loc = memberLoc, Type = type, Name = name, Offset = -1, Doc = doc, IsStatic = isStatic });
+                fields.Add(FieldDecl { Loc = memberLoc, NameLoc = nameLoc, Type = type, Name = name, Offset = -1, Doc = doc,
+                                       IsStatic = isStatic });
                 try Expect(TokenKind.Semi, "';' after field");
             }
         }
@@ -490,6 +493,7 @@ struct Parser
         var decl = InterfaceDecl { };
         Token kw = try Expect(TokenKind.KwInterface, "'interface'");
         decl.Loc = kw.Loc;
+        decl.NameLoc = Cur().Loc;
         decl.Name = try ExpectIdent("interface name");
         decl.TypeParams = new string[0];
         if (Check(TokenKind.Lt))
@@ -523,6 +527,7 @@ struct Parser
     {
         var decl = EnumDecl { IsError = isError };
         decl.Loc = loc;
+        decl.NameLoc = Cur().Loc;
         decl.Name = try ExpectIdent(isError ? "error enum name" : "enum name");
         if (!isError)
         {
@@ -1476,7 +1481,8 @@ struct Parser
         var path = new string[reversed.Count()];
         for (var i = 0; i < path.Length; i += 1)
             path[i] = reversed.Get(path.Length - 1 - i);
-        return NewType(TypeRefKind.Named, expr.Loc, path, args, TypeRef { });
+        // the place of the first name ('Geo' of 'Geo.Point'), as for a type written in a declaration
+        return NewType(TypeRefKind.Named, e.Loc, path, args, TypeRef { });
     }
 
     Error<FieldInit[]> ParseStructInitBody()

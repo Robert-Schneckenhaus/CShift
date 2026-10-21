@@ -15,6 +15,11 @@ Support for **CShift** (`.cshift`), the native, C#-like systems language of this
   imported from a C header, into the header at the line it is declared in.
 * **Find all references** (Shift+F12): every place where a variable, field, function, type or constant is written, in
   all files of the program.
+* **Rename** (F2): a variable, parameter, field, function, method, type, enum member, constant or global, everywhere it
+  is written in the program: its declaration, the field names of initializers (`Point { X = 1 }`), and for a method of
+  an interface also the methods of the structs that implement it (and the other way round). Names of the language and
+  of the standard library cannot be renamed, the new name must not be a keyword or a built-in type, and when a file
+  changed since the compiler looked at it, nothing is renamed.
 * **Outline** (and breadcrumbs, *Go to Symbol in Editor*): the structs with their fields and methods, interfaces,
   enums with their members, unions, functions, constants and globals of a file.
 * **Completion after `.`**: the fields and methods of a struct value (also inherited ones), the methods of an
@@ -29,7 +34,7 @@ Support for **CShift** (`.cshift`), the native, C#-like systems language of this
   `switch`, `try`, `ifis`, `dict`, …) and a schema for `cshift.json`.
 
 Errors, hover and go to definition come from the compiler itself (`cshiftc` 0.11 or later; references, the outline
-and completion need 0.20 or later), so they always match what the build reports.
+and completion need 0.20 or later, renaming 0.39), so they always match what the build reports.
 
 ## Installation
 
