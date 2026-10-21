@@ -152,8 +152,18 @@ async function check(name, browserType, ratio, touch) {
                 const pt = at(n[11 + 2 * i], n[12 + 2 * i]);
                 await p.mouse.click(pt.x, pt.y);
             };
+            // the dialog of a button: its button "Choose file..." is armed on the canvas. A click on the button of the
+            // program can come in a frame that does not take it (seldom, on a busy runner): then it is clicked again,
+            // once, before the check fails
+            const open = async (i) => {
+                await button(i);
+                const armed = () => p.waitForFunction(() => document.querySelector("canvas").dataset.fileButton, null,
+                                                       { timeout: 3000 }).then(() => true, () => false);
+                if (await armed()) return;
+                await button(i);
+                if (!(await armed())) throw new Error(`button ${i} opens no dialog: ${out.lines.slice(-4).join(" | ")}`);
+            };
             const choose = async (paths) => {
-                await p.waitForFunction(() => document.querySelector("canvas").dataset.fileButton, null, { timeout: 3000 });
                 await p.waitForTimeout(200); // the dialog settles (its first frame finds its size)
                 const arm = await p.evaluate(() => document.querySelector("canvas").dataset.fileButton);
                 if (!arm) throw new Error(`the dialog closed: ${out.lines.slice(-5).join(" | ")}`);
@@ -166,17 +176,17 @@ async function check(name, browserType, ratio, touch) {
                 await choosers[choosers.length - 1].setFiles(paths);
             };
             let mark = out.lines.length;
-            await button(0);
+            await open(0);
             await choose(join(files, "one.txt"));
             const one = await out.waitFor("opened ", mark);
             if (one !== "opened 1 /home/web_user/files/one.txt first file") fail(`${tag}: open one file: ${one}`);
             mark = out.lines.length;
-            await button(1);
+            await open(1);
             await choose([join(files, "one.txt"), join(files, "two.txt")]);
             const many = await out.waitFor("opened ", mark);
             if (many !== "opened 2 /home/web_user/files/one.txt first file") fail(`${tag}: open two files: ${many}`);
             mark = out.lines.length;
-            await button(3);
+            await open(3);
             await choose(join(files, "data"));
             const folder = await out.waitFor("folder ", mark);
             if (folder !== "folder /home/web_user/files/data 2") fail(`${tag}: open a folder: ${folder}`);
