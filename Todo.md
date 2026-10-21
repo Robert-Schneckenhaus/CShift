@@ -14,19 +14,13 @@ the git log.
       safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
-- [ ] m68k backend: faster counted loops, ending in jump towers. The runtime's `memcpy`/`memmove`/`memset` use towers
-      already (a body unrolled 16 times, entered in the middle so that the first pass does the remainder, see
-      [docs/amiga.md](docs/amiga.md#how-the-backend-works)). For the loops of a program they only pay off after the
-      steps before them: today `for (var i = 0; i < row.Length; i += 1) row[i] = color;` runs about 20 instructions
-      per element - the length is loaded twice (loop condition and bounds check), the index is shifted, `i + 1` is
-      checked for overflow. In this order:
-      1. keep loop-invariant values (`row.Length`, the array's data pointer) in registers,
-      2. drop the bounds check when the loop condition already proves it (`0 <= i < a.Length`, `i` grows by 1, `a`
-         is not assigned in the loop), and the overflow check of such an `i`,
-      3. walk a pointer instead of indexing (`move.w %d4,(%a0)+`), with `dbra` for the count,
-      4. then a tower for an innermost loop whose body is a few instructions without calls, at `-O2`/`-O3` only
-         (`-O1` keeps the size small for floppy disks; on a 68020 the body must stay within its 256-byte cache).
-         Bodies whose copies differ in size need a jump table instead of a computed offset.
+- [ ] m68k backend: jump towers for counted loops. Counted loops walk pointers and count down already (no bounds
+      check where `i < a.Length` proves it, see [docs/amiga.md](docs/amiga.md#how-the-backend-works)); the runtime's
+      `memcpy`/`memmove`/`memset` use towers (a body unrolled 16 times, entered in the middle so that the first pass
+      does the remainder). Next: a tower for an innermost loop whose body is a few instructions without calls, at
+      `-O2`/`-O3` only (`-O1` keeps the size small for floppy disks; on a 68020 the body must stay within its 256-byte
+      cache). Bodies whose copies differ in size need a jump table instead of a computed offset. Also: `dbra` for
+      counts known to fit into 16 bits, a walk for `a[i + k]`, and loops whose bound changes in the loop.
 
 ## Tooling
 

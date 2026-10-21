@@ -1,0 +1,215 @@
+// The counted loops of the 68000 backend (Loops.cshift: walking pointers, rotation, counting down) must never change a
+// result: loops in loops, a counter read after its loop, break and continue, an array assigned in the loop, elements of
+// 1, 2, 4, 8 and 12 bytes, starts that are not 0, loops that run no round.
+// expect-stdout: counted loops ok
+using System;
+
+struct Point
+{
+    int X;
+    int Y;
+    int Z;
+}
+
+int failures = 0;
+
+void Check(string what, int64 got, int64 expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+void Fill(uint16[] row, uint16 color)
+{
+    for (var i = 0; i < row.Length; i += 1)
+        row[i] = color;
+}
+
+int Sum(int[] a)
+{
+    int s = 0;
+    for (var i = 0; i < a.Length; i += 1)
+        s += a[i];
+    return s;
+}
+
+int64 SumFrom(int64[] a, int start)
+{
+    int64 s = 0;
+    for (var i = start; i < a.Length; i += 1)
+        s += a[i];
+    return s;
+}
+
+void Copy(uint8[] dst, uint8[] src, int n)
+{
+    for (var i = 0; i < n; i += 1)
+        dst[i] = src[i];
+}
+
+// the counter is read after the loop
+int FirstZero(int[] a)
+{
+    int i = 0;
+    for (; i < a.Length; i += 1)
+    {
+        if (a[i] == 0)
+            break;
+    }
+    return i;
+}
+
+int CountAfter(int[] a)
+{
+    int i = 3;
+    while (i < a.Length)
+    {
+        a[i] = a[i] + 1;
+        i += 1;
+    }
+    return i;
+}
+
+// the array changes in the loop
+int Switching(int[] a, int[] b)
+{
+    int s = 0;
+    var x = a;
+    for (var i = 0; i < a.Length; i += 1)
+    {
+        s += x[i] * (i + 1);
+        x = i % 2 == 0 ? b : a;
+    }
+    return s;
+}
+
+int SkipOdd(int[] a)
+{
+    int s = 0;
+    for (var i = 0; i < a.Length; i += 1)
+    {
+        if (a[i] % 2 != 0)
+            continue;
+        s += a[i];
+    }
+    return s;
+}
+
+int Grid(int[][] rows)
+{
+    int s = 0;
+    for (var y = 0; y < rows.Length; y += 1)
+    {
+        var row = rows[y];
+        for (var x = 0; x < row.Length; x += 1)
+            s += row[x] * (y + 1);
+    }
+    return s;
+}
+
+int Points(Point[] points)
+{
+    int s = 0;
+    for (var i = 0; i < points.Length; i += 1)
+        s += points[i].X + 2 * points[i].Y + 3 * points[i].Z;
+    return s;
+}
+
+void Scale(Point[] points)
+{
+    for (var i = 0; i < points.Length; i += 1)
+        points[i] = Point { X = points[i].X * 2, Y = points[i].Y, Z = i };
+}
+
+// two arrays and the index itself
+void Squares(int[] a, uint8[] b)
+{
+    for (var i = 0; i < a.Length; i += 1)
+    {
+        a[i] = i * i;
+        b[i] = (uint8)i;
+    }
+}
+
+int Between(int[] a, int from, int to)
+{
+    int s = 0;
+    for (var i = from; i < to; i += 1)
+        s += a[i];
+    return s;
+}
+
+int Main()
+{
+    var row = new uint16[37];
+    Fill(row, 513);
+    int rowSum = 0;
+    foreach (var v in row)
+        rowSum += (int)v;
+    Check("fill", rowSum, 37 * 513);
+    Fill(new uint16[0], 1);
+
+    var a = new int[50];
+    for (var i = 0; i < a.Length; i += 1)
+        a[i] = i - 7;
+    Check("sum", Sum(a), 50 * 49 / 2 - 7 * 50);
+    Check("sum of none", Sum(new int[0]), 0);
+
+    var longs = new int64[10];
+    for (var i = 0; i < longs.Length; i += 1)
+        longs[i] = (int64)i * 1000000000;
+    Check("sum from 4", SumFrom(longs, 4), 39000000000);
+    Check("sum from 10", SumFrom(longs, 10), 0);
+    Check("sum from 12", SumFrom(longs, 12), 0);
+
+    var src = new uint8[20];
+    for (var i = 0; i < src.Length; i += 1)
+        src[i] = (uint8)(i * 11);
+    var dst = new uint8[20];
+    Copy(dst, src, 15);
+    Check("copy", (int)dst[14] + (int)dst[3] + (int)dst[15], 154 + 33);
+
+    var zeros = new int[] { 4, 5, 0, 6 };
+    Check("first zero", FirstZero(zeros), 2);
+    Check("no zero", FirstZero(new int[] { 1, 2 }), 2);
+    var after = new int[] { 0, 0, 0, 0, 0, 0 };
+    Check("count after", CountAfter(after), 6);
+    Check("count after elements", after[2] + after[3] + after[5], 2);
+    Check("count after none", CountAfter(new int[2]), 3);
+
+    var b = new int[] { 100, 200, 300, 400 };
+    var c = new int[] { 1, 2, 3, 4 };
+    Check("switching", Switching(c, b), 1 + 2 * 200 + 3 * 3 + 4 * 400);
+    Check("skip odd", SkipOdd(new int[] { 1, 2, 3, 4, 6 }), 12);
+
+    var rows = new int[3][];
+    for (var y = 0; y < rows.Length; y += 1)
+    {
+        rows[y] = new int[y + 2];
+        for (var x = 0; x < rows[y].Length; x += 1)
+            rows[y][x] = x + 1;
+    }
+    Check("grid", Grid(rows), 3 + 2 * 6 + 3 * 10);
+
+    var points = new Point[4];
+    for (var i = 0; i < points.Length; i += 1)
+        points[i] = Point { X = i, Y = 10 * i, Z = 100 };
+    Check("points", Points(points), 6 + 2 * 60 + 3 * 400);
+    Scale(points);
+    Check("scaled", Points(points), 12 + 2 * 60 + 3 * 6);
+
+    var squares = new int[9];
+    var bytes = new uint8[9];
+    Squares(squares, bytes);
+    Check("squares", squares[8] + squares[3] + (int)bytes[7], 64 + 9 + 7);
+    Check("between", Between(squares, 2, 5), 4 + 9 + 16);
+    Check("between none", Between(squares, 5, 5), 0);
+    Check("between backwards", Between(squares, 6, 2), 0);
+
+    if (failures == 0)
+        Console.WriteLine("counted loops ok");
+    return failures;
+}

@@ -6,6 +6,17 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Amiga
+- Faster counted loops with the m68k backend (`for (var i = 0; i < a.Length; i += 1)` and the like):
+  - the bounds check of `a[i]` goes away where the loop condition proves it (`i` starts at a value that is not
+    negative and only grows);
+  - an element of an array that does not change in the loop is reached through an address register that moves on by
+    the element size each round (`move.w d4,(a4)+`);
+  - the test of the loop is repeated at its end, so a round ends in one branch, and a counter that only counts the
+    rounds becomes a count down to 0 (`subq.l #1,d7` / `bne`).
+
+  Filling a `uint16[]` takes 26 cycles per element instead of about 75.
+
 ### Tools
 - VS Code: **renaming** (F2) of variables, parameters, fields, functions, methods, types, enum members, constants and
   globals, in all files of the program. The declaration is renamed too, so are the field names of initializers

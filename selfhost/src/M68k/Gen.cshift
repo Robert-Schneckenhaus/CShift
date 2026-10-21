@@ -829,6 +829,18 @@ void LoadAddr(Gen g, int vi, string areg)
         g.Line("move.l\t#" + c.Off.ToString() + "," + areg);
 }
 
+// the address register (a2-a5) a pointer value lives in, "" if it is in none (or is the address of a variable)
+string AddressHome(Gen g, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind != ValKind.Local || g.Alloca.ContainsKey(v.Name))
+        return "";
+    var home = g.Home.TryGet(v.Name);
+    if (home is string reg && reg.StartsWith("%a"))
+        return reg;
+    return "";
+}
+
 // Sign- or zero-extends the low 'bits' of a data register to 32 bits.
 void Extend(Gen g, string reg, int bits, bool signed)
 {
@@ -1177,6 +1189,33 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
             src = "%d0";
         }
         g.Line("move" + suffix + "\t" + src + "," + Frame(aoff));
+        return;
+    }
+    // through a pointer that lives in an address register: that register is the address
+    if (op == "load" && !g.T.IsAggregate(inst.Type) && g.L.Size(inst.Type) <= 4 && AddressHome(g, inst.Args[0]).Length > 0)
+    {
+        int size = g.L.Size(inst.Type);
+        string from = "(" + AddressHome(g, inst.Args[0]) + ")";
+        string target = size == 4 ? ResultRegister(g, inst.Res) : "";
+        if (target.Length > 0)
+        {
+            g.Line("move.l\t" + from + "," + target);
+            return;
+        }
+        g.Line("move" + SizeSuffix(size) + "\t" + from + ",%d0");
+        StoreResult(g, inst);
+        return;
+    }
+    if (op == "store" && !g.T.IsAggregate(inst.OpType) && g.L.Size(inst.OpType) <= 4 && AddressHome(g, inst.Args[1]).Length > 0)
+    {
+        int size = g.L.Size(inst.OpType);
+        string src = SourceOperand(g, inst.Args[0], size * 8);
+        if (src.Length == 0 || (src.StartsWith("#") && size < 4))
+        {
+            Load32(g, inst.Args[0], "%d0");
+            src = "%d0";
+        }
+        g.Line("move" + SizeSuffix(size) + "\t" + src + ",(" + AddressHome(g, inst.Args[1]) + ")");
         return;
     }
     if (op == "load")

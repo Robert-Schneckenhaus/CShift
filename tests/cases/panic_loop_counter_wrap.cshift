@@ -1,0 +1,11 @@
+// A loop counter that grows by an unchecked add can wrap around to a negative value: the check of a[i] stays.
+// expect-exit: 101
+// expect-stderr: panic: array index out of range
+int Main()
+{
+    var a = new int[4];
+    int s = 0;
+    for (var i = 1; i < a.Length; i = unchecked(i + int.MaxValue))
+        s += a[i];
+    return s;
+}

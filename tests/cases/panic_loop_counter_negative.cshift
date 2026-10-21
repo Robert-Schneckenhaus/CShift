@@ -1,0 +1,16 @@
+// A loop counter that the loop condition bounds (i < a.Length) needs no bounds check while it never gets negative
+// (Facts.cshift). Here the body makes it negative: the check of a[i] stays.
+// expect-exit: 101
+// expect-stderr: panic: array index out of range
+int Main()
+{
+    var a = new int[4];
+    int s = 0;
+    for (var i = 0; i < a.Length; i += 1)
+    {
+        s += a[i];
+        if (i == 2)
+            i = -3;
+    }
+    return s;
+}
