@@ -26,6 +26,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   once (before a loop that uses them, so `i < data.Length` makes a counted loop of a loop over a slice). Unpacking
   928 KB of Ambermoon data with LOB (the decoder reads a `ReadOnlySlice<uint8>`) takes 245 instead of 341 million
   cycles.
+- Registers with the m68k backend: a function whose code needs neither `d2` nor `d3` (no 64-bit arithmetic, no
+  product but by a small constant, no division) keeps values in them too; the uses on the ways out of a loop (an error
+  returned, a failed check) no longer count as uses in the loop; pointers and integers that got the other kind of
+  register swap them; a value holds its register only in the blocks where it lives (a value that lives before and
+  after a loop but not in it leaves the register to the loop), and a comparison or an overflow check that only decides
+  the branch after it no longer takes a register. Unpacking 928 KB of Ambermoon data takes 177 million cycles (245
+  before).
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

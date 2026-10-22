@@ -1,16 +1,17 @@
 // Register allocation of the 68000 backend (linear scan): the scalar values of a function (up to 32 bits: its
 // parameters as well, which the prologue then loads from their slots) and its scalar variables (allocas whose address
-// is only loaded from and stored to) get the registers d4-d7 and a2-a5 for their whole lifetime, if they fit; the
-// others stay in their stack slots. There is no spill code: a value lives either
-// in a register or in its slot, everywhere.
+// is only loaded from and stored to) get the registers d4-d7 and a2-a5 (d2 and d3 too where the code of the function
+// does not need them) for their whole lifetime, if they fit; the others stay in their stack slots. There is no spill
+// code: a value lives either in a register or in its slot, everywhere.
 //
 //   1. Liveness: a data flow analysis over the blocks (a load of a variable uses it, a store defines it; the arguments
 //      of a phi are used at the end of the predecessor).
-//   2. Intervals: the blocks in their order, every instruction numbered; a value's interval covers every point where it
-//      is live (without holes: from its first to its last point).
-//   3. Linear scan in the order of the interval starts: a free register of the preferred kind (address registers for
-//      pointers), else the one of the active value that is worth least, if the new one is worth more. The worth: the
-//      uses and definitions, weighted by the loop nesting (8 per level).
+//   2. Intervals: the blocks in their order, every instruction numbered; a value's interval has a part in each block
+//      where it lives, from its first to its last point there (holes in between: other values can use the register).
+//   3. Linear scan in the order of the interval starts: a free register (no value there overlaps the new one) of the
+//      preferred kind (address registers for pointers), else the one whose overlapping values are worth least
+//      together, if the new one is worth more. The worth: the uses and definitions, weighted by the loop nesting (8
+//      per level).
 
 namespace CShift.M68k;
 
@@ -96,7 +97,7 @@ void AllocateRegisters(Gen g, IrFunc f)
     foreach (var name in forwarded)
         excluded.Add(name);
 
-    // ---- loop nesting (for the weights): a branch back to an earlier block ----
+    // ---- loop nesting (for the weights): the loops of the branches back to an earlier block ----
     var depth = new int[n];
     var succs = new List<int>[n];
     for (var j = 0; j < n; j += 1)
@@ -113,13 +114,54 @@ void AllocateRegisters(Gen g, IrFunc f)
                 {
                     if (!succs[j].Contains(i))
                         succs[j].Add(i);
-                    if (i <= j)
-                    {
-                        for (var k = i; k <= j; k += 1)
-                            depth[k] += 1;
-                    }
                 }
             }
+        }
+    }
+
+    // (the blocks of the loop of each branch back: the ones that reach it without passing its target; a block that
+    // leaves the loop, a panic or a return, is not in it, and its uses do not count as uses in the loop)
+    var preds = new List<int>[n];
+    for (var j = 0; j < n; j += 1)
+        preds[j] = List<int>.Create();
+    for (var j = 0; j < n; j += 1)
+    {
+        foreach (var t in succs[j].ToArray())
+            preds[t].Add(j);
+    }
+    for (var head = 0; head < n; head += 1)
+    {
+        // (all branches back to the same block: one loop)
+        var inLoop = new bool[n];
+        var work = List<int>.Create();
+        foreach (var j in preds[head].ToArray())
+        {
+            if (j >= head && !inLoop[j])
+            {
+                inLoop[j] = true;
+                work.Add(j);
+            }
+        }
+        if (work.Count() == 0)
+            continue;
+        inLoop[head] = true;
+        while (work.Count() > 0)
+        {
+            int b = work.Get(work.Count() - 1);
+            work.RemoveAt(work.Count() - 1);
+            foreach (var p in preds[b].ToArray())
+            {
+                if (!inLoop[p])
+                {
+                    inLoop[p] = true;
+                    work.Add(p);
+                }
+            }
+        }
+        for (var k = 0; k < n; k += 1)
+        {
+            if (inLoop[k])
+                depth[k] += 1;
         }
     }
 
@@ -141,6 +183,8 @@ void AllocateRegisters(Gen g, IrFunc f)
     var storeBlock = List<int>.Create();
     var lo = Dictionary<string, int>.Create();
     var hi = Dictionary<string, int>.Create();
+    var touchName = List<string>.Create();      // every point of every value (for the parts of its interval)
+    var touchPos = List<int>.Create();
     var lastUse = Dictionary<string, int>.Create();   // "block|value" -> the last position in the block that uses it
     var phiEnds = List<string>.Create();        // phi results and their predecessors: the predecessor writes the
     var phiFrom = List<int>.Create();           // result's register before its branch (and its compare)
@@ -181,7 +225,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                         uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
                         if (!kill[j].Contains(v.Name))
                             gen[j].Add(v.Name);
-                        Touch(v.Name, pos, w, weight, lo, hi);
+                        Touch(v.Name, pos, w, weight, lo, hi, touchName, touchPos);
                         lastUse.Set(j.ToString() + "|" + v.Name, pos);
                     }
                 }
@@ -192,7 +236,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                 {
                     phiDefs[j].Add(inst.Res);
                     kill[j].Add(inst.Res);
-                    Touch(inst.Res, blockStart[j], w, weight, lo, hi);
+                    Touch(inst.Res, blockStart[j], w, weight, lo, hi, touchName, touchPos);
                 }
                 for (var a = 0; a < inst.Args.Length; a += 1)
                 {
@@ -233,7 +277,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                     continue; // the variable is written, not read
                 if (!kill[j].Contains(v.Name))
                     gen[j].Add(v.Name);
-                Touch(v.Name, pos, w, weight, lo, hi);
+                Touch(v.Name, pos, w, weight, lo, hi, touchName, touchPos);
                 lastUse.Set(j.ToString() + "|" + v.Name, pos);
             }
             if (inst.Op == "store" && inst.Args.Length > 1)
@@ -242,7 +286,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                 if (target.Kind == ValKind.Local && allocaSize.ContainsKey(target.Name) && IsCandidate(target.Name, isPointer, excluded))
                 {
                     kill[j].Add(target.Name);
-                    Touch(target.Name, pos, w, weight, lo, hi);
+                    Touch(target.Name, pos, w, weight, lo, hi, touchName, touchPos);
                 }
             }
             // the called value of an indirect call is used here as well
@@ -254,7 +298,7 @@ void AllocateRegisters(Gen g, IrFunc f)
                     uses.Set(cv.Name, uses.GetOrDefault(cv.Name, 0) + 1);
                     if (!kill[j].Contains(cv.Name))
                         gen[j].Add(cv.Name);
-                    Touch(cv.Name, pos, w, weight, lo, hi);
+                    Touch(cv.Name, pos, w, weight, lo, hi, touchName, touchPos);
                     lastUse.Set(j.ToString() + "|" + cv.Name, pos);
                 }
             }
@@ -263,27 +307,44 @@ void AllocateRegisters(Gen g, IrFunc f)
                 defPos.Set(inst.Res, pos);
                 defBlock.Set(inst.Res, j);
                 kill[j].Add(inst.Res);
-                Touch(inst.Res, pos, w, weight, lo, hi);
+                Touch(inst.Res, pos, w, weight, lo, hi, touchName, touchPos);
             }
         }
         pos += 1;
         blockEnd[j] = pos;
         pos += 1;
         foreach (var u in phiUses[j].ToArray())
-            Touch(u, blockEnd[j], w, weight, lo, hi);
+            Touch(u, blockEnd[j], w, weight, lo, hi, touchName, touchPos);
+    }
+
+    // a comparison that only decides the branch after it and the flag of a checked add before its branch are flags in
+    // the code (Gen.cshift: GenCompareBranch, GenOverflowBranch): no register for them
+    foreach (var b in blocks)
+    {
+        var insts = b.Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            if (inst.Op == "icmp" && k + 1 < insts.Length && insts[k + 1].Op == "br" && insts[k + 1].Labels.Length == 2 &&
+                IsLocal(g, insts[k + 1].Args[0]) && g.M.Vals.Get(insts[k + 1].Args[0]).Name == inst.Res &&
+                uses.GetOrDefault(inst.Res, 0) == 1 && g.T.Bits(inst.OpType) != 64)
+                weight.Set(inst.Res, 0);
+            else if (k + 3 < insts.Length && IsFusableOverflow(g, insts, k, uses))
+                weight.Set(g.M.Vals.Get(insts[k + 3].Args[0]).Name, 0);
+        }
     }
 
     // a parameter has its value from the start
     foreach (var p in f.Params)
     {
         if (IsCandidate(p.Name, isPointer, excluded))
-            Touch(p.Name, 0, 0, weight, lo, hi);
+            Touch(p.Name, 0, 0, weight, lo, hi, touchName, touchPos);
     }
     for (var i = 0; i < phiEnds.Count(); i += 1)
     {
         int end = blockEnd[phiFrom.Get(i)];
-        Touch(phiEnds.Get(i), end - 2, 0, weight, lo, hi);
-        Touch(phiEnds.Get(i), end - 1, 0, weight, lo, hi);
+        Touch(phiEnds.Get(i), end - 2, 0, weight, lo, hi, touchName, touchPos);
+        Touch(phiEnds.Get(i), end - 1, 0, weight, lo, hi, touchName, touchPos);
     }
 
     // ---- liveness: live-in = gen + (live-out - kill); live-out = the live-ins of the successors (without their
@@ -341,9 +402,9 @@ void AllocateRegisters(Gen g, IrFunc f)
     for (var j = 0; j < n; j += 1)
     {
         foreach (var v in liveIn[j].ToArray())
-            Touch(v, blockStart[j], 0, weight, lo, hi);
+            Touch(v, blockStart[j], 0, weight, lo, hi, touchName, touchPos);
         foreach (var v in liveOut[j].ToArray())
-            Touch(v, blockEnd[j], 0, weight, lo, hi);
+            Touch(v, blockEnd[j], 0, weight, lo, hi, touchName, touchPos);
     }
 
     // ---- values that share their variable's register ----
@@ -391,8 +452,8 @@ void AllocateRegisters(Gen g, IrFunc f)
             written = true;
         if (written)
             continue;
-        Touch(variable, lo.Get(t), 0, weight, lo, hi);
-        Touch(variable, until, 0, weight, lo, hi);
+        Touch(variable, lo.Get(t), 0, weight, lo, hi, touchName, touchPos);
+        Touch(variable, until, 0, weight, lo, hi, touchName, touchPos);
         weight.Set(variable, weight.GetOrDefault(variable, 0) + weight.GetOrDefault(t, 0));
         aliasOf.Set(t, variable);
         aliasEnd.Set(t, until);
@@ -438,7 +499,7 @@ void AllocateRegisters(Gen g, IrFunc f)
         }
         if (read)
             continue;
-        Touch(variable, d, 0, weight, lo, hi);
+        Touch(variable, d, 0, weight, lo, hi, touchName, touchPos);
         weight.Set(variable, weight.GetOrDefault(variable, 0) + weight.GetOrDefault(x, 0));
         aliasOf.Set(x, variable);
         lo.Remove(x);
@@ -465,11 +526,77 @@ void AllocateRegisters(Gen g, IrFunc f)
         }
         sorted[k + 1] = x;
     }
+    // the parts of each interval: per block from its first to its last point there (a value that only lives in some
+    // blocks between its start and its end leaves the register to others in the rest)
+    var slot = Dictionary<string, int>.Create();
+    for (var i = 0; i < sorted.Length; i += 1)
+        slot.Set(sorted[i].Name, i);
+    var segBlock = new List<int>[sorted.Length];
+    var segStart = new List<int>[sorted.Length];
+    var segEnd = new List<int>[sorted.Length];
+    for (var i = 0; i < sorted.Length; i += 1)
+    {
+        segBlock[i] = List<int>.Create();
+        segStart[i] = List<int>.Create();
+        segEnd[i] = List<int>.Create();
+    }
+    for (var t = 0; t < touchName.Count(); t += 1)
+    {
+        string name = touchName.Get(t);
+        var ali = aliasOf.TryGet(name);
+        if (ali is string variable)
+            name = variable; // (a value in its variable's register: its points are the variable's)
+        if (!slot.ContainsKey(name))
+            continue;
+        int k = slot.Get(name);
+        int at = touchPos.Get(t);
+        int b = BlockAt(blockStart, at);
+        int s = segBlock[k].IndexOf(b);
+        if (s < 0)
+        {
+            segBlock[k].Add(b);
+            segStart[k].Add(at);
+            segEnd[k].Add(at);
+        }
+        else if (at < segStart[k].Get(s))
+            segStart[k].Set(s, at);
+        else if (at > segEnd[k].Get(s))
+            segEnd[k].Set(s, at);
+    }
+    var parts = new int[sorted.Length][];   // start, end, start, end, ... in order
+    for (var i = 0; i < sorted.Length; i += 1)
+    {
+        int count = segStart[i].Count();
+        var p = new int[count * 2];
+        for (var s = 0; s < count; s += 1)
+        {
+            int a = segStart[i].Get(s);
+            int e = segEnd[i].Get(s);
+            int k = s - 1;
+            while (k >= 0 && p[k * 2] > a)
+            {
+                p[k * 2 + 2] = p[k * 2];
+                p[k * 2 + 3] = p[k * 2 + 1];
+                k -= 1;
+            }
+            p[k * 2 + 2] = a;
+            p[k * 2 + 3] = e;
+        }
+        parts[i] = p;
+    }
+
+    // d2 and d3 too where no instruction of the function needs them for its own code (Gen.cshift: 64-bit values,
+    // products, remainders)
+    bool d23 = !NeedsD2D3(g, f);
     string[] regs = ["%d4", "%d5", "%d6", "%d7", "%a2", "%a3", "%a4", "%a5"];
-    var owner = new int[8];     // the interval in each register (-1: free)
-    var used = new bool[8];
-    for (var r = 0; r < 8; r += 1)
-        owner[r] = -1;
+    if (d23)
+        regs = ["%d4", "%d5", "%d6", "%d7", "%d2", "%d3", "%a2", "%a3", "%a4", "%a5"];
+    int nData = d23 ? 6 : 4;
+    int nRegs = regs.Length;
+    var byRegister = new List<int>[nRegs];   // the intervals in each register
+    var used = new bool[nRegs];
+    for (var r = 0; r < nRegs; r += 1)
+        byRegister[r] = List<int>.Create();
     var assigned = new int[sorted.Length];
     for (var i = 0; i < sorted.Length; i += 1)
     {
@@ -477,58 +604,120 @@ void AllocateRegisters(Gen g, IrFunc f)
         var cur = sorted[i];
         if (cur.Weight < 2)
             continue; // not worth a register
-        // registers whose value is over
-        for (var r = 0; r < 8; r += 1)
+        // a free register (no value there overlaps this one): of the preferred kind first
+        int pick = -1;
+        for (var pass = 0; pass < 2 && pick < 0; pass += 1)
         {
-            if (owner[r] >= 0 && sorted[owner[r]].End < cur.Start)
-                owner[r] = -1;
+            bool address = cur.Pointer == (pass == 0);
+            for (var r = address ? nData : 0; r < (address ? nRegs : nData) && pick < 0; r += 1)
+            {
+                if (Conflicts(parts, byRegister[r], i, -1) == 0)
+                    pick = r;
+            }
         }
-        int pick = FreeRegister(owner, cur.Pointer);
         if (pick < 0)
         {
-            // the active value that is worth least (per point of its interval) gives its register up
-            int worst = -1;
-            for (var r = 0; r < 8; r += 1)
+            // the register whose overlapping values are worth least gives them up, if the new one is worth more
+            int best = -1;
+            int bestWorth = 0;
+            for (var r = 0; r < nRegs; r += 1)
             {
-                if (worst < 0 || Worth(sorted[owner[r]]) < Worth(sorted[owner[worst]]))
-                    worst = r;
+                int w = 0;
+                foreach (var k in byRegister[r].ToArray())
+                {
+                    if (Overlap(parts[k], parts[i]))
+                        w += Worth(sorted[k]);
+                }
+                if (best < 0 || w < bestWorth)
+                {
+                    best = r;
+                    bestWorth = w;
+                }
             }
-            if (worst >= 0 && Worth(sorted[owner[worst]]) < Worth(cur))
+            if (best >= 0 && bestWorth < Worth(cur))
             {
-                assigned[owner[worst]] = -1;
-                pick = worst;
+                foreach (var k in byRegister[best].ToArray())
+                {
+                    if (Overlap(parts[k], parts[i]))
+                    {
+                        assigned[k] = -1;
+                        byRegister[best].Remove(k);
+                    }
+                }
+                pick = best;
             }
         }
-        // a register of the other kind (an integer in an address register: no dbra, no byte operations): the value of
-        // the preferred kind that is worth least moves there, if the new one is worth more
-        if (pick >= 0 && (pick >= 4) != cur.Pointer)
+        // a register of the other kind (an integer in an address register: no dbra, no byte operations): a value of
+        // the preferred kind that is worth less and is the only one in its register in the way moves there, if it fits
+        if (pick >= 0 && (pick >= nData) != cur.Pointer)
         {
-            int first = cur.Pointer ? 4 : 0;
-            int cheapest = -1;
-            for (var r = first; r < first + 4; r += 1)
+            int first = cur.Pointer ? nData : 0;
+            int last = cur.Pointer ? nRegs : nData;
+            int from = -1;
+            int moved = -1;
+            for (var r = first; r < last; r += 1)
             {
-                if (owner[r] >= 0 && (cheapest < 0 || Worth(sorted[owner[r]]) < Worth(sorted[owner[cheapest]])))
-                    cheapest = r;
+                int only = -1;
+                int count = 0;
+                foreach (var k in byRegister[r].ToArray())
+                {
+                    if (Overlap(parts[k], parts[i]))
+                    {
+                        only = k;
+                        count += 1;
+                    }
+                }
+                if (count != 1 || Worth(sorted[only]) >= Worth(cur) || Conflicts(parts, byRegister[pick], only, -1) != 0)
+                    continue;
+                if (moved < 0 || Worth(sorted[only]) < Worth(sorted[moved]))
+                {
+                    from = r;
+                    moved = only;
+                }
             }
-            // (the free register must have been free over the moved value's whole interval)
-            bool free = cheapest >= 0;
-            for (var j = 0; j < i && free; j += 1)
+            if (moved >= 0)
             {
-                var moved = sorted[owner[cheapest]];
-                if (assigned[j] == pick && sorted[j].End >= moved.Start && sorted[j].Start <= moved.End)
-                    free = false;
-            }
-            if (free && Worth(sorted[owner[cheapest]]) < Worth(cur))
-            {
-                owner[pick] = owner[cheapest];
-                assigned[owner[pick]] = pick;
-                pick = cheapest;
+                byRegister[from].Remove(moved);
+                byRegister[pick].Add(moved);
+                assigned[moved] = pick;
+                pick = from;
             }
         }
         if (pick >= 0)
         {
-            owner[pick] = i;
+            byRegister[pick].Add(i);
             assigned[i] = pick;
+        }
+    }
+    // a pointer in a data register and an integer in an address register over the same time: swapped, where each fits
+    // into the other's register (no other value there overlaps it)
+    for (var i = 0; i < sorted.Length; i += 1)
+    {
+        int rd = assigned[i];
+        if (rd < 0 || rd >= nData || !sorted[i].Pointer)
+            continue;
+        for (var ra = nData; ra < nRegs; ra += 1)
+        {
+            // the one value of the address register over i's time, an integer
+            int other = -1;
+            int count = 0;
+            foreach (var k in byRegister[ra].ToArray())
+            {
+                if (Overlap(parts[k], parts[i]))
+                {
+                    other = k;
+                    count += 1;
+                }
+            }
+            if (count != 1 || sorted[other].Pointer || Conflicts(parts, byRegister[rd], other, i) != 0)
+                continue;
+            assigned[i] = ra;
+            assigned[other] = rd;
+            byRegister[rd].Remove(i);
+            byRegister[ra].Remove(other);
+            byRegister[ra].Add(i);
+            byRegister[rd].Add(other);
+            break;
         }
     }
     for (var i = 0; i < sorted.Length; i += 1)
@@ -547,10 +736,10 @@ void AllocateRegisters(Gen g, IrFunc f)
         else if (allocaSize.GetOrDefault(entry.Value, 0) == 4)
             g.Home.Set(entry.Key, Frame(g.Alloca.Get(entry.Value))); // the variable's slot: read (or written) there
     }
-    for (var r = 0; r < 8; r += 1)
+    for (var r = 0; r < nRegs; r += 1)
     {
-        if (used[r])
-            g.Saved.Add(regs[r]);
+        if (used[r] && regs[r] != "%d2" && regs[r] != "%d3")
+            g.Saved.Add(regs[r]); // (d2 and d3 are always saved)
     }
     foreach (var name in forwarded)
         g.Home.Set(name, "%d0");
@@ -673,13 +862,46 @@ bool ReadsFirstOperandFirst(Gen g, IrInst[] insts, int k)
 // the block that contains a position
 int BlockAt(int[] blockStart, int at)
 {
-    int b = 0;
-    for (var j = 0; j < blockStart.Length; j += 1)
+    int low = 0;
+    int high = blockStart.Length - 1;
+    while (low < high)
     {
-        if (blockStart[j] <= at)
-            b = j;
+        int mid = (low + high + 1) / 2;
+        if (blockStart[mid] <= at)
+            low = mid;
+        else
+            high = mid - 1;
     }
-    return b;
+    return low;
+}
+
+// whether two intervals (their parts: start, end, ... in order) have a point in common
+bool Overlap(int[] a, int[] b)
+{
+    int i = 0;
+    int k = 0;
+    while (i < a.Length && k < b.Length)
+    {
+        if (a[i + 1] < b[k])
+            i += 2;
+        else if (b[k + 1] < a[i])
+            k += 2;
+        else
+            return true;
+    }
+    return false;
+}
+
+// the intervals of a register (but 'except') that overlap interval i
+int Conflicts(int[][] parts, List<int> inRegister, int i, int except)
+{
+    int count = 0;
+    foreach (var k in inRegister.ToArray())
+    {
+        if (k != except && k != i && Overlap(parts[k], parts[i]))
+            count += 1;
+    }
+    return count;
 }
 
 bool IsCandidate(string name, Dictionary<string, bool> isPointer, HashSet<string> excluded)
@@ -687,8 +909,11 @@ bool IsCandidate(string name, Dictionary<string, bool> isPointer, HashSet<string
     return isPointer.ContainsKey(name) && !excluded.Contains(name);
 }
 
-void Touch(string name, int at, int w, Dictionary<string, int> weight, Dictionary<string, int> lo, Dictionary<string, int> hi)
+void Touch(string name, int at, int w, Dictionary<string, int> weight, Dictionary<string, int> lo, Dictionary<string, int> hi,
+           List<string> touchName, List<int> touchPos)
 {
+    touchName.Add(name);
+    touchPos.Add(at);
     var l = lo.TryGet(name);
     if (!(l is int low) || at < low)
         lo.Set(name, at);
@@ -705,20 +930,49 @@ int Worth(LiveInterval iv)
     return iv.Weight;
 }
 
-// a free register: address registers for pointers, data registers for the rest (then the other kind)
-int FreeRegister(int[] owner, bool pointer)
+// whether the code of an instruction of the function uses d2 or d3 (Gen.cshift): 64-bit arithmetic and comparisons,
+// products (but by constants of 16 bits and powers of two), remainders, products with an overflow check. (A 64-bit
+// value that is only extended, truncated or passed on, as in the message of a failed bounds check, needs neither.)
+bool NeedsD2D3(Gen g, IrFunc f)
 {
-    int first = pointer ? 4 : 0;
-    int second = pointer ? 0 : 4;
-    for (var r = first; r < first + 4; r += 1)
+    foreach (var b in f.Blocks.ToArray())
     {
-        if (owner[r] < 0)
-            return r;
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            string op = inst.Op;
+            if (op == "srem" || op == "urem" || op == "sdiv" || op == "udiv")
+                return true;
+            if (op == "mul" && !SmallFactor(g, inst.Args[0]) && !SmallFactor(g, inst.Args[1]))
+                return true;
+            bool arithmetic = op == "add" || op == "sub" || op == "mul" || op == "and" || op == "or" || op == "xor" ||
+                              op == "shl" || op == "lshr" || op == "ashr" || op == "icmp" || op == "select";
+            if (arithmetic && (Is64(g, inst.Type) || Is64(g, inst.OpType)))
+                return true;
+            if (op == "call" && inst.Callee >= 0)
+            {
+                var c = g.M.Vals.Get(inst.Callee);
+                if (c.Kind == ValKind.Global && c.Name.StartsWith("llvm.") &&
+                    (c.Name.Contains("mul") || c.Name.EndsWith(".i64")))
+                    return true;
+            }
+        }
     }
-    for (var r = second; r < second + 4; r += 1)
-    {
-        if (owner[r] < 0)
-            return r;
-    }
-    return -1;
+    return false;
+}
+
+// a constant factor whose product takes neither d2 nor d3: a power of two or one of 16 bits
+bool SmallFactor(Gen g, int vi)
+{
+    int64 c = 0;
+    if (!ConstFactor(g, vi, ref c))
+        return false;
+    c = c & 4294967295;
+    return ((c >> 16) & 65535) == 0 || PowerOfTwo(c) >= 0;
+}
+
+bool Is64(Gen g, int t)
+{
+    return t >= 0 && g.T.Kind(t) == IrKind.Int && g.T.Bits(t) == 64;
 }

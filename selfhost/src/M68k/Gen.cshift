@@ -1592,19 +1592,21 @@ void GenBinary32(Gen g, IrInst inst)
     }
     if (op == "mul" && bits <= 32)
     {
-        // by a power of two: a shift
+        // by a power of two: a shift (by 1: the value)
         for (var side = 1; side >= 0; side -= 1)
         {
-            var cv = g.M.Vals.Get(inst.Args[side]);
-            if (cv.Kind != ValKind.Int)
+            int64 factor = 0;
+            if (!ConstFactor(g, inst.Args[side], ref factor))
                 continue;
-            int64 factor = Normalize(cv.Int, bits, false);
-            for (var n = 1; n < bits; n += 1)
+            factor = Normalize(factor, bits, false);
+            for (var n = 0; n < bits; n += 1)
             {
                 if (factor == ((int64)1 << n))
                 {
                     Load32(g, inst.Args[1 - side], "%d0");
-                    if (n <= 8)
+                    if (n == 0)
+                        g.Line("tst.l\t%d0"); // (the flags as after a product)
+                    else if (n <= 8)
                         g.Line("lsl.l\t#" + n.ToString() + ",%d0");
                     else
                     {
@@ -1620,10 +1622,10 @@ void GenBinary32(Gen g, IrInst inst)
         // three mulu.w (two if ch is 0) instead of the helper
         for (var side = 1; side >= 0; side -= 1)
         {
-            var cv = g.M.Vals.Get(inst.Args[side]);
-            if (cv.Kind != ValKind.Int || bits != 32)
+            int64 factor = 0;
+            if (!ConstFactor(g, inst.Args[side], ref factor) || bits != 32)
                 continue;
-            int64 c = cv.Int & 4294967295;
+            int64 c = factor & 4294967295;
             int64 cl = c & 65535;
             int64 ch = (c >> 16) & 65535;
             Load32(g, inst.Args[1 - side], "%d0");
@@ -1703,6 +1705,35 @@ void GenBinary32(Gen g, IrInst inst)
 }
 
 // n if v is 2^n (n >= 1), else -1
+// the offset of a getelementptr whose indices are all constants (false if one is not)
+bool GepConstant(Gen g, IrInst inst, ref int64 offset)
+{
+    var fold = AddrFold { Base = -1, Index = -1, IndexBits = 32, Stride = 1, Offset = 0 };
+    if (!GepParts(g, inst, ref fold) || fold.Index >= 0)
+        return false;
+    offset = fold.Offset;
+    return true;
+}
+
+// a constant factor: an integer, or a constant expression without a symbol (the size of a type: ptrtoint of a gep of
+// null)
+bool ConstFactor(Gen g, int vi, ref int64 value)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind == ValKind.Int)
+    {
+        value = v.Int;
+        return true;
+    }
+    if (v.Kind != ValKind.Expr)
+        return false;
+    var c = EvalConst(g, vi);
+    if (!c.Ok || c.Sym.Length > 0)
+        return false;
+    value = c.Off;
+    return true;
+}
+
 int PowerOfTwo(int64 v)
 {
     for (var n = 1; n <= 62; n += 1)
@@ -2131,9 +2162,20 @@ void GenExtract(Gen g, IrInst inst)
 // getelementptr: the base in d0, plus the constant offsets and the scaled variable indexes.
 void GenGep(Gen g, IrInst inst)
 {
+    // a pointer in a data register plus a constant: added there (addq.l #1,%d2), not through a0
+    var home = g.Home.TryGet(inst.Res);
+    int64 offset = 0;
+    if (home is string dataReg && dataReg.StartsWith("%d") && GepConstant(g, inst, ref offset))
+    {
+        Load32(g, inst.Args[0], dataReg);
+        if (offset >= 1 && offset <= 8)
+            g.Line("addq.l\t#" + offset.ToString() + "," + dataReg);
+        else if (offset != 0)
+            g.Line("add.l\t#" + offset.ToString() + "," + dataReg);
+        return;
+    }
     // computed in an address register: the result's, or a0
     string dst = "%a0";
-    var home = g.Home.TryGet(inst.Res);
     if (home is string reg && reg.StartsWith("%a"))
         dst = reg;
     LoadAddr(g, inst.Args[0], dst);

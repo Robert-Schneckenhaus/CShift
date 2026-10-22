@@ -1,0 +1,114 @@
+// The registers of the 68000 backend are held per block (Regalloc.cshift: intervals with holes), so values that live
+// before and after a loop but not in it leave their registers to the loop, and the loop's values leave theirs to what
+// comes after. Neither may change a result: values around loops, in loops of loops, across a break and through phis.
+// expect-stdout: register holes ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+// many values before the loop that are used again only after it
+int Around(int[] a, int k)
+{
+    int p = k * 3;
+    int q = k + 11;
+    int r = k - 5;
+    int s = k * k;
+    int t = q - p;
+    int sum = 0;
+    for (var i = 0; i < a.Length; i += 1)
+    {
+        int x = a[i];
+        int y = x * 2 + i;
+        int z = y - x;
+        int w = z + y;
+        sum += x + y + z + w;
+    }
+    return sum + p + q * 2 + r * 3 + s * 4 + t * 5;
+}
+
+// a value used in the loop only on a rare path and after it
+int Rare(uint8[] data, int limit)
+{
+    int marker = limit * 7;
+    int count = 0;
+    int last = -1;
+    for (var i = 0; i < data.Length; i += 1)
+    {
+        int v = data[i];
+        if (v > limit)
+        {
+            last = i + marker;
+            break;
+        }
+        count += v;
+    }
+    return count * 1000 + last + marker;
+}
+
+// loops in loops, a value of the outer loop used between the inner ones
+int Nested(int[][] rows)
+{
+    int total = 0;
+    for (var y = 0; y < rows.Length; y += 1)
+    {
+        var row = rows[y];
+        int rowStart = total;
+        for (var x = 0; x < row.Length; x += 1)
+            total += row[x];
+        int between = total - rowStart;
+        for (var x = row.Length - 1; x >= 0; x -= 1)
+            total += row[x] * between;
+    }
+    return total;
+}
+
+// values that go round a loop through phis and one that is only read after it
+int Phis(int n)
+{
+    int a = 1;
+    int b = 2;
+    int c = n;
+    int keep = n * 13;
+    while (c > 0)
+    {
+        int t = a + b;
+        a = b;
+        b = t % 1000;
+        c -= 1;
+    }
+    return a * 10000 + b + keep;
+}
+
+int Main()
+{
+    var a = new int[] { 3, 1, 4, 1, 5, 9, 2, 6 };
+    int expected = 0;
+    for (var i = 0; i < a.Length; i += 1)
+        expected += a[i] + (a[i] * 2 + i) + (a[i] + i) + (a[i] * 3 + 2 * i);
+    Check("around", Around(a, 4), expected + 12 + 15 * 2 + (-1) * 3 + 16 * 4 + 3 * 5);
+    Check("around none", Around(new int[0], 2), 6 + 13 * 2 - 9 + 16 + 35);
+
+    var bytes = new uint8[] { 1, 2, 3, 200, 4 };
+    Check("rare", Rare(bytes, 100), 6000 + 3 + 700 + 700);
+    Check("rare none", Rare(bytes, 250), 210000 - 1 + 1750);
+
+    var rows = new int[][] { new int[] { 1, 2 }, new int[0], new int[] { 3 } };
+    // row 0: total 3, between 3, + (2 + 1) * 3 = 12; row 1: nothing; row 2: 15, between 3, + 9 = 24
+    Check("nested", Nested(rows), 24);
+
+    Check("phis", Phis(10), 144 * 10000 + 233 + 130);
+    Check("phis none", Phis(0), 10000 + 2);
+
+    if (failures == 0)
+        Console.WriteLine("register holes ok");
+    return failures;
+}
