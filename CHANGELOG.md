@@ -17,6 +17,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
   Filling a `uint16[]` takes 26 cycles per element instead of about 75.
 
+## [0.39] - 2026-10-21
+
 ### Tools
 - VS Code: **renaming** (F2) of variables, parameters, fields, functions, methods, types, enum members, constants and
   globals, in all files of the program. The declaration is renamed too, so are the field names of initializers
