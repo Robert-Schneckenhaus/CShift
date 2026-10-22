@@ -1469,6 +1469,29 @@ void GenBinary32(Gen g, IrInst inst)
 {
     string op = inst.Op;
     int bits = g.T.Kind(inst.OpType) == IrKind.Int ? g.T.Bits(inst.OpType) : 32;
+    // a constant added to a value whose result lives in an address register: lea (c,%aX),%aN (or addq), not through d0
+    var addend = g.M.Vals.Get(inst.Args[1]);
+    string resultHome = g.Home.TryGet(inst.Res) is string rh ? rh : "";
+    if ((op == "add" || op == "sub") && bits == 32 && resultHome.StartsWith("%a") && addend.Kind == ValKind.Int)
+    {
+        int64 c = op == "add" ? Normalize(addend.Int, 32, true) : -Normalize(addend.Int, 32, true);
+        if (c >= -32768 && c <= 32767)
+        {
+            string from = SourceOperand(g, inst.Args[0], 32);
+            if (from.StartsWith("%a"))
+            {
+                if (c != 0 || from != resultHome)
+                    g.Line("lea\t(" + c.ToString() + "," + from + ")," + resultHome);
+                return;
+            }
+            Load32(g, inst.Args[0], resultHome);
+            if (c >= 1 && c <= 8)
+                g.Line("addq.l\t#" + c.ToString() + "," + resultHome);
+            else if (c != 0)
+                g.Line("lea\t(" + c.ToString() + "," + resultHome + ")," + resultHome);
+            return;
+        }
+    }
     // add, sub, and, or, xor and shifts: straight into the result's data register, with the second operand as it is
     string target = ResultRegister(g, inst.Res);
     if (target.Length > 0 && SourceOperand(g, inst.Args[1], 32) == target)

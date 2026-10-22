@@ -147,6 +147,36 @@ bool ReadsFlags(string line)
            Mentions(line, "%ccr");
 }
 
+// (-8,%a6): a long of the frame
+bool IsFrameSlot(string operand)
+{
+    return operand.StartsWith("(-") && operand.EndsWith(",%a6)") && RegisterOffset(operand, "%a6") != -99999;
+}
+
+// whether no line of the function but the two given ones touches the 4 bytes of a frame slot (also not a part of them,
+// nor an address in the frame near them, which could be the start of a copy)
+bool SlotUnused(List<string> lines, string slot, int a, int b)
+{
+    int at = RegisterOffset(slot, "%a6");
+    for (var i = 0; i < lines.Count(); i += 1)
+    {
+        if (i == a || i == b)
+            continue;
+        string line = lines.Get(i);
+        if (!line.Contains(",%a6)"))
+            continue;
+        foreach (var o in Operands(line))
+        {
+            if (!o.Contains("%a6"))
+                continue;
+            int r = RegisterOffset(o, "%a6");
+            if (r == -99999 || (Mnemonic(line) == "lea" && r <= at) || (r > at - 8 && r < at + 4))
+                return false;
+        }
+    }
+    return true;
+}
+
 // (%a2) .. (%a5): an address register's memory without an offset
 bool IsPlainIndirect(string operand)
 {
@@ -459,6 +489,50 @@ bool PeepholePass(Gen g, List<string> lines)
                     if (Mentions(next, reg))
                         break;
                 }
+            }
+        }
+
+        // and.l #128,%d0 / tst.l %d0 -> and.l #128,%d0: and, or and eor set N and Z by the result and clear V and C, as tst
+        if ((mn == "and.l" || mn == "or.l" || mn == "eor.l" || mn == "and.w" || mn == "or.w" || mn == "eor.w" ||
+             mn == "and.b" || mn == "or.b" || mn == "eor.b") && ops.Length == 2 && ops[1].StartsWith("%d") && ops[1].Length == 3 &&
+            i + 1 < lines.Count())
+        {
+            var ops2 = Operands(lines.Get(i + 1));
+            if (Mnemonic(lines.Get(i + 1)) == "tst" + mn.Substring(mn.Length - 2).ToString() && ops2.Length == 1 && ops2[0] == ops[1])
+            {
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
+
+        // move.l %d0,(-8,%a6) / move.l (-8,%a6),%d5 -> move.l %d0,(-8,%a6) / move.l %d0,%d5 (the value is in the register:
+        // the slot is written and read back right away); the write goes too where nothing else in the function uses the
+        // slot (SlotUnused)
+        if (mn == "move.l" && ops.Length == 2 && IsRegister(ops[0]) && IsFrameSlot(ops[1]) && i + 1 < lines.Count())
+        {
+            var ops2 = Operands(lines.Get(i + 1));
+            if (Mnemonic(lines.Get(i + 1)) == "move.l" && ops2.Length == 2 && ops2[0] == ops[1] && IsRegister(ops2[1]))
+            {
+                if (SlotUnused(lines, ops[1], i, i + 1))
+                {
+                    if (ops2[1] == ops[0])
+                    {
+                        lines.RemoveAt(i + 1);
+                        lines.RemoveAt(i);
+                    }
+                    else
+                    {
+                        lines.Set(i, Instr(ops2[1].StartsWith("%a") ? "move.l" : "move.l", ops[0] + "," + ops2[1]));
+                        lines.RemoveAt(i + 1);
+                    }
+                }
+                else if (ops2[1] == ops[0])
+                    lines.RemoveAt(i + 1);
+                else
+                    lines.Set(i + 1, Instr("move.l", ops[0] + "," + ops2[1]));
+                changed = true;
+                continue;
             }
         }
 

@@ -190,7 +190,11 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   from outside of it is read before the loop); constants are folded; `&&` and `||` in a condition become branches (no
   `bool` is made) and a branch on `!c` branches on `c` with its targets swapped; dead code is removed; a pointer that is
   only used by loads and stores (one, or the load and the store of `a[i] ^= x`) becomes an addressing mode
-  (`(d16,An)`, `(d8,An,Dn.l)`, with the register of a 32-bit index as it is).
+  (`(d16,An)`, `(d8,An,Dn.l)`, with the register of a 32-bit index as it is). Structs: a load of a struct (a slice:
+  pointer, data, length) that only field reads use loads just those fields, a struct variable that is written once
+  (a slice or struct parameter) is its value, and the field of a struct value is read once, right after the value, so
+  `data[at]` in a loop over a `ReadOnlySlice<uint8>` reads the data pointer and the length before the loop instead of
+  copying the slice into the frame for every byte.
 * **Facts.cshift**: what the IR knows at a place. A load of a variable that was stored or loaded before on every way to it
   (no store on the ways from there) is that value; the same computation of the same values twice is computed once; a
   block whose only predecessor branched on a comparison knows its outcome (so does every block it dominates), so the
@@ -261,7 +265,7 @@ the executed instructions of every function. Build the program with `-g` (the na
 
 ```
 cshiftc build AmbermoonPack --target m68k-amigaos -g -o AmbermoonPack
-python3 tools/amiga/profile.py AmbermoonPack UNPACK Floors.amb out
+python3 tools/amiga/profile.py AmbermoonPack UNPACK Floors.amb out     # (--ram: the memory in KB, 8192 by default)
 python3 tools/amiga/profile.py --annotate Lob.Decompress AmbermoonPack UNPACK Floors.amb out
 ```
 
