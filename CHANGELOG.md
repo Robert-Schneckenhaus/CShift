@@ -13,9 +13,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   - an element of an array that does not change in the loop is reached through an address register that moves on by
     the element size each round (`move.w d4,(a4)+`);
   - the test of the loop is repeated at its end, so a round ends in one branch, and a counter that only counts the
-    rounds becomes a count down to 0 (`subq.l #1,d7` / `bne`).
+    rounds becomes a `dbra` (any count: the high word is counted when the low word ends);
+  - with `-O2`/`-O3`, a short body without branches (one to three instructions) becomes a jump tower: 16 (or 8)
+    copies, entered in the middle so that the first pass does the rounds left over, then 16 rounds per `dbra`;
+  - an integer that would get an address register takes the data register of a value used less instead, and a
+    constant byte or word is stored as an immediate (`move.b #7,(a5)+`).
 
-  Filling a `uint16[]` takes 26 cycles per element instead of about 75.
+  Filling a `uint16[]` takes about 9 cycles per element instead of about 75: a program that clears a 10 KB bitplane
+  and fills 320-pixel rows runs in 4.9 instead of 51 million cycles (0.38).
 
 ## [0.39] - 2026-10-21
 

@@ -126,7 +126,7 @@ Error<string> GenerateModule(IrModule m, string prelude, int optimize)
             g.Out = StringBuilder.Create();
             GenFunction(g, m.Funcs.Get(f));
             string text = g.Out.ToString();
-            funcText.Set(f, FinishSaves(Peephole(text)));
+            funcText.Set(f, FinishSaves(Peephole(g, text)));
             ScanSymbols(text, work, seen);
         }
         var gi = m.GlobalIndex.TryGet(ir);
@@ -1210,7 +1210,10 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
     {
         int size = g.L.Size(inst.OpType);
         string src = SourceOperand(g, inst.Args[0], size * 8);
-        if (src.Length == 0 || (src.StartsWith("#") && size < 4))
+        var cv = g.M.Vals.Get(inst.Args[0]);
+        if (src.StartsWith("#") && size < 4 && cv.Kind == ValKind.Int)
+            src = "#" + (cv.Int & (size == 1 ? 255 : 65535)).ToString(); // (the immediate of the size)
+        else if (src.Length == 0 || (src.StartsWith("#") && size < 4))
         {
             Load32(g, inst.Args[0], "%d0");
             src = "%d0";

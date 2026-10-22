@@ -7,7 +7,7 @@ namespace CShift.M68k;
 
 using System;
 
-string Peephole(string text)
+string Peephole(Gen g, string text)
 {
     var lines = List<string>.Create();
     foreach (var l in text.Split('\n'))
@@ -17,9 +17,12 @@ string Peephole(string text)
     }
     for (var pass = 0; pass < 4; pass += 1)
     {
-        if (!PeepholePass(lines))
+        if (!PeepholePass(g, lines))
             break;
     }
+    // jump towers for short counted loops (not with -O0/-O1: they make the code larger)
+    if (g.Counters[2] >= 2)
+        JumpTowers(g, lines);
     var sb = StringBuilder.Create();
     foreach (var l in lines.ToArray())
     {
@@ -182,7 +185,7 @@ int RegisterOffset(string operand, string reg)
     return -99999;
 }
 
-bool PeepholePass(List<string> lines)
+bool PeepholePass(Gen g, List<string> lines)
 {
     bool changed = false;
     int i = 0;
@@ -481,6 +484,33 @@ bool PeepholePass(List<string> lines)
             }
         }
 
+        // sub.l #1,%d7 / cmp.l #-1,%d7 / bne L -> dbra %d7,L, then the high word: a count down to -1 (Loops.cshift).
+        // dbra counts the low word only; when it ends (at 0xffff), the high word is counted down once, and while it is
+        // not -1 the loop goes on with the low word at 0xffff (65536 more rounds). At the end the register is -1 either
+        // way, as after the sub.
+        if (mn == "sub.l" && ops.Length == 2 && ops[0] == "#1" && ops[1].StartsWith("%d") && ops[1].Length == 3 && i + 2 < lines.Count())
+        {
+            string reg = ops[1];
+            var cmp = Operands(lines.Get(i + 1));
+            string mn3 = Mnemonic(lines.Get(i + 2));
+            var target = Operands(lines.Get(i + 2));
+            if (Mnemonic(lines.Get(i + 1)) == "cmp.l" && cmp.Length == 2 && cmp[1] == reg &&
+                (cmp[0] == "#4294967295" || cmp[0] == "#-1") && (mn3 == "bne" || mn3 == "bne.s") && target.Length == 1)
+            {
+                string done = g.NewLabel();
+                lines.Set(i, Instr("dbra", reg + "," + target[0]));
+                lines.Set(i + 1, Instr("swap", reg));
+                lines.Set(i + 2, Instr("sub.w", "#1," + reg));
+                lines.Insert(i + 3, Instr("bcs.s", done));
+                lines.Insert(i + 4, Instr("swap", reg));
+                lines.Insert(i + 5, Instr("bra", target[0]));
+                lines.Insert(i + 6, done + ":");
+                changed = true;
+                i += 7;
+                continue;
+            }
+        }
+
         // lea (n,%sp),%sp -> addq.l #n,%sp
         if (mn == "lea" && ops.Length == 2 && ops[1] == "%sp" && ops[0].StartsWith("(") && ops[0].EndsWith(",%sp)"))
         {
@@ -494,4 +524,144 @@ bool PeepholePass(List<string> lines)
         i += 1;
     }
     return changed;
+}
+
+// A jump tower for a short counted loop (written by the dbra rule above, after a test that skips it):
+//
+//     bcc   exit              the test before the loop
+//   L:  body                  one to three instructions, without branches, calls or the count
+//     dbra  %dN,L  ...        the count of the rounds after this one (Loops.cshift), down to -1
+//
+// The body is copied 16 times (8 times for two or three instructions), and a count of at least that many enters the
+// copies in the middle through a table: the first pass does the rounds that are left over (count & 15, plus one), every
+// further pass 16 rounds for one dbra. A smaller count runs the loop as it is. A fill of a uint16[] then takes about 9
+// cycles per element instead of 18.
+void JumpTowers(Gen g, List<string> lines)
+{
+    var tables = List<string>.Create();
+    for (var k = 1; k + 2 < lines.Count(); k += 1)
+    {
+        string label = lines.Get(k);
+        if (IsInstrLine(label) || !label.EndsWith(":") || label.StartsWith("\t"))
+            continue;
+        string name = label.Substring(0, label.Length - 1).ToString();
+        // the test before the loop falls through into it
+        string before = Mnemonic(lines.Get(k - 1));
+        if (!before.StartsWith("b") || before.StartsWith("bra") || before.StartsWith("bsr") || !IsBranch(before.Replace(".s", "")))
+            continue;
+        // the body and the dbra
+        int m = 0;
+        while (m < 3 && k + 1 + m < lines.Count() && IsInstrLine(lines.Get(k + 1 + m)) && !Mnemonic(lines.Get(k + 1 + m)).StartsWith("db"))
+            m += 1;
+        int d = k + 1 + m;
+        if (m == 0 || d + 6 >= lines.Count() || Mnemonic(lines.Get(d)) != "dbra")
+            continue;
+        var dops = Operands(lines.Get(d));
+        if (dops.Length != 2 || dops[1] != name)
+            continue;
+        string reg = dops[0];
+        string done = lines.Get(d + 6);
+        if (Mnemonic(lines.Get(d + 1)) != "swap" || Mnemonic(lines.Get(d + 5)) != "bra" || IsInstrLine(done) || !done.EndsWith(":"))
+            continue;
+        bool ok = !ReadsFlags(lines.Get(k + 1));
+        for (var b = k + 1; b < d && ok; b += 1)
+        {
+            string mb = Mnemonic(lines.Get(b));
+            if (mb.StartsWith("b") || mb.StartsWith("j") || mb == "rts" || mb.StartsWith("movem") || mb == "link" ||
+                mb == "unlk" || mb == "trap" || Mentions(lines.Get(b), reg) || Mentions(lines.Get(b), "%sp") ||
+                !ScratchWrittenFirst(lines, k + 1, d, "%d0") || !ScratchWrittenFirst(lines, k + 1, d, "%a0"))
+                ok = false;
+        }
+        // only the test before it and the loop's own branches come here
+        int refs = 0;
+        foreach (var l in lines.ToArray())
+        {
+            if (IsInstrLine(l))
+            {
+                foreach (var o in Operands(l))
+                {
+                    if (o == name)
+                        refs += 1;
+                }
+            }
+        }
+        if (!ok || refs != 2)
+            continue;
+        int copies = m == 1 ? 16 : 8;
+        int shift = m == 1 ? 4 : 3;
+        var body = List<string>.Create();
+        for (var b = k + 1; b < d; b += 1)
+            body.Add(lines.Get(b));
+        string table = g.NewLabel();
+        string towerDone = g.NewLabel();
+        var copyLabels = new string[copies];
+        for (var c = 0; c < copies; c += 1)
+            copyLabels[c] = g.NewLabel();
+        var tower = List<string>.Create();
+        // a count below the copies: the loop as it is
+        tower.Add(Instr("moveq", "#" + (copies - 1).ToString() + ",%d0"));
+        tower.Add(Instr("cmp.l", "%d0," + reg));
+        tower.Add(Instr("bls", name));
+        // the entry: the copy that leaves (count & 15) + 1 rounds for the first pass
+        tower.Add(Instr("and.l", reg + ",%d0"));
+        tower.Add(Instr("lsl.l", "#2,%d0"));
+        tower.Add(Instr("lea", table + ",%a0"));
+        tower.Add(Instr("move.l", "(0,%a0,%d0.l),%a0"));
+        tower.Add(Instr("lsr.l", "#" + shift.ToString() + "," + reg));
+        tower.Add(Instr("jmp", "(%a0)"));
+        for (var c = 0; c < copies; c += 1)
+        {
+            tower.Add(copyLabels[c] + ":");
+            foreach (var l in body.ToArray())
+                tower.Add(l);
+        }
+        tower.Add(Instr("dbra", reg + "," + copyLabels[0]));
+        tower.Add(Instr("swap", reg));
+        tower.Add(Instr("sub.w", "#1," + reg));
+        tower.Add(Instr("bcs.s", towerDone));
+        tower.Add(Instr("swap", reg));
+        tower.Add(Instr("bra", copyLabels[0]));
+        tower.Add(towerDone + ":");
+        tower.Add(Instr("bra", done.Substring(0, done.Length - 1).ToString()));
+        for (var t = tower.Count() - 1; t >= 0; t -= 1)
+            lines.Insert(k, tower.Get(t));
+        // the table: entry r starts r + 1 copies before the dbra
+        var entries = List<string>.Create();
+        for (var r = 0; r < copies; r += 1)
+            entries.Add(copyLabels[copies - 1 - r]);
+        tables.Add("\t.even");
+        tables.Add(table + ":");
+        tables.Add("\t.long\t" + string.Join(",", entries.ToArray()));
+        k += tower.Count() + m + 7;
+    }
+    if (tables.Count() == 0)
+        return;
+    lines.Add("\t.data");
+    foreach (var t in tables.ToArray())
+        lines.Add(t);
+    lines.Add("\t.text");
+}
+
+// whether a body does not read a scratch register before it writes it (the tower's entry uses d0 and a0); a byte or
+// word written to a data register may be read with that size or less afterwards
+bool ScratchWrittenFirst(List<string> lines, int from, int to, string reg)
+{
+    int written = 0;   // the size written, 0 before the write
+    for (var i = from; i < to; i += 1)
+    {
+        string mn = Mnemonic(lines.Get(i));
+        var ops = Operands(lines.Get(i));
+        int size = mn.EndsWith(".b") ? 1 : mn.EndsWith(".w") ? 2 : 4;
+        for (var k = 0; k < ops.Length; k += 1)
+        {
+            if (!Mentions(ops[k], reg))
+                continue;
+            bool write = k == ops.Length - 1 && ops[k] == reg && ops.Length == 2 && (mn.StartsWith("move") || mn == "lea");
+            if (write && written == 0)
+                written = reg.StartsWith("%a") || mn == "moveq" || mn == "lea" ? 4 : size;
+            else if (written == 0 || size > written || (k == ops.Length - 1 && !write))
+                return false;
+        }
+    }
+    return true;
 }

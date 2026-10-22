@@ -499,6 +499,32 @@ void AllocateRegisters(Gen g, IrFunc f)
                 pick = worst;
             }
         }
+        // a register of the other kind (an integer in an address register: no dbra, no byte operations): the value of
+        // the preferred kind that is worth least moves there, if the new one is worth more
+        if (pick >= 0 && (pick >= 4) != cur.Pointer)
+        {
+            int first = cur.Pointer ? 4 : 0;
+            int cheapest = -1;
+            for (var r = first; r < first + 4; r += 1)
+            {
+                if (owner[r] >= 0 && (cheapest < 0 || Worth(sorted[owner[r]]) < Worth(sorted[owner[cheapest]])))
+                    cheapest = r;
+            }
+            // (the free register must have been free over the moved value's whole interval)
+            bool free = cheapest >= 0;
+            for (var j = 0; j < i && free; j += 1)
+            {
+                var moved = sorted[owner[cheapest]];
+                if (assigned[j] == pick && sorted[j].End >= moved.Start && sorted[j].Start <= moved.End)
+                    free = false;
+            }
+            if (free && Worth(sorted[owner[cheapest]]) < Worth(cur))
+            {
+                owner[pick] = owner[cheapest];
+                assigned[owner[pick]] = pick;
+                pick = cheapest;
+            }
+        }
         if (pick >= 0)
         {
             owner[pick] = i;

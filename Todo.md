@@ -14,13 +14,10 @@ the git log.
       safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
-- [ ] m68k backend: jump towers for counted loops. Counted loops walk pointers and count down already (no bounds
-      check where `i < a.Length` proves it, see [docs/amiga.md](docs/amiga.md#how-the-backend-works)); the runtime's
-      `memcpy`/`memmove`/`memset` use towers (a body unrolled 16 times, entered in the middle so that the first pass
-      does the remainder). Next: a tower for an innermost loop whose body is a few instructions without calls, at
-      `-O2`/`-O3` only (`-O1` keeps the size small for floppy disks; on a 68020 the body must stay within its 256-byte
-      cache). Bodies whose copies differ in size need a jump table instead of a computed offset. Also: `dbra` for
-      counts known to fit into 16 bits, a walk for `a[i + k]`, and loops whose bound changes in the loop.
+- [ ] m68k backend, counted loops (see [docs/amiga.md](docs/amiga.md#how-the-backend-works)): a walk for `a[i + k]`,
+      loops whose bound changes in the loop, invariant values computed once before the loop (`value + 1` is computed
+      and checked in every round), and towers for bodies with a branch (a checked sum: the panic branch is never
+      taken). The tower's table entry could be a computed offset where all copies have the same size.
 
 ## Tooling
 
