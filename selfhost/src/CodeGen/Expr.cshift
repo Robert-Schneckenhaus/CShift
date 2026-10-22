@@ -1231,15 +1231,16 @@ Value EmitConditionalIn(const ref Compiler cg, Expr e, int frame)
     string elseCode = ir.TakeSince(elseMark);
     var elseTemps = TakeTemps(cg, baseCount);
 
-    // The common type.
+    // The then branch: its code, then the conversion, the temporaries and the jump to the end. Two collection
+    // expressions have no common type: the first becomes an array (in its branch) and the second converts to it.
+    ir.AppendCode(thenCode);
+    ir.ResumeBlock(thenEnd);
+    if (a.Type == types.Collection && b.Type == types.Collection)
+        a = SettleCollection(cg, a);
     string why = "";
     int t = ConditionalType(cg, a, b, ref why);
     if (t == 0)
         Fail(cg, e.Loc, why);
-
-    // The then branch: its code, then the conversion, the temporaries and the jump to the end.
-    ir.AppendCode(thenCode);
-    ir.ResumeBlock(thenEnd);
     string av = Consume(cg, ConvertValue(cg, a, t, c.Then.Loc));
     // a conversion can make temporaries (an array that becomes a slice): they exist only in this branch
     ReleaseTemps(cg, TakeTemps(cg, baseCount));

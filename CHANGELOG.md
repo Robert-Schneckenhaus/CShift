@@ -36,6 +36,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 
+### Fixed
+- `b ? [1, 2] : [3]` (a collection expression in both branches of a conditional) no longer stops the compiler with an
+  internal error: the first collection becomes an array of its element type and the second converts to that array.
+
 ## [0.39] - 2026-10-21
 
 ### Tools
