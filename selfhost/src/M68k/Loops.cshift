@@ -460,9 +460,10 @@ void RotateLoops(Gen g, IrFunc f)
         var latch = f.Blocks.Get(loop.Latch).Insts;
         if (countsOnly)
         {
-            // i only counts the rounds: a count of the rounds left instead, set by the test before the loop (i < n there,
-            // so it is n - i >= 1; as an unsigned number it is right even where n - i does not fit into an int), and
-            // down to 0 at the end of each round. i is not stored any more.
+            // i only counts the rounds: a count of the rounds left after this one instead, set by the test before the
+            // loop (i < n there, so it is n - i - 1 >= 0; as an unsigned number it is right even where n - i does not fit
+            // into an int), and down by one at the end of each round, until it is -1: that is dbra (Peephole.cshift). i
+            // is not stored any more.
             string count = tag + ".count";
             int countVar = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.Ptr, Name = count });
             f.Blocks.Get(0).Insts.Insert(0, LoopInst("alloca", count, g.T.Ptr, i32, new int[0]));
@@ -471,6 +472,9 @@ void RotateLoops(Gen g, IrFunc f)
             guard.Insert(loop.Cmp, LoopInst("store", "", g.T.Void, i32,
                                             [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".first" }), countVar]));
             guard.Insert(loop.Cmp, LoopInst("sub", count + ".first", i32, i32,
+                                            [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".rounds" }),
+                                             g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 1 })]));
+            guard.Insert(loop.Cmp, LoopInst("sub", count + ".rounds", i32, i32,
                                             [cmp.Args[1], g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = loop.Index })]));
             latch.RemoveAt(latch.Count() - 1);
             latch.RemoveAt(loop.Body == loop.Latch ? loop.Step + 1 : loop.Step); // (after the load at the start)
@@ -484,7 +488,7 @@ void RotateLoops(Gen g, IrFunc f)
             latch.Add(LoopInst("load", count + ".test", i32, i32, [countVar]));
             var more = LoopInst("icmp", tag + ".more", g.T.I1, i32,
                                 [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".test" }),
-                                 g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 0 })]);
+                                 g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = -1 })]);
             more.Pred = "ne";
             latch.Add(more);
             var loopBranch = LoopInst("br", "", g.T.Void, g.T.I1, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.I1, Name = tag + ".more" })]);

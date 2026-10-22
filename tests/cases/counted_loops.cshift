@@ -1,6 +1,7 @@
 // The counted loops of the 68000 backend (Loops.cshift: walking pointers, rotation, counting down) must never change a
 // result: loops in loops, a counter read after its loop, break and continue, an array assigned in the loop, elements of
-// 1, 2, 4, 8 and 12 bytes, starts that are not 0, loops that run no round.
+// 1, 2, 4, 8 and 12 bytes, starts that are not 0, loops that run no round, counts around the 16 rounds of a jump tower
+// and the 65536 of dbra.
 // expect-stdout: counted loops ok
 using System;
 
@@ -142,6 +143,50 @@ int Between(int[] a, int from, int to)
     return s;
 }
 
+// a body short enough for a jump tower
+void FillBytes(uint8[] a, int from, uint8 value)
+{
+    for (var i = from; i < a.Length; i += 1)
+        a[i] = value;
+}
+
+struct Pair
+{
+    int A;
+    int B;
+}
+
+void FillPairs(Pair[] pairs, int value)
+{
+    for (var i = 0; i < pairs.Length; i += 1)
+    {
+        pairs[i].A = value;
+        pairs[i].B = value;
+    }
+}
+
+void Sizes()
+{
+    foreach (var n in [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 65535, 65536, 65537, 65552, 131073, 1048593])
+    {
+        var a = new uint8[n + 1];
+        FillBytes(a, 1, 7);
+        int64 sum = 0;
+        foreach (var v in a)
+            sum += (int64)v;
+        Check("fill " + n.ToString(), sum, (int64)n * 7);
+        if (n < 70000)
+        {
+            var pairs = new Pair[n];
+            FillPairs(pairs, 3);
+            int64 both = 0;
+            foreach (var p in pairs)
+                both += (int64)(p.A + p.B);
+            Check("fill pairs " + n.ToString(), both, (int64)n * 6);
+        }
+    }
+}
+
 int Main()
 {
     var row = new uint16[37];
@@ -208,6 +253,8 @@ int Main()
     Check("between", Between(squares, 2, 5), 4 + 9 + 16);
     Check("between none", Between(squares, 5, 5), 0);
     Check("between backwards", Between(squares, 6, 2), 0);
+
+    Sizes();
 
     if (failures == 0)
         Console.WriteLine("counted loops ok");

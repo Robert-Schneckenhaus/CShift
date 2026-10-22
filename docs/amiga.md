@@ -208,9 +208,16 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   first round before the loop, moved on by the element size at the end of each round, so `row[i] = color` is
   `move.w d4,(a4)+` instead of a copy and a shift of `i` and `move.w d4,(8,a2,d1.l)`. The test is repeated at the end
   of the round, which then ends in one taken branch back. When `i` only counts the rounds (nothing else reads it), a
-  count of the rounds left replaces it: `subq.l #1,d7` and `bne`. Filling a `uint16[]` this way takes 26 cycles per
-  element instead of about 75 (with the bounds check, a shift of `i` and two branches); a program that fills, sums and
-  copies arrays in loops ran in 1.47 instead of 2.62 million cycles. (`dbra` is not used: it counts only 16 bits.)
+  count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
+  when that ends, a `swap` and a `sub.w` count the high word, so any count works). With `-O2`/`-O3` a body of one to
+  three instructions without branches (after the steps above, so with the bounds checks gone) becomes a **jump tower**
+  (Peephole.cshift): it is copied 16 times (8 times for two or three instructions), and a count of at least that many
+  enters the copies through a table, so that the first pass does the rounds left over and every further pass 16 for
+  one `dbra`; a smaller count runs the plain loop. Filling a `uint16[]` takes about 9 cycles per element (one
+  `move.w d4,(a4)+` and a sixteenth of a `dbra`) instead of about 75 with 0.38; a program that clears a 10 KB
+  bitplane and fills 320-pixel rows ran in 4.9 instead of 51 million cycles. A register allocation detail matters
+  here: an integer that would get an address register (no `dbra`, no byte operations) takes the data register of a
+  value that is worth less, which moves to the address register instead.
 * **Regalloc.cshift**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
   their uses, weighted by loop depth; a value loaded from a variable shares its register (also when the variable is
   written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
