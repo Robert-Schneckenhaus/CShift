@@ -1,5 +1,10 @@
 // Before a function is written: simple improvements of its IR.
 //
+//   * Aggregate loads: a load of a struct (a slice: pointer, data, length) that only extractvalues use loads just the
+//     fields they take, where the struct was loaded: 'data[i]' reads the data pointer and the length of the slice
+//     instead of copying all of it into the frame first.
+//   * Fields of struct values: an extractvalue is computed right after the value it takes the field of (a struct value
+//     never changes), so that 'i < data.Length' in a loop reads the length of a slice parameter once, before the loop.
 //   * Constant folding: comparisons of two constants, and/or/xor of constants (the division checks of CShift compare
 //     the divisor with -1 even when it is a constant) - the uses get the constant, the instruction is skipped.
 //   * Variables written once: a scalar variable stored once (a parameter's copy, mostly, or a local variable that is
@@ -37,6 +42,8 @@ void PrepareFunction(Gen g, IrFunc f)
     PromoteSingleStores(g, f);
     InlineCalls(g, f);
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
+    SplitAggregateLoads(g, f);
+    HoistFields(g, f);
     ForwardLoads(g, f);
     ShareLengths(g, f);
     FoldConstants(g, f); // (constant shift counts and masks for the ranges)
@@ -261,7 +268,9 @@ void PromoteSingleStores(Gen g, IrFunc f)
     {
         foreach (var inst in b.Insts.ToArray())
         {
-            if (inst.Op == "alloca" && (inst.Args.Length == 0 || !IsLocal(g, inst.Args[0])) && IsScalar4(g, inst.OpType))
+            // (also a struct: a slice or a struct parameter that the function only reads is its value)
+            if (inst.Op == "alloca" && (inst.Args.Length == 0 || !IsLocal(g, inst.Args[0])) &&
+                (IsScalar4(g, inst.OpType) || g.T.IsAggregate(inst.OpType)))
                 state.Set(inst.Res, 0);
         }
     }
@@ -286,7 +295,7 @@ void PromoteSingleStores(Gen g, IrFunc f)
                 if (inst.Op == "store" && a == 1)
                 {
                     // once (before every load: checked below)
-                    if (st == 0 && g.L.Size(inst.OpType) == 4)
+                    if (st == 0 && (g.L.Size(inst.OpType) == 4 || g.T.IsAggregate(inst.OpType)))
                     {
                         state.Set(v.Name, 1);
                         stored.Set(v.Name, inst.Args[0]);
@@ -1038,4 +1047,183 @@ string FoldedOperand(Gen g, AddrFold fold)
         Extend(g, "%d1", fold.IndexBits, true);
     ScaleD1(g, fold.Stride);
     return "(" + fold.Offset.ToString() + "," + baseReg + ",%d1.l)";
+}
+
+// A load of an aggregate whose only uses are extractvalues of scalar fields: each field that is used is loaded on its
+// own (a getelementptr of the field and a load, at the place of the aggregate's load, so that they read the same
+// memory), and the extractvalues are those loads.
+void SplitAggregateLoads(Gen g, IrFunc f)
+{
+    var uses = LocalUses(g, f);
+    var extracts = Dictionary<string, int>.Create();   // an aggregate load -> the extractvalues of it
+    var loads = HashSet<string>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            if (inst.Op == "load" && inst.Res.Length > 0 && !inst.Volatile && g.T.IsAggregate(inst.Type))
+                loads.Add(inst.Res);
+            if (inst.Op == "extractvalue" && inst.Res.Length > 0 && IsLocal(g, inst.Args[0]))
+            {
+                string agg = g.M.Vals.Get(inst.Args[0]).Name;
+                int ft = inst.OpType;
+                PathOffset(g, inst.OpType, inst.Cases, ref ft);
+                // (a field that is not a scalar of up to 32 bits keeps the whole load)
+                extracts.Set(agg, extracts.GetOrDefault(agg, 0) + (IsScalar4(g, ft) && !g.T.IsAggregate(ft) ? 1 : 1000000));
+            }
+        }
+    }
+    var split = HashSet<string>.Create();
+    foreach (var name in loads.ToArray())
+    {
+        int n = extracts.GetOrDefault(name, 0);
+        if (n > 0 && n < 1000000 && uses.GetOrDefault(name, 0) == n)
+            split.Add(name);
+    }
+    if (split.Count() == 0)
+        return;
+    // the fields: per load, per path, the value of its field load
+    var fieldValue = Dictionary<string, int>.Create();   // "load|path" -> value
+    var fieldLoads = Dictionary<string, List<IrInst>>.Create();
+    int counter = 0;
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op != "extractvalue" || !IsLocal(g, inst.Args[0]) || !split.Contains(g.M.Vals.Get(inst.Args[0]).Name))
+                continue;
+            string agg = g.M.Vals.Get(inst.Args[0]).Name;
+            var path = List<string>.Create();
+            foreach (var c in inst.Cases)
+                path.Add(c.ToString());
+            string key = agg + "|" + string.Join(".", path.ToArray());
+            if (!fieldValue.ContainsKey(key))
+            {
+                counter += 1;
+                string name = agg + ".f" + counter.ToString();
+                int ft = inst.OpType;
+                PathOffset(g, inst.OpType, inst.Cases, ref ft);
+                fieldValue.Set(key, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ft, Name = name }));
+                if (!fieldLoads.ContainsKey(agg))
+                    fieldLoads.Set(agg, List<IrInst>.Create());
+                var list = fieldLoads.Get(agg);
+                var indices = List<int>.Create();
+                indices.Add(-1); // (the pointer, filled in below)
+                indices.Add(g.M.AddVal(IrVal { Kind = ValKind.Int, Type = g.T.I32, Int = 0 }));
+                foreach (var c in inst.Cases)
+                    indices.Add(g.M.AddVal(IrVal { Kind = ValKind.Int, Type = g.T.I32, Int = c }));
+                list.Add(IrInst { Op = "getelementptr", Res = name + ".at", Type = g.T.Ptr, OpType = inst.OpType,
+                                  Args = indices.ToArray(), Pred = "", Labels = new string[0], Cases = new int64[0],
+                                  Callee = -1, Volatile = false });
+                list.Add(IrInst { Op = "load", Res = name, Type = ft, OpType = ft,
+                                  Args = [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.Ptr, Name = name + ".at" })],
+                                  Pred = "", Labels = new string[0], Cases = new int64[0], Callee = -1, Volatile = false });
+            }
+            ReplaceUses(g, f, inst.Res, fieldValue.Get(key));
+            g.Skip.Add(inst.Res);
+        }
+    }
+    // the field loads take the place of the aggregate's load
+    for (var j = 0; j < f.Blocks.Count(); j += 1)
+    {
+        var block = f.Blocks.Get(j);
+        var kept = List<IrInst>.Create();
+        foreach (var inst in block.Insts.ToArray())
+        {
+            if (inst.Op == "load" && split.Contains(inst.Res) && fieldLoads.TryGet(inst.Res) is List<IrInst> list)
+            {
+                foreach (var fl in list.ToArray())
+                {
+                    if (fl.Op == "getelementptr")
+                        fl.Args[0] = inst.Args[0];
+                    kept.Add(fl);
+                }
+                continue;
+            }
+            kept.Add(inst);
+        }
+        f.Blocks.Set(j, IrBlock { Label = block.Label, Insts = kept });
+    }
+}
+
+// An extractvalue moves right after the definition of its struct (after the allocas for a parameter, after the phis
+// for a phi); the field of the same value twice is one computation then (CommonValues).
+void HoistFields(Gen g, IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    if (blocks.Length == 0)
+        return;
+    var defBlock = Dictionary<string, int>.Create();
+    var fieldValues = HashSet<string>.Create();   // (a field of a field stays where it is)
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Res.Length > 0)
+                defBlock.Set(inst.Res, j);
+            if (inst.Op == "extractvalue" && inst.Res.Length > 0)
+                fieldValues.Add(inst.Res);
+        }
+    }
+    var moved = Dictionary<string, List<IrInst>>.Create();   // a struct value ("" for parameters) -> its extractvalues
+    var movedNames = HashSet<string>.Create();
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op != "extractvalue" || inst.Res.Length == 0 || g.Skip.Contains(inst.Res) || !IsLocal(g, inst.Args[0]))
+                continue;
+            string agg = g.M.Vals.Get(inst.Args[0]).Name;
+            if (fieldValues.Contains(agg))
+                continue;
+            string key = defBlock.ContainsKey(agg) ? agg : "";
+            if (!moved.ContainsKey(key))
+                moved.Set(key, List<IrInst>.Create());
+            moved.Get(key).Add(inst);
+            movedNames.Add(inst.Res);
+        }
+    }
+    if (movedNames.Count() == 0)
+        return;
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var kept = List<IrInst>.Create();
+        var insts = blocks[j].Insts.ToArray();
+        bool paramsDone = j != 0;
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            // the fields of the parameters: after the allocas (and phis) at the start of the entry block
+            if (!paramsDone && inst.Op != "alloca" && inst.Op != "phi")
+            {
+                if (moved.TryGet("") is List<IrInst> fromParams)
+                {
+                    foreach (var e in fromParams.ToArray())
+                        kept.Add(e);
+                }
+                paramsDone = true;
+            }
+            if (inst.Res.Length > 0 && movedNames.Contains(inst.Res))
+                continue;
+            kept.Add(inst);
+            if (inst.Res.Length > 0 && moved.TryGet(inst.Res) is List<IrInst> fields)
+            {
+                // (after a phi: after all phis of the block)
+                if (inst.Op == "phi")
+                {
+                    while (k + 1 < insts.Length && insts[k + 1].Op == "phi")
+                    {
+                        k += 1;
+                        if (!(insts[k].Res.Length > 0 && movedNames.Contains(insts[k].Res)))
+                            kept.Add(insts[k]);
+                    }
+                }
+                foreach (var e in fields.ToArray())
+                    kept.Add(e);
+            }
+        }
+        f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
+    }
 }

@@ -1,0 +1,99 @@
+// The fields of struct values in the 68000 backend (Prepare.cshift: aggregate loads that only extractvalues use load
+// just their fields, a struct variable written once is its value, the field of a value is read once right after it)
+// must never change a result: slices read in loops, structs from arrays and from branches, function pointers in
+// fields, a struct variable that changes.
+// expect-stdout: struct fields ok
+using System;
+
+struct Pair
+{
+    int A;
+    int B;
+}
+
+struct Ops
+{
+    Func<int, int> Twice;
+    int Base;
+}
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+int SumSlice(ReadOnlySlice<uint8> data)
+{
+    int s = 0;
+    int at = 0;
+    while (at < data.Length)
+    {
+        s += data[at];
+        at += 1;
+    }
+    return s;
+}
+
+int SumPairs(Pair[] pairs)
+{
+    int s = 0;
+    for (var i = 0; i < pairs.Length; i += 1)
+    {
+        var p = pairs[i];
+        s += p.A * 10 + p.B;
+    }
+    return s;
+}
+
+// a struct variable that is assigned again: its fields are read where it has the value
+int Changing(Pair a, Pair b)
+{
+    var p = a;
+    int first = p.A;
+    p = b;
+    return first * 100 + p.A + p.B;
+}
+
+Pair Choose(bool left, Pair a, Pair b)
+{
+    var p = left ? a : b;
+    return Pair { A = p.B, B = p.A };
+}
+
+int Apply(Ops ops, int x)
+{
+    return ops.Twice(x) + ops.Base;
+}
+
+Ops global = Ops { Twice = x => x * 2, Base = 7 };
+
+int Main()
+{
+    var bytes = new uint8[] { 1, 2, 3, 250 };
+    Check("slice", SumSlice(bytes), 256);
+    Check("slice part", SumSlice(bytes[1..3]), 5);
+    Check("empty slice", SumSlice(new uint8[0]), 0);
+
+    var pairs = new Pair[] { Pair { A = 1, B = 2 }, Pair { A = 3, B = 4 } };
+    Check("pairs", SumPairs(pairs), 12 + 34);
+
+    Check("changing", Changing(Pair { A = 5, B = 6 }, Pair { A = 7, B = 8 }), 515);
+    var left = Choose(true, Pair { A = 1, B = 2 }, Pair { A = 3, B = 4 });
+    var right = Choose(false, Pair { A = 1, B = 2 }, Pair { A = 3, B = 4 });
+    Check("choose", left.A * 1000 + left.B * 100 + right.A * 10 + right.B, 2143);
+
+    Check("function field", Apply(global, 20), 47);
+    var local = Ops { Twice = x => x + x + 1, Base = 1 };
+    Check("local function field", Apply(local, 5), 12);
+    Check("global field call", global.Twice(4), 8);
+
+    if (failures == 0)
+        Console.WriteLine("struct fields ok");
+    return failures;
+}

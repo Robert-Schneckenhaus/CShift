@@ -4,7 +4,7 @@ executed instructions of every function. The program must be built with -g, whic
 into the executable (HUNK_SYMBOL).
 
     cshiftc --target m68k-amigaos -g program.cshift -o program
-    python3 tools/amiga/profile.py [--cpu 68000] [--top 30] [--annotate NAME] program [arguments]
+    python3 tools/amiga/profile.py [--cpu 68000] [--ram 8192] [--top 30] [--annotate NAME] program [arguments]
 
 --annotate NAME also lists the instructions of the functions whose name contains NAME, each with how often it ran.
 The trace is slow (about 30,000 instructions per second); the program's own output goes to stdout as usual.
@@ -82,6 +82,7 @@ def code_symbols(path):
 def main():
     parser = argparse.ArgumentParser(description='Instruction profile of an AmigaOS program under vamos.')
     parser.add_argument('--cpu', default='68000', help='68000 (default), 68020 or 68040')
+    parser.add_argument('--ram', type=int, default=8192, help='the memory of the Amiga in KB (default 8192; vamos alone has 1 MB)')
     parser.add_argument('--top', type=int, default=30, help='the number of functions to list (default 30)')
     parser.add_argument('--annotate', metavar='NAME', help='list the instructions of the functions whose name contains NAME')
     parser.add_argument('program')
@@ -90,7 +91,8 @@ def main():
 
     symbols = code_symbols(args.program)
     starts = [offset for offset, _ in symbols]
-    command = ['vamos', '-v', '-I', '-C', args.cpu, args.program] + args.arguments
+    # (after '--' the options of the program are its own, vamos would take -c, -v, -x ... for itself)
+    command = ['vamos', '-v', '-I', '-C', args.cpu, '-m', str(args.ram), '--', args.program] + args.arguments
     process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, errors='replace')
     trace = re.compile(r'N/A\s+([0-9a-f]{6,8})\s{4}(.*)$')
     counts = collections.Counter()

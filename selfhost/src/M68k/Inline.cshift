@@ -330,16 +330,22 @@ bool CalledThrough(Gen g, IrFunc f, string name)
 void ReplaceUses(Gen g, IrFunc f, string name, int vi)
 {
     foreach (var b in f.Blocks.ToArray())
-    {
-        foreach (var inst in b.Insts.ToArray())
-            ReplaceArgs(g, inst, name, vi);
-    }
+        ReplaceUses(g, b, name, vi);
 }
 
+// (the called value too: a function pointer that is a field of a struct)
 void ReplaceUses(Gen g, IrBlock b, string name, int vi)
 {
-    foreach (var inst in b.Insts.ToArray())
+    for (var k = 0; k < b.Insts.Count(); k += 1)
+    {
+        var inst = b.Insts.Get(k);
         ReplaceArgs(g, inst, name, vi);
+        if (inst.Callee >= 0 && IsLocalNamed(g, inst.Callee, name))
+        {
+            inst.Callee = vi;
+            b.Insts.Set(k, inst);
+        }
+    }
 }
 
 void ReplaceArgs(Gen g, IrInst inst, string name, int vi)

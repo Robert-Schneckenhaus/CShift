@@ -10,7 +10,7 @@
 //     at most int.MaxValue) is known, `i + k + 1` where `i + k < n` is known, `length - c` (a length is never
 //     negative), and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`) become
 //     plain additions and subtractions; their panic blocks go away.
-//   * The same computation twice (an add, a cast of the same values) where the first dominates the second: the second
+//   * The same computation twice (an add, a cast, a field of a struct: of the same values) where the first dominates the second: the second
 //     is the first's result (CommonValues).
 //   * Blocks: a branch on a constant goes to its target, blocks that nothing reaches any more are removed, and a block
 //     that only one block branches to (and that comes after it) is joined to that block.
@@ -943,6 +943,8 @@ void CommonValues(Gen g, IrFunc f)
             if (inst.Res.Length == 0 || g.Skip.Contains(inst.Res) || !IsCommonOp(inst.Op))
                 continue;
             string key = inst.Op + " " + inst.Pred + " " + inst.Type.ToString() + " " + inst.OpType.ToString();
+            foreach (var c in inst.Cases)
+                key = key + " ." + c.ToString(); // (the path of an extractvalue)
             bool ok = true;
             foreach (var a in inst.Args)
             {
@@ -1008,6 +1010,7 @@ bool IsCommonOp(string op)
     case "zext":
     case "sext":
     case "trunc":
+    case "extractvalue":
         return true;
     }
     return false; // (not icmp: a comparison with one use is written together with its branch)

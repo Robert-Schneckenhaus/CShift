@@ -21,6 +21,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
   Filling a `uint16[]` takes about 9 cycles per element instead of about 75: a program that clears a 10 KB bitplane
   and fills 320-pixel rows runs in 4.9 instead of 51 million cycles (0.38).
+- Structs with the m68k backend: reading a field of a slice or a struct no longer copies all of it into the frame
+  first, a slice or struct parameter that the function does not assign is read where it is, and its fields are read
+  once (before a loop that uses them, so `i < data.Length` makes a counted loop of a loop over a slice). Unpacking
+  928 KB of Ambermoon data with LOB (the decoder reads a `ReadOnlySlice<uint8>`) takes 245 instead of 341 million
+  cycles.
+- `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
+  options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 
 ## [0.39] - 2026-10-21
 
