@@ -1,0 +1,15 @@
+// The second collection of a conditional converts to the array the first one becomes.
+// expect-error: cannot implicitly convert 'int32' to 'string'
+
+using System;
+
+int Count(bool b)
+{
+    var r = b ? ["a"] : [1];
+    return r.Length;
+}
+
+int Main()
+{
+    return Count(true);
+}

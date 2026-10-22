@@ -493,6 +493,8 @@ Value CheckConditionalIn(const ref Compiler cg, Expr e, int frame)
     CheckCondition(cg, c.Cond);
     Value a = frame != 0 ? CheckFramed(cg, c.Then, frame) : CheckRValue(cg, c.Then);
     Value b = frame != 0 ? CheckFramed(cg, c.Else, frame) : CheckRValue(cg, c.Else);
+    if (a.Type == cg.Types.Collection && b.Type == cg.Types.Collection)
+        a = SettleChecked(cg, a); // the first becomes an array, the second converts to it (see EmitConditionalIn)
     string why = "";
     int t = ConditionalType(cg, a, b, ref why);
     if (t == 0)

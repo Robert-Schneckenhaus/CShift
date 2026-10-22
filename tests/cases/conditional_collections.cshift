@@ -1,0 +1,23 @@
+// A conditional with a collection expression in both branches (it has no type of its own): the first becomes an array
+// of its element type and the second converts to that array.
+// expect-stdout: 2 3 1 3 uv / 1 1 2 1 w
+using System;
+
+void Show(bool b)
+{
+    var r = b ? [1, 2] : [3];
+    int[] q = !b ? [4] : [5, 6, 7];
+    var s = b ? new int[] { 9 } : [8, 8];
+    Console.Write($"{r.Length} {q.Length} {s.Length} {(b ? [1, 2, 3] : [4]).Length} ");
+    foreach (var x in b ? ["u", "v"] : ["w"])
+        Console.Write(x);
+}
+
+int Main()
+{
+    Show(true);
+    Console.Write(" / ");
+    Show(false);
+    Console.WriteLine("");
+    return 0;
+}
