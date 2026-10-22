@@ -222,8 +222,13 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   bitplane and fills 320-pixel rows ran in 4.9 instead of 51 million cycles. A register allocation detail matters
   here: an integer that would get an address register (no `dbra`, no byte operations) takes the data register of a
   value that is worth less, which moves to the address register instead.
-* **Regalloc.cshift**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
-  their uses, weighted by loop depth; a value loaded from a variable shares its register (also when the variable is
+* **Regalloc.cshift**: a linear scan over live intervals (with holes: a value holds its register from its first to its
+  last point in each block where it lives, not in the blocks in between); values, variables and parameters get `d4`-`d7` and `a2`-`a5`
+  (and `d2`/`d3` in a function whose code needs neither: no 64-bit arithmetic, no product but by a constant of 16 bits,
+  no division) by their uses, weighted by the depth of the loops they are in (a block that leaves a loop, a panic or
+  a return, is not in it); a pointer that got a data register and an integer that got an address register over the
+  same time swap them; a comparison or an overflow flag that only decides the branch after it is a flag, not a
+  register; a value loaded from a variable shares its register (also when the variable is
   written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
   first operand, stays in `d0` and needs neither a register nor its slot.
 * **Gen.cshift** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
