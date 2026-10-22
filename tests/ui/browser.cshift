@@ -55,6 +55,7 @@ int Main()
                     app.Mode = 1 + i;
                     if (i == 2)
                         app.Path = ""; // to save: a new name
+                    Console.WriteLine($"dialog {i}"); // (the check waits for it before it uses the dialog)
                 }
                 buttons[i] = ui.LastRect();
             }

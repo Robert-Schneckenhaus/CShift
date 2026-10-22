@@ -152,16 +152,23 @@ async function check(name, browserType, ratio, touch) {
                 const pt = at(n[11 + 2 * i], n[12 + 2 * i]);
                 await p.mouse.click(pt.x, pt.y);
             };
-            // the dialog of a button: its button "Choose file..." is armed on the canvas. A click on the button of the
-            // program can come in a frame that does not take it (seldom, on a busy runner): then it is clicked again,
-            // once, before the check fails
+            // the dialog of a button: the program writes "dialog i" when its button was clicked. A click on the button
+            // can come in a frame that does not take it (seldom, on a busy runner): then it is clicked again, once,
+            // before the check fails. (The button "Choose file..." that the canvas arms is not enough by itself: the one
+            // of the dialog before can still be armed for a frame.)
+            const opened = async (i) => {
+                const mark = out.lines.length;
+                await button(i);
+                if (await out.waitFor(`dialog ${i}`, mark, 3000)) return;
+                await button(i);
+                if (!(await out.waitFor(`dialog ${i}`, mark, 3000)))
+                    throw new Error(`button ${i} opens no dialog: ${out.lines.slice(-4).join(" | ")}`);
+            };
             const open = async (i) => {
-                await button(i);
-                const armed = () => p.waitForFunction(() => document.querySelector("canvas").dataset.fileButton, null,
-                                                       { timeout: 3000 }).then(() => true, () => false);
-                if (await armed()) return;
-                await button(i);
-                if (!(await armed())) throw new Error(`button ${i} opens no dialog: ${out.lines.slice(-4).join(" | ")}`);
+                await opened(i);
+                const armed = await p.waitForFunction(() => document.querySelector("canvas").dataset.fileButton, null,
+                                                      { timeout: 3000 }).then(() => true, () => false);
+                if (!armed) throw new Error(`the dialog of button ${i} has no button to choose: ${out.lines.slice(-4).join(" | ")}`);
             };
             const choose = async (paths) => {
                 await p.waitForTimeout(200); // the dialog settles (its first frame finds its size)
@@ -192,8 +199,8 @@ async function check(name, browserType, ratio, touch) {
             if (folder !== "folder /home/web_user/files/data 2") fail(`${tag}: open a folder: ${folder}`);
             // save: the name, then one download
             mark = out.lines.length;
-            await button(2);
-            await p.waitForTimeout(200);
+            await opened(2);
+            await p.waitForTimeout(300); // (the dialog's first frames: its name field takes the keys)
             const downloads = [];
             p.on("download", (d) => downloads.push(d));
             await p.keyboard.type("result.txt");
