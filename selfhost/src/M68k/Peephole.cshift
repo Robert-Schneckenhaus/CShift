@@ -144,6 +144,12 @@ bool ReadsFlags(string line)
            Mentions(line, "%ccr");
 }
 
+// (%a2) .. (%a5): an address register's memory without an offset
+bool IsPlainIndirect(string operand)
+{
+    return operand.Length == 5 && operand.StartsWith("(%a") && operand.EndsWith(")") && operand[3] >= '2' && operand[3] <= '5';
+}
+
 bool IsRegister(string operand)
 {
     return operand.Length == 3 && (operand.StartsWith("%d") || operand.StartsWith("%a"));
@@ -202,6 +208,25 @@ bool PeepholePass(List<string> lines)
                 if (at != -99999)
                 {
                     lines.Set(i, Instr("lea", OffsetOperand(ops[0], at) + "," + ops[1]));
+                    lines.RemoveAt(i + 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        // move.l %aX,%aY / lea (n,%aY),%aY -> lea (n,%aX),%aY (neither sets the flags)
+        if (mn == "move.l" && ops.Length == 2 && ops[0].StartsWith("%a") && ops[1].StartsWith("%a") && ops[0] != ops[1] &&
+            ops[0].Length == 3 && ops[1].Length == 3 && ops[0] != "%a7" && i + 1 < lines.Count())
+        {
+            string next = lines.Get(i + 1);
+            var ops2 = Operands(next);
+            if (Mnemonic(next) == "lea" && ops2.Length == 2 && ops2[1] == ops[1])
+            {
+                int at = RegisterOffset(ops2[0], ops[1]);
+                if (at != -99999 && at >= -32768 && at <= 32767)
+                {
+                    lines.Set(i, Instr("lea", "(" + at.ToString() + "," + ops[0] + ")," + ops[1]));
                     lines.RemoveAt(i + 1);
                     changed = true;
                     continue;
@@ -396,6 +421,59 @@ bool PeepholePass(List<string> lines)
                 if (negated.Length > 0)
                 {
                     lines.Set(i, Instr("b" + negated, ops2[0]));
+                    lines.RemoveAt(i + 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        // move.w x,(%aN) / ... / lea (2,%aN),%aN -> move.w x,(%aN)+ / ... (and loads; a walking pointer, Loops.cshift),
+        // when the lines in between are in the same block and do not use aN
+        if ((mn == "move.b" || mn == "move.w" || mn == "move.l") && ops.Length == 2)
+        {
+            int side = IsPlainIndirect(ops[1]) ? 1 : IsPlainIndirect(ops[0]) ? 0 : -1;
+            string reg = side >= 0 ? ops[side].Substring(1, ops[side].Length - 2).ToString() : "";
+            if (side >= 0 && !Mentions(ops[1 - side], reg))
+            {
+                int size = mn == "move.b" ? 1 : mn == "move.w" ? 2 : 4;
+                for (var k = i + 1; k < lines.Count() && k <= i + 8; k += 1)
+                {
+                    string next = lines.Get(k);
+                    string mn2 = Mnemonic(next);
+                    if (mn2.Length == 0 || mn2.StartsWith("b") || mn2.StartsWith("j") || mn2.StartsWith("db") || mn2 == "rts" ||
+                        mn2.StartsWith("movem"))
+                        break;
+                    var ops2 = Operands(next);
+                    if (mn2 == "lea" && ops2.Length == 2 && ops2[1] == reg && ops2[0] == "(" + size.ToString() + "," + reg + ")")
+                    {
+                        string walked = "(" + reg + ")+";
+                        lines.Set(i, Instr(mn, side == 1 ? ops[0] + "," + walked : walked + "," + ops[1]));
+                        lines.RemoveAt(k);
+                        changed = true;
+                        break;
+                    }
+                    if (Mentions(next, reg))
+                        break;
+                }
+            }
+        }
+
+        // sub.l #1,%d7 / tst.l %d7 / bne -> sub.l #1,%d7 / bne: the sub sets Z and N as the tst does (C and V differ, so
+        // only before beq, bne, bmi, bpl); a move to a data register sets them all as the tst does
+        if ((mn == "sub.l" || mn == "add.l" || mn == "move.l" || mn == "move.w" || mn == "move.b") && ops.Length == 2 &&
+            ops[1].StartsWith("%d") && ops[1].Length == 3 && i + 1 < lines.Count())
+        {
+            string next = lines.Get(i + 1);
+            string size = mn.Substring(mn.Length - 2).ToString();
+            var ops2 = Operands(next);
+            if (Mnemonic(next) == "tst" + size && ops2.Length == 1 && ops2[0] == ops[1])
+            {
+                string branch = i + 2 < lines.Count() ? Mnemonic(lines.Get(i + 2)) : "";
+                bool zeroOrSign = branch == "beq" || branch == "bne" || branch == "bmi" || branch == "bpl" ||
+                                  branch == "beq.s" || branch == "bne.s" || branch == "bmi.s" || branch == "bpl.s";
+                if (mn.StartsWith("move") || zeroOrSign)
+                {
                     lines.RemoveAt(i + 1);
                     changed = true;
                     continue;

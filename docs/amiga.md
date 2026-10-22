@@ -178,7 +178,7 @@ The sources are in [selfhost/src/M68k](../selfhost/src/M68k); the compiler write
 reads it back:
 
 ```
-IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─▶ Gen (68000 assembly) ─▶ Peephole ─▶ Asm ─▶ Hunk / Elf
+IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─▶ Regalloc ─▶ Gen (68000 assembly) ─▶ Peephole ─▶ Asm ─▶ Hunk / Elf
 ```
 
 * **IrReader.cshift** reads the LLVM IR the front end writes (types, constants, functions, instructions).
@@ -197,10 +197,20 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding) ─▶ Regalloc ─
   same comparison there is a constant: the bounds check of `data[i] ^= x` is made once. Checked additions and
   subtractions that cannot overflow become plain ones and lose their panics: `i + 1` where `i < n` or `i < length` is
   known, `length - 1`, and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`).
+  A loop counter that only gets values that are never negative (`var i = 0`, `i += 1` that cannot overflow) is never
+  negative, so where `i < a.Length` holds the bounds check of `a[i]` goes away.
   Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
   goes through `d0`.
+* **Loops.cshift**: counted loops, `for (var i = start; i < n; i += 1)` with `n` from before the loop. An element
+  `a[i]` of an array that does not change in the loop gets an address register of its own: set to the element of the
+  first round before the loop, moved on by the element size at the end of each round, so `row[i] = color` is
+  `move.w d4,(a4)+` instead of a copy and a shift of `i` and `move.w d4,(8,a2,d1.l)`. The test is repeated at the end
+  of the round, which then ends in one taken branch back. When `i` only counts the rounds (nothing else reads it), a
+  count of the rounds left replaces it: `subq.l #1,d7` and `bne`. Filling a `uint16[]` this way takes 26 cycles per
+  element instead of about 75 (with the bounds check, a shift of `i` and two branches); a program that fills, sums and
+  copies arrays in loops ran in 1.47 instead of 2.62 million cycles. (`dbra` is not used: it counts only 16 bits.)
 * **Regalloc.cshift**: a linear scan over live intervals; values, variables and parameters get `d4`-`d7` and `a2`-`a5` by
   their uses, weighted by loop depth; a value loaded from a variable shares its register (also when the variable is
   written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
