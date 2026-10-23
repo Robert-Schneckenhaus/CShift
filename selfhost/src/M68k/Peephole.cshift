@@ -127,6 +127,92 @@ bool DeadAfter(List<string> lines, int from, string reg)
     return false;
 }
 
+// whether no way from line 'from' on reads reg before it writes it: DeadAfter, through branches as well (the targets
+// of a branch and the line after it are both followed; a way that comes back to a line seen before adds nothing). A
+// byte or word written to a data register may be read with that size or less afterwards.
+bool DeadOnAllPaths(List<string> lines, int from, string reg)
+{
+    var labels = Dictionary<string, int>.Create();
+    for (var i = 0; i < lines.Count(); i += 1)
+    {
+        string line = lines.Get(i);
+        if (!line.StartsWith("\t") && line.EndsWith(":"))
+            labels.Set(line.Substring(0, line.Length - 1).ToString(), i);
+    }
+    var seen = HashSet<int>.Create();   // line * 8 + the size written on the way there
+    var work = List<int>.Create();
+    work.Add(from * 8);
+    while (work.Count() > 0)
+    {
+        int item = work.Get(work.Count() - 1);
+        work.RemoveAt(work.Count() - 1);
+        int written = item % 8;
+        bool ended = false;
+        for (var i = item / 8; i < lines.Count() && !ended; i += 1)
+        {
+            if (seen.Contains(i * 8 + written))
+            {
+                ended = true;
+                break;
+            }
+            seen.Add(i * 8 + written);
+            string line = lines.Get(i);
+            if (!line.StartsWith("\t") || line.StartsWith("\t."))
+                continue;
+            string mn = Mnemonic(line);
+            var ops = Operands(line);
+            int size = mn.EndsWith(".b") ? 1 : mn.EndsWith(".w") ? 2 : 4;
+            if (mn == "jsr")
+            {
+                if (written == 0 && ops.Length > 0 && (Mentions(ops[0], reg) || ops[0].StartsWith("__cs68k_")))
+                    return false;
+                ended = true; // the called function does not keep the scratch registers
+                break;
+            }
+            if ((mn == "rts" || mn == "jmp") && written == 0)
+                return false;
+            if (mn == "rts" || mn == "jmp")
+            {
+                ended = true;
+                break;
+            }
+            for (var k = 0; k < ops.Length; k += 1)
+            {
+                if (!Mentions(ops[k], reg))
+                    continue;
+                bool write = k == ops.Length - 1 && ops[k] == reg && ops.Length == 2 && (mn.StartsWith("move") || mn == "lea");
+                if (write)
+                {
+                    int now = reg.StartsWith("%a") || mn == "moveq" || mn == "lea" ? 4 : size;
+                    if (now > written)
+                        written = now;
+                    if (written == 4)
+                        ended = true;
+                }
+                else if (written == 0 || size > written || k == ops.Length - 1)
+                    return false;
+            }
+            if (ended)
+                break;
+            string bare = mn.IndexOf('.') > 0 ? mn.Substring(0, mn.IndexOf('.')).ToString() : mn;
+            bool branch = bare == "bra" || (bare.StartsWith("b") && bare.Length == 3) || (bare.StartsWith("db") && bare.Length == 4);
+            if (!branch)
+                continue;
+            if (!labels.ContainsKey(ops[ops.Length - 1]))
+                return false;
+            work.Add(labels.Get(ops[ops.Length - 1]) * 8 + written);
+            if (bare == "bra")
+            {
+                ended = true;
+                break;
+            }
+        }
+        if (!ended)
+            return false; // (the end of the code without a return)
+    }
+    return true;
+}
+
 // Does the instruction read the condition codes (a conditional branch or set, an operation with the X flag)?
 bool ReadsFlags(string line)
 {
@@ -229,6 +315,29 @@ bool PeepholePass(Gen g, List<string> lines)
             continue;
         }
         var ops = Operands(line);
+
+        // move.b (%a3)+,%d0 / move.b %d0,(%a4)+ -> move.b (%a3)+,(%a4)+ (memory to memory; the flags are those of the
+        // value either way), where d0 is not read on any way afterwards and the two operands share no address register
+        if ((mn == "move.b" || mn == "move.w" || mn == "move.l") && ops.Length == 2 && ops[1] == "%d0" && !Mentions(ops[0], "%d0") &&
+            i + 1 < lines.Count())
+        {
+            string next = lines.Get(i + 1);
+            var ops2 = Operands(next);
+            bool shared = false;
+            foreach (var r in ["%a0", "%a1", "%a2", "%a3", "%a4", "%a5", "%a6", "%sp"])
+            {
+                if (Mentions(ops[0], r) && Mentions(ops2.Length == 2 ? ops2[1] : "", r))
+                    shared = true;
+            }
+            if (Mnemonic(next) == mn && ops2.Length == 2 && ops2[0] == "%d0" && !Mentions(ops2[1], "%d0") &&
+                !ops2[1].StartsWith("%a") && !shared && DeadOnAllPaths(lines, i + 2, "%d0"))
+            {
+                lines.Set(i, Instr(mn, ops[0] + "," + ops2[1]));
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
 
         // lea (d,%a6),%aX / lea (c,%aX),%aX -> lea (d+c,%a6),%aX
         if (mn == "lea" && ops.Length == 2 && ops[1].StartsWith("%a") && OffsetOperand(ops[0], 0).Length > 0 && i + 1 < lines.Count())

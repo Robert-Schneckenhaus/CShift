@@ -1,0 +1,125 @@
+// Loops of two indexes that step together (Facts.cshift: LockstepFacts; Loops.cshift: walking pointers for both, a
+// dbra count where the counter is read after the loop) must never change a result: a copy within an array as in an
+// LZ decoder (overlapping, distance 1 and more), a counter read after its loop, a loop left by a break, where the
+// counter keeps the round's value, and one left by a return that reads the other index.
+// expect-stdout: lockstep loops ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+// matches (distance, length) copied within the output, as Lob.Decompress does it
+int Decode(uint8[] output, int[] pairs)
+{
+    int to = 0;
+    output[0] = 1;
+    output[1] = 2;
+    output[2] = 3;
+    to = 3;
+    for (var p = 0; p + 1 < pairs.Length; p += 2)
+    {
+        int from = to - pairs[p];
+        int stop = to + pairs[p + 1];
+        if (from < 0 || stop > output.Length)
+            return -1;
+        while (to < stop)
+        {
+            output[to] = output[from];
+            to += 1;
+            from += 1;
+        }
+    }
+    return to;
+}
+
+// the same with a break: the counter is the round's value then
+int DecodeUntil(uint8[] output, int[] pairs, uint8 last)
+{
+    int to = 3;
+    for (var p = 0; p + 1 < pairs.Length; p += 2)
+    {
+        int from = to - pairs[p];
+        int stop = to + pairs[p + 1];
+        if (from < 0 || stop > output.Length)
+            return -1;
+        while (to < stop)
+        {
+            if (output[from] == last)
+                break;
+            output[to] = output[from];
+            to += 1;
+            from += 1;
+        }
+    }
+    return to;
+}
+
+// a way out of the loop that is not its exit reads the index that steps with the counter
+int FindZero(uint8[] output, int[] pairs)
+{
+    int to = 3;
+    int from = 0;
+    for (var p = 0; p + 1 < pairs.Length; p += 2)
+    {
+        from = to - pairs[p];
+        int stop = to + pairs[p + 1];
+        if (from < 0 || stop > output.Length)
+            return -1;
+        while (to < stop)
+        {
+            uint8 b = output[from];
+            if (b == 0)
+                return from * 1000 + to;
+            output[to] = b;
+            to += 1;
+            from += 1;
+        }
+    }
+    return to;
+}
+
+int Sum(uint8[] a, int n)
+{
+    int s = 0;
+    for (var i = 0; i < a.Length && i < n; i += 1)
+        s += a[i];
+    return s;
+}
+
+int Main()
+{
+    var output = new uint8[64];
+    // distance 1: a run; distance 3: a pattern; distance 2 over the end of what was there
+    int end = Decode(output, [1, 5, 3, 6, 2, 7, 10, 20]);
+    Check("decode end", end, 41);
+    Check("decode bytes", Sum(output, end), 120);
+    Check("decode last", output[40] * 10 + output[30], 33);
+    Check("decode too far", Decode(new uint8[10], [1, 8]), -1);
+    Check("decode none", Decode(output, [1, 0, 2, 0]), 3);
+
+    var other = new uint8[64];
+    other[0] = 4;
+    other[1] = 5;
+    other[2] = 9;
+    Check("until end", DecodeUntil(other, [3, 10], 9), 5);
+    Check("until bytes", Sum(other, 6), 27);
+
+    var zeros = new uint8[64];
+    zeros[0] = 1;
+    zeros[2] = 3;
+    // copies the 1 to 3, then reads the 0 at 1 (from 1, to 4)
+    Check("find zero", FindZero(zeros, [3, 10]), 1 * 1000 + 4);
+    Check("find zero copied", zeros[3], 1);
+
+    if (failures == 0)
+        Console.WriteLine("lockstep loops ok");
+    return failures;
+}

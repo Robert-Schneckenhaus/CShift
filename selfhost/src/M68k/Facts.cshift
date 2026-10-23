@@ -6,6 +6,8 @@
 //     another array are the same value then, and so are the bounds checks of `data[index]` that read and write.
 //   * Known conditions: a block whose only predecessor branched on a comparison knows its outcome, and so do the blocks
 //     it dominates. The same comparison there is a constant: the bounds check of `data[index] ^= x` is made once.
+//     Facts combine through other values (a < x <= b), the side of a branch on `c1 || c2` that came through c2 knows
+//     both outcomes, and variables that a loop steps together keep their order (LockstepFacts).
 //   * Checked arithmetic that cannot overflow: `i + 1` where `i < n` (signed) or `i < length` (unsigned, a length is
 //     at most int.MaxValue) is known, `i + k + 1` where `i + k < n` is known, `length - c` (a length is never
 //     negative), and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`) become
@@ -336,7 +338,8 @@ string SwapPred(string p)
     return p;
 }
 
-// 1 if the comparison holds, 0 if it does not, -1 if the facts do not tell
+// 1 if the comparison holds, 0 if it does not, -1 if the facts do not tell: a fact about a and b, or two facts that
+// order them through a third value (a < x <= b)
 int Decide(List<Fact> facts, string p, string a, string b)
 {
     if (a.Length == 0 || b.Length == 0)
@@ -355,6 +358,75 @@ int Decide(List<Fact> facts, string p, string a, string b)
         if (NegatePred(q) == p)
             return 0;
     }
+    string up = Chain(facts, a, b);
+    if (up.Length > 0)
+        return Implies(up, p);
+    string down = Chain(facts, b, a);
+    if (down.Length > 0)
+        return Implies(SwapPred(down), p);
+    return -1;
+}
+
+// "slt" or "sle" if facts put a below b through other values (signed; up to three of them: a <= x < y <= b), ""
+// otherwise
+string Chain(List<Fact> facts, string a, string b)
+{
+    return ChainFrom(facts, a, b, false, 4);
+}
+
+string ChainFrom(List<Fact> facts, string a, string b, bool strict, int steps)
+{
+    if (steps == 0)
+        return "";
+    string best = "";
+    foreach (var fact in facts)
+    {
+        string x = "";
+        bool s = false;
+        if (!Below(fact, a, ref x, ref s) || x == a)
+            continue;
+        bool st = strict || s;
+        if (x == b)
+        {
+            if (st)
+                return "slt";
+            best = "sle";
+            continue;
+        }
+        string r = ChainFrom(facts, x, b, st, steps - 1);
+        if (r == "slt")
+            return r;
+        if (r.Length > 0)
+            best = r;
+    }
+    return best;
+}
+
+// whether the fact puts a below another value (signed): that value, and whether it is strictly below
+bool Below(Fact fact, string a, ref string above, ref bool strict)
+{
+    if (fact.A == a && (fact.Pred == "slt" || fact.Pred == "sle"))
+    {
+        above = fact.B;
+        strict = fact.Pred == "slt";
+        return true;
+    }
+    if (fact.B == a && (fact.Pred == "sgt" || fact.Pred == "sge"))
+    {
+        above = fact.A;
+        strict = fact.Pred == "sgt";
+        return true;
+    }
+    return false;
+}
+
+// what 'a q b' (q: slt, sle, sgt, sge) says about 'a p b': 1, 0 or -1
+int Implies(string q, string p)
+{
+    if (q == p || (q == "slt" && (p == "sle" || p == "ne")) || (q == "sgt" && (p == "sge" || p == "ne")))
+        return 1;
+    if (NegatePred(q) == p || (q == "slt" && (p == "sgt" || p == "eq")) || (q == "sgt" && (p == "slt" || p == "eq")))
+        return 0;
     return -1;
 }
 
@@ -374,8 +446,8 @@ int DecideUnsigned(List<Fact> facts, HashSet<string> nonNegative, string p, stri
     }
     if (r >= 0 || sp.Length == 0)
         return r;
-    bool na = IsNonNegative(nonNegative, a);
-    bool nb = IsNonNegative(nonNegative, b);
+    bool na = IsNonNegative(nonNegative, a) || Decide(facts, "sge", a, "#0") == 1;
+    bool nb = IsNonNegative(nonNegative, b) || Decide(facts, "sge", b, "#0") == 1;
     if (na && !nb)
         nb = Decide(facts, "sle", a, b) == 1 || Decide(facts, "slt", a, b) == 1;
     if (nb && !na)
@@ -461,7 +533,49 @@ void KnownConditions(Gen g, IrFunc f)
         }
     }
 
+    // a branch on the phi of 'c1 || c2' (or 'c1 && c2'): on the side where the phi has not the value it gets from the
+    // block that decided by c1 alone, the way came through the block of c2, and c2 had that side's value
+    for (var j = 0; j < n; j += 1)
+    {
+        var insts = blocks[j].Insts.ToArray();
+        if (insts.Length == 0)
+            continue;
+        var br = insts[insts.Length - 1];
+        if (br.Op != "br" || br.Labels.Length != 2 || br.Labels[0] == br.Labels[1] || !IsLocal(g, br.Args[0]))
+            continue;
+        string cond = g.M.Vals.Get(br.Args[0]).Name;
+        foreach (var phi in insts)
+        {
+            if (phi.Op != "phi" || phi.Res != cond || phi.Args.Length != 2)
+                continue;
+            for (var known = 0; known < 2; known += 1)
+            {
+                var kv = g.M.Vals.Get(phi.Args[known]);
+                var other = g.M.Vals.Get(phi.Args[1 - known]);
+                if (kv.Kind != ValKind.Int || other.Kind != ValKind.Local || !e.Index.ContainsKey(phi.Labels[1 - known]) ||
+                    !cmps.ContainsKey(other.Name))
+                    continue;
+                int bj = e.Index.Get(phi.Labels[1 - known]);
+                var cmp = cmps.Get(other.Name);
+                string a = ValueKey(g, cmp.Args[0]);
+                string b = ValueKey(g, cmp.Args[1]);
+                if (a.Length == 0 || b.Length == 0)
+                    continue;
+                // side 0: the phi is true; the side where the known incoming value is not the phi's value
+                int side = kv.Int != 0 ? 1 : 0;
+                var target = e.Index.TryGet(br.Labels[side]);
+                if (target is int t && e.Preds[t].Count() == 1)
+                {
+                    own[t].Add(Fact { Pred = side == 0 ? cmp.Pred : NegatePred(cmp.Pred), A = a, B = b });
+                    foreach (var fact in own[bj].ToArray())
+                        own[t].Add(fact);
+                }
+            }
+        }
+    }
+
     var ranges = NewRanges(g, f);
+    LockstepFacts(g, f, e, idom, own, sums, ranges);
     var constants = Dictionary<string, int>.Create();   // a comparison's result -> its constant
     var plainOps = List<string>.Create();               // the checked operations that cannot overflow
     int i1 = g.T.IntType(1);
@@ -507,6 +621,222 @@ void KnownConditions(Gen g, IrFunc f)
     }
     if (plainOps.Count() > 0)
         PlainArithmetic(g, f, plainOps);
+}
+
+// Variables that step together: in a loop whose one latch steps the variables u and v by the same constant (and no
+// other block of the loop stores them), v - u is the same in every round. Where v <= u when the loop is entered (a
+// fact, or v = u - x with x >= 0), every value of v that a round reads is <= the one of u it reads; where v >= 0
+// then, it stays so (it only grows, and its add does not wrap). 'while (to < stop) { d[to] = d[from]; ... }' after
+// 'from = to - offset' and 'if (from < 0 || stop > d.Length) ...': both bounds checks go.
+void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dictionary<string, Offset> sums, Ranges ranges)
+{
+    var blocks = f.Blocks.ToArray();
+    int n = blocks.Length;
+    var plain = PlainVariables(g, f);
+    if (plain.Count() < 2)
+        return;
+    var stores = new HashSet<string>[n];
+    var loadOf = Dictionary<string, string>.Create();    // a load's result -> its variable
+    var loadBlock = Dictionary<string, int>.Create();
+    var loadAt = Dictionary<string, int>.Create();
+    var defs = Dictionary<string, IrInst>.Create();
+    for (var j = 0; j < n; j += 1)
+    {
+        stores[j] = HashSet<string>.Create();
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            string name = AccessedVariable(g, inst, plain);
+            if (inst.Op == "store" && name.Length > 0)
+                stores[j].Add(name);
+            if (inst.Op == "load" && name.Length > 0)
+            {
+                loadOf.Set("%" + inst.Res, name);
+                loadBlock.Set("%" + inst.Res, j);
+                loadAt.Set("%" + inst.Res, k);
+            }
+            if (inst.Res.Length > 0)
+                defs.Set("%" + inst.Res, inst);
+        }
+    }
+    for (var h = 0; h < n; h += 1)
+    {
+        // one branch back (from a block that h dominates) and one way in
+        if (e.Preds[h].Count() != 2 || (h > 0 && idom[h] < 0))
+            continue;
+        int latch = -1;
+        int pre = -1;
+        foreach (var p in e.Preds[h].ToArray())
+        {
+            if (Dominates(idom, h, p))
+                latch = p;
+            else
+                pre = p;
+        }
+        if (latch < 0 || pre < 0)
+            continue;
+        var inLoop = NaturalLoop(e, h, latch);
+        if (inLoop[pre])
+            continue;
+        // the variables that a round steps once: stored once in the loop, as a load of their own + k, in a block that
+        // every round passes once (it dominates the latch and is in no loop inside this one)
+        var names = List<string>.Create();
+        var steps = List<int64>.Create();
+        var stepBlock = List<int>.Create();
+        var stepAt = List<int>.Create();
+        for (var j = 0; j < n; j += 1)
+        {
+            if (!inLoop[j] || stores[j].Count() == 0 || !Dominates(idom, j, latch) || InInnerLoop(e, h, j))
+                continue;
+            var sinsts = blocks[j].Insts.ToArray();
+            for (var k = 0; k < sinsts.Length; k += 1)
+            {
+                var inst = sinsts[k];
+                string name = AccessedVariable(g, inst, plain);
+                if (inst.Op != "store" || name.Length == 0)
+                    continue;
+                string key = ValueKey(g, inst.Args[0]);
+                if (!sums.ContainsKey(key))
+                    continue;
+                var o = sums.Get(key);
+                if (!o.NoWrap || loadOf.GetOrDefault(o.Base, "") != name || !inLoop[loadBlock.Get(o.Base)])
+                    continue;
+                int count = 0;
+                for (var b = 0; b < n; b += 1)
+                {
+                    if (inLoop[b] && stores[b].Contains(name))
+                    {
+                        foreach (var other in blocks[b].Insts.ToArray())
+                        {
+                            if (other.Op == "store" && AccessedVariable(g, other, plain) == name)
+                                count += 1;
+                        }
+                    }
+                }
+                if (count != 1 || names.Contains(name))
+                    continue;
+                names.Add(name);
+                steps.Add(o.K);
+                stepBlock.Add(j);
+                stepAt.Add(k);
+            }
+        }
+        if (names.Count() < 2)
+            continue;
+        // the facts when the loop is entered
+        var entry = List<Fact>.Create();
+        for (int d = pre; d >= 0; d = d == 0 ? -1 : idom[d])
+        {
+            foreach (var fact in own[d].ToArray())
+                entry.Add(fact);
+        }
+        int end = blocks[pre].Insts.Count();
+        for (var ui = 0; ui < names.Count(); ui += 1)
+        {
+            for (var vi = 0; vi < names.Count(); vi += 1)
+            {
+                if (ui == vi || steps.Get(ui) != steps.Get(vi))
+                    continue;
+                string u = names.Get(ui);
+                string v = names.Get(vi);
+                int up = KnownValue(g, blocks, e, idom, stores, plain, u, pre, end);
+                int vp = KnownValue(g, blocks, e, idom, stores, plain, v, pre, end);
+                if (up < 0 || vp < 0)
+                    continue;
+                string uk = ValueKey(g, up);
+                string vk = ValueKey(g, vp);
+                bool below = Decide(entry, "sle", vk, uk) == 1 || IsDifference(g, defs, ranges, vk, uk);
+                bool nonNegative = Decide(entry, "sge", vk, "#0") == 1;
+                if (!below && !nonNegative)
+                    continue;
+                // the values of a round: loads in the loop before the first of the two steps (in blocks that the
+                // block of that step does not reach in the round, or in it before the step)
+                int first = ui;
+                if (stepBlock.Get(vi) != stepBlock.Get(ui) ? Dominates(idom, stepBlock.Get(vi), stepBlock.Get(ui))
+                                                           : stepAt.Get(vi) < stepAt.Get(ui))
+                    first = vi;
+                var after = Reached(e, h, stepBlock.Get(first));
+                foreach (var lv in loadOf.Entries())
+                {
+                    if (lv.Value != v || !RoundLoad(loadBlock, loadAt, lv.Key, inLoop, after, stepBlock.Get(first), stepAt.Get(first)))
+                        continue;
+                    if (nonNegative)
+                        own[h].Add(Fact { Pred = "sge", A = lv.Key, B = "#0" });
+                    if (!below)
+                        continue;
+                    foreach (var lu in loadOf.Entries())
+                    {
+                        if (lu.Value == u && RoundLoad(loadBlock, loadAt, lu.Key, inLoop, after, stepBlock.Get(first), stepAt.Get(first)))
+                            own[h].Add(Fact { Pred = "sle", A = lv.Key, B = lu.Key });
+                    }
+                }
+            }
+        }
+    }
+}
+
+bool RoundLoad(Dictionary<string, int> loadBlock, Dictionary<string, int> loadAt, string load, bool[] inLoop, bool[] after,
+               int stepBlock, int stepAt)
+{
+    int b = loadBlock.Get(load);
+    return inLoop[b] && !after[b] && (b != stepBlock || loadAt.Get(load) < stepAt);
+}
+
+// the blocks that a way from block 'from' reaches before it comes back to the header (from itself only through a
+// loop inside)
+bool[] Reached(Edges e, int header, int from)
+{
+    var seen = new bool[e.Succs.Length];
+    var work = List<int>.Create();
+    foreach (var s in e.Succs[from].ToArray())
+    {
+        if (s != header && !seen[s])
+        {
+            seen[s] = true;
+            work.Add(s);
+        }
+    }
+    while (work.Count() > 0)
+    {
+        int b = work.Get(work.Count() - 1);
+        work.RemoveAt(work.Count() - 1);
+        foreach (var s in e.Succs[b].ToArray())
+        {
+            if (s != header && !seen[s])
+            {
+                seen[s] = true;
+                work.Add(s);
+            }
+        }
+    }
+    return seen;
+}
+
+bool InInnerLoop(Edges e, int header, int b)
+{
+    return Reached(e, header, b)[b];
+}
+
+// whether a is b - x with x >= 0 and no wrap (a checked subtraction)
+bool IsDifference(Gen g, Dictionary<string, IrInst> defs, Ranges ranges, string a, string b)
+{
+    if (!defs.ContainsKey(a))
+        return false;
+    var ev = defs.Get(a);
+    if (ev.Op == "sub" && ev.Args.Length == 2 && g.NoWrap.Contains(ev.Res) && ValueKey(g, ev.Args[0]) == b)
+    {
+        var y = RangeOf(g, ranges, ev.Args[1]);
+        return y.Known && y.Lo >= 0;
+    }
+    if (ev.Op != "extractvalue" || ev.Cases.Length != 1 || ev.Cases[0] != 0 || !IsLocal(g, ev.Args[0]) ||
+        !defs.ContainsKey("%" + g.M.Vals.Get(ev.Args[0]).Name))
+        return false;
+    var c = defs.Get("%" + g.M.Vals.Get(ev.Args[0]).Name);
+    if (!IsOverflowCall(g, c, "llvm.ssub.with.overflow.i32") || ValueKey(g, c.Args[0]) != b)
+        return false;
+    var x = RangeOf(g, ranges, c.Args[1]);
+    return x.Known && x.Lo >= 0;
 }
 
 // A variable that only ever gets values that are never negative is never negative: constants >= 0, values known to be
@@ -839,6 +1169,19 @@ Range RangeOfInst(Gen g, Ranges r, IrInst inst)
         if (y.Known && y.Lo >= 0)
             return Range { Known = true, Lo = 0, Hi = y.Hi };
         return Unknown();
+    }
+    if ((op == "or" || op == "xor") && inst.Args.Length == 2)
+    {
+        // of values that are never negative: below the next power of two of the larger one
+        var x = RangeOf(g, r, inst.Args[0]);
+        var y = RangeOf(g, r, inst.Args[1]);
+        if (!x.Known || !y.Known || x.Lo < 0 || y.Lo < 0)
+            return Unknown();
+        int64 hi = x.Hi > y.Hi ? x.Hi : y.Hi;
+        int64 top = 1;
+        while (top <= hi)
+            top <<= 1;
+        return Range { Known = true, Lo = 0, Hi = top - 1 };
     }
     if ((op == "lshr" || op == "ashr" || op == "shl") && inst.Args.Length == 2 && ConstInt(g, inst.Args[1], ref c) && c >= 0 &&
         c < 32)

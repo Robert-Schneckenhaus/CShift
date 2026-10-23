@@ -33,6 +33,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   after a loop but not in it leaves the register to the loop), and a comparison or an overflow check that only decides
   the branch after it no longer takes a register. Unpacking 928 KB of Ambermoon data takes 177 million cycles (245
   before).
+- Copies within an array with the m68k backend, as in an LZ decoder (`while (to < stop) { d[to] = d[from]; to += 1;
+  from += 1; }` after `from = to - offset` and `if (from < 0 || stop > d.Length) ...`): both bounds checks go (facts
+  combine through other values, a branch on `c1 || c2` tells both outcomes, and two variables stepped together keep
+  their difference), both elements are reached through walking address registers, `from` is not stepped when nothing
+  reads it afterwards, the counter becomes a `dbra` count also when it is read after the loop (its value `n` is
+  stored on the way out), and a byte moved through `d0` that nothing reads afterwards is moved memory to memory:
+  `move.b (a3)+,(a4)+` and `dbra` (in a jump tower with `-O2`). Unpacking 928 KB of Ambermoon data takes 149 million
+  cycles (177 before).
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 
