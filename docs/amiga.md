@@ -202,7 +202,11 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   subtractions that cannot overflow become plain ones and lose their panics: `i + 1` where `i < n` or `i < length` is
   known, `length - 1`, and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`).
   A loop counter that only gets values that are never negative (`var i = 0`, `i += 1` that cannot overflow) is never
-  negative, so where `i < a.Length` holds the bounds check of `a[i]` goes away.
+  negative, so where `i < a.Length` holds the bounds check of `a[i]` goes away. Facts are combined through other
+  values (`to < stop` and `stop <= d.Length` give `to < d.Length`), the side of a branch on `c1 || c2` (or `&&`) where
+  the way came through `c2` knows both outcomes, and two variables that a loop steps by the same amount keep their
+  difference: after `from = to - offset` (`offset >= 0`) and `if (from < 0 || stop > d.Length) ...`, the loop
+  `while (to < stop) { d[to] = d[from]; to += 1; from += 1; }` needs neither bounds check.
   Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
@@ -210,9 +214,12 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
 * **Loops.cshift**: counted loops, `for (var i = start; i < n; i += 1)` with `n` from before the loop. An element
   `a[i]` of an array that does not change in the loop gets an address register of its own: set to the element of the
   first round before the loop, moved on by the element size at the end of each round, so `row[i] = color` is
-  `move.w d4,(a4)+` instead of a copy and a shift of `i` and `move.w d4,(8,a2,d1.l)`. The test is repeated at the end
-  of the round, which then ends in one taken branch back. When `i` only counts the rounds (nothing else reads it), a
-  count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
+  `move.w d4,(a4)+` instead of a copy and a shift of `i` and `move.w d4,(8,a2,d1.l)`; so does an element whose index
+  is another variable that steps with `i` (`d[from]` above), and when nothing else reads that variable in the loop and
+  it is written before it is read after the loop, it is not stepped at all. The test is repeated at the end
+  of the round, which then ends in one taken branch back. When `i` only counts the rounds (nothing else in the loop
+  reads it, and after the loop either nothing or, when the loop ends only by its test, its value `n` stored on the
+  way out), a count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
   when that ends, a `swap` and a `sub.w` count the high word, so any count works). With `-O2`/`-O3` a body of one to
   three instructions without branches (after the steps above, so with the bounds checks gone) becomes a **jump tower**
   (Peephole.cshift): it is copied 16 times (8 times for two or three instructions), and a count of at least that many
@@ -237,8 +244,9 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   powers of two, products by other constants as three `mulu.w` of the 16-bit halves (no call), variables in their slots
   as frame operands (`(-8,a6)`), the length of a string or array for its bounds check without a call, only the
   registers that are used are saved.
-* **Peephole.cshift** simplifies the assembly (for example a register copied back right after it was copied, or
-  `moveq #0` before loading a byte or word instead of masking it afterwards); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
+* **Peephole.cshift** simplifies the assembly (for example a register copied back right after it was copied,
+  `moveq #0` before loading a byte or word instead of masking it afterwards, or `move.b (a3)+,(a4)+` instead of a
+  move through `d0` where no way afterwards reads `d0`); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
   **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
 * **AmigaRuntime.cshift, Runtime.cshift**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
   32/64-bit multiplication and division. `memcpy`, `memmove` and `memset` go through *jump towers*: the move is
