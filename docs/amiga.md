@@ -211,7 +211,12 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   was entered (`at >= 0` from a check before the loop, for every `data[at]` in it). The joins of `&&` and `||` are
   left out before the facts are gathered, so the blocks of `c1 && c2` follow the block of `c2` and know it. A bounds
   check that passed tells `i >= 0` and `i < n`, `a < x` tells `a + 1 <= x`, and `n - 1 < n`: after
-  `while (i < data.Length - 1)` and the check of `data[i]`, `data[i + 1]` needs none.
+  `while (i < data.Length - 1)` and the check of `data[i]`, `data[i + 1]` needs none. Where such an index starts at a
+  value that may be negative (a parameter), the block before the loop asks whether it is (GuardLowerBounds): then a
+  copy of the loop's test and of the bounds check runs (and panics as the check would), else the loop is entered with
+  the index >= 0 and its check needs only the upper bound. `x & 0xffff` (or `& 0xff`) of plain additions,
+  subtractions, and, or, xor and shifts left by a constant is computed in 16 (8) bits and zero-extended (NarrowMasks):
+  the low bits of these depend only on the low bits of their operands.
   Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
@@ -223,7 +228,9 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   is another variable that steps with `i` (`d[from]` above), and when nothing else reads that variable in the loop and
   it is written before it is read after the loop, it is not stepped at all. The test is repeated at the end
   of the round, which then ends in one taken branch back; so is the test of another loop whose header only loads,
-  compares and branches (`for (var bit = 0x80; bit != 0; bit >>= 1)`: `asr.l #1,d3` / `bne`). When `i` only counts the rounds (nothing else in the loop
+  compares and branches (`for (var bit = 0x80; bit != 0; bit >>= 1)`: `asr.l #1,d3` / `bne`). After the rotation the
+  test before the loop is reached from the block before it only, so a start stored there (`var n = 0`) is the value
+  it tests and counts from: `n < 8` is known, the count is the constant 7. When `i` only counts the rounds (nothing else in the loop
   reads it, and after the loop either nothing or, when the loop ends only by its test, its value `n` stored on the
   way out), a count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
   when that ends, a `swap` and a `sub.w` count the high word, so any count works). With `-O2`/`-O3` a body of one to
@@ -250,7 +257,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   first operand, stays in `d0` and needs neither a register nor its slot.
 * **Gen.cshift** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
   fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
-  pointers (custom chip registers), division by constants (shifts for powers of two, none by 1), `asl` for checked products by
+  pointers (custom chip registers), division by constants (shifts for powers of two, none by 1), 8- and 16-bit
+  operations of their size (`add.w`, `lsl.w`), `p - x` as a `sub.l` from the pointer, `asl` for checked products by
   powers of two, products by other constants as three `mulu.w` of the 16-bit halves (no call), variables in their slots
   as frame operands (`(-8,a6)`), the length of a string or array for its bounds check without a call, only the
   registers that are used are saved.
@@ -258,7 +266,9 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   `moveq #0` before loading a byte or word instead of masking it afterwards, `move.b (a3)+,(a4)+` instead of a
   move through `d0` where no way afterwards reads `d0`, `eor.b d2,(8,a2,d4.l)` instead of a load, the operation and
   a store, `add.l #2,d4` instead of a copy, the add and a copy back, `btst #7,d7` instead of a copy, an `and.l #128` and
-  the branch on it, `cmp.l a2,a5` instead of a copy of the pointer into a data register, `(a3)` instead of `(0,a3)`); the address of an access by `i + c` is
+  the branch on it, `cmp.l a2,a5` instead of a copy of the pointer into a data register, `(a3)` instead of `(0,a3)`, `moveq #0,d6` / `move.b (a5),d6` instead of a load
+  into `d0` and a copy); with `-O2`/`-O3` a `bra` to the end of a loop's round (its last few instructions with the
+  `dbra`) is a copy of that end; the address of an access by `i + c` is
   `(c + 8,a2,d4.l)` with `i` in `d4` (Prepare.cshift); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
   **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
 * **AmigaRuntime.cshift, Runtime.cshift**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
