@@ -54,6 +54,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   index is not negative and below the length (and `i < n - 1` that `i + 1 < n`: the second check goes), a while loop
   whose exit reads the variable it tests is rotated too, and a copy, an operation and a copy back is the operation.
   Unpacking Ambermoon's Floors.amb takes 9.3 instead of 10.7 million cycles.
+- Pointer code with the m68k backend (`unsafe`: `while (src < end) { *dst = *src; dst += 1; src += 1; }`): a pointer
+  that got a data register takes the address register of an integer instead (`move.b (a5)+,(a3)+`), a pointer is
+  compared where it is (`cmp.l a2,a5`), `(0,a3)` is `(a3)`, `lea` goes straight into the register that keeps the
+  address, a test of one bit is a `btst` (`btst #7,d7` instead of a copy and an `and.l #128`), and `x / 1` and `x % 1`
+  need no division. The LOB decoder of Ambermoon with a fast path through pointers unpacks Floors.amb in 8.0 instead of
+  9.3 million cycles and monster.amb in 81 instead of 118 million.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

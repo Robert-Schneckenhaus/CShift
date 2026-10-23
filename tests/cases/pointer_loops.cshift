@@ -1,0 +1,120 @@
+// Loops through pointers as in the fast path of an LZ decoder must never change a result with the 68000 backend:
+// pointers that walk with post-increment ('move.b (a5)+,(a2)+'), a compare of a pointer with a bound, a pointer
+// value in an address register (register exchange), a bit test of the header ('btst'), a division by 1 and the
+// distance between two pointers.
+// expect-stdout: pointer loops ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+int Copy(ReadOnlySlice<uint8> data, uint8[] output)
+{
+    int n = 0;
+    unsafe
+    {
+        uint8* src = data.Ptr();
+        uint8* end = src + data.Length;
+        uint8* dst = &output[0];
+        uint8* start = dst;
+        while (src < end)
+        {
+            *dst = *src;
+            dst += 1;
+            src += 1;
+        }
+        n = (int)(dst - start) * 1000 + src[-1];
+    }
+    return n;
+}
+
+// a header byte, then per bit (high bit first) a literal byte (1) or a match (0: distance and length in two bytes)
+unsafe int Decode(uint8[] input, uint8[] output)
+{
+    uint8* src = &input[0];
+    uint8* srcEnd = src + input.Length;
+    uint8* start = &output[0];
+    uint8* dst = start;
+    while (src < srcEnd)
+    {
+        int header = *src;
+        src += 1;
+        for (var n = 0; n < 8 && src < srcEnd; n += 1)
+        {
+            if ((header & 0x80) != 0)
+            {
+                *dst = *src;
+                dst += 1;
+                src += 1;
+            }
+            else
+            {
+                int first = *src;
+                uint8* from = dst - (((first << 4) & 0xff00) | src[1]);
+                if (from < start)
+                    return -1;
+                src += 2;
+                int length = (first & 0x0f) + 3;
+                for (var k = 0; k < length; k += 1)
+                {
+                    *dst = *from;
+                    dst += 1;
+                    from += 1;
+                }
+            }
+            header <<= 1;
+        }
+    }
+    return (int)(dst - start);
+}
+
+int Bits(int value)
+{
+    int count = 0;
+    for (var i = 0; i < 16; i += 1)
+    {
+        if ((value & 0x4000) != 0)
+            count += 1;
+        value <<= 1;
+    }
+    return count;
+}
+
+int Main()
+{
+    var data = new uint8[] { 1, 2, 3, 4, 5 };
+    var copied = new uint8[8];
+    Check("copy", Copy(data, copied), 5005);
+    Check("copied", copied[4], 5);
+
+    // 'a', 'b', 'c', then 5 bytes from 3 back, then 'd'
+    var input = new uint8[] { 0xe8, 97, 98, 99, 0x02, 0x03, 100 };
+    var output = new uint8[16];
+    Check("decode", Decode(input, output), 9);
+    Check("match", output[7], 98);
+    Check("literal", output[8], 100);
+    var bad = new uint8[] { 0x00, 0x00, 0x05 };
+    Check("before start", Decode(bad, output), -1);
+
+    Check("bits", Bits(0x5555), 8);
+    int one = 1;
+    for (var i = 0; i < 3; i += 1)
+    {
+        int x = 1234 - i * 2000;
+        Check("divide by 1", x / one, x);
+        Check("rest of 1", x % one, 0);
+        Check("divide by constant 1", x / 1, x);
+    }
+
+    if (failures == 0)
+        Console.WriteLine("pointer loops ok");
+    return failures;
+}

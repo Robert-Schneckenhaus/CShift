@@ -1552,10 +1552,21 @@ void GenBinary32(Gen g, IrInst inst)
             StoreResult(g, inst);
         return;
     }
-    var divisor = g.M.Vals.Get(inst.Args[1]);
     // division by a power of two (2..2^30): shifts; signed division rounds towards zero, so a negative dividend gets
-    // 2^n-1 added first
-    int pow = divisor.Kind == ValKind.Int ? PowerOfTwo(divisor.Int) : -1;
+    // 2^n-1 added first; by 1 (a difference of byte pointers, divided by sizeof(uint8)): the value itself, remainder 0
+    var divisor = g.M.Vals.Get(inst.Args[1]);
+    int64 constDivisor = 0;
+    bool isConst = ConstFactor(g, inst.Args[1], ref constDivisor);
+    if ((op == "sdiv" || op == "udiv" || op == "srem" || op == "urem") && isConst && constDivisor == 1 && bits == 32)
+    {
+        if (op == "sdiv" || op == "udiv")
+            Load32(g, inst.Args[0], "%d0");
+        else
+            g.Line("moveq\t#0,%d0");
+        StoreResult(g, inst);
+        return;
+    }
+    int pow = isConst ? PowerOfTwo(constDivisor) : -1;
     if ((op == "sdiv" || op == "srem" || op == "udiv" || op == "urem") && pow >= 1 && pow <= 30)
     {
         bool signedDiv = op == "sdiv" || op == "srem";
