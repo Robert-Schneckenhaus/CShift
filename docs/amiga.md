@@ -240,7 +240,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   (and `d2`/`d3` in a function whose code needs neither: no 64-bit arithmetic, no product but by a constant of 16 bits,
   no division) by their uses, weighted by the depth of the loops they are in (a block that leaves a loop, a panic or
   a return, is not in it); a pointer that got a data register and an integer that got an address register over the
-  same time swap them (with the values of both registers over that time); a value that got no register gets one where
+  same time swap them (with the values of both registers over that time; an integer and a pointer too, where the
+  pointer is used more: `move.b (a5)+,(a3)+` in a loop through pointers); a value that got no register gets one where
   the other values of that register are only in blocks the value lives through without being used (it is written to
   its slot where it is computed and loaded again on the ways out of those blocks), where its uses are worth more than
   the loads (a use in a block that every round of its loop passes counts twice); a comparison or an overflow flag that only decides the branch after it is a flag, not a
@@ -249,14 +250,15 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   first operand, stays in `d0` and needs neither a register nor its slot.
 * **Gen.cshift** writes the code: 16-bit fast paths for multiplication and division (`muls.w`, `divs.w`), overflow checks
   fused with their branch (`bvs`; the code of the panics at the end of the function), absolute addresses for constant
-  pointers (custom chip registers), division by constants (shifts for powers of two), `asl` for checked products by
+  pointers (custom chip registers), division by constants (shifts for powers of two, none by 1), `asl` for checked products by
   powers of two, products by other constants as three `mulu.w` of the 16-bit halves (no call), variables in their slots
   as frame operands (`(-8,a6)`), the length of a string or array for its bounds check without a call, only the
   registers that are used are saved.
 * **Peephole.cshift** simplifies the assembly (for example a register copied back right after it was copied,
   `moveq #0` before loading a byte or word instead of masking it afterwards, `move.b (a3)+,(a4)+` instead of a
   move through `d0` where no way afterwards reads `d0`, `eor.b d2,(8,a2,d4.l)` instead of a load, the operation and
-  a store, `add.l #2,d4` instead of a copy, the add and a copy back); the address of an access by `i + c` is
+  a store, `add.l #2,d4` instead of a copy, the add and a copy back, `btst #7,d7` instead of a copy, an `and.l #128` and
+  the branch on it, `cmp.l a2,a5` instead of a copy of the pointer into a data register, `(a3)` instead of `(0,a3)`); the address of an access by `i + c` is
   `(c + 8,a2,d4.l)` with `i` in `d4` (Prepare.cshift); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
   **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
 * **AmigaRuntime.cshift, Runtime.cshift**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for

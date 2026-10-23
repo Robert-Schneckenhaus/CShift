@@ -710,10 +710,10 @@ void AllocateRegisters(Gen g, IrFunc f)
             assigned[i] = pick;
         }
     }
-    // a pointer in a data register and an integer in an address register over the same time: swapped, where each fits
-    // into the other's register; the other values of the address register over the pointer's time go along, and so do
-    // those of the data register over their time (an exchange of the two registers there), if the pointers that end up
-    // in the data register are worth less than the ones that end up in the address register
+    // a pointer in a data register: the two registers exchange their values over its time (the other values of the address
+    // register then, and those of the data register over their time), where each fits into the other register and the
+    // pointers that end up in the data register (and half the integers that end up in the address register) are worth
+    // less than the ones that end up in the address register
     for (var i = 0; i < sorted.Length; i += 1)
     {
         int rd = assigned[i];
@@ -722,17 +722,11 @@ void AllocateRegisters(Gen g, IrFunc f)
         for (var ra = nData; ra < nRegs; ra += 1)
         {
             var toData = List<int>.Create();
-            bool integer = false;
             foreach (var k in byRegister[ra].ToArray())
             {
-                if (!Overlap(parts[k], parts[i]))
-                    continue;
-                toData.Add(k);
-                if (!sorted[k].Pointer)
-                    integer = true;
+                if (Overlap(parts[k], parts[i]))
+                    toData.Add(k);
             }
-            if (!integer)
-                continue;
             var toAddress = List<int>.Create();
             toAddress.Add(i);
             foreach (var k in byRegister[rd].ToArray())
@@ -755,6 +749,8 @@ void AllocateRegisters(Gen g, IrFunc f)
                     fits = false;
                 if (sorted[k].Pointer)
                     won += Worth(sorted[k]);
+                else
+                    lost += Worth(sorted[k]) / 2; // (an integer in an address register: no byte operations)
             }
             foreach (var k in toData.ToArray())
             {

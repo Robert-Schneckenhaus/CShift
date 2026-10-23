@@ -664,6 +664,87 @@ bool PeepholePass(Gen g, List<string> lines)
             }
         }
 
+        // (0,%aN) -> (%aN): no displacement (4 cycles less)
+        if (ops.Length > 0 && line.Contains("(0,%a") && !mn.StartsWith("lea") && !mn.StartsWith("pea"))
+        {
+            bool any = false;
+            var fixedOps = new string[ops.Length];
+            for (var k = 0; k < ops.Length; k += 1)
+            {
+                fixedOps[k] = ops[k];
+                if (ops[k].StartsWith("(0,%a") && ops[k].Length == 7 && ops[k].EndsWith(")"))
+                {
+                    fixedOps[k] = "(" + ops[k].Substring(3, 3).ToString() + ")";
+                    any = true;
+                }
+            }
+            if (any)
+            {
+                lines.Set(i, Instr(mn, string.Join(",", fixedOps)));
+                changed = true;
+                continue;
+            }
+        }
+
+        // move.l %a5,%d0 / cmp.l %d5,%d0 -> cmp.l %d5,%a5 (cmpa compares all 32 bits and sets the flags as cmp does; d0 not
+        // read afterwards)
+        if (mn == "move.l" && ops.Length == 2 && ops[0].StartsWith("%a") && ops[0].Length == 3 && IsDataRegister(ops[1]) &&
+            i + 1 < lines.Count())
+        {
+            var ops2 = Operands(lines.Get(i + 1));
+            if (Mnemonic(lines.Get(i + 1)) == "cmp.l" && ops2.Length == 2 && ops2[1] == ops[1] && !Mentions(ops2[0], ops[1]) &&
+                DeadOnAllPaths(lines, i + 2, ops[1]))
+            {
+                lines.Set(i, Instr("cmp.l", ops2[0] + "," + ops[0]));
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
+
+        // move.l %d4,%d0 / and.l #128,%d0 / beq -> btst #7,%d4 / beq (a single bit tested, d0 not read afterwards; btst
+        // sets Z only, so only before beq and bne)
+        if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && IsDataRegister(ops[1]) && i + 2 < lines.Count())
+        {
+            var ops2 = Operands(lines.Get(i + 1));
+            string branch = Mnemonic(lines.Get(i + 2));
+            int64 mask = 0;
+            if (Mnemonic(lines.Get(i + 1)) == "and.l" && ops2.Length == 2 && ops2[1] == ops[1] && ops2[0].StartsWith("#") &&
+                (branch == "beq" || branch == "bne" || branch == "beq.s" || branch == "bne.s") &&
+                TryAsmNumber(ops2[0].Substring(1).ToString()) is int64 m && m > 0 && (m & (m - 1)) == 0 &&
+                DeadOnAllPaths(lines, i + 2, ops[1]))
+            {
+                int bit = 0;
+                mask = m;
+                while (mask > 1)
+                {
+                    mask >>= 1;
+                    bit += 1;
+                }
+                if (bit < 32)
+                {
+                    lines.Set(i, Instr("btst", "#" + bit.ToString() + "," + ops[0]));
+                    lines.RemoveAt(i + 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        // lea (1,%a5),%a3 / move.l %a3,%a5 -> lea (1,%a5),%a5 (a3 not read afterwards)
+        if (mn == "lea" && ops.Length == 2 && ops[1].StartsWith("%a") && ops[1].Length == 3 && i + 1 < lines.Count())
+        {
+            var ops2 = Operands(lines.Get(i + 1));
+            if (Mnemonic(lines.Get(i + 1)) == "move.l" && ops2.Length == 2 && ops2[0] == ops[1] && ops2[1].StartsWith("%a") &&
+                ops2[1].Length == 3 && ops2[1] != ops[1] && ops2[1] != "%a7" && DeadOnAllPaths(lines, i + 2, ops[1]))
+            {
+                lines.Set(i, Instr("lea", ops[0] + "," + ops2[1]));
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
+
         // move.w x,(%aN) / ... / lea (2,%aN),%aN -> move.w x,(%aN)+ / ... (and loads; a walking pointer, Loops.cshift),
         // when the lines in between are in the same block and do not use aN
         if ((mn == "move.b" || mn == "move.w" || mn == "move.l") && ops.Length == 2)
