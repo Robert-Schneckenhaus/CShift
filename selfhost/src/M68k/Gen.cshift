@@ -44,6 +44,7 @@ struct Gen
     Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.cshift)
     HashSet<string> Skip;                 // instructions that are not written (folded)
     HashSet<string> NoWrap;               // plain adds that were checked ones (Facts.cshift): they do not wrap around
+    HashSet<string> NegatedIndex;         // getelementptrs whose index is subtracted ('p - x': Prepare.cshift)
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
     int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
@@ -53,7 +54,7 @@ struct Gen
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
                       Saved = List<string>.Create(), Splits = List<SplitHome>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
-                      NoWrap = HashSet<string>.Create(),
+                      NoWrap = HashSet<string>.Create(), NegatedIndex = HashSet<string>.Create(),
                       Counters = new int[3], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[2];
@@ -1542,12 +1543,23 @@ void GenBinary32(Gen g, IrInst inst)
             Load32(g, inst.Args[1], "%d1");
             src = "%d1";
         }
-        if (op == "lshr")
+        // an 8- or 16-bit value: the operation of its size (the low bits are the value, the high ones do not matter);
+        // its second operand from a data register or an immediate (a slot holds the value in its last bytes)
+        string size = bits == 8 ? ".b" : bits == 16 ? ".w" : ".l";
+        if (size != ".l" && !src.StartsWith("%d") && !src.StartsWith("#"))
+        {
+            Load32(g, inst.Args[1], "%d1");
+            src = "%d1";
+        }
+        if (size == ".l" && op == "lshr")
             Extend(g, dst, bits, false);
-        else if (op == "ashr")
+        else if (size == ".l" && op == "ashr")
             Extend(g, dst, bits, true);
+        var imm = g.M.Vals.Get(inst.Args[1]);
+        if (size != ".l" && src.StartsWith("#") && imm.Kind == ValKind.Int)
+            src = "#" + Normalize(imm.Int, bits, false).ToString();
         string m = op == "xor" ? "eor" : op == "shl" ? "lsl" : op == "lshr" ? "lsr" : op == "ashr" ? "asr" : op;
-        g.Line(m + ".l\t" + src + "," + dst);
+        g.Line(m + size + "\t" + src + "," + dst);
         if (dst == "%d0")
             StoreResult(g, inst);
         return;
@@ -2113,6 +2125,15 @@ void GenIntCast(Gen g, IrInst inst)
         StoreResult(g, inst);
         return;
     }
+    // a zero-extended byte or word into another data register: moveq #0 and a move of its size (8 cycles, not 20)
+    string target = ResultRegister(g, inst.Res);
+    string source = SourceOperand(g, inst.Args[0], fromBits);
+    if (op == "zext" && (fromBits == 8 || fromBits == 16) && target.Length > 0 && source.StartsWith("%d") && source != target)
+    {
+        g.Line("moveq\t#0," + target);
+        g.Line("move" + (fromBits == 8 ? ".b\t" : ".w\t") + source + "," + target);
+        return;
+    }
     Load32(g, inst.Args[0], "%d0"); // from 64 bits: the low half
     if (op == "sext")
         Extend(g, "%d0", fromBits, true);
@@ -2253,12 +2274,19 @@ void GenGep(Gen g, IrInst inst)
             constant += n * (int64)stride;
             continue;
         }
-        Load32(g, idx, "%d1");
+        string addOrSub = k == 1 && g.NegatedIndex.Contains(inst.Res) ? "sub.l\t" : "add.l\t";
         int ib = g.T.Bits(iv.Type);
+        string direct = SourceOperand(g, idx, 32);
+        if (stride == 1 && ib == 32 && (direct.StartsWith("%d") || direct.StartsWith("%a")) && direct != dst)
+        {
+            g.Line(addOrSub + direct + "," + dst); // (adda.l/suba.l)
+            continue;
+        }
+        Load32(g, idx, "%d1");
         if (ib < 32)
             Extend(g, "%d1", ib, true);
         ScaleD1(g, stride);
-        g.Line("add.l\t%d1," + dst);
+        g.Line(addOrSub + "%d1," + dst);
     }
     if (constant != 0)
     {

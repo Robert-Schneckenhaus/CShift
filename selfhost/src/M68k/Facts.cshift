@@ -1797,3 +1797,359 @@ void FreeTruncations(Gen g, IrFunc f)
         }
     }
 }
+
+// A bounds check of a[i] at the start of a loop's body, where i only grows in the loop: the block before the loop asks
+// whether i < 0 first. Then the way in runs a copy of the loop's test and of the check (which fails then, with the
+// same panic) and leaves to the exit otherwise; the loop itself is entered with i >= 0, so i stays so in it (the
+// facts), and the check needs only the upper bound, which the loop's test often proves ('while (i < a.Length - 1)').
+// The header must be pure, the body's start up to the check too, so the copy changes nothing but where the panic is.
+void GuardLowerBounds(Gen g, IrFunc f)
+{
+    var plain = PlainVariables(g, f);
+    if (plain.Count() == 0)
+        return;
+    int count = f.Blocks.Count();
+    for (var h = 0; h < count; h += 1)
+    {
+        var e = BlockEdges(f);
+        var idom = Dominators(f);
+        var blocks = f.Blocks.ToArray();
+        int n = blocks.Length;
+        if (h >= n || e.Preds[h].Count() != 2 || (h > 0 && idom[h] < 0))
+            continue;
+        int latch = -1;
+        int pre = -1;
+        foreach (var p in e.Preds[h].ToArray())
+        {
+            if (p != h && Dominates(idom, h, p))
+                latch = p;
+            else
+                pre = p;
+        }
+        if (latch < 0 || pre < 0 || pre == h)
+            continue;
+        var preInsts = blocks[pre].Insts;
+        if (preInsts.Count() == 0)
+            continue;
+        var preBr = preInsts.Get(preInsts.Count() - 1);
+        if (preBr.Op != "br" || preBr.Labels.Length != 1 || preBr.Labels[0] != blocks[h].Label)
+            continue;
+        // the header: pure, a branch into the body or out of the loop
+        var hinsts = blocks[h].Insts.ToArray();
+        if (hinsts.Length == 0 || HasPhis(blocks[h]))
+            continue;
+        var hbr = hinsts[hinsts.Length - 1];
+        if (hbr.Op != "br" || hbr.Labels.Length != 2 || !e.Index.ContainsKey(hbr.Labels[0]) || !e.Index.ContainsKey(hbr.Labels[1]))
+            continue;
+        bool ok = true;
+        for (var k = 0; k < hinsts.Length - 1; k += 1)
+        {
+            if (!IsPure(hinsts[k]) && !IsLengthCall(g, hinsts[k]))
+                ok = false;
+        }
+        var inLoop = NaturalLoop(e, h, latch);
+        int body = e.Index.Get(hbr.Labels[0]);
+        int exit = e.Index.Get(hbr.Labels[1]);
+        if (!ok || !inLoop[body] || inLoop[exit] || body == h || e.Preds[body].Count() != 1 || HasPhis(blocks[exit]))
+            continue;
+        // the body's start: pure up to a bounds check 'i uge n' whose failing side is a panic
+        var binsts = blocks[body].Insts.ToArray();
+        int check = -1;
+        for (var k = 0; k < binsts.Length && check < 0 && ok; k += 1)
+        {
+            var inst = binsts[k];
+            if (inst.Op == "br")
+                check = k;
+            else if (!IsPure(inst) && !IsLengthCall(g, inst))
+                ok = false;
+        }
+        if (!ok || check < 1)
+            continue;
+        var cbr = binsts[check];
+        var cmp = binsts[check - 1];
+        if (cbr.Labels.Length != 2 || cmp.Op != "icmp" || cmp.Pred != "uge" || !IsLocalNamed(g, cbr.Args[0], cmp.Res) ||
+            !e.Index.ContainsKey(cbr.Labels[0]))
+            continue;
+        int panic = e.Index.Get(cbr.Labels[0]);
+        var pinsts = blocks[panic].Insts.ToArray();
+        if (e.Preds[panic].Count() != 1 || pinsts.Length == 0 || pinsts[pinsts.Length - 1].Op != "unreachable" || HasPhis(blocks[panic]))
+            continue;
+        // i: a load of a plain variable (in the header or the body's start) that only grows in the loop
+        var defs = Dictionary<string, IrInst>.Create();
+        foreach (var b in blocks)
+        {
+            foreach (var inst in b.Insts.ToArray())
+            {
+                if (inst.Res.Length > 0)
+                    defs.Set(inst.Res, inst);
+            }
+        }
+        var iv = g.M.Vals.Get(cmp.Args[0]);
+        if (iv.Kind != ValKind.Local || !defs.ContainsKey(iv.Name))
+            continue;
+        var iload = defs.Get(iv.Name);
+        string name = AccessedVariable(g, iload, plain);
+        if (iload.Op != "load" || name.Length == 0 || !GrowsInLoop(g, f, defs, plain, inLoop, name))
+            continue;
+        // the values of the header are used only in the loop (the exit gets another way in)
+        var local = HashSet<string>.Create();
+        foreach (var inst in hinsts)
+        {
+            if (inst.Res.Length > 0)
+                local.Add(inst.Res);
+        }
+        for (var j = 0; j < n && ok; j += 1)
+        {
+            if (inLoop[j])
+                continue;
+            foreach (var inst in blocks[j].Insts.ToArray())
+            {
+                foreach (var a in inst.Args)
+                {
+                    var v = g.M.Vals.Get(a);
+                    if (v.Kind == ValKind.Local && local.Contains(v.Name))
+                        ok = false;
+                }
+            }
+        }
+        if (!ok)
+            continue;
+
+        string tag = "lb" + g.NewLabel().Substring(2).ToString();
+        var renamed = Dictionary<string, int>.Create();
+        foreach (var inst in hinsts)
+        {
+            if (inst.Res.Length > 0)
+                renamed.Set(inst.Res, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = inst.Type, Name = inst.Res + "." + tag }));
+        }
+        for (var k = 0; k < check; k += 1)
+        {
+            if (binsts[k].Res.Length > 0)
+                renamed.Set(binsts[k].Res, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = binsts[k].Type, Name = binsts[k].Res + "." + tag }));
+        }
+        foreach (var inst in pinsts)
+        {
+            if (inst.Res.Length > 0)
+                renamed.Set(inst.Res, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = inst.Type, Name = inst.Res + "." + tag }));
+        }
+        string early = blocks[pre].Label + "." + tag + "n";
+        string earlyBody = early + "b";
+        string earlyPanic = early + "p";
+        string enter = blocks[pre].Label + "." + tag + "e";
+        // the copy of the header: into the copy of the body's start, or out of the loop
+        var earlyInsts = List<IrInst>.Create();
+        for (var k = 0; k < hinsts.Length; k += 1)
+        {
+            var copy = CopyRenamed(g, hinsts[k], renamed, tag);
+            if (k == hinsts.Length - 1)
+                copy.Labels = [earlyBody, hbr.Labels[1]];
+            earlyInsts.Add(copy);
+        }
+        // the copy of the body's start: i < 0, so the check fails
+        var earlyBodyInsts = List<IrInst>.Create();
+        for (var k = 0; k < check; k += 1)
+            earlyBodyInsts.Add(CopyRenamed(g, binsts[k], renamed, tag));
+        earlyBodyInsts.Add(Branch(earlyPanic));
+        var earlyPanicInsts = List<IrInst>.Create();
+        foreach (var inst in pinsts)
+            earlyPanicInsts.Add(CopyRenamed(g, inst, renamed, tag));
+        // the block before the loop: i < 0?
+        int i32 = iload.Type;
+        string start = tag + ".i";
+        string negative = tag + ".neg";
+        preInsts.RemoveAt(preInsts.Count() - 1);
+        preInsts.Add(LoopInst("load", start, i32, iload.OpType, [iload.Args[0]]));
+        var test = LoopInst("icmp", negative, g.T.I1, i32,
+                            [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = start }),
+                             g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 0 })]);
+        test.Pred = "slt";
+        preInsts.Add(test);
+        var branch = LoopInst("br", "", g.T.Void, g.T.I1, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.I1, Name = negative })]);
+        branch.Labels = [early, enter];
+        preInsts.Add(branch);
+        var enterInsts = List<IrInst>.Create();
+        enterInsts.Add(Branch(blocks[h].Label));
+        f.Blocks.Insert(pre + 1, IrBlock { Label = enter, Insts = enterInsts });
+        f.Blocks.Add(IrBlock { Label = early, Insts = earlyInsts });
+        f.Blocks.Add(IrBlock { Label = earlyBody, Insts = earlyBodyInsts });
+        f.Blocks.Add(IrBlock { Label = earlyPanic, Insts = earlyPanicInsts });
+        if (pre < h)
+            h += 1;
+        count = f.Blocks.Count();
+    }
+}
+
+IrInst CopyRenamed(Gen g, IrInst inst, Dictionary<string, int> renamed, string tag)
+{
+    var args = new int[inst.Args.Length];
+    for (var a = 0; a < args.Length; a += 1)
+    {
+        var v = g.M.Vals.Get(inst.Args[a]);
+        args[a] = v.Kind == ValKind.Local && renamed.ContainsKey(v.Name) ? renamed.Get(v.Name) : inst.Args[a];
+    }
+    var labels = new string[inst.Labels.Length];
+    for (var a = 0; a < labels.Length; a += 1)
+        labels[a] = inst.Labels[a];
+    return IrInst { Op = inst.Op, Res = inst.Res.Length > 0 ? inst.Res + "." + tag : "", Type = inst.Type, OpType = inst.OpType,
+                    Args = args, Pred = inst.Pred, Labels = labels, Cases = inst.Cases, Callee = inst.Callee,
+                    Volatile = inst.Volatile };
+}
+
+// whether every store of the variable in the loop is a load of its own in the loop plus a constant >= 0 without a wrap
+// (a checked add, or a plain one known not to wrap)
+bool GrowsInLoop(Gen g, IrFunc f, Dictionary<string, IrInst> defs, Dictionary<string, int> plain, bool[] inLoop, string name)
+{
+    var blocks = f.Blocks.ToArray();
+    var loopDefs = HashSet<string>.Create();
+    for (var j = 0; j < inLoop.Length; j += 1)
+    {
+        if (!inLoop[j])
+            continue;
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Res.Length > 0)
+                loopDefs.Add(inst.Res);
+        }
+    }
+    bool any = false;
+    for (var j = 0; j < inLoop.Length; j += 1)
+    {
+        if (!inLoop[j])
+            continue;
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op != "store" || AccessedVariable(g, inst, plain) != name)
+                continue;
+            var v = g.M.Vals.Get(inst.Args[0]);
+            if (v.Kind != ValKind.Local || !defs.ContainsKey(v.Name))
+                return false;
+            var def = defs.Get(v.Name);
+            int baseValue = -1;
+            int64 c = 0;
+            if (def.Op == "add" && def.Args.Length == 2 && g.NoWrap.Contains(def.Res))
+                baseValue = def.Args[0];
+            else if (def.Op == "extractvalue" && def.Cases.Length == 1 && def.Cases[0] == 0 && IsLocal(g, def.Args[0]) &&
+                     defs.ContainsKey(g.M.Vals.Get(def.Args[0]).Name))
+            {
+                var call = defs.Get(g.M.Vals.Get(def.Args[0]).Name);
+                if (IsOverflowCall(g, call, "llvm.sadd.with.overflow.i32"))
+                    def = call;
+                else
+                    return false;
+                baseValue = def.Args[0];
+            }
+            else
+                return false;
+            if (!ConstInt(g, def.Args[1], ref c) || c < 0)
+                return false;
+            var bv = g.M.Vals.Get(baseValue);
+            if (bv.Kind != ValKind.Local || !defs.ContainsKey(bv.Name) || !loopDefs.Contains(bv.Name) ||
+                AccessedVariable(g, defs.Get(bv.Name), plain) != name || defs.Get(bv.Name).Op != "load")
+                return false;
+            any = true;
+        }
+    }
+    return any;
+}
+
+// ---------------------------------------------------------------------------
+// Narrow arithmetic
+// ---------------------------------------------------------------------------
+
+// 'x & 0xffff' (or 0xff) where x is made of plain add, sub, and, or, xor and shifts left by a constant: the low 16 (8)
+// bits of these depend only on the low bits of their operands, so they are computed in 16 (8) bits (add.w, lsl.w, an
+// immediate word) and the result is zero-extended. '((d0 << 4) + d0 + 87) & 0xffff' takes lsl.w, add.w, add.w #87
+// and a moveq/move.w instead of the long operations and an and.l #65535. The narrow operations are placed before the
+// and (their operands are there); the wide ones go if nothing else uses them.
+void NarrowMasks(Gen g, IrFunc f)
+{
+    var uses = LocalUses(g, f);
+    var defs = Dictionary<string, IrInst>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0)
+                defs.Set(inst.Res, inst);
+        }
+    }
+    int i32 = g.T.IntType(32);
+    for (var j = 0; j < f.Blocks.Count(); j += 1)
+    {
+        var insts = f.Blocks.Get(j).Insts;
+        for (var k = 0; k < insts.Count(); k += 1)
+        {
+            var inst = insts.Get(k);
+            int64 mask = 0;
+            if (inst.Op != "and" || inst.Type != i32 || inst.Args.Length != 2 || !ConstInt(g, inst.Args[1], ref mask) ||
+                (mask != 0xffff && mask != 0xff))
+                continue;
+            int bits = mask == 0xffff ? 16 : 8;
+            if (!Narrowable(g, defs, uses, inst.Args[0], bits, 0))
+                continue;
+            var added = List<IrInst>.Create();
+            int narrow = NarrowValue(g, defs, uses, inst.Args[0], bits, added, 0);
+            var ext = LoopInst("zext", inst.Res, i32, g.T.IntType(bits), [narrow]);
+            for (var a = 0; a < added.Count(); a += 1)
+                insts.Insert(k + a, added.Get(a));
+            k += added.Count();
+            insts.Set(k, ext);
+            defs.Set(inst.Res, ext);
+        }
+    }
+}
+
+bool NarrowOp(string op)
+{
+    return op == "add" || op == "sub" || op == "and" || op == "or" || op == "xor" || op == "shl";
+}
+
+// whether x is a plain operation of the kind (with the only use here) that the narrow computation replaces
+bool Narrowable(Gen g, Dictionary<string, IrInst> defs, Dictionary<string, int> uses, int vi, int bits, int depth)
+{
+    var v = g.M.Vals.Get(vi);
+    if (v.Kind != ValKind.Local || !defs.ContainsKey(v.Name) || uses.GetOrDefault(v.Name, 0) != 1 || depth > 8)
+        return false;
+    var def = defs.Get(v.Name);
+    if (!NarrowOp(def.Op) || def.Args.Length != 2 || def.Type != g.T.IntType(32))
+        return false;
+    int64 c = 0;
+    if (def.Op == "shl" && (!ConstInt(g, def.Args[1], ref c) || c < 1 || c >= bits))
+        return false;
+    return true;
+}
+
+// the low 'bits' bits of x as a value of that width (new instructions in 'added', in order)
+int NarrowValue(Gen g, Dictionary<string, IrInst> defs, Dictionary<string, int> uses, int vi, int bits, List<IrInst> added,
+                int depth)
+{
+    int narrowType = g.T.IntType(bits);
+    var v = g.M.Vals.Get(vi);
+    int64 c = 0;
+    if (ConstInt(g, vi, ref c))
+        return g.M.AddVal(IrVal { Kind = ValKind.Int, Type = narrowType, Int = Normalize(c, bits, false) });
+    if (v.Kind == ValKind.Local && defs.ContainsKey(v.Name))
+    {
+        var def = defs.Get(v.Name);
+        // a zero-extended value of this width, or a mask of it: the value itself
+        if (def.Op == "zext" && def.OpType == narrowType)
+            return def.Args[0];
+        int64 m = 0;
+        if (def.Op == "and" && def.Args.Length == 2 && ConstInt(g, def.Args[1], ref m) && Normalize(m, bits, false) == Normalize(-1, bits, false) &&
+            uses.GetOrDefault(v.Name, 0) == 1)
+            return NarrowValue(g, defs, uses, def.Args[0], bits, added, depth + 1);
+        if (Narrowable(g, defs, uses, vi, bits, depth))
+        {
+            int a = NarrowValue(g, defs, uses, def.Args[0], bits, added, depth + 1);
+            int b = def.Op == "shl" ? g.M.AddVal(IrVal { Kind = ValKind.Int, Type = narrowType, Int = g.M.Vals.Get(def.Args[1]).Int })
+                                    : NarrowValue(g, defs, uses, def.Args[1], bits, added, depth + 1);
+            string name = v.Name + ".w" + bits.ToString();
+            added.Add(LoopInst(def.Op, name, narrowType, narrowType, [a, b]));
+            return g.M.AddVal(IrVal { Kind = ValKind.Local, Type = narrowType, Name = name });
+        }
+    }
+    // anything else: its low bits (a trunc)
+    string t = (v.Kind == ValKind.Local ? v.Name : "c" + vi.ToString()) + ".t" + bits.ToString() + "." + added.Count().ToString();
+    added.Add(LoopInst("trunc", t, narrowType, g.T.IntType(32), [vi]));
+    return g.M.AddVal(IrVal { Kind = ValKind.Local, Type = narrowType, Name = t });
+}

@@ -60,6 +60,21 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   address, a test of one bit is a `btst` (`btst #7,d7` instead of a copy and an `and.l #128`), and `x / 1` and `x % 1`
   need no division. The LOB decoder of Ambermoon with a fast path through pointers unpacks Floors.amb in 8.0 instead of
   9.3 million cycles and monster.amb in 81 instead of 118 million.
+- Loops and narrow values with the m68k backend:
+  - a loop over `a[i]` from a start that may be negative, where `i` only grows (`while (i < a.Length - 1) { ... i += 2; }`):
+    the block before the loop asks once whether `i < 0` (then the loop's test and the check run as before, with the
+    same panic), so the loop itself needs no bounds check;
+  - `(x << 4) + x + 87 & 0xffff` (or `& 0xff`) is computed in 16 (8) bits: `lsl.w`, `add.w`, `add.w #87`, and a
+    `moveq #0` / `move.w` for the result instead of an `and.l #65535`; 8- and 16-bit add, sub, and, or, xor and shifts
+    use the operation of their size;
+  - a counted loop from a known start (`for (var n = 0; n < 8; n += 1)`) gets its count as a constant, and the start
+    is not stored when nothing reads it;
+  - `p - x` on pointers is a `sub.l x,a4` (not a negation and an add), and an index in a register is added from there;
+  - a branch to the end of a round (`bra` to `lsl.l #1,d7` / `dbra`) is a copy of that end (with `-O2`/`-O3`);
+  - a byte loaded and zero-extended goes straight into its register (`moveq #0,d6` / `move.b (a5),d6`).
+
+  Unpacking Ambermoon's monster.amb takes 72 instead of 81 million cycles on a 68000, Floors.amb 7.1 instead of 8.0
+  million; its JH crypt takes about 125 instead of 162 cycles per two bytes.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

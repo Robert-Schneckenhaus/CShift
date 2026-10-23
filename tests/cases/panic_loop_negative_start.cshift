@@ -1,0 +1,23 @@
+// A loop over a[i] from a start that may be negative, where i only grows: the block before the loop asks whether
+// i < 0 and then runs the test and the bounds check once (Facts.cshift, GuardLowerBounds), so a negative start still
+// panics on its first access, with the message of the check.
+// expect-exit: 101
+// expect-stderr: panic: array index out of range
+int Sum(int[] a, int from)
+{
+    int s = 0;
+    int i = from;
+    while (i < a.Length - 1)
+    {
+        s += a[i] + a[i + 1];
+        i += 2;
+    }
+    return s;
+}
+
+int Main()
+{
+    var a = new int[] { 1, 2, 3, 4, 5 };
+    int s = Sum(a, 0) + Sum(a, 7) + Sum(a, -9); // (from 7 the loop does not run at all)
+    return s;
+}

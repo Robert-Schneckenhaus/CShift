@@ -39,12 +39,14 @@ void PrepareFunction(Gen g, IrFunc f)
     g.Folds.Clear();
     g.Skip.Clear();
     g.NoWrap.Clear();
+    g.NegatedIndex.Clear();
     PromoteSingleStores(g, f);
     InlineCalls(g, f);
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
     SplitAggregateLoads(g, f);
     HoistFields(g, f);
     ThreadConditions(g, f); // (before the facts: the blocks of 'c1 && c2' follow the block of c2 then)
+    GuardLowerBounds(g, f); // (before ForwardLoads: its test of i then reads i's value before the loop)
     ForwardLoads(g, f);
     ShareLengths(g, f);
     FoldConstants(g, f); // (constant shift counts and masks for the ranges)
@@ -56,6 +58,7 @@ void PrepareFunction(Gen g, IrFunc f)
     FoldConstants(g, f);
     SimplifyBranches(g, f);
     ThreadConditions(g, f);
+    NarrowMasks(g, f);     // (after the facts: the checked operations that cannot overflow are plain ones then)
     FreeTruncations(g, f);
     WalkPointers(g, f);
     RotateLoops(g, f);
@@ -63,6 +66,42 @@ void PrepareFunction(Gen g, IrFunc f)
     RemoveDeadCode(g, f);
     OrderOperands(g, f);
     FoldAddresses(g, f);
+    NegateIndices(g, f);
+}
+
+// 'p - x' is 'getelementptr p, (0 - x)': where the gep is computed (not folded into an access) and nothing else uses
+// the negation, the gep takes x and subtracts it (sub.l x,aN instead of the negation and an add)
+void NegateIndices(Gen g, IrFunc f)
+{
+    var uses = LocalUses(g, f);
+    var defs = Dictionary<string, IrInst>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0)
+                defs.Set(inst.Res, inst);
+        }
+    }
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op != "getelementptr" || inst.Args.Length != 2 || g.Folds.ContainsKey(inst.Res) || g.Skip.Contains(inst.Res))
+                continue;
+            var iv = g.M.Vals.Get(inst.Args[1]);
+            if (iv.Kind != ValKind.Local || !defs.ContainsKey(iv.Name) || uses.GetOrDefault(iv.Name, 0) != 1)
+                continue;
+            var neg = defs.Get(iv.Name);
+            int64 zero = 1;
+            if (neg.Op != "sub" || neg.Args.Length != 2 || !ConstInt(g, neg.Args[0], ref zero) || zero != 0 || g.T.Bits(neg.Type) != 32 ||
+                g.M.Vals.Get(neg.Args[1]).Kind != ValKind.Local) // (a constant: the offset itself, folded)
+                continue;
+            inst.Args[1] = neg.Args[1];
+            g.NegatedIndex.Add(inst.Res);
+            g.Skip.Add(neg.Res);
+        }
+    }
 }
 
 bool ConstInt(Gen g, int vi, ref int64 value)

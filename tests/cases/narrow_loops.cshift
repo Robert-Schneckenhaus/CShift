@@ -1,0 +1,95 @@
+// Loops and arithmetic that the 68000 backend makes cheaper must never change a result:
+// - a loop from a start that may be negative, where the index only grows: the bounds check goes in the loop
+//   (GuardLowerBounds); a start past the end runs no round;
+// - '(x << 4) + x + 87 & 0xffff' computed in 16 bits, '& 0xff' in 8 (NarrowMasks), with 8- and 16-bit operations;
+// - a counted loop from a known start ('for (var n = 0; n < 8; ...)': its count is a constant);
+// - 'p - x' on pointers (a subtraction, not a negation and an add);
+// - a branch to the end of a round replaced by a copy of it (CopyLoopEnds).
+// expect-stdout: narrow loops ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+void Crypt(uint8[] data, uint16 key, int offset)
+{
+    int last = data.Length - 1;
+    int d0 = key;
+    int index = offset;
+    while (index < last)
+    {
+        data[index] = (uint8)(data[index] ^ (d0 >> 8));
+        data[index + 1] = (uint8)(data[index + 1] ^ d0);
+        d0 = ((d0 << 4) + d0 + 87) & 0xffff;
+        index += 2;
+    }
+    if (index == last)
+        data[index] = (uint8)(data[index] ^ (d0 >> 8));
+}
+
+int Bytes(int x)
+{
+    int a = ((x << 3) - x + 200) & 0xff;
+    int b = ((x ^ 0x5a5a) | (x << 2)) & 0xffff;
+    int c = (x - 70000) & 0xffff;
+    return a * 100000 + b + c * 3;
+}
+
+int Bits(int header)
+{
+    int ones = 0;
+    int pattern = 0;
+    for (var n = 0; n < 8; n += 1)
+    {
+        if ((header & 0x80) != 0)
+            ones += 1;
+        else
+            pattern += n;
+        header <<= 1;
+    }
+    return ones * 100 + pattern;
+}
+
+unsafe int Back(uint8[] data, int distance)
+{
+    uint8* end = &data[0] + data.Length;
+    uint8* from = end - distance;
+    return *from;
+}
+
+int Main()
+{
+    var d = new uint8[101];
+    for (var i = 0; i < d.Length; i += 1)
+        d[i] = (uint8)(i * 7);
+    Crypt(d, 0x1234, 0);
+    Crypt(d, 0x4321, 3);
+    Crypt(d, 0x0101, 200);
+    int sum = 0;
+    for (var i = 0; i < d.Length; i += 1)
+        sum = (sum * 31 + d[i]) & 0xfffff;
+    Check("crypt", sum, 464170);
+    Crypt(d, 0x4321, 3);
+    Crypt(d, 0x1234, 0);
+    Check("crypt back", d[50], 94);
+
+    Check("bytes 1", Bytes(1), 20906354);
+    Check("bytes -5", Bytes(-5), 16748718);
+    Check("bytes 40000", Bytes(40000), 13769866);
+    Check("bits 0xa5", Bits(0xa5), 414);
+    Check("bits 0", Bits(0), 28);
+    Check("bits 0xff", Bits(0xff), 800);
+    Check("back", Back(d, 3), d[98]);
+
+    if (failures == 0)
+        Console.WriteLine("narrow loops ok");
+    return failures;
+}

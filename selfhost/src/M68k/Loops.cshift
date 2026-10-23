@@ -641,6 +641,29 @@ void RotateLoops(Gen g, IrFunc f)
         }
         f.Blocks.Get(loop.Body).Insts.Insert(0, LoopInst("load", tag + ".i", i32, i32, [counterVal]));
         var latch = f.Blocks.Get(loop.Latch).Insts;
+        // the header is entered from the block before the loop only now: where that block stores a constant into i
+        // ('var n = 0'), the header's i is that constant (the count is n - 0, 'n < 8' is known)
+        bool hasStart = false;
+        int64 start = 0;
+        foreach (var inst in blocks[loop.Pre].Insts.ToArray())
+        {
+            if (inst.Op == "store" && AccessedVariable(g, inst, plain) == loop.Counter)
+                hasStart = ConstInt(g, inst.Args[0], ref start);
+        }
+        int64 bound = 0;
+        bool constBound = ConstInt(g, cmp.Args[1], ref bound);
+        if (hasStart)
+        {
+            ReplaceUses(g, f.Blocks.Get(h), loop.Index, g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = start }));
+            int decided = constBound ? Compare32(cmp.Pred, start, bound) : -1;
+            if (decided == 1)
+            {
+                var hinsts = f.Blocks.Get(h).Insts;
+                var into = LoopInst("br", "", g.T.Void, g.T.Void, new int[0]);
+                into.Labels = [blocks[loop.Body].Label];
+                hinsts.Set(hinsts.Count() - 1, into);
+            }
+        }
         if (countsOnly)
         {
             // i only counts the rounds: a count of the rounds left after this one instead, set by the test before the
@@ -652,13 +675,42 @@ void RotateLoops(Gen g, IrFunc f)
             f.Blocks.Get(0).Insts.Insert(0, LoopInst("alloca", count, g.T.Ptr, i32, new int[0]));
             // (before the comparison, which stays right before its branch)
             var guard = f.Blocks.Get(h).Insts;
-            guard.Insert(loop.Cmp, LoopInst("store", "", g.T.Void, i32,
-                                            [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".first" }), countVar]));
-            guard.Insert(loop.Cmp, LoopInst("sub", count + ".first", i32, i32,
-                                            [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".rounds" }),
-                                             g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 1 })]));
-            guard.Insert(loop.Cmp, LoopInst("sub", count + ".rounds", i32, i32,
-                                            [cmp.Args[1], g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = loop.Index })]));
+            int firstCount = hasStart && constBound ? g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = Normalize(bound - start - 1, 32, true) })
+                                                    : g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".first" });
+            guard.Insert(loop.Cmp, LoopInst("store", "", g.T.Void, i32, [firstCount, countVar]));
+            if (!(hasStart && constBound))
+            {
+                // (n - i - 1, or n - (i + 1) with i known: one sub)
+                bool known = hasStart && start >= -1 && start < 1000000;
+                guard.Insert(loop.Cmp, LoopInst("sub", count + ".first", i32, i32,
+                                                [known ? cmp.Args[1] : g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".rounds" }),
+                                                 g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = known ? start + 1 : 1 })]));
+                if (!known)
+                    guard.Insert(loop.Cmp, LoopInst("sub", count + ".rounds", i32, i32,
+                                                    [cmp.Args[1], g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = loop.Index })]));
+            }
+            // (with nothing reading i after the loop, the start that the block before it stores is not needed either)
+            if (counts == 1 && hasStart)
+            {
+                var preInsts = f.Blocks.Get(loop.Pre).Insts;
+                int last = -1;
+                bool readAfter = false;
+                for (var k = 0; k < preInsts.Count(); k += 1)
+                {
+                    var inst = preInsts.Get(k);
+                    if (AccessedVariable(g, inst, plain) != loop.Counter)
+                        continue;
+                    if (inst.Op == "store")
+                    {
+                        last = k;
+                        readAfter = false;
+                    }
+                    else
+                        readAfter = true;
+                }
+                if (last >= 0 && !readAfter)
+                    preInsts.RemoveAt(last);
+            }
             latch.RemoveAt(latch.Count() - 1);
             latch.RemoveAt(loop.Body == loop.Latch ? loop.Step + 1 : loop.Step); // (after the load at the start)
             latch.Add(LoopInst("load", count + ".cur", i32, i32, [countVar]));
@@ -703,6 +755,29 @@ void RotateLoops(Gen g, IrFunc f)
         br.Labels = [blocks[loop.Body].Label, blocks[loop.Exit].Label];
         latch.Add(br);
     }
+}
+
+// the outcome of 'a pred b' for 32-bit constants (1 or 0; -1: an unknown predicate)
+int Compare32(string pred, int64 a, int64 b)
+{
+    int64 sa = Normalize(a, 32, true);
+    int64 sb = Normalize(b, 32, true);
+    int64 ua = Normalize(a, 32, false);
+    int64 ub = Normalize(b, 32, false);
+    switch (pred)
+    {
+    case "slt": return sa < sb ? 1 : 0;
+    case "sle": return sa <= sb ? 1 : 0;
+    case "sgt": return sa > sb ? 1 : 0;
+    case "sge": return sa >= sb ? 1 : 0;
+    case "ult": return ua < ub ? 1 : 0;
+    case "ule": return ua <= ub ? 1 : 0;
+    case "ugt": return ua > ub ? 1 : 0;
+    case "uge": return ua >= ub ? 1 : 0;
+    case "eq": return sa == sb ? 1 : 0;
+    case "ne": return sa != sb ? 1 : 0;
+    }
+    return -1;
 }
 
 // Other loops whose header only loads variables, compares and branches ('while (bit != 0)'): the test is repeated at
