@@ -646,8 +646,10 @@ bool PeepholePass(Gen g, List<string> lines)
         }
 
         // sub.l #1,%d7 / tst.l %d7 / bne -> sub.l #1,%d7 / bne: the sub sets Z and N as the tst does (C and V differ, so
-        // only before beq, bne, bmi, bpl); a move to a data register sets them all as the tst does
-        if ((mn == "sub.l" || mn == "add.l" || mn == "move.l" || mn == "move.w" || mn == "move.b") && ops.Length == 2 &&
+        // only before beq, bne, bmi, bpl), and so do shifts and and/or/eor; a move to a data register sets them all as
+        // the tst does
+        bool setsZN = mn == "asr.l" || mn == "lsr.l" || mn == "lsl.l" || mn == "and.l" || mn == "or.l" || mn == "eor.l";
+        if ((mn == "sub.l" || mn == "add.l" || mn == "move.l" || mn == "move.w" || mn == "move.b" || setsZN) && ops.Length == 2 &&
             ops[1].StartsWith("%d") && ops[1].Length == 3 && i + 1 < lines.Count())
         {
             string next = lines.Get(i + 1);

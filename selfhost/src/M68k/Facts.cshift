@@ -367,37 +367,44 @@ int Decide(List<Fact> facts, string p, string a, string b)
     return -1;
 }
 
-// "slt" or "sle" if facts put a below b through other values (signed; up to three of them: a <= x < y <= b), ""
-// otherwise
+// "slt" or "sle" if facts put a below b through other values (signed: a <= x < y <= b), "" otherwise
 string Chain(List<Fact> facts, string a, string b)
 {
-    return ChainFrom(facts, a, b, false, 4);
-}
-
-string ChainFrom(List<Fact> facts, string a, string b, bool strict, int steps)
-{
-    if (steps == 0)
-        return "";
+    // the values reached from a, each with whether the way there was strict at some step
+    var seen = HashSet<string>.Create();
+    var work = List<string>.Create();
+    var strictness = List<bool>.Create();
+    work.Add(a);
+    strictness.Add(false);
+    seen.Add("0" + a);
     string best = "";
-    foreach (var fact in facts)
+    while (work.Count() > 0)
     {
-        string x = "";
-        bool s = false;
-        if (!Below(fact, a, ref x, ref s) || x == a)
-            continue;
-        bool st = strict || s;
-        if (x == b)
+        string at = work.Get(work.Count() - 1);
+        bool strict = strictness.Get(strictness.Count() - 1);
+        work.RemoveAt(work.Count() - 1);
+        strictness.RemoveAt(strictness.Count() - 1);
+        foreach (var fact in facts)
         {
-            if (st)
-                return "slt";
-            best = "sle";
-            continue;
+            string x = "";
+            bool s = false;
+            if (!Below(fact, at, ref x, ref s) || x == a)
+                continue;
+            bool st = strict || s;
+            if (x == b)
+            {
+                if (st)
+                    return "slt";
+                best = "sle";
+                continue;
+            }
+            string key = (st ? "1" : "0") + x;
+            if (seen.Contains(key))
+                continue;
+            seen.Add(key);
+            work.Add(x);
+            strictness.Add(st);
         }
-        string r = ChainFrom(facts, x, b, st, steps - 1);
-        if (r == "slt")
-            return r;
-        if (r.Length > 0)
-            best = r;
     }
     return best;
 }
@@ -533,6 +540,16 @@ void KnownConditions(Gen g, IrFunc f)
         }
     }
 
+    // a sum that does not wrap is above its base: 'i + 1 > i' (a fact about the values, wherever they are)
+    if (n > 0)
+    {
+        foreach (var entry in sums.Entries())
+        {
+            if (entry.Value.NoWrap && entry.Value.K >= 1 && entry.Value.Base.Length > 0)
+                own[0].Add(Fact { Pred = "slt", A = entry.Value.Base, B = entry.Key });
+        }
+    }
+
     // a branch on the phi of 'c1 || c2' (or 'c1 && c2'): on the side where the phi has not the value it gets from the
     // block that decided by c1 alone, the way came through the block of c2, and c2 had that side's value
     for (var j = 0; j < n; j += 1)
@@ -575,7 +592,7 @@ void KnownConditions(Gen g, IrFunc f)
     }
 
     var ranges = NewRanges(g, f);
-    LockstepFacts(g, f, e, idom, own, sums, ranges);
+    LockstepFacts(g, f, e, idom, own, sums, ranges, nonNegative);
     var constants = Dictionary<string, int>.Create();   // a comparison's result -> its constant
     var plainOps = List<string>.Create();               // the checked operations that cannot overflow
     int i1 = g.T.IntType(1);
@@ -628,12 +645,13 @@ void KnownConditions(Gen g, IrFunc f)
 // fact, or v = u - x with x >= 0), every value of v that a round reads is <= the one of u it reads; where v >= 0
 // then, it stays so (it only grows, and its add does not wrap). 'while (to < stop) { d[to] = d[from]; ... }' after
 // 'from = to - offset' and 'if (from < 0 || stop > d.Length) ...': both bounds checks go.
-void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dictionary<string, Offset> sums, Ranges ranges)
+void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dictionary<string, Offset> sums, Ranges ranges,
+                   HashSet<string> nonNegative)
 {
     var blocks = f.Blocks.ToArray();
     int n = blocks.Length;
     var plain = PlainVariables(g, f);
-    if (plain.Count() < 2)
+    if (plain.Count() == 0)
         return;
     var stores = new HashSet<string>[n];
     var loadOf = Dictionary<string, string>.Create();    // a load's result -> its variable
@@ -679,6 +697,49 @@ void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dicti
         var inLoop = NaturalLoop(e, h, latch);
         if (inLoop[pre])
             continue;
+        // the facts when the loop is entered
+        var entry = List<Fact>.Create();
+        for (int d = pre; d >= 0; d = d == 0 ? -1 : idom[d])
+        {
+            foreach (var fact in own[d].ToArray())
+                entry.Add(fact);
+        }
+        int end = blocks[pre].Insts.Count();
+        // variables that only grow in the loop (every store there is a load of their own in the loop + k, k >= 0, without
+        // a wrap): where their value is >= 0 when the loop is entered, every load in the loop is
+        var grows = HashSet<string>.Create();
+        var other = HashSet<string>.Create();
+        for (var j = 0; j < n; j += 1)
+        {
+            if (!inLoop[j] || stores[j].Count() == 0)
+                continue;
+            foreach (var inst in blocks[j].Insts.ToArray())
+            {
+                string name = AccessedVariable(g, inst, plain);
+                if (inst.Op != "store" || name.Length == 0)
+                    continue;
+                string key = ValueKey(g, inst.Args[0]);
+                bool step = sums.ContainsKey(key) && sums.Get(key).NoWrap && loadOf.GetOrDefault(sums.Get(key).Base, "") == name &&
+                            inLoop[loadBlock.Get(sums.Get(key).Base)];
+                if (step)
+                    grows.Add(name);
+                else
+                    other.Add(name);
+            }
+        }
+        foreach (var name in grows.ToArray())
+        {
+            if (other.Contains(name))
+                continue;
+            int vp = KnownValue(g, blocks, e, idom, stores, plain, name, pre, end);
+            if (vp < 0 || !NonNegativeKey(entry, nonNegative, sums, ValueKey(g, vp)))
+                continue;
+            foreach (var load in loadOf.Entries())
+            {
+                if (load.Value == name && inLoop[loadBlock.Get(load.Key)])
+                    own[h].Add(Fact { Pred = "sge", A = load.Key, B = "#0" });
+            }
+        }
         // the variables that a round steps once: stored once in the loop, as a load of their own + k, in a block that
         // every round passes once (it dominates the latch and is in no loop inside this one)
         var names = List<string>.Create();
@@ -724,14 +785,6 @@ void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dicti
         }
         if (names.Count() < 2)
             continue;
-        // the facts when the loop is entered
-        var entry = List<Fact>.Create();
-        for (int d = pre; d >= 0; d = d == 0 ? -1 : idom[d])
-        {
-            foreach (var fact in own[d].ToArray())
-                entry.Add(fact);
-        }
-        int end = blocks[pre].Insts.Count();
         for (var ui = 0; ui < names.Count(); ui += 1)
         {
             for (var vi = 0; vi < names.Count(); vi += 1)
@@ -774,6 +827,22 @@ void LockstepFacts(Gen g, IrFunc f, Edges e, int[] idom, List<Fact>[] own, Dicti
             }
         }
     }
+}
+
+// whether a value is >= 0: known so, a fact, or a sum (that does not wrap) of such a value and k >= 0
+bool NonNegativeKey(List<Fact> facts, HashSet<string> nonNegative, Dictionary<string, Offset> sums, string key)
+{
+    for (var guard = 0; guard < 8 && key.Length > 0; guard += 1)
+    {
+        if (key.StartsWith("#"))
+            return !key.StartsWith("#-");
+        if (IsNonNegative(nonNegative, key) || Decide(facts, "sge", key, "#0") == 1)
+            return true;
+        if (!sums.ContainsKey(key) || !sums.Get(key).NoWrap)
+            return false;
+        key = sums.Get(key).Base;
+    }
+    return false;
 }
 
 bool RoundLoad(Dictionary<string, int> loadBlock, Dictionary<string, int> loadAt, string load, bool[] inLoop, bool[] after,

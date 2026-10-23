@@ -44,6 +44,7 @@ void PrepareFunction(Gen g, IrFunc f)
     PromoteSingleStores(g, f); // (the variables of the inlined functions)
     SplitAggregateLoads(g, f);
     HoistFields(g, f);
+    ThreadConditions(g, f); // (before the facts: the blocks of 'c1 && c2' follow the block of c2 then)
     ForwardLoads(g, f);
     ShareLengths(g, f);
     FoldConstants(g, f); // (constant shift counts and masks for the ranges)
@@ -58,6 +59,7 @@ void PrepareFunction(Gen g, IrFunc f)
     FreeTruncations(g, f);
     WalkPointers(g, f);
     RotateLoops(g, f);
+    RotateWhileLoops(g, f);
     RemoveDeadCode(g, f);
     OrderOperands(g, f);
     FoldAddresses(g, f);

@@ -41,6 +41,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   stored on the way out), and a byte moved through `d0` that nothing reads afterwards is moved memory to memory:
   `move.b (a3)+,(a4)+` and `dbra` (in a jump tower with `-O2`). Unpacking 928 KB of Ambermoon data takes 149 million
   cycles (177 before).
+- Loops over the bits of a byte and their literal bytes with the m68k backend (the LOB decoder of Ambermoon:
+  `for (var bit = 0x80; bit != 0 && to < d.Length; bit >>= 1)`): the test of such a loop is repeated at the end of the
+  round (`asr.l #1,d3` / `bne`), what `c1 && c2` in a loop's test says reaches its body, a variable that only grows in
+  a loop keeps its lower bound there (a bounds check less for `data[at]`), a value that lives through a part of the
+  loop that needs its register is kept in its slot only there, and a pointer and an integer exchange their registers
+  together with the values next to them. Fixed: a loop of one block made all blocks before it count as being in a
+  loop for the register weights. Unpacking 928 KB of Ambermoon data takes 118 million cycles (149 before).
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

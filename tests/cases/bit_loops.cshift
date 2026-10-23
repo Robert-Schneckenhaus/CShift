@@ -1,0 +1,117 @@
+// Loops over the bits of a header byte as in an LZ decoder (Lob.Decompress) must never change a result with the
+// 68000 backend: 'c1 && c2' in a loop's test (ThreadConditions before the facts), a while loop whose test is repeated
+// at the end of the round (RotateWhileLoops), an index that only grows (its lower bound holds in the loop: one bounds
+// check less), and a value that lives through an inner loop in its slot and in a register elsewhere (SplitValues).
+// expect-stdout: bit loops ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+// literal bytes (bit 1) and runs of the last byte (bit 0: count in the next byte), until the output is full
+int Decode(uint8[] input, uint8[] output)
+{
+    int at = 0;
+    int to = 0;
+    while (to < output.Length)
+    {
+        if (at < 0 || at >= input.Length)
+            return -1;
+        int header = input[at];
+        at += 1;
+        for (var bit = 0x80; bit != 0 && to < output.Length; bit >>= 1)
+        {
+            if ((header & bit) != 0)
+            {
+                if (at >= input.Length)
+                    return -2;
+                output[to] = input[at];
+                at += 1;
+                to += 1;
+            }
+            else
+            {
+                if (at >= input.Length || to == 0)
+                    return -3;
+                int count = input[at];
+                at += 1;
+                uint8 last = output[to - 1];
+                int stop = to + count;
+                if (stop > output.Length)
+                    return -4;
+                while (to < stop)
+                {
+                    output[to] = last;
+                    to += 1;
+                }
+            }
+        }
+    }
+    return at * 1000 + to;
+}
+
+int Bits(int x)
+{
+    int n = 0;
+    int b = 1;
+    while (b != 0 && b <= x)
+    {
+        if ((x & b) != 0)
+            n += 1;
+        b <<= 1;
+    }
+    return n;
+}
+
+// the counter is read after its while loop
+int Halve(int x)
+{
+    int steps = 0;
+    while (x > 1)
+    {
+        x >>= 1;
+        steps += 1;
+    }
+    return steps * 100 + x;
+}
+
+int Sum(uint8[] a, int n)
+{
+    int s = 0;
+    for (var i = 0; i < n; i += 1)
+        s += a[i];
+    return s;
+}
+
+int Main()
+{
+    // 0xA0: literal, run, literal (then the output is full)
+    var output = new uint8[5];
+    var input = new uint8[] { 0xA0, 5, 3, 9 };
+    Check("decode", Decode(input, output), 4 * 1000 + 5);
+    Check("decode bytes", Sum(output, 5), 4 * 5 + 9);
+    Check("decode needs more", Decode(input, new uint8[8]), -3);
+    var full = new uint8[3];
+    Check("decode full", Decode(new uint8[] { 0xFF, 1, 2, 3, 4 }, full), 4 * 1000 + 3);
+    Check("decode run too long", Decode(new uint8[] { 0x80, 1, 9 }, new uint8[4]), -4);
+    Check("decode short", Decode(new uint8[] { 0xC0, 1 }, new uint8[4]), -2);
+    Check("decode no input", Decode(new uint8[0], new uint8[4]), -1);
+
+    Check("bits 0", Bits(0), 0);
+    Check("bits 255", Bits(255), 8);
+    Check("bits 0x40000001", Bits(0x40000001), 2);
+    Check("halve 1", Halve(1), 1);
+    Check("halve 40", Halve(40), 501);
+
+    if (failures == 0)
+        Console.WriteLine("bit loops ok");
+    return failures;
+}
