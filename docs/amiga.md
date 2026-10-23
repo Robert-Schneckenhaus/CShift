@@ -209,7 +209,9 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   `while (to < stop) { d[to] = d[from]; to += 1; from += 1; }` needs neither bounds check. A sum that does not wrap
   is above its base (`i + 1 > i`), and a variable that only grows in a loop keeps the lower bound it had when the loop
   was entered (`at >= 0` from a check before the loop, for every `data[at]` in it). The joins of `&&` and `||` are
-  left out before the facts are gathered, so the blocks of `c1 && c2` follow the block of `c2` and know it.
+  left out before the facts are gathered, so the blocks of `c1 && c2` follow the block of `c2` and know it. A bounds
+  check that passed tells `i >= 0` and `i < n`, `a < x` tells `a + 1 <= x`, and `n - 1 < n`: after
+  `while (i < data.Length - 1)` and the check of `data[i]`, `data[i + 1]` needs none.
   Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
@@ -252,8 +254,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   as frame operands (`(-8,a6)`), the length of a string or array for its bounds check without a call, only the
   registers that are used are saved.
 * **Peephole.cshift** simplifies the assembly (for example a register copied back right after it was copied,
-  `moveq #0` before loading a byte or word instead of masking it afterwards, or `move.b (a3)+,(a4)+` instead of a
-  move through `d0` where no way afterwards reads `d0`); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
+  `moveq #0` before loading a byte or word instead of masking it afterwards, `move.b (a3)+,(a4)+` instead of a
+  move through `d0` where no way afterwards reads `d0`, `eor.b d2,(8,a2,d4.l)` instead of a load, the operation and
+  a store, `add.l #2,d4` instead of a copy, the add and a copy back); the address of an access by `i + c` is
+  `(c + 8,a2,d4.l)` with `i` in `d4` (Prepare.cshift); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
   **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
 * **AmigaRuntime.cshift, Runtime.cshift**: the startup code, the library stubs, `printf`, `memcpy` & co, and the helpers for
   32/64-bit multiplication and division. `memcpy`, `memmove` and `memset` go through *jump towers*: the move is

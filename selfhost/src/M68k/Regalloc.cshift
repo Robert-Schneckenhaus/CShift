@@ -1010,11 +1010,22 @@ void SplitValues(Gen g, IrFunc f, IrBlock[] blocks, Dictionary<string, int> inde
 // before it changes d0. Such a value needs neither a register of its own nor its slot.
 List<string> ForwardedValues(Gen g, IrFunc f)
 {
+    // (the uses by instructions that are written, and by the addresses of folded accesses: 'a[i + 1]' uses i there)
     var uses = Dictionary<string, int>.Create();
+    foreach (var entry in g.Folds.Entries())
+    {
+        foreach (var part in [entry.Value.Base, entry.Value.Index])
+        {
+            if (part >= 0 && g.M.Vals.Get(part).Kind == ValKind.Local)
+                uses.Set(g.M.Vals.Get(part).Name, uses.GetOrDefault(g.M.Vals.Get(part).Name, 0) + 1);
+        }
+    }
     foreach (var b in f.Blocks.ToArray())
     {
         foreach (var inst in b.Insts.ToArray())
         {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
             foreach (var a in inst.Args)
             {
                 var v = g.M.Vals.Get(a);

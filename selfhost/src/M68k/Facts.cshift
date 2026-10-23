@@ -7,7 +7,8 @@
 //   * Known conditions: a block whose only predecessor branched on a comparison knows its outcome, and so do the blocks
 //     it dominates. The same comparison there is a constant: the bounds check of `data[index] ^= x` is made once.
 //     Facts combine through other values (a < x <= b), the side of a branch on `c1 || c2` that came through c2 knows
-//     both outcomes, and variables that a loop steps together keep their order (LockstepFacts).
+//     both outcomes, and variables that a loop steps together keep their order (LockstepFacts). A bounds check that
+//     passed ('i ult n', n >= 0) tells 'i >= 0' and 'i < n'; 'a < x' tells 'a + 1 <= x'; 'n - 1 < n'.
 //   * Checked arithmetic that cannot overflow: `i + 1` where `i < n` (signed) or `i < length` (unsigned, a length is
 //     at most int.MaxValue) is known, `i + k + 1` where `i + k < n` is known, `length - c` (a length is never
 //     negative), and operations whose operands have small ranges (`(d << 4) + d + 87` with `d = x & 0xffff`) become
@@ -535,18 +536,38 @@ void KnownConditions(Gen g, IrFunc f)
             {
                 var target = e.Index.TryGet(br.Labels[side]);
                 if (target is int t && e.Preds[t].Count() == 1)
-                    own[t].Add(Fact { Pred = side == 0 ? cmp.Pred : NegatePred(cmp.Pred), A = a, B = b });
+                    AddFact(own[t], Fact { Pred = side == 0 ? cmp.Pred : NegatePred(cmp.Pred), A = a, B = b }, nonNegative);
             }
         }
     }
 
-    // a sum that does not wrap is above its base: 'i + 1 > i' (a fact about the values, wherever they are)
+    // a sum that does not wrap is above its base: 'i + 1 > i', and a difference below it: 'n - 1 < n' (facts about the
+    // values, wherever they are)
     if (n > 0)
     {
         foreach (var entry in sums.Entries())
         {
             if (entry.Value.NoWrap && entry.Value.K >= 1 && entry.Value.Base.Length > 0)
                 own[0].Add(Fact { Pred = "slt", A = entry.Value.Base, B = entry.Key });
+        }
+        foreach (var b in blocks)
+        {
+            foreach (var inst in b.Insts.ToArray())
+            {
+                int64 c = 0;
+                if (inst.Op == "extractvalue" && inst.Cases.Length == 1 && inst.Cases[0] == 0 && IsLocal(g, inst.Args[0]))
+                {
+                    foreach (var call in b.Insts.ToArray())
+                    {
+                        if (call.Res == g.M.Vals.Get(inst.Args[0]).Name && IsOverflowCall(g, call, "llvm.ssub.with.overflow.i32") &&
+                            ConstInt(g, call.Args[1], ref c) && c >= 1 && ValueKey(g, call.Args[0]).Length > 0)
+                            own[0].Add(Fact { Pred = "slt", A = "%" + inst.Res, B = ValueKey(g, call.Args[0]) });
+                    }
+                }
+                else if (inst.Op == "sub" && inst.Args.Length == 2 && g.NoWrap.Contains(inst.Res) && ConstInt(g, inst.Args[1], ref c) &&
+                         c >= 1 && ValueKey(g, inst.Args[0]).Length > 0)
+                    own[0].Add(Fact { Pred = "slt", A = "%" + inst.Res, B = ValueKey(g, inst.Args[0]) });
+            }
         }
     }
 
@@ -583,7 +604,7 @@ void KnownConditions(Gen g, IrFunc f)
                 var target = e.Index.TryGet(br.Labels[side]);
                 if (target is int t && e.Preds[t].Count() == 1)
                 {
-                    own[t].Add(Fact { Pred = side == 0 ? cmp.Pred : NegatePred(cmp.Pred), A = a, B = b });
+                    AddFact(own[t], Fact { Pred = side == 0 ? cmp.Pred : NegatePred(cmp.Pred), A = a, B = b }, nonNegative);
                     foreach (var fact in own[bj].ToArray())
                         own[t].Add(fact);
                 }
@@ -605,6 +626,21 @@ void KnownConditions(Gen g, IrFunc f)
         {
             foreach (var fact in own[d].ToArray())
                 facts.Add(fact);
+        }
+        // 'a < x' makes 'a + 1 <= x' (the sum does not wrap)
+        int known = facts.Count();
+        for (var fi = 0; fi < known; fi += 1)
+        {
+            var fact = facts.Get(fi);
+            string below = fact.Pred == "slt" ? fact.A : fact.Pred == "sgt" ? fact.B : "";
+            string above = fact.Pred == "slt" ? fact.B : fact.Pred == "sgt" ? fact.A : "";
+            if (below.Length == 0 || below.StartsWith("#"))
+                continue;
+            foreach (var sum in sums.Entries())
+            {
+                if (sum.Value.Base == below && sum.Value.K == 1 && sum.Value.NoWrap)
+                    facts.Add(Fact { Pred = "sle", A = sum.Key, B = above });
+            }
         }
         foreach (var inst in blocks[j].Insts.ToArray())
         {
@@ -906,6 +942,30 @@ bool IsDifference(Gen g, Dictionary<string, IrInst> defs, Ranges ranges, string 
         return false;
     var x = RangeOf(g, ranges, c.Args[1]);
     return x.Known && x.Lo >= 0;
+}
+
+// A fact, and for an unsigned comparison with a value that is never negative the signed ones it makes: 'a ult n'
+// with n >= 0 is 'a >= 0' and 'a < n' (a bounds check that passed).
+void AddFact(List<Fact> to, Fact fact, HashSet<string> nonNegative)
+{
+    to.Add(fact);
+    string low = "";
+    string high = "";
+    string pred = "";
+    switch (fact.Pred)
+    {
+    case "ult": low = fact.A; high = fact.B; pred = "slt"; break;
+    case "ule": low = fact.A; high = fact.B; pred = "sle"; break;
+    case "ugt": low = fact.B; high = fact.A; pred = "slt"; break;
+    case "uge": low = fact.B; high = fact.A; pred = "sle"; break;
+    }
+    if (pred.Length == 0)
+        return;
+    bool bounded = IsNonNegative(nonNegative, high) || (high.StartsWith("#") && !high.StartsWith("#-"));
+    if (!bounded)
+        return;
+    to.Add(Fact { Pred = "sge", A = low, B = "#0" });
+    to.Add(Fact { Pred = pred, A = low, B = high });
 }
 
 // A variable that only ever gets values that are never negative is never negative: constants >= 0, values known to be
