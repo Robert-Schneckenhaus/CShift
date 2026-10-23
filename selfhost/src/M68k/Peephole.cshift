@@ -162,17 +162,35 @@ bool DeadOnAllPaths(List<string> lines, int from, string reg)
             string mn = Mnemonic(line);
             var ops = Operands(line);
             int size = mn.EndsWith(".b") ? 1 : mn.EndsWith(".w") ? 2 : 4;
+            bool scratch = reg == "%d0" || reg == "%d1" || reg == "%a0" || reg == "%a1";
             if (mn == "jsr")
             {
                 if (written == 0 && ops.Length > 0 && (Mentions(ops[0], reg) || ops[0].StartsWith("__cs68k_")))
                     return false;
-                ended = true; // the called function does not keep the scratch registers
+                if (scratch)
+                {
+                    ended = true; // the called function does not keep the scratch registers
+                    break;
+                }
+                continue; // (it keeps the others: they may be read after the call)
+            }
+            // the end of the function: d0 (and d1, a0) may be its result; the saved registers get their old values back
+            if (mn.StartsWith("movem") && ops.Length == 2 && ops[0] == "(%sp)+" && Mentions(ops[1], reg))
+            {
+                ended = true;
                 break;
             }
-            if ((mn == "rts" || mn == "jmp") && written == 0)
-                return false;
-            if (mn == "rts" || mn == "jmp")
+            if (mn == "rts")
             {
+                if (written == 0 && (reg == "%d0" || reg == "%d1" || reg == "%a0"))
+                    return false;
+                ended = true;
+                break;
+            }
+            if (mn == "jmp")
+            {
+                if (written == 0)
+                    return false;
                 ended = true;
                 break;
             }
@@ -269,6 +287,11 @@ bool IsPlainIndirect(string operand)
     return operand.Length == 5 && operand.StartsWith("(%a") && operand.EndsWith(")") && operand[3] >= '2' && operand[3] <= '5';
 }
 
+bool IsDataRegister(string operand)
+{
+    return operand.Length == 3 && operand.StartsWith("%d");
+}
+
 bool IsRegister(string operand)
 {
     return operand.Length == 3 && (operand.StartsWith("%d") || operand.StartsWith("%a"));
@@ -315,6 +338,77 @@ bool PeepholePass(Gen g, List<string> lines)
             continue;
         }
         var ops = Operands(line);
+
+        // move.l %d4,%d2 / add.l #2,%d2 / move.l %d2,%d4 -> add.l #2,%d4 (d2 not read afterwards, no flags read: the
+        // last move sets V and C otherwise)
+        if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && IsDataRegister(ops[1]) && ops[0] != ops[1] &&
+            i + 3 < lines.Count())
+        {
+            string x = ops[0];
+            string t = ops[1];
+            var mid = Operands(lines.Get(i + 1));
+            string mmn = Mnemonic(lines.Get(i + 1));
+            var back = Operands(lines.Get(i + 2));
+            bool simple = mmn == "add.l" || mmn == "sub.l" || mmn == "and.l" || mmn == "or.l" || mmn == "eor.l" ||
+                          mmn == "lsl.l" || mmn == "lsr.l" || mmn == "asr.l" || mmn == "asl.l";
+            if (simple && mid.Length == 2 && mid[1] == t && !Mentions(mid[0], t) && Mnemonic(lines.Get(i + 2)) == "move.l" &&
+                back.Length == 2 && back[0] == t && back[1] == x && !ReadsFlags(lines.Get(i + 3)) &&
+                DeadOnAllPaths(lines, i + 3, t))
+            {
+                lines.Set(i, Instr(mmn, mid[0] + "," + x));
+                lines.RemoveAt(i + 2);
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
+
+        // move.b EA,%dA / (move.l %dA,%dB /) eor.l %dX,%dB / move.b %dB,EA -> eor.b %dX,EA: a byte (word, long) changed
+        // in memory where it is (also and, or, add, sub; the low byte of the result depends on the low bytes only),
+        // where neither register is read afterwards; a 'moveq #0,%dA' before the load goes too
+        if ((mn == "move.b" || mn == "move.w" || mn == "move.l") && ops.Length == 2 && IsDataRegister(ops[1]) &&
+            !ops[0].Contains("+") && !ops[0].StartsWith("-(") && ops[0].StartsWith("(") && i + 2 < lines.Count())
+        {
+            string size = mn.Substring(mn.Length - 2).ToString();
+            string ea = ops[0];
+            string a = ops[1];
+            int at = i + 1;
+            string b = a;
+            var copy = Operands(lines.Get(at));
+            if (Mnemonic(lines.Get(at)) == "move.l" && copy.Length == 2 && copy[0] == a && IsDataRegister(copy[1]) && copy[1] != a)
+            {
+                b = copy[1];
+                at += 1;
+            }
+            if (at + 1 < lines.Count())
+            {
+                string opLine = lines.Get(at);
+                string omn = Mnemonic(opLine);
+                var oops = Operands(opLine);
+                var store = Operands(lines.Get(at + 1));
+                string kind = omn.Length > 2 ? omn.Substring(0, omn.Length - 2).ToString() : "";
+                bool arith = kind == "add" || kind == "sub";
+                bool logic = kind == "eor" || kind == "and" || kind == "or";
+                if ((arith || logic) && omn.EndsWith(".l") && oops.Length == 2 && oops[1] == b && !Mentions(oops[0], a) &&
+                    !Mentions(oops[0], b) && (IsDataRegister(oops[0]) || oops[0].StartsWith("#")) &&
+                    Mnemonic(lines.Get(at + 1)) == "move" + size && store.Length == 2 && store[0] == b && store[1] == ea &&
+                    !Mentions(ea, b) && !Mentions(ea, a) &&
+                    (logic || at + 2 >= lines.Count() || !ReadsFlags(lines.Get(at + 2))) &&
+                    DeadOnAllPaths(lines, at + 2, b) && (a == b || DeadOnAllPaths(lines, at + 2, a)))
+                {
+                    string imm = oops[0].StartsWith("#") ? (kind == "eor" ? "eori" : kind == "and" ? "andi" : kind == "or" ? "ori" :
+                                                                                 kind == "add" ? "addi" : "subi") : kind;
+                    lines.Set(i, Instr(imm + size, oops[0] + "," + ea));
+                    for (var r = at + 1; r > i; r -= 1)
+                        lines.RemoveAt(r);
+                    // (the zero before the load is not needed any more)
+                    if (i > 0 && lines.Get(i - 1) == Instr("moveq", "#0," + a) && DeadOnAllPaths(lines, i, a))
+                        lines.RemoveAt(i - 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
 
         // move.b (%a3)+,%d0 / move.b %d0,(%a4)+ -> move.b (%a3)+,(%a4)+ (memory to memory; the flags are those of the
         // value either way), where d0 is not read on any way afterwards and the two operands share no address register

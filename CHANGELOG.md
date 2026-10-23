@@ -48,6 +48,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   loop that needs its register is kept in its slot only there, and a pointer and an integer exchange their registers
   together with the values next to them. Fixed: a loop of one block made all blocks before it count as being in a
   loop for the register weights. Unpacking 928 KB of Ambermoon data takes 118 million cycles (149 before).
+- Bytes changed in memory with the m68k backend (the JH crypt of Ambermoon: `data[i] = (uint8)(data[i] ^ k)`): the
+  operation is made where the byte is (`eor.b d2,(8,a2,d4.l)`; also and, or, add, sub on bytes, words and longs), an
+  index plus a constant is part of the address (`data[i + 1]`: `(9,a2,d4.l)`), a passed bounds check tells that the
+  index is not negative and below the length (and `i < n - 1` that `i + 1 < n`: the second check goes), a while loop
+  whose exit reads the variable it tests is rotated too, and a copy, an operation and a copy back is the operation.
+  Unpacking Ambermoon's Floors.amb takes 9.3 instead of 10.7 million cycles.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

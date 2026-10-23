@@ -916,18 +916,24 @@ void FoldAddresses(Gen g, IrFunc f)
     // the geps of the function (a gep's single use may be in a later block: its operands are values that do not change)
     var geps = List<IrInst>.Create();
     var gepAt = Dictionary<string, int>.Create();
+    var adds = Dictionary<string, IrInst>.Create();   // 'x + c' (plain adds of a constant)
     foreach (var b in f.Blocks.ToArray())
     {
         foreach (var inst in b.Insts.ToArray())
         {
+            int64 c = 0;
             if (inst.Op == "getelementptr" && !g.Skip.Contains(inst.Res))
             {
                 gepAt.Set(inst.Res, geps.Count());
                 geps.Add(inst);
             }
+            else if (inst.Op == "add" && inst.Args.Length == 2 && ConstInt(g, inst.Args[1], ref c) && !g.Skip.Contains(inst.Res) &&
+                     g.T.Kind(inst.Type) == IrKind.Int && g.T.Bits(inst.Type) == 32)
+                adds.Set(inst.Res, inst);
         }
     }
     var insts = geps.ToArray();
+    var consumed = HashSet<string>.Create();
     foreach (var b in f.Blocks.ToArray())
     {
         foreach (var inst in b.Insts.ToArray())
@@ -966,6 +972,22 @@ void FoldAddresses(Gen g, IrFunc f)
                     }
                 }
             }
+            // an index 'x + c': x, and c in the offset (the address is the same, wrapping or not)
+            string folded = "";
+            if (fold.Index >= 0 && fold.IndexBits == 32 && g.M.Vals.Get(fold.Index).Kind == ValKind.Local &&
+                adds.ContainsKey(g.M.Vals.Get(fold.Index).Name))
+            {
+                var add = adds.Get(g.M.Vals.Get(fold.Index).Name);
+                int64 c = 0;
+                ConstInt(g, add.Args[1], ref c);
+                int64 off = fold.Offset + Normalize(c, 32, true) * (int64)fold.Stride;
+                if (off >= -128 && off <= 127)
+                {
+                    fold.Index = add.Args[0];
+                    fold.Offset = off;
+                    folded = add.Res;
+                }
+            }
             // the base must be a pointer value (not the address of a variable of the frame)
             var finalBase = g.M.Vals.Get(fold.Base);
             if (finalBase.Kind == ValKind.Local && allocas.Contains(finalBase.Name))
@@ -978,8 +1000,40 @@ void FoldAddresses(Gen g, IrFunc f)
             g.Skip.Add(p.Name);
             if (inner.Length > 0)
                 g.Skip.Add(inner);
+            if (folded.Length > 0)
+                consumed.Add(folded);
         }
     }
+    // the adds that only addresses used: not computed
+    if (consumed.Count() == 0)
+        return;
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local)
+                    consumed.Remove(v.Name);
+            }
+            if (inst.Callee >= 0 && g.M.Vals.Get(inst.Callee).Kind == ValKind.Local)
+                consumed.Remove(g.M.Vals.Get(inst.Callee).Name);
+        }
+    }
+    // (nor as the base or index of another folded access)
+    foreach (var entry in g.Folds.Entries())
+    {
+        foreach (var part in [entry.Value.Base, entry.Value.Index])
+        {
+            if (part >= 0 && g.M.Vals.Get(part).Kind == ValKind.Local)
+                consumed.Remove(g.M.Vals.Get(part).Name);
+        }
+    }
+    foreach (var name in consumed.ToArray())
+        g.Skip.Add(name);
 }
 
 // The parts of a getelementptr: base, constant offset and at most one variable index. False if it has more.

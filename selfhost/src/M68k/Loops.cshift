@@ -784,7 +784,7 @@ void RotateWhileLoops(Gen g, IrFunc f)
                 ok = false;
         }
         // the comparison is used by its branch only, the header's loads only in the header and where the body's start
-        // dominates (they are loaded there once more)
+        // or the exit dominates (they are loaded there once more; the exit is reached from the header and the latch)
         for (var j = 0; j < n && ok; j += 1)
         {
             foreach (var inst in blocks[j].Insts.ToArray())
@@ -795,7 +795,8 @@ void RotateWhileLoops(Gen g, IrFunc f)
                         ok = false;
                     foreach (var ld in loads.ToArray())
                     {
-                        if (IsLocalNamed(g, a, ld.Res) && j != h && !Dominates(idom, body, j))
+                        if (IsLocalNamed(g, a, ld.Res) && j != h && !Dominates(idom, body, j) &&
+                            !(Dominates(idom, exit, j) && e.Preds[exit].Count() == 1))
                             ok = false;
                     }
                 }
@@ -804,19 +805,39 @@ void RotateWhileLoops(Gen g, IrFunc f)
         if (!ok)
             continue;
         string tag = "while" + h.ToString();
-        // the body loads the header's variables once more (the header is not passed after the first round)
+        // the body and the exit load the header's variables once more (the header is not passed after the first round)
         var bodyInsts = f.Blocks.Get(body).Insts;
+        var exitInsts = f.Blocks.Get(exit).Insts;
         for (var k = loads.Count() - 1; k >= 0; k -= 1)
         {
             var ld = loads.Get(k);
             string again = tag + ".b" + k.ToString();
+            string after = tag + ".x" + k.ToString();
             int value = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ld.Type, Name = again });
+            int exitValue = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ld.Type, Name = after });
+            bool usedAfter = false;
             for (var j = 0; j < n; j += 1)
             {
-                if (j != h)
+                if (j == h)
+                    continue;
+                if (Dominates(idom, body, j))
                     ReplaceUses(g, f.Blocks.Get(j), ld.Res, value);
+                else if (Dominates(idom, exit, j))
+                {
+                    foreach (var inst in blocks[j].Insts.ToArray())
+                    {
+                        foreach (var a in inst.Args)
+                        {
+                            if (IsLocalNamed(g, a, ld.Res))
+                                usedAfter = true;
+                        }
+                    }
+                    ReplaceUses(g, f.Blocks.Get(j), ld.Res, exitValue);
+                }
             }
             bodyInsts.Insert(0, LoopInst("load", again, ld.Type, ld.OpType, [ld.Args[0]]));
+            if (usedAfter)
+                exitInsts.Insert(0, LoopInst("load", after, ld.Type, ld.OpType, [ld.Args[0]]));
         }
         // the end of the round: the loads, the comparison and the branch once more
         linsts.RemoveAt(linsts.Count() - 1);
