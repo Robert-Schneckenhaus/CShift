@@ -1,8 +1,8 @@
 // Register allocation of the 68000 backend (linear scan): the scalar values of a function (up to 32 bits: its
 // parameters as well, which the prologue then loads from their slots) and its scalar variables (allocas whose address
 // is only loaded from and stored to) get the registers d4-d7 and a2-a5 (d2 and d3 too where the code of the function
-// does not need them) for their whole lifetime, if they fit; the others stay in their stack slots. There is no spill
-// code: a value lives either in a register or in its slot, everywhere.
+// does not need them) for their whole lifetime, if they fit; the others stay in their stack slots. Apart from the values
+// split in step 4, a value lives in a register or in its slot everywhere.
 //
 //   1. Liveness: a data flow analysis over the blocks (a load of a variable uses it, a store defines it; the arguments
 //      of a phi are used at the end of the predecessor).
@@ -12,10 +12,25 @@
 //      preferred kind (address registers for pointers), else the one whose overlapping values are worth least
 //      together, if the new one is worth more. The worth: the uses and definitions, weighted by the loop nesting (8
 //      per level).
+//   4. A value without a register may still get one outside the blocks that it only lives through (SplitValues): there
+//      it is in its slot, and it is loaded again on the ways out of them.
 
 namespace CShift.M68k;
 
 using System;
+
+// A value in a register but in some blocks, where it only lives on (it is neither computed nor used there) and the
+// register holds other values: it is written to its slot as well where it is computed, and loaded into the register
+// again on the ways out of such blocks: at the end of one that only goes on to one block (without phis), else at the
+// start of the block it enters.
+struct SplitHome
+{
+    string Name;
+    string Reg;
+    HashSet<string> InSlot;       // the blocks where it is in its slot
+    HashSet<string> Reload;       // the blocks that load it at their start
+    HashSet<string> ReloadAtEnd;  // the blocks that load it before their branch
+}
 
 struct LiveInterval
 {
@@ -30,6 +45,7 @@ void AllocateRegisters(Gen g, IrFunc f)
 {
     g.Home.Clear();
     g.Saved.Clear();
+    g.Splits.Clear();
     g.Saved.Add("%d2-%d3");
     var blocks = f.Blocks.ToArray();
     int n = blocks.Length;
@@ -97,7 +113,7 @@ void AllocateRegisters(Gen g, IrFunc f)
     foreach (var name in forwarded)
         excluded.Add(name);
 
-    // ---- loop nesting (for the weights): the loops of the branches back to an earlier block ----
+    // ---- loop nesting (for the weights): the loops of the branches back to a block that dominates them ----
     var depth = new int[n];
     var succs = new List<int>[n];
     for (var j = 0; j < n; j += 1)
@@ -129,20 +145,25 @@ void AllocateRegisters(Gen g, IrFunc f)
         foreach (var t in succs[j].ToArray())
             preds[t].Add(j);
     }
+    var idom = Dominators(f);
     for (var head = 0; head < n; head += 1)
     {
-        // (all branches back to the same block: one loop)
+        // (all branches back to the same block, from blocks that it dominates: one loop)
         var inLoop = new bool[n];
         var work = List<int>.Create();
+        bool loops = false;
         foreach (var j in preds[head].ToArray())
         {
-            if (j >= head && !inLoop[j])
+            if (!Dominates(idom, head, j))
+                continue;
+            loops = true;
+            if (j != head && !inLoop[j])
             {
                 inLoop[j] = true;
-                work.Add(j);
+                work.Add(j); // (a block that branches back to itself is a loop of its own: nothing before it is in it)
             }
         }
-        if (work.Count() == 0)
+        if (!loops)
             continue;
         inLoop[head] = true;
         while (work.Count() > 0)
@@ -690,7 +711,9 @@ void AllocateRegisters(Gen g, IrFunc f)
         }
     }
     // a pointer in a data register and an integer in an address register over the same time: swapped, where each fits
-    // into the other's register (no other value there overlaps it)
+    // into the other's register; the other values of the address register over the pointer's time go along, and so do
+    // those of the data register over their time (an exchange of the two registers there), if the pointers that end up
+    // in the data register are worth less than the ones that end up in the address register
     for (var i = 0; i < sorted.Length; i += 1)
     {
         int rd = assigned[i];
@@ -698,28 +721,65 @@ void AllocateRegisters(Gen g, IrFunc f)
             continue;
         for (var ra = nData; ra < nRegs; ra += 1)
         {
-            // the one value of the address register over i's time, an integer
-            int other = -1;
-            int count = 0;
+            var toData = List<int>.Create();
+            bool integer = false;
             foreach (var k in byRegister[ra].ToArray())
             {
-                if (Overlap(parts[k], parts[i]))
+                if (!Overlap(parts[k], parts[i]))
+                    continue;
+                toData.Add(k);
+                if (!sorted[k].Pointer)
+                    integer = true;
+            }
+            if (!integer)
+                continue;
+            var toAddress = List<int>.Create();
+            toAddress.Add(i);
+            foreach (var k in byRegister[rd].ToArray())
+            {
+                if (k == i)
+                    continue;
+                foreach (var m in toData.ToArray())
                 {
-                    other = k;
-                    count += 1;
+                    if (Overlap(parts[k], parts[m]) && !toAddress.Contains(k))
+                        toAddress.Add(k);
                 }
             }
-            if (count != 1 || sorted[other].Pointer || Conflicts(parts, byRegister[rd], other, i) != 0)
+            // (what goes to the address register must not meet what stays there)
+            bool fits = true;
+            int lost = 0;
+            int won = 0;
+            foreach (var k in toAddress.ToArray())
+            {
+                if (Conflicts(parts, byRegister[ra], k, -1) - ConflictsWith(parts, toData, k) != 0)
+                    fits = false;
+                if (sorted[k].Pointer)
+                    won += Worth(sorted[k]);
+            }
+            foreach (var k in toData.ToArray())
+            {
+                if (sorted[k].Pointer)
+                    lost += Worth(sorted[k]);
+            }
+            if (!fits || lost >= won)
                 continue;
-            assigned[i] = ra;
-            assigned[other] = rd;
-            byRegister[rd].Remove(i);
-            byRegister[ra].Remove(other);
-            byRegister[ra].Add(i);
-            byRegister[rd].Add(other);
+            foreach (var k in toAddress.ToArray())
+            {
+                assigned[k] = ra;
+                byRegister[rd].Remove(k);
+                byRegister[ra].Add(k);
+            }
+            foreach (var k in toData.ToArray())
+            {
+                assigned[k] = rd;
+                byRegister[ra].Remove(k);
+                byRegister[rd].Add(k);
+            }
             break;
         }
     }
+    SplitValues(g, f, blocks, index, depth, preds, sorted, segBlock, segStart, segEnd, parts, byRegister, assigned, regs, nData,
+                allocaSize, phiDefs, phiUses);
     for (var i = 0; i < sorted.Length; i += 1)
     {
         if (assigned[i] >= 0)
@@ -743,6 +803,205 @@ void AllocateRegisters(Gen g, IrFunc f)
     }
     foreach (var name in forwarded)
         g.Home.Set(name, "%d0");
+}
+
+// The values that got no register: one where its other values are only in blocks that the value passes (neither
+// computed nor used there), if its uses elsewhere are worth more than the loads at the blocks entered from those (the
+// weights of the blocks: 1, 8, 64, 512 by their loop depth). Not for variables, parameters, phis and their values, and
+// not for the results of comparisons and checked additions (their code is fused with the branch).
+void SplitValues(Gen g, IrFunc f, IrBlock[] blocks, Dictionary<string, int> index, int[] depth, List<int>[] preds,
+                 LiveInterval[] sorted, List<int>[] segBlock, List<int>[] segStart, List<int>[] segEnd, int[][] parts,
+                 List<int>[] byRegister, int[] assigned, string[] regs, int nData, Dictionary<string, int> allocaSize,
+                 HashSet<string>[] phiDefs, List<string>[] phiUses)
+{
+    int n = blocks.Length;
+    var weightOf = new int[n];
+    for (var j = 0; j < n; j += 1)
+    {
+        int d = depth[j] > 3 ? 3 : depth[j];
+        weightOf[j] = d == 0 ? 1 : (d == 1 ? 8 : (d == 2 ? 64 : 512));
+    }
+    var succCount = new int[n];
+    var hasPhis = new bool[n];
+    for (var j = 0; j < n; j += 1)
+    {
+        foreach (var p in preds[j].ToArray())
+            succCount[p] += 1;
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Op == "phi")
+                hasPhis[j] = true;
+        }
+    }
+    // the blocks that each round of their innermost loop passes (they dominate all its branches back): their uses
+    // count twice as much as those of a block on one way of several
+    var idom = Dominators(f);
+    var always = new bool[n];
+    for (var j = 0; j < n; j += 1)
+        always[j] = depth[j] == 0;
+    for (var head = 0; head < n; head += 1)
+    {
+        var back = List<int>.Create();
+        foreach (var p in preds[head].ToArray())
+        {
+            if (Dominates(idom, head, p))
+                back.Add(p);
+        }
+        if (back.Count() == 0)
+            continue;
+        for (var j = 0; j < n; j += 1)
+        {
+            if (depth[j] != depth[head] || !Dominates(idom, head, j))
+                continue;
+            bool all = true;
+            foreach (var p in back.ToArray())
+            {
+                if (!Dominates(idom, j, p))
+                    all = false;
+            }
+            if (all)
+                always[j] = true;
+        }
+    }
+    // where each value is computed and used (with the weights of the uses)
+    var defBlock = Dictionary<string, int>.Create();
+    var defOp = Dictionary<string, IrInst>.Create();
+    var useWeight = Dictionary<string, int>.Create();    // "value|block" -> the weight of its uses there
+    var excluded = HashSet<string>.Create();
+    foreach (var p in f.Params)
+        excluded.Add(p.Name);
+    for (var j = 0; j < n; j += 1)
+    {
+        foreach (var name in phiDefs[j].ToArray())
+            excluded.Add(name);
+        foreach (var name in phiUses[j].ToArray())
+            excluded.Add(name);
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            if (inst.Res.Length > 0)
+            {
+                defBlock.Set(inst.Res, j);
+                defOp.Set(inst.Res, inst);
+            }
+            var used = List<int>.Create();
+            foreach (var a in inst.Args)
+                used.Add(a);
+            if (inst.Callee >= 0)
+                used.Add(inst.Callee);
+            if (inst.Op == "load" || inst.Op == "store")
+            {
+                var ptr = g.M.Vals.Get(inst.Args[inst.Op == "load" ? 0 : 1]);
+                var fold = ptr.Kind == ValKind.Local ? g.Folds.TryGet(ptr.Name) : null;
+                if (fold is AddrFold af)
+                {
+                    if (af.Base >= 0)
+                        used.Add(af.Base);
+                    if (af.Index >= 0)
+                        used.Add(af.Index);
+                }
+            }
+            foreach (var a in used.ToArray())
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind != ValKind.Local)
+                    continue;
+                string key = v.Name + "|" + j.ToString();
+                useWeight.Set(key, useWeight.GetOrDefault(key, 0) + weightOf[j]);
+            }
+        }
+    }
+    for (var i = 0; i < sorted.Length; i += 1)
+    {
+        string name = sorted[i].Name;
+        if (assigned[i] >= 0 || sorted[i].Weight < 2 || allocaSize.ContainsKey(name) || excluded.Contains(name) ||
+            !defBlock.ContainsKey(name))
+            continue;
+        var def = defOp.Get(name);
+        if (def.Op == "icmp" || def.Op == "extractvalue" || def.Op == "phi" || def.Op == "call")
+            continue;
+        int best = -1;
+        int bestGain = 0;
+        HashSet<string> bestSlot = HashSet<string>.Create();
+        HashSet<string> bestReload = HashSet<string>.Create();
+        HashSet<string> bestAtEnd = HashSet<string>.Create();
+        for (var r = 0; r < regs.Length; r += 1)
+        {
+            // the blocks where another value of the register overlaps this one
+            var inSlot = HashSet<int>.Create();
+            for (var s = 0; s < segBlock[i].Count(); s += 1)
+            {
+                int[] one = [segStart[i].Get(s), segEnd[i].Get(s)];
+                foreach (var k in byRegister[r].ToArray())
+                {
+                    if (Overlap(parts[k], one))
+                        inSlot.Add(segBlock[i].Get(s));
+                }
+            }
+            if (inSlot.Count() == 0 || inSlot.Contains(defBlock.Get(name)))
+                continue;
+            bool usedThere = false;
+            foreach (var b in inSlot.ToArray())
+            {
+                if (useWeight.GetOrDefault(name + "|" + b.ToString(), 0) > 0)
+                    usedThere = true;
+            }
+            if (usedThere)
+                continue;
+            // what the register saves: the uses; what it costs: the store where it is computed and the loads (at the
+            // end of a block that leaves the slot's blocks: half its weight, it is one way of several)
+            int gain = 0;
+            var reload = HashSet<int>.Create();
+            var reloadAtEnd = HashSet<int>.Create();
+            int cost = weightOf[defBlock.Get(name)];
+            for (var s = 0; s < segBlock[i].Count(); s += 1)
+            {
+                int b = segBlock[i].Get(s);
+                if (inSlot.Contains(b))
+                    continue;
+                gain += useWeight.GetOrDefault(name + "|" + b.ToString(), 0) * (always[b] ? 2 : 1);
+                foreach (var pb in preds[b].ToArray())
+                {
+                    if (!inSlot.Contains(pb))
+                        continue;
+                    if (succCount[pb] == 1 && !hasPhis[b])
+                    {
+                        if (!reloadAtEnd.Contains(pb))
+                            cost += weightOf[pb] / 2 + 1;
+                        reloadAtEnd.Add(pb);
+                    }
+                    else if (!reload.Contains(b))
+                    {
+                        reload.Add(b);
+                        cost += weightOf[b];
+                    }
+                }
+            }
+            // (an integer in an address register or a pointer in a data register: worth less)
+            if ((r >= nData) != sorted[i].Pointer)
+                gain = gain / 2;
+            if (gain - cost > bestGain)
+            {
+                best = r;
+                bestGain = gain - cost;
+                bestSlot = HashSet<string>.Create();
+                foreach (var b in inSlot.ToArray())
+                    bestSlot.Add(blocks[b].Label);
+                bestReload = HashSet<string>.Create();
+                foreach (var b in reload.ToArray())
+                    bestReload.Add(blocks[b].Label);
+                bestAtEnd = HashSet<string>.Create();
+                foreach (var b in reloadAtEnd.ToArray())
+                    bestAtEnd.Add(blocks[b].Label);
+            }
+        }
+        if (best < 0)
+            continue;
+        assigned[i] = best;
+        byRegister[best].Add(i);
+        g.Splits.Add(SplitHome { Name = name, Reg = regs[best], InSlot = bestSlot, Reload = bestReload, ReloadAtEnd = bestAtEnd });
+    }
 }
 
 // The values that go from their instruction straight to the next one in d0: the next instruction is their only use and
@@ -890,6 +1149,18 @@ bool Overlap(int[] a, int[] b)
             return true;
     }
     return false;
+}
+
+// how many of the intervals in 'others' overlap interval i
+int ConflictsWith(int[][] parts, List<int> others, int i)
+{
+    int count = 0;
+    foreach (var k in others.ToArray())
+    {
+        if (k != i && Overlap(parts[k], parts[i]))
+            count += 1;
+    }
+    return count;
 }
 
 // the intervals of a register (but 'except') that overlap interval i

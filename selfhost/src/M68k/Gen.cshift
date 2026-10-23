@@ -40,6 +40,7 @@ struct Gen
     Dictionary<string, List<IrInst>> Phis; // block -> its phis
     Dictionary<string, string> Home;       // values and allocas that live in a register for the whole function
     List<string> Saved;                   // the registers the function keeps (movem)
+    List<SplitHome> Splits;               // values in a register but in some blocks (in their slot there; Regalloc.cshift)
     Dictionary<string, AddrFold> Folds;   // pointers whose load/store uses an addressing mode (Prepare.cshift)
     HashSet<string> Skip;                 // instructions that are not written (folded)
     HashSet<string> NoWrap;               // plain adds that were checked ones (Facts.cshift): they do not wrap around
@@ -51,7 +52,7 @@ struct Gen
     {
         var g = Gen { M = m, T = m.Types, L = Layouts.Create(m.Types), Out = StringBuilder.Create(), Data = StringBuilder.Create(),
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
-                      Saved = List<string>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
+                      Saved = List<string>.Create(), Splits = List<SplitHome>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
                       NoWrap = HashSet<string>.Create(),
                       Counters = new int[3], Errors = List<string>.Create() };
         g.Fn = new string[3];
@@ -589,6 +590,19 @@ void GenFunction(Gen g, IrFunc f)
     {
         g.Fn[1] = b.Label;
         g.Label(g.BlockLabel.Get(b.Label));
+        // a value that only passes some blocks lives in its slot there; where a way comes from such a block, its
+        // register is loaded again
+        foreach (var split in g.Splits.ToArray())
+        {
+            if (split.InSlot.Contains(b.Label))
+                g.Home.Remove(split.Name);
+            else
+            {
+                g.Home.Set(split.Name, split.Reg);
+                if (split.Reload.Contains(b.Label))
+                    g.Line("move.l\t" + Frame(g.Slot.Get(split.Name)) + "," + split.Reg);
+            }
+        }
         // phis: from their staging slots (written by the predecessor before its branch)
         var phis = g.Phis.TryGet(b.Label);
         if (phis is List<IrInst> list)
@@ -621,7 +635,21 @@ void GenFunction(Gen g, IrFunc f)
                 k += 3;
                 continue;
             }
+            if (inst.Op == "br" && inst.Labels.Length == 1)
+            {
+                foreach (var split in g.Splits.ToArray())
+                {
+                    if (split.ReloadAtEnd.Contains(b.Label))
+                        g.Line("move.l\t" + Frame(g.Slot.Get(split.Name)) + "," + split.Reg);
+                }
+            }
             GenInst(g, f, inst);
+            // (a value that lives in its slot in some blocks: written there as well)
+            foreach (var split in g.Splits.ToArray())
+            {
+                if (split.Name == inst.Res && inst.Res.Length > 0)
+                    g.Line("move.l\t" + split.Reg + "," + Frame(g.Slot.Get(split.Name)));
+            }
         }
     }
     g.Label(g.Fn[2]);

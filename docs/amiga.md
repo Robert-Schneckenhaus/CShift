@@ -206,7 +206,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   values (`to < stop` and `stop <= d.Length` give `to < d.Length`), the side of a branch on `c1 || c2` (or `&&`) where
   the way came through `c2` knows both outcomes, and two variables that a loop steps by the same amount keep their
   difference: after `from = to - offset` (`offset >= 0`) and `if (from < 0 || stop > d.Length) ...`, the loop
-  `while (to < stop) { d[to] = d[from]; to += 1; from += 1; }` needs neither bounds check.
+  `while (to < stop) { d[to] = d[from]; to += 1; from += 1; }` needs neither bounds check. A sum that does not wrap
+  is above its base (`i + 1 > i`), and a variable that only grows in a loop keeps the lower bound it had when the loop
+  was entered (`at >= 0` from a check before the loop, for every `data[at]` in it). The joins of `&&` and `||` are
+  left out before the facts are gathered, so the blocks of `c1 && c2` follow the block of `c2` and know it.
   Branches on constants go to their target, unreachable blocks are removed, and a block that only one block branches
   to is joined to it. A `trunc` is no instruction (an 8- or 16-bit value is the low bits of its register), and a value
   that only one later instruction of its block uses is computed right before it (the first operand last), so that it
@@ -217,7 +220,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   `move.w d4,(a4)+` instead of a copy and a shift of `i` and `move.w d4,(8,a2,d1.l)`; so does an element whose index
   is another variable that steps with `i` (`d[from]` above), and when nothing else reads that variable in the loop and
   it is written before it is read after the loop, it is not stepped at all. The test is repeated at the end
-  of the round, which then ends in one taken branch back. When `i` only counts the rounds (nothing else in the loop
+  of the round, which then ends in one taken branch back; so is the test of another loop whose header only loads,
+  compares and branches (`for (var bit = 0x80; bit != 0; bit >>= 1)`: `asr.l #1,d3` / `bne`). When `i` only counts the rounds (nothing else in the loop
   reads it, and after the loop either nothing or, when the loop ends only by its test, its value `n` stored on the
   way out), a count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
   when that ends, a `swap` and a `sub.w` count the high word, so any count works). With `-O2`/`-O3` a body of one to
@@ -234,7 +238,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   (and `d2`/`d3` in a function whose code needs neither: no 64-bit arithmetic, no product but by a constant of 16 bits,
   no division) by their uses, weighted by the depth of the loops they are in (a block that leaves a loop, a panic or
   a return, is not in it); a pointer that got a data register and an integer that got an address register over the
-  same time swap them; a comparison or an overflow flag that only decides the branch after it is a flag, not a
+  same time swap them (with the values of both registers over that time); a value that got no register gets one where
+  the other values of that register are only in blocks the value lives through without being used (it is written to
+  its slot where it is computed and loaded again on the ways out of those blocks), where its uses are worth more than
+  the loads (a use in a block that every round of its loop passes counts twice); a comparison or an overflow flag that only decides the branch after it is a flag, not a
   register; a value loaded from a variable shares its register (also when the variable is
   written after the value's last use, in a block where it ends); a value that only the next instruction uses, as its
   first operand, stays in `d0` and needs neither a register nor its slot.
