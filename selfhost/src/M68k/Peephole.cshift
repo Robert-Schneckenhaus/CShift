@@ -21,6 +21,7 @@ string Peephole(Gen g, string text)
             break;
     }
     // jump towers for short counted loops (not with -O0/-O1: they make the code larger)
+    FuseBitShifts(lines); // (before the towers: no jmp through a table yet)
     if (g.Counters[2] >= 2)
     {
         JumpTowers(g, lines);
@@ -1120,4 +1121,237 @@ void CopyLoopEnds(List<string> lines)
         for (var k = copy.Count() - 1; k >= 0; k -= 1)
             lines.Insert(i, copy.Get(k));
     }
+}
+
+// The bits of a byte from the highest on, as in an LZ decoder ('if ((header & 0x80) != 0) ... header <<= 1'): a
+// register that is only tested by 'btst #7,R' (with a beq/bne right after it), shifted by 'lsl.l #1,R' and written
+// otherwise, where every way from a test reaches a shift (or a write, or the end) before the next test and every way
+// from a shift or a write reaches a test (or a write, or the end) before the next shift. The test becomes 'add.b R,R'
+// with bcc/bcs (the carry is the bit, and the byte is shifted at once) and the shifts go: 4 cycles instead of 20 a bit.
+// Only bit 7 of the low byte is ever read, and after each test-and-shift the low byte is the one the shift would make.
+// (No way from a test or a shift reads the X flag, which add.b sets, before an instruction sets it again; no
+// instruction right after the test's branch or a shift reads the flags.)
+void FuseBitShifts(List<string> lines)
+{
+    var labels = Dictionary<string, int>.Create();
+    for (var i = 0; i < lines.Count(); i += 1)
+    {
+        string l = lines.Get(i);
+        if (l.EndsWith(":") && !l.StartsWith("\t"))
+            labels.Set(l.Substring(0, l.Length - 1).ToString(), i);
+    }
+    for (var r = 2; r <= 7; r += 1)
+    {
+        string reg = "%d" + r.ToString();
+        // the events: 1 a test, 2 a shift, 3 a write
+        var kind = new int[lines.Count()];
+        bool ok = true;
+        int tests = 0;
+        int shifts = 0;
+        for (var i = 0; i < lines.Count() && ok; i += 1)
+        {
+            string l = lines.Get(i);
+            string mn = Mnemonic(l);
+            if (mn.Length == 0 || mn == "movem.l" || !Mentions(l, reg))
+                continue;
+            var ops = Operands(l);
+            if (mn == "btst" && ops.Length == 2 && ops[0] == "#7" && ops[1] == reg && i + 1 < lines.Count() &&
+                (Mnemonic(lines.Get(i + 1)) == "beq" || Mnemonic(lines.Get(i + 1)) == "bne" || Mnemonic(lines.Get(i + 1)) == "beq.s" ||
+                 Mnemonic(lines.Get(i + 1)) == "bne.s"))
+            {
+                kind[i] = 1;
+                tests += 1;
+            }
+            else if (mn == "lsl.l" && ops.Length == 2 && ops[0] == "#1" && ops[1] == reg)
+            {
+                kind[i] = 2;
+                shifts += 1;
+            }
+            else if ((mn == "moveq" || mn == "move.l" || mn == "move.w" || mn == "move.b") && ops.Length == 2 && ops[1] == reg &&
+                     !Mentions(ops[0], reg))
+                kind[i] = 3;
+            else
+                ok = false;
+        }
+        if (!ok || tests == 0 || shifts == 0)
+            continue;
+        for (var i = 0; i < lines.Count() && ok; i += 1)
+        {
+            if (kind[i] == 0)
+                continue;
+            int from = i + 1; // (for a test its branch: both ways)
+            // (from a test: a shift, a write or the end; from a shift or a write: a test, a write or the end)
+            int allowed = kind[i] == 1 ? 2 : 1;
+            ok = NextEvents(lines, labels, kind, from, allowed);
+            // the flags of the test's branch targets and after a shift are not read
+            if (ok && kind[i] == 1)
+            {
+                var target = Operands(lines.Get(i + 1));
+                ok = !ReadsFlagsAt(lines, labels, i + 2) && target.Length == 1 && labels.ContainsKey(target[0]) &&
+                     !ReadsFlagsAt(lines, labels, labels.Get(target[0]) + 1);
+            }
+            if (ok && kind[i] == 2)
+                ok = !ReadsFlagsAt(lines, labels, i + 1);
+            // (X differs from the test on until an instruction sets it again)
+            if (ok && kind[i] != 3)
+                ok = !ReadsXFrom(lines, labels, i + 1);
+        }
+        if (!ok)
+            continue;
+        for (var i = lines.Count() - 1; i >= 0; i -= 1)
+        {
+            if (kind[i] == 1)
+            {
+                lines.Set(i, Instr("add.b", reg + "," + reg));
+                string br = Mnemonic(lines.Get(i + 1));
+                string cond = br.StartsWith("beq") ? "bcc" : "bcs";
+                lines.Set(i + 1, Instr(cond + (br.EndsWith(".s") ? ".s" : ""), string.Join(",", Operands(lines.Get(i + 1)))));
+            }
+            else if (kind[i] == 2)
+                lines.RemoveAt(i);
+        }
+        // (the indices changed: the labels again)
+        labels.Clear();
+        for (var i = 0; i < lines.Count(); i += 1)
+        {
+            string l = lines.Get(i);
+            if (l.EndsWith(":") && !l.StartsWith("\t"))
+                labels.Set(l.Substring(0, l.Length - 1).ToString(), i);
+        }
+    }
+}
+
+// whether every way from line 'from' on reaches an event of kind 'allowed' (or a write: 3, or the end) as its next
+// event; a jmp (an unknown target) fails
+bool NextEvents(List<string> lines, Dictionary<string, int> labels, int[] kind, int from, int allowed)
+{
+    var seen = new bool[lines.Count() + 1];
+    var work = List<int>.Create();
+    work.Add(from);
+    while (work.Count() > 0)
+    {
+        int k = work.Get(work.Count() - 1);
+        work.RemoveAt(work.Count() - 1);
+        if (k >= lines.Count() || seen[k])
+            continue;
+        seen[k] = true;
+        if (kind[k] != 0)
+        {
+            if (kind[k] != allowed && kind[k] != 3)
+                return false;
+            continue;
+        }
+        string l = lines.Get(k);
+        string mn = Mnemonic(l);
+        if (mn.Length == 0)
+        {
+            work.Add(k + 1);
+            continue;
+        }
+        if (mn == "rts")
+            continue;
+        if (mn == "jmp")
+            return false;
+        bool branch = mn == "bra" || mn == "bra.s" || mn.StartsWith("db") || (mn.StartsWith("b") && (mn.Length == 3 || (mn.Length == 5 && mn.EndsWith(".s"))));
+        if (branch && mn != "btst" && mn != "bset" && mn != "bclr" && mn != "bchg")
+        {
+            var ops = Operands(l);
+            string target = ops.Length > 0 ? ops[ops.Length - 1] : "";
+            if (!labels.ContainsKey(target))
+                return false;
+            work.Add(labels.Get(target));
+            if (mn != "bra" && mn != "bra.s")
+                work.Add(k + 1);
+            continue;
+        }
+        work.Add(k + 1);
+    }
+    return true;
+}
+
+// whether the first instruction from line k on that reads or sets the flags reads them (past labels, a bra, and
+// instructions that leave the flags: lea, pea, moves to an address register, adda/suba, addq/subq to one); dbra does
+// not read them
+bool ReadsFlagsAt(List<string> lines, Dictionary<string, int> labels, int k)
+{
+    for (var guard = 0; guard < 64 && k < lines.Count(); guard += 1)
+    {
+        string line = lines.Get(k);
+        string mn = Mnemonic(line);
+        if (mn.Length == 0)
+        {
+            k += 1;
+            continue;
+        }
+        var ops = Operands(line);
+        if (mn == "bra" || mn == "bra.s")
+        {
+            if (ops.Length != 1 || !labels.ContainsKey(ops[0]))
+                return true;
+            k = labels.Get(ops[0]) + 1;
+            continue;
+        }
+        bool toAddress = ops.Length == 2 && ops[1].StartsWith("%a") && ops[1].Length == 3;
+        if (mn == "lea" || mn == "pea" || mn.StartsWith("adda") || mn.StartsWith("suba") || mn.StartsWith("movea") ||
+            (toAddress && (mn.StartsWith("move.") || mn.StartsWith("addq") || mn.StartsWith("subq") || mn.StartsWith("add.") ||
+                           mn.StartsWith("sub."))))
+        {
+            k += 1;
+            continue;
+        }
+        if (mn == "dbra" || mn == "dbra.w")
+            return false;
+        return ReadsFlags(line);
+    }
+    return true;
+}
+
+// whether a way from line 'from' on reads the X flag (addx, subx, negx, roxl/roxr, abcd, sbcd) before an instruction
+// sets it (add, sub, neg, the shifts); a jmp counts as a read
+bool ReadsXFrom(List<string> lines, Dictionary<string, int> labels, int from)
+{
+    var seen = new bool[lines.Count() + 1];
+    var work = List<int>.Create();
+    work.Add(from);
+    while (work.Count() > 0)
+    {
+        int k = work.Get(work.Count() - 1);
+        work.RemoveAt(work.Count() - 1);
+        if (k >= lines.Count() || seen[k])
+            continue;
+        seen[k] = true;
+        string mn = Mnemonic(lines.Get(k));
+        if (mn.Length == 0)
+        {
+            work.Add(k + 1);
+            continue;
+        }
+        if (mn.StartsWith("addx") || mn.StartsWith("subx") || mn.StartsWith("negx") || mn.StartsWith("rox") || mn.StartsWith("abcd") ||
+            mn.StartsWith("sbcd") || mn == "jmp")
+            return true;
+        if (mn.StartsWith("add") || mn.StartsWith("sub") || mn.StartsWith("neg") || mn.StartsWith("lsl") || mn.StartsWith("lsr") ||
+            mn.StartsWith("asl") || mn.StartsWith("asr"))
+        {
+            // (adda/suba and addq/subq to an address register leave the flags)
+            var ops = Operands(lines.Get(k));
+            if (!mn.StartsWith("adda") && !mn.StartsWith("suba") && !(ops.Length == 2 && ops[1].StartsWith("%a")))
+                continue;
+        }
+        if (mn == "rts")
+            continue;
+        bool branch = mn == "bra" || mn == "bra.s" || mn.StartsWith("db") || (mn.StartsWith("b") && (mn.Length == 3 || (mn.Length == 5 && mn.EndsWith(".s"))));
+        if (branch && mn != "btst" && mn != "bset" && mn != "bclr" && mn != "bchg")
+        {
+            var ops = Operands(lines.Get(k));
+            string target = ops.Length > 0 ? ops[ops.Length - 1] : "";
+            if (!labels.ContainsKey(target))
+                return true;
+            work.Add(labels.Get(target));
+            if (mn != "bra" && mn != "bra.s")
+                work.Add(k + 1);
+            continue;
+        }
+        work.Add(k + 1);
+    }
+    return false;
 }

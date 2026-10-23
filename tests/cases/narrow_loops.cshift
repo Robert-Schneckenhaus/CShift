@@ -4,7 +4,9 @@
 // - '(x << 4) + x + 87 & 0xffff' computed in 16 bits, '& 0xff' in 8 (NarrowMasks), with 8- and 16-bit operations;
 // - a counted loop from a known start ('for (var n = 0; n < 8; ...)': its count is a constant);
 // - 'p - x' on pointers (a subtraction, not a negation and an add);
-// - a branch to the end of a round replaced by a copy of it (CopyLoopEnds).
+// - a branch to the end of a round replaced by a copy of it (CopyLoopEnds);
+// - the bits of a byte tested by bit 7 and shifted: 'add.b d7,d7' / bcc (FuseBitShifts), also with 64-bit
+//   arithmetic (which reads the X flag that add.b sets) in the round.
 // expect-stdout: narrow loops ok
 using System;
 
@@ -58,6 +60,19 @@ int Bits(int header)
     return ones * 100 + pattern;
 }
 
+int64 Wide(int header, int64 total)
+{
+    for (var n = 0; n < 8; n += 1)
+    {
+        if ((header & 0x80) != 0)
+            total += 0x100000001;
+        else
+            total -= 3;
+        header <<= 1;
+    }
+    return total;
+}
+
 unsafe int Back(uint8[] data, int distance)
 {
     uint8* end = &data[0] + data.Length;
@@ -88,6 +103,9 @@ int Main()
     Check("bits 0", Bits(0), 28);
     Check("bits 0xff", Bits(0xff), 800);
     Check("back", Back(d, 3), d[98]);
+    int64 w = Wide(0xb6, 0xfffffff0);
+    Check("wide high", (int)(w >> 32), 5);
+    Check("wide low", (int)(w & 0xffffffff), -20);
 
     if (failures == 0)
         Console.WriteLine("narrow loops ok");
