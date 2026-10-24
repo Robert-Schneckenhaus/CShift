@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.40] - 2026-10-24
+
 ### Amiga
 - Faster counted loops with the m68k backend (`for (var i = 0; i < a.Length; i += 1)` and the like):
   - the bounds check of `a[i]` goes away where the loop condition proves it (`i` starts at a value that is not
