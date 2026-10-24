@@ -563,6 +563,7 @@ bool Dominates(int[] idom, int a, int b)
 }
 
 // The length of an array or string (__cs_len), computed once per value instead of at every bounds check:
+//   0. the length of an array made by __cs_alloc in the function is the count it was made with;
 //   1. a call that an earlier one of the same value dominates becomes that one's result (the program read the length
 //      there already);
 //   2. the calls in a loop that the value comes from outside of become one right after the value - if it is surely a
@@ -584,6 +585,21 @@ void ShareLengths(Gen g, IrFunc f)
     var depth = LoopDepth(f);
     var replaced = Dictionary<string, int>.Create();   // a call's result -> the value that replaces it
 
+    // 0. the length of a new array is the count it was allocated with (__cs_alloc writes it; it never returns null)
+    var allocated = Dictionary<string, int>.Create();   // an allocation's result -> its count
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "call" && inst.Res.Length > 0 && inst.Callee >= 0 && inst.Args.Length == 2)
+            {
+                var c = g.M.Vals.Get(inst.Callee);
+                if (c.Kind == ValKind.Global && c.Name == "__cs_alloc")
+                    allocated.Set(inst.Res, inst.Args[1]);
+            }
+        }
+    }
+
     // 1. calls dominated by an earlier call of the same value
     var keptName = List<string>.Create();   // the calls that stay: the value, where, the result
     var keptAt = List<int[]>.Create();
@@ -598,6 +614,11 @@ void ShareLengths(Gen g, IrFunc f)
             if (!IsLengthCall(g, inst))
                 continue;
             string name = g.M.Vals.Get(inst.Args[0]).Name;
+            if (allocated.ContainsKey(name) && g.M.Vals.Get(allocated.Get(name)).Type == inst.Type)
+            {
+                replaced.Set(inst.Res, allocated.Get(name));
+                continue;
+            }
             int by = -1;
             for (var i = 0; i < keptName.Count() && by < 0; i += 1)
             {
@@ -687,7 +708,14 @@ void ShareLengths(Gen g, IrFunc f)
         f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
     }
     foreach (var entry in replaced.Entries())
-        ReplaceUses(g, f, entry.Key, entry.Value);
+    {
+        // (the count of a new array may be a length that is replaced too)
+        int by = entry.Value;
+        for (var guard = 0; guard < 100 && g.M.Vals.Get(by).Kind == ValKind.Local && replaced.ContainsKey(g.M.Vals.Get(by).Name);
+             guard += 1)
+            by = replaced.Get(g.M.Vals.Get(by).Name);
+        ReplaceUses(g, f, entry.Key, by);
+    }
 }
 
 // A block that only joins the parts of '&&' or '||' - a phi of i1 and a branch on it - is left out: a predecessor
