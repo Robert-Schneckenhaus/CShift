@@ -79,6 +79,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   register that is only tested by its bit 7 and shifted left by one is tested by `add.b d7,d7` / `bcc` (the carry is
   the bit, and the byte is shifted at once), and the shifts go: 4 cycles a bit instead of 20. Unpacking Ambermoon's
   monster.amb takes 66 instead of 72 million cycles on a 68000, Floors.amb 6.8 instead of 7.1 million.
+- The arguments of an AmigaOS program: in quotes, `*` escapes as for ReadArgs (`**` is `*`, `*"` is `"`, `*N` a line
+  break, `*E` escape), so `"x**y"` is `x*y` and `"say *"hi*""` is `say "hi"` (both were taken as they stood). vamos
+  and the shell quote arguments with these characters that way. A test runs a program with such arguments under vamos.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

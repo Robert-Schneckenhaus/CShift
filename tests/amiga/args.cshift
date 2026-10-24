@@ -1,0 +1,12 @@
+// The arguments of an AmigaOS program, from its command line: split at spaces, "..." keeps spaces, and in quotes
+// * escapes as for ReadArgs (** is *, *" is ", *N a line break). vamos quotes an argument with one of these
+// characters that way: run as 'vamos amiga_args plain "two words" "x*y" "say \"hi\"" "a
+// b"' it prints each one in brackets.
+using System;
+
+int Main(string[] args)
+{
+    foreach (var a in args)
+        Console.WriteLine("[" + a.Replace("\n", "|") + "]");
+    return args.Length;
+}
