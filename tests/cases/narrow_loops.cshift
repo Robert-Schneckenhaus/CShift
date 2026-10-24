@@ -77,6 +77,56 @@ int Pairs(uint8[] a, int from)
     return i;
 }
 
+// LZ matches of (x & 15) + 3 (and (x & 31) + 5) bytes through pointers: the copy loop jumps into as many moves as the
+// longest match needs (move.b (%a3)+,(%a2)+ ... instead of a dbra per byte)
+unsafe int Matches(uint8[] d)
+{
+    uint8* start = &d[0];
+    uint8* dst = start + 40;
+    for (var x = 0; x < 64; x += 1)
+    {
+        uint8* from = dst - (((x ^ (x >> 2)) & 31) + 1);
+        int length = (x & 15) + 3;
+        for (var k = 0; k < length; k += 1)
+        {
+            *dst = *from;
+            dst += 1;
+            from += 1;
+        }
+        *dst = (uint8)x;
+        dst += 1;
+    }
+    return Sum(d) + (int)(dst - start);
+}
+
+unsafe int WideMatches(uint8[] d)
+{
+    uint8* start = &d[0];
+    uint8* dst = start + 40;
+    for (var x = 0; x < 64; x += 1)
+    {
+        uint8* from = dst - (((x ^ (x >> 2)) & 31) + 1);
+        int length = (x & 31) + 5;
+        for (var k = 0; k < length; k += 1)
+        {
+            *dst = *from;
+            dst += 1;
+            from += 1;
+        }
+        *dst = (uint8)x;
+        dst += 1;
+    }
+    return Sum(d) + (int)(dst - start);
+}
+
+int Sum(uint8[] d)
+{
+    int sum = 0;
+    for (var i = 0; i < d.Length; i += 1)
+        sum = ((sum << 5) + sum + d[i]) & 0xffffff;
+    return sum;
+}
+
 void Crypt(uint8[] data, uint16 key, int offset)
 {
     int last = data.Length - 1;
@@ -220,6 +270,11 @@ int Main()
     foreach (var x in pairs)
         psum = psum * 3 + x;
     Check("pairs written", psum, 48469);
+    var lz = new uint8[3000];
+    for (var i = 0; i < 40; i += 1)
+        lz[i] = (uint8)(i * 13 + 1);
+    Check("matches", Matches(lz), 8107690);
+    Check("matches wide", WideMatches(lz), 14259927);
 
     Check("bytes 1", Bytes(1), 20906354);
     Check("bytes -5", Bytes(-5), 16748718);

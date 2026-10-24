@@ -119,6 +119,17 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   left only through its test) is tested by the walking address (`cmp.l %a3,%a4` / `bcs`): the counter's step goes,
   the end address is computed once before the loop, and the counter's value after the loop is computed on the way
   out. Unpacking Ambermoon's Floors.amb takes 5.32 instead of 5.44 million cycles on a 68000.
+- Short copy loops with the m68k backend (`-O2`/`-O3`): a `move.b (%a3)+,(%a2)+` / `dbra` loop whose count is
+  `(x & m) + c` (an LZ match of `(first & 15) + 3` bytes) jumps into `m + c + 1` copies of the move (at most 64): 12
+  cycles a byte instead of 22, and 32 once to get there. Peephole:
+  - `and.l #65280` / `moveq #0` / `move.b EA` / `or.l` is `move.b EA` into the masked register (its low byte is 0);
+  - a zero-extended byte shifted by up to 7 and masked is shifted and masked in words (`lsl.w`, `and.w`);
+  - `move.l %d7,%d5` / `and.l #15,%d5` is `moveq #15,%d5` / `and.l %d7,%d5`;
+  - up to three operations through `d0` into another register are made there;
+  - d1 counts as a result of the function at its `rts` only when the result takes 8 bytes.
+
+  Unpacking Ambermoon's monster.amb takes 36.7 instead of 42.8 million cycles on a 68000, Floors.amb 5.19 instead of
+  5.32 million.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 - `tools/amiga/profile.py`: `--callers NAME` lists the functions that call the functions whose name contains `NAME`,
