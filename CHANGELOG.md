@@ -93,6 +93,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
   Unpacking Ambermoon's monster.amb takes 59 instead of 66 million cycles on a 68000, Floors.amb 6.6 instead of 6.8
   million.
+- More registers with the m68k backend: a function whose only divisions are by 1 or powers of two (`(int)(p - q)`
+  divides by `sizeof(uint8)`) and whose checked products are by powers of two (`8 * 18`) keeps values in `d2` and `d3`
+  too. The bits of a byte are tested with `add.b` also where the register holds other values elsewhere (that no test or
+  shift reaches), a pointer moved on in a data register is an `addq.l`/`lea` on its address register, and an operation
+  through `d0` into another register is made there. Unpacking Ambermoon's Floors.amb takes 6.5 instead of 6.6 million
+  cycles on a 68000.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

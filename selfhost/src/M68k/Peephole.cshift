@@ -832,6 +832,55 @@ bool PeepholePass(Gen g, List<string> lines)
             }
         }
 
+        // move.l %a5,%d5 / addq.l #2,%d5 / move.l %d5,%a5 -> addq.l #2,%a5 (or lea (k,%aX),%aY): a pointer moved on in a
+        // data register (d5 not read afterwards, nor the flags of the add)
+        if (mn == "move.l" && ops.Length == 2 && ops[0].StartsWith("%a") && ops[0].Length == 3 && IsDataRegister(ops[1]) &&
+            i + 2 < lines.Count())
+        {
+            string am = Mnemonic(lines.Get(i + 1));
+            var ao = Operands(lines.Get(i + 1));
+            var bo = Operands(lines.Get(i + 2));
+            if ((am == "addq.l" || am == "subq.l" || am == "add.l" || am == "sub.l") && ao.Length == 2 && ao[1] == ops[1] &&
+                ao[0].StartsWith("#") && TryAsmNumber(ao[0].Substring(1).ToString()) is int64 k && k >= -32768 && k <= 32767 &&
+                Mnemonic(lines.Get(i + 2)) == "move.l" && bo.Length == 2 && bo[0] == ops[1] && bo[1].StartsWith("%a") &&
+                bo[1].Length == 3 && bo[1] != "%a7" && DeadOnAllPaths(lines, i + 3, ops[1]) &&
+                !ReadsFlagsAt(lines, LineLabels(lines), i + 3))
+            {
+                int64 d = am.StartsWith("add") ? k : -k;
+                if (bo[1] == ops[0] && d >= 1 && d <= 8)
+                    lines.Set(i, Instr("addq.l", "#" + d.ToString() + "," + bo[1]));
+                else if (bo[1] == ops[0] && d <= -1 && d >= -8)
+                    lines.Set(i, Instr("subq.l", "#" + (-d).ToString() + "," + bo[1]));
+                else
+                    lines.Set(i, Instr("lea", "(" + d.ToString() + "," + ops[0] + ")," + bo[1]));
+                lines.RemoveAt(i + 1);
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
+
+        // move.l %d7,%d0 / and.l #15,%d0 / move.l %d0,%d5 -> move.l %d7,%d5 / and.l #15,%d5 (an operation through d0 into
+        // another data register; d0 not read afterwards)
+        if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && ops[1] == "%d0" && ops[0] != "%d0" && i + 2 < lines.Count())
+        {
+            string om = Mnemonic(lines.Get(i + 1));
+            var oo = Operands(lines.Get(i + 1));
+            var mo = Operands(lines.Get(i + 2));
+            bool simple = om == "and.l" || om == "or.l" || om == "add.l" || om == "sub.l" || om == "addq.l" || om == "subq.l" ||
+                          om == "lsl.l" || om == "lsr.l" || om == "asl.l" || om == "asr.l" || om == "eor.l";
+            if (simple && oo.Length == 2 && oo[1] == "%d0" && !Mentions(oo[0], "%d0") && Mnemonic(lines.Get(i + 2)) == "move.l" &&
+                mo.Length == 2 && mo[0] == "%d0" && IsDataRegister(mo[1]) && mo[1] != "%d0" && !Mentions(oo[0], mo[1]) &&
+                DeadOnAllPaths(lines, i + 3, "%d0") && !ReadsFlagsAt(lines, LineLabels(lines), i + 3))
+            {
+                lines.Set(i, Instr("move.l", ops[0] + "," + mo[1]));
+                lines.Set(i + 1, Instr(om, oo[0] + "," + mo[1]));
+                lines.RemoveAt(i + 2);
+                changed = true;
+                continue;
+            }
+        }
+
         // (0,%aN) -> (%aN): no displacement (4 cycles less)
         if (ops.Length > 0 && line.Contains("(0,%a") && !mn.StartsWith("lea") && !mn.StartsWith("pea"))
         {
@@ -1334,7 +1383,7 @@ void FuseBitShifts(List<string> lines)
                      !Mentions(ops[0], reg))
                 kind[i] = 3;
             else
-                ok = false;
+                kind[i] = 4; // (another value in the register: no test or shift may reach it, nor it a shift)
         }
         if (!ok || tests == 0 || shifts == 0)
             continue;
@@ -1343,8 +1392,9 @@ void FuseBitShifts(List<string> lines)
             if (kind[i] == 0)
                 continue;
             int from = i + 1; // (for a test its branch: both ways)
-            // (from a test: a shift, a write or the end; from a shift or a write: a test, a write or the end)
-            int allowed = kind[i] == 1 ? 2 : 1;
+            // (from a test: a shift, a write or the end; from a shift: a test, a write or the end; from a write or another
+            // use: anything but a shift)
+            int allowed = kind[i] == 1 ? 4 + 8 : kind[i] == 2 ? 2 + 8 : 2 + 8 + 16;
             ok = NextEvents(lines, labels, kind, from, allowed);
             // the flags of the test's branch targets and after a shift are not read
             if (ok && kind[i] == 1)
@@ -1356,7 +1406,7 @@ void FuseBitShifts(List<string> lines)
             if (ok && kind[i] == 2)
                 ok = !ReadsFlagsAt(lines, labels, i + 1);
             // (X differs from the test on until an instruction sets it again)
-            if (ok && kind[i] != 3)
+            if (ok && (kind[i] == 1 || kind[i] == 2))
                 ok = !ReadsXFrom(lines, labels, i + 1);
         }
         if (!ok)
@@ -1384,8 +1434,8 @@ void FuseBitShifts(List<string> lines)
     }
 }
 
-// whether every way from line 'from' on reaches an event of kind 'allowed' (or a write: 3, or the end) as its next
-// event; a jmp (an unknown target) fails
+// whether every way from line 'from' on reaches an event whose kind is in 'allowed' (bit 1 << kind) or the end as its
+// next event; a jmp (an unknown target) fails
 bool NextEvents(List<string> lines, Dictionary<string, int> labels, int[] kind, int from, int allowed)
 {
     var seen = new bool[lines.Count() + 1];
@@ -1400,7 +1450,7 @@ bool NextEvents(List<string> lines, Dictionary<string, int> labels, int[] kind, 
         seen[k] = true;
         if (kind[k] != 0)
         {
-            if (kind[k] != allowed && kind[k] != 3)
+            if ((allowed & (1 << kind[k])) == 0)
                 return false;
             continue;
         }
