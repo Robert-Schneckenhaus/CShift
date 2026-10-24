@@ -1025,15 +1025,26 @@ bool PeepholePass(Gen g, List<string> lines)
         }
 
         // move.w x,(%aN) / ... / lea (2,%aN),%aN -> move.w x,(%aN)+ / ... (and loads; a walking pointer, Loops.cshift),
-        // when the lines in between are in the same block and do not use aN
-        if ((mn == "move.b" || mn == "move.w" || mn == "move.l") && ops.Length == 2)
+        // when the lines in between are in the same block and do not use aN; also a run of accesses one after the other
+        // (eor.b %d3,(%a4) / eor.b %d2,(1,%a4) / lea (2,%a4),%a4 -> eor.b %d3,(%a4)+ / eor.b %d2,(%a4)+), of any
+        // operation with a size
+        int dot = mn.IndexOf('.');
+        string bare = dot > 0 ? mn.Substring(0, dot).ToString() : mn;
+        bool sized = mn.EndsWith(".b") || mn.EndsWith(".w") || mn.EndsWith(".l");
+        bool memOp = bare == "move" || bare == "eor" || bare == "add" || bare == "sub" || bare == "and" || bare == "or" ||
+                     bare == "eori" || bare == "addi" || bare == "subi" || bare == "andi" || bare == "ori" || bare == "addq" ||
+                     bare == "subq" || bare == "cmp" || bare == "tst" || bare == "clr" || bare == "not" || bare == "neg";
+        if (sized && memOp && ops.Length >= 1 && ops.Length <= 2)
         {
-            int side = IsPlainIndirect(ops[1]) ? 1 : IsPlainIndirect(ops[0]) ? 0 : -1;
+            int side = IsPlainIndirect(ops[ops.Length - 1]) ? ops.Length - 1 : IsPlainIndirect(ops[0]) ? 0 : -1;
             string reg = side >= 0 ? ops[side].Substring(1, ops[side].Length - 2).ToString() : "";
-            if (side >= 0 && !Mentions(ops[1 - side], reg))
+            if (side >= 0 && (ops.Length == 1 || !Mentions(ops[1 - side], reg)) && reg.StartsWith("%a"))
             {
-                int size = mn == "move.b" ? 1 : mn == "move.w" ? 2 : 4;
-                for (var k = i + 1; k < lines.Count() && k <= i + 8; k += 1)
+                int size = mn.EndsWith(".b") ? 1 : mn.EndsWith(".w") ? 2 : 4;
+                var run = List<int>.Create();   // the lines of the accesses after the first, and the operand they use
+                var runSide = List<int>.Create();
+                int total = size;
+                for (var k = i + 1; k < lines.Count() && k <= i + 24; k += 1)
                 {
                     string next = lines.Get(k);
                     string mn2 = Mnemonic(next);
@@ -1041,16 +1052,39 @@ bool PeepholePass(Gen g, List<string> lines)
                         mn2.StartsWith("movem"))
                         break;
                     var ops2 = Operands(next);
-                    if (mn2 == "lea" && ops2.Length == 2 && ops2[1] == reg && ops2[0] == "(" + size.ToString() + "," + reg + ")")
+                    if (mn2 == "lea" && ops2.Length == 2 && ops2[1] == reg && ops2[0] == "(" + total.ToString() + "," + reg + ")")
                     {
                         string walked = "(" + reg + ")+";
-                        lines.Set(i, Instr(mn, side == 1 ? ops[0] + "," + walked : walked + "," + ops[1]));
+                        lines.Set(i, Instr(mn, ops.Length == 1 ? walked : side == 1 ? ops[0] + "," + walked : walked + "," + ops[1]));
+                        for (var r = 0; r < run.Count(); r += 1)
+                        {
+                            int at = run.Get(r);
+                            var ro = Operands(lines.Get(at));
+                            int rs = runSide.Get(r);
+                            string rmn = Mnemonic(lines.Get(at));
+                            lines.Set(at, Instr(rmn, ro.Length == 1 ? walked : rs == 1 ? ro[0] + "," + walked : walked + "," + ro[1]));
+                        }
                         lines.RemoveAt(k);
                         changed = true;
                         break;
                     }
-                    if (Mentions(next, reg))
+                    if (!Mentions(next, reg))
+                        continue;
+                    // the next access of the run: at the offset where the last one ended, with the same kind of operation
+                    string expect = "(" + total.ToString() + "," + reg + ")";
+                    int d2 = mn2.IndexOf('.');
+                    string bare2 = d2 > 0 ? mn2.Substring(0, d2).ToString() : mn2;
+                    bool memOp2 = bare2 == "move" || bare2 == "eor" || bare2 == "add" || bare2 == "sub" || bare2 == "and" ||
+                                  bare2 == "or" || bare2 == "eori" || bare2 == "addi" || bare2 == "subi" || bare2 == "andi" ||
+                                  bare2 == "ori" || bare2 == "addq" || bare2 == "subq" || bare2 == "cmp" || bare2 == "tst" ||
+                                  bare2 == "clr" || bare2 == "not" || bare2 == "neg";
+                    int s2 = ops2.Length >= 1 && ops2[ops2.Length - 1] == expect ? ops2.Length - 1 : ops2.Length >= 1 && ops2[0] == expect ? 0 : -1;
+                    if (!memOp2 || s2 < 0 || ops2.Length > 2 || (ops2.Length == 2 && Mentions(ops2[1 - s2], reg)) ||
+                        !(mn2.EndsWith(".b") || mn2.EndsWith(".w") || mn2.EndsWith(".l")))
                         break;
+                    run.Add(k);
+                    runSide.Add(s2);
+                    total += mn2.EndsWith(".b") ? 1 : mn2.EndsWith(".w") ? 2 : 4;
                 }
             }
         }

@@ -110,6 +110,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
     return (a panic) no longer counts as a way that reads a register.
 
   Such a loop (two bytes per round) takes a third fewer instructions.
+- Walking pointers with the m68k backend in loops that step by more than 1 (`index += 2`, up to 16) and for the
+  elements after i's (`data[index + 1]`: `(1,%a4)` from the walking address), and a run of accesses one after the
+  other through it before its step becomes `(aN)+` with any operation (`eor.b %d3,(%a4)+` / `eor.b %d2,(%a4)+`
+  instead of `(8,%a2,%d4.l)` twice). Unpacking Ambermoon's Floors.amb (its JH crypt) takes 5.44 instead of 5.61
+  million cycles on a 68000.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 - `tools/amiga/profile.py`: `--callers NAME` lists the functions that call the functions whose name contains `NAME`,
