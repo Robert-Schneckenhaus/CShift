@@ -115,6 +115,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   other through it before its step becomes `(aN)+` with any operation (`eor.b %d3,(%a4)+` / `eor.b %d2,(%a4)+`
   instead of `(8,%a2,%d4.l)` twice). Unpacking Ambermoon's Floors.amb (its JH crypt) takes 5.44 instead of 5.61
   million cycles on a 68000.
+- A loop that steps by more than 1 and whose counter only counts the rounds once its addresses walk (and that is
+  left only through its test) is tested by the walking address (`cmp.l %a3,%a4` / `bcs`): the counter's step goes,
+  the end address is computed once before the loop, and the counter's value after the loop is computed on the way
+  out. Unpacking Ambermoon's Floors.amb takes 5.32 instead of 5.44 million cycles on a 68000.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 - `tools/amiga/profile.py`: `--callers NAME` lists the functions that call the functions whose name contains `NAME`,

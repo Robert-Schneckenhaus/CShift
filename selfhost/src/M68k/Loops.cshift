@@ -499,10 +499,190 @@ void WalkPointers(Gen g, IrFunc f)
         }
         foreach (var v in followers.ToArray())
             DropStep(g, f, loop, plain, v);
+        // (a loop that steps by 1 becomes a dbra loop: RotateLoops)
+        if (groups.Get(0).Index == loop.Counter && loop.StepBy > 1)
+            CountByPointer(g, f, loop, plain, tag, groups.Get(0).ElemType, counterFirst);
         // (the variables are new: the next loop sees them, and the blocks' indices stay the same)
         plain = PlainVariables(g, f);
         defBlock = DefinitionBlocks(f);
         e = BlockEdges(f);
+    }
+}
+
+// A loop that steps by more than 1 and whose counter i only counts the rounds once its element addresses walk
+// (nothing in the loop reads i but its test 'i < b' and its step): the test compares the walking address with the address of element b instead, and i's
+// step goes. Before the loop: end = first + (b - i0) * size, and the loop is entered only when i0 < b (then b - i0 is
+// at most the length of the array, and the addresses do not wrap). On the way out through the test, a block of its
+// own stores i = b + (address - end) / size (the first i >= b); when the loop is not entered, i keeps i0.
+void CountByPointer(Gen g, IrFunc f, CountedLoop loop, Dictionary<string, int> plain, string tag, int elemType, int i0)
+{
+    var blocks = f.Blocks.ToArray();
+    var header = blocks[loop.Header].Insts;
+    var live = LiveInsts(g, blocks[loop.Header]);
+    var cmp = header.Get(loop.Cmp);
+    int stride = g.L.Stride(elemType);
+    int shift = 0;
+    while ((1 << shift) < stride)
+        shift += 1;
+    if (cmp.Pred != "slt" || (1 << shift) != stride || HasPhis(blocks[loop.Exit]) || live.Count() != 3)
+        return;
+    // the loop is left only through its test (i is stored on that way out only): every other block of it leads into
+    // the loop or to a panic
+    var e = BlockEdges(f);
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        if (!loop.InLoop[j] || j == loop.Header)
+            continue;
+        foreach (var t in e.Succs[j].ToArray())
+        {
+            var ti = blocks[t].Insts;
+            if (!loop.InLoop[t] && (ti.Count() == 0 || ti.Get(ti.Count() - 1).Op != "unreachable"))
+                return;
+        }
+    }
+    // the uses of i's value: the test, the step (an add stored into i in the latch), and adds 'i + K' that nothing uses
+    // any more (their addresses walk)
+    var uses = Dictionary<string, int>.Create();
+    foreach (var b in f.Blocks.ToArray())
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue; // (not written: a check that the facts decided)
+            foreach (var a in inst.Args)
+            {
+                var v = g.M.Vals.Get(a);
+                if (v.Kind == ValKind.Local)
+                    uses.Set(v.Name, uses.GetOrDefault(v.Name, 0) + 1);
+            }
+        }
+    }
+    var drop = List<string>.Create();   // the instructions that go (by result), i's step store found separately
+    string stepAdd = "";
+    int stepStore = -1;
+    var latch = blocks[loop.Latch].Insts;
+    for (var k = 0; k < latch.Count(); k += 1)
+    {
+        var inst = latch.Get(k);
+        if (inst.Op == "store" && AccessedVariable(g, inst, plain) == loop.Counter)
+        {
+            stepStore = k;
+            stepAdd = g.M.Vals.Get(inst.Args[0]).Name;
+        }
+    }
+    if (stepStore < 0)
+        return;
+    int counted = 0;
+    bool usedAfter = false;   // i's value read after the loop (where the way out leads)
+    var idom = Dominators(f);
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
+                continue;
+            // (no other load of i in the loop)
+            if (loop.InLoop[j] && inst.Op == "load" && AccessedVariable(g, inst, plain) == loop.Counter && inst.Res != loop.Index)
+                return;
+            bool readsIndex = false;
+            foreach (var a in inst.Args)
+                readsIndex = readsIndex || IsLocalNamed(g, a, loop.Index);
+            if (!readsIndex)
+                continue;
+            if (j == loop.Header && k == loop.Cmp)
+                counted += 1;
+            else if (!loop.InLoop[j] && (j == loop.Exit || Dominates(idom, loop.Exit, j)))
+            {
+                counted += 1;
+                usedAfter = true;
+            }
+            else if (inst.Res == stepAdd && inst.Op == "add" && uses.GetOrDefault(inst.Res, 0) == 1)
+            {
+                counted += 1;
+                drop.Add(inst.Res);
+            }
+            else if (inst.Op == "add" && inst.Res.Length > 0 && uses.GetOrDefault(inst.Res, 0) == 0)
+            {
+                counted += 1;
+                drop.Add(inst.Res);
+            }
+            else
+                return;
+        }
+    }
+    if (counted != uses.GetOrDefault(loop.Index, 0))
+        return;
+    int i32 = g.T.I32;
+    int ptr = g.T.Ptr;
+    int bound = cmp.Args[1];
+    int variable = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = tag + ".0" });
+    int first = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = tag + ".0.first" });
+    // before the loop: the end address and the test whether the loop runs at all
+    var pre = blocks[loop.Pre].Insts;
+    var preBranch = pre.Get(pre.Count() - 1);
+    pre.RemoveAt(pre.Count() - 1);
+    pre.Add(LoopInst("sub", tag + ".rounds", i32, i32, [bound, i0]));
+    pre.Add(LoopInst("getelementptr", tag + ".end", ptr, elemType,
+                     [first, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = tag + ".rounds" })]));
+    var enter = LoopInst("icmp", tag + ".enter", g.T.I1, i32, [i0, bound]);
+    enter.Pred = "slt";
+    pre.Add(enter);
+    var toLoop = LoopInst("br", "", g.T.Void, g.T.I1, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.I1, Name = tag + ".enter" })]);
+    toLoop.Labels = [blocks[loop.Header].Label, blocks[loop.Exit].Label];
+    pre.Add(toLoop);
+    int end = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = tag + ".end" });
+    // the test: the walking address against the end
+    header.Set(live.Get(0), LoopInst("load", tag + ".at", ptr, ptr, [variable]));
+    var test = LoopInst("icmp", cmp.Res, cmp.Type, ptr, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = tag + ".at" }), end]);
+    test.Pred = "ult";
+    header.Set(loop.Cmp, test);
+    // the way out through the test: i's value
+    string outLabel = tag + ".out";
+    var br = header.Get(live.Get(2));
+    br.Labels = [br.Labels[0], outLabel];
+    header.Set(live.Get(2), br);
+    var outInsts = List<IrInst>.Create();
+    outInsts.Add(LoopInst("load", tag + ".last", ptr, ptr, [variable]));
+    outInsts.Add(LoopInst("ptrtoint", tag + ".lastI", i32, ptr, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = tag + ".last" })]));
+    outInsts.Add(LoopInst("ptrtoint", tag + ".endI", i32, ptr, [end]));
+    outInsts.Add(LoopInst("sub", tag + ".past", i32, i32,
+                          [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = tag + ".lastI" }),
+                           g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = tag + ".endI" })]));
+    string past = tag + ".past";
+    if (shift > 0)
+    {
+        outInsts.Add(LoopInst("ashr", tag + ".pastN", i32, i32,
+                              [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = past }),
+                               g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = shift })]));
+        past = tag + ".pastN";
+    }
+    outInsts.Add(LoopInst("add", tag + ".iOut", i32, i32, [bound, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = past })]));
+    outInsts.Add(LoopInst("store", "", g.T.Void, i32,
+                          [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = tag + ".iOut" }),
+                           g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = loop.Counter })]));
+    var toExit = LoopInst("br", "", g.T.Void, g.T.Void, new int[0]);
+    toExit.Labels = [blocks[loop.Exit].Label];
+    outInsts.Add(toExit);
+    f.Blocks.Add(IrBlock { Label = outLabel, Insts = outInsts });
+    // after the loop: i's value is in the variable on both ways there
+    if (usedAfter)
+    {
+        f.Blocks.Get(loop.Exit).Insts.Insert(0, LoopInst("load", tag + ".after", i32, i32,
+                                                         [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = loop.Counter })]));
+        ReplaceUses(g, f, loop.Index, g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = tag + ".after" }));
+    }
+    // i's step and the adds that go
+    latch.RemoveAt(stepStore);
+    for (var j = 0; j < blocks.Length; j += 1)
+    {
+        var insts = f.Blocks.Get(j).Insts;
+        for (var k = insts.Count() - 1; k >= 0; k -= 1)
+        {
+            if (insts.Get(k).Res.Length > 0 && drop.Contains(insts.Get(k).Res))
+                insts.RemoveAt(k);
+        }
     }
 }
 

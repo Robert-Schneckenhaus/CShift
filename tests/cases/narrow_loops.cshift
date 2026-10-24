@@ -62,6 +62,21 @@ int Triples(uint16[] w, int from)
     return sum + i;
 }
 
+// a loop that steps by 2 whose counter only counts the rounds: it is tested by the walking address (cmp.l %a3,%a4),
+// and i's value afterwards is the first one >= last (or from when the loop does not run)
+int Pairs(uint8[] a, int from)
+{
+    int last = a.Length - 1;
+    int i = from;
+    while (i < last)
+    {
+        a[i] = (uint8)(a[i] + 1);
+        a[i + 1] ^= 0x10;
+        i += 2;
+    }
+    return i;
+}
+
 void Crypt(uint8[] data, uint16 key, int offset)
 {
     int last = data.Length - 1;
@@ -198,6 +213,13 @@ int Main()
     foreach (var x in words)
         wsum = (wsum * 3 + x) & 0xfffff;
     Check("triples written", wsum, 14767);
+    var pairs = new uint8[9];
+    int pi = Pairs(pairs, 0) * 1000 + Pairs(pairs, 3) * 100 + Pairs(pairs, 8) * 10 + Pairs(pairs, 50);
+    Check("pairs", pi, 8000 + 900 + 80 + 50);
+    int psum = 0;
+    foreach (var x in pairs)
+        psum = psum * 3 + x;
+    Check("pairs written", psum, 48469);
 
     Check("bytes 1", Bytes(1), 20906354);
     Check("bytes -5", Bytes(-5), 16748718);
