@@ -2072,6 +2072,8 @@ void GenCompareBranch(Gen g, IrFunc f, IrInst cmp, IrInst br)
             Load32(g, cmp.Args[1], "%d1");
             src = "%d1";
         }
+        else if (bits < 32 && right.Kind == ValKind.Int)
+            src = "#" + Normalize(right.Int, bits, false).ToString(); // (an immediate of the comparison's size)
         g.Line("cmp" + suffix + "\t" + src + "," + left);
     }
     g.Line("b" + Cond(cmp.Pred) + "\t" + g.BlockLabel.Get(br.Labels[0]));
