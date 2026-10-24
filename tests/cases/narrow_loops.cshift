@@ -5,6 +5,8 @@
 // - a counted loop from a known start ('for (var n = 0; n < 8; ...)': its count is a constant);
 // - 'p - x' on pointers (a subtraction, not a negation and an add);
 // - a branch to the end of a round replaced by a copy of it (CopyLoopEnds);
+// - a counted loop whose bound has a known range ('(x & 15) + 3', 'x & 0xffff'): its test before the loop is known,
+//   and a count below 65536 is a plain dbra (up to 65535 rounds); a bound that may be larger keeps the long count;
 // - the bits of a byte tested by bit 7 and shifted: 'add.b d7,d7' / bcc (FuseBitShifts), also with 64-bit
 //   arithmetic (which reads the X flag that add.b sets) in the round.
 // expect-stdout: narrow loops ok
@@ -60,6 +62,23 @@ int Bits(int header)
     return ones * 100 + pattern;
 }
 
+int Rounds(int x)
+{
+    int n = 0;
+    int length = (x & 0x0f) + 3;
+    for (var k = 0; k < length; k += 1)
+        n += 1;
+    int words = 0;
+    int limit = x & 0xffff;
+    for (var k = 0; k < limit; k += 1)
+        words += 1;
+    int longer = 0;
+    int big = (x & 0x1ffff);
+    for (var k = 0; k < big; k += 1)
+        longer += 1;
+    return n * 1000000 + words * 2 + longer;
+}
+
 int64 Wide(int header, int64 total)
 {
     for (var n = 0; n < 8; n += 1)
@@ -103,6 +122,11 @@ int Main()
     Check("bits 0", Bits(0), 28);
     Check("bits 0xff", Bits(0xff), 800);
     Check("back", Back(d, 3), d[98]);
+    Check("rounds 0", Rounds(0), 3000000);
+    Check("rounds 1", Rounds(1), 4000003);
+    Check("rounds ffff", Rounds(0xffff), 18000000 + 65535 * 3);
+    Check("rounds 1ffff", Rounds(0x1ffff), 18000000 + 65535 * 2 + 0x1ffff);
+    Check("rounds 10000", Rounds(0x10000), 3000000 + 0x10000);
     int64 w = Wide(0xb6, 0xfffffff0);
     Check("wide high", (int)(w >> 32), 5);
     Check("wide low", (int)(w & 0xffffffff), -20);

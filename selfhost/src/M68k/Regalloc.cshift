@@ -481,7 +481,8 @@ void AllocateRegisters(Gen g, IrFunc f)
         lo.Remove(t);
         hi.Remove(t);
     }
-    // a value that is only stored into a variable, which is not read in between: computed in the variable's register
+    // a value that is stored into a variable, which is not read in between: computed in the variable's register (other
+    // uses of the value in its block are fine while the variable is not written again: 'from = dst - x; if (from < s)')
     for (var k = 0; k < stores.Count(); k += 1)
     {
         var st = stores.Get(k);
@@ -490,12 +491,25 @@ void AllocateRegisters(Gen g, IrFunc f)
         if (val.Kind != ValKind.Local || !IsCandidate(val.Name, isPointer, excluded) || !IsCandidate(variable, isPointer, excluded))
             continue;
         string x = val.Name;
-        if (aliasOf.ContainsKey(x) || nonLocal.Contains(x) || uses.GetOrDefault(x, 0) != 1 || !defPos.ContainsKey(x) ||
+        if (aliasOf.ContainsKey(x) || nonLocal.Contains(x) || !defPos.ContainsKey(x) ||
             defBlock.Get(x) != storeBlock.Get(k) || !lo.ContainsKey(x))
             continue;
         int d = defPos.Get(x);
         int sp = storePos.Get(k);
         bool read = false;
+        if (uses.GetOrDefault(x, 0) != 1)
+        {
+            // (its uses before its last one: no other store of the variable from the definition on)
+            int last = hi.Get(x);
+            for (var i = 0; i < stores.Count() && !read; i += 1)
+            {
+                int op = storePos.Get(i);
+                if (i != k && op > d && op <= last && g.M.Vals.Get(stores.Get(i).Args[1]).Name == variable)
+                    read = true;
+            }
+            if (last < sp)
+                read = true;
+        }
         for (var i = 0; i < loads.Count() && !read; i += 1)
         {
             int lp = loadPos.Get(i);

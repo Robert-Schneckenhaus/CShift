@@ -230,7 +230,8 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   of the round, which then ends in one taken branch back; so is the test of another loop whose header only loads,
   compares and branches (`for (var bit = 0x80; bit != 0; bit >>= 1)`: `asr.l #1,d3` / `bne`). After the rotation the
   test before the loop is reached from the block before it only, so a start stored there (`var n = 0`) is the value
-  it tests and counts from: `n < 8` is known, the count is the constant 7. When `i` only counts the rounds (nothing else in the loop
+  it tests and counts from: `n < 8` is known, the count is the constant 7. Where the bound has a known range (`(x & 15) + 3`: 3 to 18), the test is known when it holds
+  for all of its values, and a count below 65536 is a 16-bit count, so the round ends in a plain `dbra`. When `i` only counts the rounds (nothing else in the loop
   reads it, and after the loop either nothing or, when the loop ends only by its test, its value `n` stored on the
   way out), a count of the rounds left after the current one replaces it, down to -1: `dbra d7,loop` (dbra counts the low word;
   when that ends, a `swap` and a `sub.w` count the high word, so any count works). With `-O2`/`-O3` a body of one to

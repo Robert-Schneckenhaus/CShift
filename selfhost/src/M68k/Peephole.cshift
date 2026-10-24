@@ -686,6 +686,152 @@ bool PeepholePass(Gen g, List<string> lines)
             }
         }
 
+        // moveq #0,%d0 / move.b X,%d0 / move.l %d0,%a4 ... move.l %a4,%d1 -> ... moveq #0,%d1 / move.b X,%d1: a byte (or
+        // word) parked in an address register is loaded where it is used (straight-line code in between that leaves
+        // a4, d1, the registers of X and the memory alone; d0 and a4 not read afterwards)
+        if (mn == "moveq" && ops.Length == 2 && ops[0] == "#0" && ops[1] == "%d0" && i + 3 < lines.Count())
+        {
+            string ld = Mnemonic(lines.Get(i + 1));
+            var lops = Operands(lines.Get(i + 1));
+            var pops = Operands(lines.Get(i + 2));
+            if ((ld == "move.b" || ld == "move.w") && lops.Length == 2 && lops[1] == "%d0" && !Mentions(lops[0], "%d0") &&
+                Mnemonic(lines.Get(i + 2)) == "move.l" && pops.Length == 2 && pops[0] == "%d0" && pops[1].StartsWith("%a") &&
+                pops[1].Length == 3 && pops[1] != "%a7" && !ReadsFlagsAt(lines, LineLabels(lines), i + 3) &&
+                DeadOnAllPaths(lines, i + 3, "%d0"))
+            {
+                string park = pops[1];
+                string x = lops[0];
+                int j = i + 3;
+                int use = -1;
+                for (; j < lines.Count() && j < i + 40; j += 1)
+                {
+                    string l = lines.Get(j);
+                    string m = Mnemonic(l);
+                    if (m.Length == 0 || m.StartsWith("b") && m != "btst" || m.StartsWith("db") || m == "jmp" || m == "jsr" ||
+                        m == "rts" || m.StartsWith("movem"))
+                        break;
+                    var lo = Operands(l);
+                    if (Mentions(l, park))
+                    {
+                        if (m == "move.l" && lo.Length == 2 && lo[0] == park && IsDataRegister(lo[1]) && lo[1] != "%d0")
+                            use = j;
+                        break;
+                    }
+                    // (memory written, or a register of X)
+                    bool touches = lo.Length > 0 && (lo[lo.Length - 1].Contains("(") || lo[lo.Length - 1].Contains("-("));
+                    for (var r = 0; r < 8 && !touches; r += 1)
+                    {
+                        if (Mentions(x, "%a" + r.ToString()) && Mentions(l, "%a" + r.ToString()))
+                            touches = true;
+                        if (Mentions(x, "%d" + r.ToString()) && Mentions(l, "%d" + r.ToString()))
+                            touches = true;
+                    }
+                    if (touches || l.Contains(")+") || l.Contains("-("))
+                        break;
+                }
+                if (use > 0)
+                {
+                    string dst = Operands(lines.Get(use))[1];
+                    bool clean = DeadOnAllPaths(lines, use + 1, park) && !ReadsFlagsAt(lines, LineLabels(lines), use + 1);
+                    for (var k = i + 3; k < use && clean; k += 1)
+                    {
+                        if (Mentions(lines.Get(k), dst))
+                            clean = false;
+                    }
+                    if (clean)
+                    {
+                        lines.Set(use, Instr(ld, x + "," + dst));
+                        lines.Insert(use, Instr("moveq", "#0," + dst));
+                        lines.RemoveAt(i);
+                        lines.RemoveAt(i);
+                        lines.RemoveAt(i);
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // move.l %d0,%a4 / ... / sub.l %a4,%a3 -> ... / sub.l %d0,%a3: the copy's only use takes d0 itself (straight-line
+        // code in between that leaves d0 and a4 alone; a4 not read afterwards; movea sets no flags)
+        if (mn == "move.l" && ops.Length == 2 && ops[0] == "%d0" && ops[1].StartsWith("%a") && ops[1].Length == 3 && ops[1] != "%a7")
+        {
+            string copy = ops[1];
+            int use = -1;
+            for (var j = i + 1; j < lines.Count() && j < i + 12; j += 1)
+            {
+                string l = lines.Get(j);
+                string m = Mnemonic(l);
+                if (m.Length == 0 || (m.StartsWith("b") && m != "btst") || m.StartsWith("db") || m == "jmp" || m == "jsr" || m == "rts")
+                    break;
+                if (Mentions(l, copy))
+                {
+                    var uo = Operands(l);
+                    if ((m == "add.l" || m == "sub.l" || m == "cmp.l" || m == "move.l") && uo.Length == 2 && uo[0] == copy &&
+                        uo[1] != copy && uo[1] != "%d0" && !Mentions(uo[1], "%d0"))
+                        use = j;
+                    break;
+                }
+                if (Mentions(l, "%d0"))
+                    break;
+            }
+            if (use > 0 && DeadOnAllPaths(lines, use + 1, copy))
+            {
+                var uo = Operands(lines.Get(use));
+                lines.Set(use, Instr(Mnemonic(lines.Get(use)), "%d0," + uo[1]));
+                lines.RemoveAt(i);
+                changed = true;
+                continue;
+            }
+        }
+
+        // add.l #3,%d4 / (labels nothing branches to) / sub.l #1,%d4 -> add.l #2,%d4 (the flags of the second not read)
+        if ((mn == "add.l" || mn == "sub.l") && ops.Length == 2 && ops[0].StartsWith("#") && IsDataRegister(ops[1]))
+        {
+            int j = i + 1;
+            bool labelsFree = true;
+            while (j < lines.Count() && Mnemonic(lines.Get(j)).Length == 0 && labelsFree)
+            {
+                string l = lines.Get(j);
+                if (!l.EndsWith(":") || l.StartsWith("\t"))
+                    labelsFree = false;
+                else
+                {
+                    string name = l.Substring(0, l.Length - 1).ToString();
+                    foreach (var other in lines.ToArray())
+                    {
+                        if (!IsInstrLine(other))
+                            continue;
+                        foreach (var o in Operands(other))
+                        {
+                            if (o == name)
+                                labelsFree = false;
+                        }
+                    }
+                }
+                j += 1;
+            }
+            int64 a = 0;
+            int64 b = 0;
+            if (labelsFree && j < lines.Count())
+            {
+                string m2 = Mnemonic(lines.Get(j));
+                var o2 = Operands(lines.Get(j));
+                if ((m2 == "add.l" || m2 == "sub.l") && o2.Length == 2 && o2[1] == ops[1] && o2[0].StartsWith("#") &&
+                    TryAsmNumber(ops[0].Substring(1).ToString()) is int64 x && TryAsmNumber(o2[0].Substring(1).ToString()) is int64 y &&
+                    !ReadsFlagsAt(lines, LineLabels(lines), j + 1))
+                {
+                    a = Normalize(mn == "add.l" ? x : -x, 32, true);
+                    b = Normalize(m2 == "add.l" ? y : -y, 32, true);
+                    int64 sum = Normalize(a + b, 32, true);
+                    lines.Set(j, sum >= 0 ? Instr("add.l", "#" + sum.ToString() + "," + ops[1]) : Instr("sub.l", "#" + (-sum).ToString() + "," + ops[1]));
+                    lines.RemoveAt(i);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
         // (0,%aN) -> (%aN): no displacement (4 cycles less)
         if (ops.Length > 0 && line.Contains("(0,%a") && !mn.StartsWith("lea") && !mn.StartsWith("pea"))
         {
@@ -866,6 +1012,23 @@ bool PeepholePass(Gen g, List<string> lines)
             }
         }
 
+        // sub.w #1,%d7 / cmp.w #-1,%d7 / bne L -> dbra %d7,L (a count of 16 bits, Loops.cshift: dbra counts the low word)
+        if (mn == "sub.w" && ops.Length == 2 && ops[0] == "#1" && ops[1].StartsWith("%d") && ops[1].Length == 3 && i + 2 < lines.Count())
+        {
+            var cmp = Operands(lines.Get(i + 1));
+            string mn3 = Mnemonic(lines.Get(i + 2));
+            var target = Operands(lines.Get(i + 2));
+            if (Mnemonic(lines.Get(i + 1)) == "cmp.w" && cmp.Length == 2 && cmp[1] == ops[1] &&
+                (cmp[0] == "#65535" || cmp[0] == "#-1") && (mn3 == "bne" || mn3 == "bne.s") && target.Length == 1 &&
+                !ReadsFlagsAt(lines, LineLabels(lines), i + 3))
+            {
+                lines.Set(i, Instr("dbra", ops[1] + "," + target[0]));
+                lines.RemoveAt(i + 1);
+                lines.RemoveAt(i + 1);
+                changed = true;
+                continue;
+            }
+        }
         // sub.l #1,%d7 / cmp.l #-1,%d7 / bne L -> dbra %d7,L, then the high word: a count down to -1 (Loops.cshift).
         // dbra counts the low word only; when it ends (at 0xffff), the high word is counted down once, and while it is
         // not -1 the loop goes on with the low word at 0xffff (65536 more rounds). At the end the register is -1 either
@@ -1354,4 +1517,17 @@ bool ReadsXFrom(List<string> lines, Dictionary<string, int> labels, int from)
         work.Add(k + 1);
     }
     return false;
+}
+
+// the line of each label
+Dictionary<string, int> LineLabels(List<string> lines)
+{
+    var labels = Dictionary<string, int>.Create();
+    for (var i = 0; i < lines.Count(); i += 1)
+    {
+        string l = lines.Get(i);
+        if (l.EndsWith(":") && !l.StartsWith("\t"))
+            labels.Set(l.Substring(0, l.Length - 1).ToString(), i);
+    }
+    return labels;
 }

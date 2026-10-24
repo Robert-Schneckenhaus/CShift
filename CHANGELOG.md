@@ -82,6 +82,17 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - The arguments of an AmigaOS program: in quotes, `*` escapes as for ReadArgs (`**` is `*`, `*"` is `"`, `*N` a line
   break, `*E` escape), so `"x**y"` is `x*y` and `"say *"hi*""` is `say "hi"` (both were taken as they stood). vamos
   and the shell quote arguments with these characters that way. A test runs a program with such arguments under vamos.
+- Short counted loops with the m68k backend (`for (var k = 0; k < length; k += 1)` with `length = (x & 15) + 3`):
+  - where the bound's values are known (a range), the test before the loop is decided when it holds for all of them,
+    and a count below 65536 is a 16-bit count that ends in a plain `dbra` (no `swap`/`sub.w`/`bcs` for the high word);
+  - a value stored into a variable is computed in its register also when it is used again before the variable
+    changes (`from = dst - x; if (from < start)`);
+  - Peephole: a byte parked in an address register is loaded where it is used, a copy of `d0` into an address
+    register that one instruction reads is left out (`sub.l %d0,%a3`), and `add.l #3` / `sub.l #1` on a register is
+    one `add.l #2`.
+
+  Unpacking Ambermoon's monster.amb takes 59 instead of 66 million cycles on a 68000, Floors.amb 6.6 instead of 6.8
+  million.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 

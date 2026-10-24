@@ -652,10 +652,17 @@ void RotateLoops(Gen g, IrFunc f)
         }
         int64 bound = 0;
         bool constBound = ConstInt(g, cmp.Args[1], ref bound);
+        // the values the bound can have ('(x & 15) + 3': 3 to 18): the test before the loop may be known for all of them,
+        // and a count below 65536 needs only the low word (a plain dbra)
+        var boundRange = RangeOf(g, NewRanges(g, f), cmp.Args[1]);
+        bool upward = cmp.Pred == "slt" || cmp.Pred == "sle" || ((cmp.Pred == "ult" || cmp.Pred == "ule") && boundRange.Lo >= 0 && start >= 0);
+        bool shortCount = countsOnly && hasStart && boundRange.Known && upward && boundRange.Hi - start <= 65535;
         if (hasStart)
         {
             ReplaceUses(g, f.Blocks.Get(h), loop.Index, g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = start }));
             int decided = constBound ? Compare32(cmp.Pred, start, bound) : -1;
+            if (decided < 0 && boundRange.Known && upward && Compare32(cmp.Pred, start, boundRange.Lo) == 1)
+                decided = 1;
             if (decided == 1)
             {
                 var hinsts = f.Blocks.Get(h).Insts;
@@ -670,14 +677,19 @@ void RotateLoops(Gen g, IrFunc f)
             // loop (i < n there, so it is n - i - 1 >= 0; as an unsigned number it is right even where n - i does not fit
             // into an int), and down by one at the end of each round, until it is -1: that is dbra (Peephole.cshift). i
             // is not stored any more.
+            // (a count below 65536: a 16-bit variable, so the end of the round is a plain dbra)
             string count = tag + ".count";
+            int ct = shortCount ? g.T.IntType(16) : i32;
             int countVar = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.Ptr, Name = count });
-            f.Blocks.Get(0).Insts.Insert(0, LoopInst("alloca", count, g.T.Ptr, i32, new int[0]));
+            f.Blocks.Get(0).Insts.Insert(0, LoopInst("alloca", count, g.T.Ptr, ct, new int[0]));
             // (before the comparison, which stays right before its branch)
             var guard = f.Blocks.Get(h).Insts;
-            int firstCount = hasStart && constBound ? g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = Normalize(bound - start - 1, 32, true) })
-                                                    : g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".first" });
-            guard.Insert(loop.Cmp, LoopInst("store", "", g.T.Void, i32, [firstCount, countVar]));
+            int firstCount = hasStart && constBound ? g.M.AddVal(IrVal { Kind = ValKind.Int, Type = ct, Int = Normalize(bound - start - 1, shortCount ? 16 : 32, true) })
+                                                    : g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ct, Name = count + (shortCount ? ".first16" : ".first") });
+            guard.Insert(loop.Cmp, LoopInst("store", "", g.T.Void, ct, [firstCount, countVar]));
+            if (shortCount && !constBound)
+                guard.Insert(loop.Cmp, LoopInst("trunc", count + ".first16", ct, i32,
+                                                [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".first" })]));
             if (!(hasStart && constBound))
             {
                 // (n - i - 1, or n - (i + 1) with i known: one sub)
@@ -713,17 +725,17 @@ void RotateLoops(Gen g, IrFunc f)
             }
             latch.RemoveAt(latch.Count() - 1);
             latch.RemoveAt(loop.Body == loop.Latch ? loop.Step + 1 : loop.Step); // (after the load at the start)
-            latch.Add(LoopInst("load", count + ".cur", i32, i32, [countVar]));
-            latch.Add(LoopInst("sub", count + ".left", i32, i32,
-                               [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".cur" }),
-                                g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 1 })]));
-            int left = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".left" });
-            latch.Add(LoopInst("store", "", g.T.Void, i32, [left, countVar]));
+            latch.Add(LoopInst("load", count + ".cur", ct, ct, [countVar]));
+            latch.Add(LoopInst("sub", count + ".left", ct, ct,
+                               [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ct, Name = count + ".cur" }),
+                                g.M.AddVal(IrVal { Kind = ValKind.Int, Type = ct, Int = 1 })]));
+            int left = g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ct, Name = count + ".left" });
+            latch.Add(LoopInst("store", "", g.T.Void, ct, [left, countVar]));
             // (the count read again: the new count is computed in the variable's register, Regalloc.cshift)
-            latch.Add(LoopInst("load", count + ".test", i32, i32, [countVar]));
-            var more = LoopInst("icmp", tag + ".more", g.T.I1, i32,
-                                [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = i32, Name = count + ".test" }),
-                                 g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = -1 })]);
+            latch.Add(LoopInst("load", count + ".test", ct, ct, [countVar]));
+            var more = LoopInst("icmp", tag + ".more", g.T.I1, ct,
+                                [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ct, Name = count + ".test" }),
+                                 g.M.AddVal(IrVal { Kind = ValKind.Int, Type = ct, Int = -1 })]);
             more.Pred = "ne";
             latch.Add(more);
             var loopBranch = LoopInst("br", "", g.T.Void, g.T.I1, [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = g.T.I1, Name = tag + ".more" })]);
