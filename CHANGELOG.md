@@ -99,6 +99,17 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   shift reaches), a pointer moved on in a data register is an `addq.l`/`lea` on its address register, and an operation
   through `d0` into another register is made there. Unpacking Ambermoon's Floors.amb takes 6.5 instead of 6.6 million
   cycles on a 68000.
+- Loops from one array into another with the m68k backend (`data[i] = (uint8)(source[i] ^ k)` with
+  `data = new uint8[source.Length]`):
+  - the length of `new T[n]` is `n`, so `i < data.Length - 1` also proves `source[i]` and `source[i + 1]` (both
+    bounds checks go), and `i += 2` cannot overflow where `n >= 0` was tested before;
+  - a byte made of narrow operations is computed as a byte (`eor.b %d3,%d0` instead of `moveq #0` and `eor.l`);
+  - Peephole: a value parked in another register while the other operand is computed stays where it is, the
+    operation of `x[i] ^= k` in memory (`eor.b %d3,(8,%a2,%d4.l)`) is also found with a byte operation and with
+    instructions on other registers between the load and the operation, and the code behind a call that does not
+    return (a panic) no longer counts as a way that reads a register.
+
+  Such a loop (two bytes per round) takes a third fewer instructions.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
 - `tools/amiga/profile.py`: `--callers NAME` lists the functions that call the functions whose name contains `NAME`,

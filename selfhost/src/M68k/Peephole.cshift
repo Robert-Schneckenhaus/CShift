@@ -161,6 +161,11 @@ bool DeadOnAllPaths(List<string> lines, int from, string reg)
             }
             seen.Add(i * 8 + written);
             string line = lines.Get(i);
+            if (line == "| unreachable")
+            {
+                ended = true; // (behind a call that does not return: a panic)
+                break;
+            }
             if (!line.StartsWith("\t") || line.StartsWith("\t."))
                 continue;
             string mn = Mnemonic(line);
@@ -236,6 +241,26 @@ bool DeadOnAllPaths(List<string> lines, int from, string reg)
 }
 
 // Does the instruction read the condition codes (a conditional branch or set, an operation with the X flag)?
+// whether the line is an instruction on registers and immediates only, none of them a, b or a register of ea
+bool RegistersOnly(string line, string a, string b, string ea)
+{
+    string mn = Mnemonic(line);
+    if (mn.Length == 0 || mn == "jsr" || mn == "rts" || mn == "jmp" || mn == "bra" || mn.StartsWith("db") ||
+        (mn.StartsWith("b") && mn.Length <= 3) || mn.StartsWith("movem") || ReadsFlags(line))
+        return false;
+    var ops = Operands(line);
+    if (ops.Length == 0)
+        return false;
+    foreach (var o in ops)
+    {
+        if (o.StartsWith("#"))
+            continue;
+        if (!IsRegister(o) || o == a || o == b || Mentions(ea, o))
+            return false;
+    }
+    return true;
+}
+
 bool ReadsFlags(string line)
 {
     string mn = Mnemonic(line);
@@ -367,6 +392,38 @@ bool PeepholePass(Gen g, List<string> lines)
             }
         }
 
+        // move.l %d0,%d2 / (instructions that neither read nor write d0 or d2) / move.l %d2,%d0 -> the instructions: a
+        // value parked while the other operand is computed stays where it is (d2 not read afterwards, no flags read)
+        if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && IsDataRegister(ops[1]) && ops[0] != ops[1])
+        {
+            string a = ops[0];
+            string b = ops[1];
+            int j = i + 1;
+            bool plain = true;
+            while (plain && j < lines.Count() && j <= i + 8)
+            {
+                string ml = lines.Get(j);
+                string mmn = Mnemonic(ml);
+                var mops = Operands(ml);
+                if (mmn == "move.l" && mops.Length == 2 && mops[0] == b && mops[1] == a)
+                    break;
+                plain = ml.StartsWith("\t") && !ml.StartsWith("\t.") && mmn.Length > 0 && mmn != "jsr" && mmn != "rts" &&
+                        mmn != "jmp" && mmn != "bra" && !mmn.StartsWith("db") && !(mmn.StartsWith("b") && mmn.Length <= 3) &&
+                        !mmn.StartsWith("movem") && !ReadsFlags(ml);
+                foreach (var o in mops)
+                    plain = plain && !Mentions(o, a) && !Mentions(o, b);
+                j += 1;
+            }
+            if (plain && j > i + 1 && j < lines.Count() && j <= i + 8 && Mnemonic(lines.Get(j)) == "move.l" &&
+                (j + 1 >= lines.Count() || !ReadsFlags(lines.Get(j + 1))) && DeadOnAllPaths(lines, j + 1, b))
+            {
+                lines.RemoveAt(j);
+                lines.RemoveAt(i);
+                changed = true;
+                continue;
+            }
+        }
+
         // move.b EA,%dA / (move.l %dA,%dB /) eor.l %dX,%dB / move.b %dB,EA -> eor.b %dX,EA: a byte (word, long) changed
         // in memory where it is (also and, or, add, sub; the low byte of the result depends on the low bytes only),
         // where neither register is read afterwards; a 'moveq #0,%dA' before the load goes too
@@ -384,6 +441,10 @@ bool PeepholePass(Gen g, List<string> lines)
                 b = copy[1];
                 at += 1;
             }
+            // (instructions on other registers only may come before the operation: they stay)
+            int gap = at;
+            while (at < lines.Count() && at < gap + 4 && RegistersOnly(lines.Get(at), a, b, ea))
+                at += 1;
             if (at + 1 < lines.Count())
             {
                 string opLine = lines.Get(at);
@@ -393,7 +454,7 @@ bool PeepholePass(Gen g, List<string> lines)
                 string kind = omn.Length > 2 ? omn.Substring(0, omn.Length - 2).ToString() : "";
                 bool arith = kind == "add" || kind == "sub";
                 bool logic = kind == "eor" || kind == "and" || kind == "or";
-                if ((arith || logic) && omn.EndsWith(".l") && oops.Length == 2 && oops[1] == b && !Mentions(oops[0], a) &&
+                if ((arith || logic) && (omn.EndsWith(".l") || omn.EndsWith(size)) && oops.Length == 2 && oops[1] == b && !Mentions(oops[0], a) &&
                     !Mentions(oops[0], b) && (IsDataRegister(oops[0]) || oops[0].StartsWith("#")) &&
                     Mnemonic(lines.Get(at + 1)) == "move" + size && store.Length == 2 && store[0] == b && store[1] == ea &&
                     !Mentions(ea, b) && !Mentions(ea, a) &&
@@ -402,8 +463,9 @@ bool PeepholePass(Gen g, List<string> lines)
                 {
                     string imm = oops[0].StartsWith("#") ? (kind == "eor" ? "eori" : kind == "and" ? "andi" : kind == "or" ? "ori" :
                                                                                  kind == "add" ? "addi" : "subi") : kind;
-                    lines.Set(i, Instr(imm + size, oops[0] + "," + ea));
-                    for (var r = at + 1; r > i; r -= 1)
+                    lines.Set(at, Instr(imm + size, oops[0] + "," + ea));
+                    lines.RemoveAt(at + 1);
+                    for (var r = gap - 1; r >= i; r -= 1)
                         lines.RemoveAt(r);
                     // (the zero before the load is not needed any more)
                     if (i > 0 && lines.Get(i - 1) == Instr("moveq", "#0," + a) && DeadOnAllPaths(lines, i, a))

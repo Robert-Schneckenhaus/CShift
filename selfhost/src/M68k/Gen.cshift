@@ -1376,7 +1376,10 @@ void GenInst(Gen g, IrFunc f, IrInst inst)
         return;
     }
     if (op == "unreachable")
+    {
+        g.Out.Append("| unreachable\n"); // (the peephole knows that no way goes on from here)
         return;
+    }
     if (op == "call")
     {
         GenCall(g, inst);
