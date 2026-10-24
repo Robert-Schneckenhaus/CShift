@@ -321,6 +321,16 @@ else
         else
             report_ok "amiga runtime (vamos)"
         fi
+        # the arguments of a program: vamos quotes those with spaces, *, " or a line break, as the AmigaOS shell does
+        expected_args="$(printf '[plain]\n[two words]\n[x*y]\n[say "hi"]\n[a|b]')"
+        if ! "$COMPILER" --target m68k-amigaos --stdlib "$DIR/../stdlib" "$DIR/amiga/args.cshift" -o "$TMP/amiga_args" 2> "$TMP/amiga.err"; then
+            report_fail "amiga arguments (vamos)" "$(head -n 3 "$TMP/amiga.err" | tr '\n' ' ')"
+        elif ! (cd "$TMP" && vamos -q amiga_args plain "two words" "x*y" 'say "hi"' "a
+b" > "$TMP/amiga.out" 2>&1; [ $? -eq 5 ]) || [ "$(cat "$TMP/amiga.out")" != "$expected_args" ]; then
+            report_fail "amiga arguments (vamos)" "$(head -n 5 "$TMP/amiga.out" | tr '\n' ' ')"
+        else
+            report_ok "amiga arguments (vamos)"
+        fi
     fi
 
     # Debug information (-g): LLVM accepts the metadata (it verifies it while compiling), the program still runs, and, if
