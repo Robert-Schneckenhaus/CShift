@@ -46,15 +46,28 @@ struct File
             if (f == null)
                 return error("cannot open file '" + path + "'", IoError.CannotOpen);
 
-            uint8[] data = new uint8[4096];
+            // As large as the file (if it can tell its size), so that the bytes are read without copies.
+            int64 size = -1;
+            if (_Os.Seek(f, 0, 2))
+            {
+                size = _Os.Tell(f);
+                if (!_Os.Seek(f, 0, 0))
+                    size = -1;
+            }
+            uint8[] data = new uint8[size > 0 && size < 0x7FFFFFFF ? (int)size : 4096];
             int length = 0;
             while (true)
             {
                 if (length == data.Length)
                 {
+                    uint8 extra = 0;
+                    if (fread(&extra, 1, 1, f) == 0)
+                        break;
                     var bigger = new uint8[data.Length * 2];
                     Array.Copy(data, 0, bigger, 0, length);
                     data = bigger;
+                    data[length] = extra;
+                    length += 1;
                 }
                 nuint n = fread(&data[length], 1, (nuint)(data.Length - length), f);
                 if (n == 0)
@@ -63,6 +76,8 @@ struct File
             }
             fclose(f);
 
+            if (length == data.Length)
+                return data;
             var result = new uint8[length];
             Array.Copy(data, 0, result, 0, length);
             return result;
