@@ -15,6 +15,9 @@ string Peephole(Gen g, string text)
         if (l.Length > 0)
             lines.Add(l.ToString());
     }
+    // (DeadOnAllPaths: d1 is no part of this function's result)
+    if (g.Frame[2] == 0)
+        lines.Insert(0, "| result without d1");
     for (var pass = 0; pass < 4; pass += 1)
     {
         if (!PeepholePass(g, lines))
@@ -25,8 +28,11 @@ string Peephole(Gen g, string text)
     if (g.Counters[2] >= 2)
     {
         JumpTowers(g, lines);
+        ShortCopies(g, lines);
         CopyLoopEnds(lines);
     }
+    if (lines.Count() > 0 && lines.Get(0) == "| result without d1")
+        lines.RemoveAt(0);
     var sb = StringBuilder.Create();
     foreach (var l in lines.ToArray())
     {
@@ -191,7 +197,8 @@ bool DeadOnAllPaths(List<string> lines, int from, string reg)
             }
             if (mn == "rts")
             {
-                if (written == 0 && (reg == "%d0" || reg == "%d1" || reg == "%a0"))
+                bool result = reg == "%d0" || reg == "%a0" || (reg == "%d1" && !(lines.Count() > 0 && lines.Get(0) == "| result without d1"));
+                if (written == 0 && result)
                     return false;
                 ended = true;
                 break;
@@ -389,6 +396,113 @@ bool PeepholePass(Gen g, List<string> lines)
                 lines.RemoveAt(i + 1);
                 changed = true;
                 continue;
+            }
+        }
+
+        // moveq #0,%d7 / move.b EA,%d7 / (move.l %d7,%d5 /) lsl.l #4,%d5 / and.l #65280,%d5 -> ... lsl.w #4,%d5 /
+        // and.w #65280,%d5: a byte shifted by at most 7 stays below 32768, so the high word is 0 and stays 0, and the
+        // flags (and X) are those of the long operations (8 cycles less for the and, 2 for the shift)
+        if (mn == "lsl.l" && ops.Length == 2 && ops[0].StartsWith("#") && ops[0].Length == 2 && ops[0][1] >= '1' &&
+            ops[0][1] <= '7' && IsDataRegister(ops[1]) && i >= 2)
+        {
+            string r = ops[1];
+            string src = r;
+            int back = i - 1;
+            var cp = Operands(lines.Get(back));
+            if (Mnemonic(lines.Get(back)) == "move.l" && cp.Length == 2 && cp[1] == r && IsDataRegister(cp[0]) && back >= 2)
+            {
+                src = cp[0];
+                back -= 1;
+            }
+            var ld = Operands(lines.Get(back));
+            bool zeroByte = Mnemonic(lines.Get(back)) == "move.b" && ld.Length == 2 && ld[1] == src && !Mentions(ld[0], src) &&
+                            back >= 1 && lines.Get(back - 1) == Instr("moveq", "#0," + src);
+            if (zeroByte)
+            {
+                lines.Set(i, Instr("lsl.w", ops[0] + "," + r));
+                if (i + 1 < lines.Count() && Mnemonic(lines.Get(i + 1)) == "and.l")
+                {
+                    var am = Operands(lines.Get(i + 1));
+                    if (am.Length == 2 && am[1] == r && am[0].StartsWith("#") && am[0].Length > 1 && am[0].Length <= 6)
+                    {
+                        string digits = am[0].Substring(1).ToString();
+                        bool number = true;
+                        for (var q = 0; q < digits.Length; q += 1)
+                            number = number && digits[q] >= '0' && digits[q] <= '9';
+                        if (number && ParseInt(digits) <= 65535)
+                            lines.Set(i + 1, Instr("and.w", am[0] + "," + r));
+                    }
+                }
+                changed = true;
+                continue;
+            }
+        }
+
+        // and.l #65280,%dB / moveq #0,%dT / move.b EA,%dT / or.l %dT,%dB -> and.l #65280,%dB / move.b EA,%dB: the low byte
+        // of dB is 0 (a mask without its bits, or a copy of such a value right before), so or'ing a zero-extended byte is
+        // writing that byte (dT not read afterwards, no flags read: move.b sets them by the byte only)
+        if (mn == "moveq" && ops.Length == 2 && ops[0] == "#0" && IsDataRegister(ops[1]) && i + 3 < lines.Count() && i >= 1)
+        {
+            string t = ops[1];
+            var load = Operands(lines.Get(i + 1));
+            var or = Operands(lines.Get(i + 2));
+            if (Mnemonic(lines.Get(i + 1)) == "move.b" && load.Length == 2 && load[1] == t && !Mentions(load[0], t) &&
+                Mnemonic(lines.Get(i + 2)) == "or.l" && or.Length == 2 && or[0] == t && IsDataRegister(or[1]) && or[1] != t &&
+                !Mentions(load[0], or[1]) && !ReadsFlags(lines.Get(i + 3)) && DeadOnAllPaths(lines, i + 3, t))
+            {
+                string b = or[1];
+                // the low byte of b: masked away right before (or in the value b is a copy of)
+                string src = b;
+                int back = i - 1;
+                var prev = Operands(lines.Get(back));
+                if (Mnemonic(lines.Get(back)) == "move.l" && prev.Length == 2 && prev[1] == b && IsDataRegister(prev[0]) && back >= 1)
+                {
+                    src = prev[0];
+                    back -= 1;
+                    prev = Operands(lines.Get(back));
+                }
+                int64 mask = -1;
+                if ((Mnemonic(lines.Get(back)) == "and.l" || Mnemonic(lines.Get(back)) == "andi.l" ||
+                     Mnemonic(lines.Get(back)) == "and.w") && prev.Length == 2 &&
+                    prev[1] == src && prev[0].StartsWith("#") && prev[0].Length > 1 && prev[0].Length < 12)
+                {
+                    string digits = prev[0].Substring(1).ToString();
+                    bool number = true;
+                    for (var q = 0; q < digits.Length; q += 1)
+                        number = number && digits[q] >= '0' && digits[q] <= '9';
+                    if (number)
+                        mask = ParseInt(digits);
+                }
+                if (mask >= 0 && (mask & 255) == 0)
+                {
+                    lines.Set(i, Instr("move.b", load[0] + "," + b));
+                    lines.RemoveAt(i + 2);
+                    lines.RemoveAt(i + 1);
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        // move.l %d7,%d5 / and.l #15,%d5 -> moveq #15,%d5 / and.l %d7,%d5 (a mask that fits moveq: 12 cycles instead of 20;
+        // not into d0, whose operations go into their target register first)
+        if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && IsDataRegister(ops[1]) && ops[0] != ops[1] &&
+            ops[1] != "%d0" && i + 1 < lines.Count() && Mnemonic(lines.Get(i + 1)) == "and.l")
+        {
+            var aops = Operands(lines.Get(i + 1));
+            if (aops.Length == 2 && aops[1] == ops[1] && aops[0].StartsWith("#") && aops[0].Length >= 2 && aops[0].Length <= 4)
+            {
+                string digits = aops[0].Substring(1).ToString();
+                bool number = true;
+                for (var q = 0; q < digits.Length; q += 1)
+                    number = number && digits[q] >= '0' && digits[q] <= '9';
+                if (number && ParseInt(digits) <= 127)
+                {
+                    lines.Set(i, Instr("moveq", aops[0] + "," + ops[1]));
+                    lines.Set(i + 1, Instr("and.l", ops[0] + "," + ops[1]));
+                    changed = true;
+                    continue;
+                }
             }
         }
 
@@ -923,23 +1037,38 @@ bool PeepholePass(Gen g, List<string> lines)
         }
 
         // move.l %d7,%d0 / and.l #15,%d0 / move.l %d0,%d5 -> move.l %d7,%d5 / and.l #15,%d5 (an operation through d0 into
-        // another data register; d0 not read afterwards)
+        // another data register, or up to three of them: lsl.l #4 / and.l #65280; d0 not read afterwards)
         if (mn == "move.l" && ops.Length == 2 && IsDataRegister(ops[0]) && ops[1] == "%d0" && ops[0] != "%d0" && i + 2 < lines.Count())
         {
-            string om = Mnemonic(lines.Get(i + 1));
-            var oo = Operands(lines.Get(i + 1));
-            var mo = Operands(lines.Get(i + 2));
-            bool simple = om == "and.l" || om == "or.l" || om == "add.l" || om == "sub.l" || om == "addq.l" || om == "subq.l" ||
-                          om == "lsl.l" || om == "lsr.l" || om == "asl.l" || om == "asr.l" || om == "eor.l";
-            if (simple && oo.Length == 2 && oo[1] == "%d0" && !Mentions(oo[0], "%d0") && Mnemonic(lines.Get(i + 2)) == "move.l" &&
-                mo.Length == 2 && mo[0] == "%d0" && IsDataRegister(mo[1]) && mo[1] != "%d0" && !Mentions(oo[0], mo[1]) &&
-                DeadOnAllPaths(lines, i + 3, "%d0") && !ReadsFlagsAt(lines, LineLabels(lines), i + 3))
+            int j = i + 1;
+            bool fits = true;
+            while (fits && j < lines.Count() && j <= i + 3 && Mnemonic(lines.Get(j)) != "move.l")
             {
-                lines.Set(i, Instr("move.l", ops[0] + "," + mo[1]));
-                lines.Set(i + 1, Instr(om, oo[0] + "," + mo[1]));
-                lines.RemoveAt(i + 2);
-                changed = true;
-                continue;
+                string om = Mnemonic(lines.Get(j));
+                var oo = Operands(lines.Get(j));
+                bool simple = om == "and.l" || om == "or.l" || om == "add.l" || om == "sub.l" || om == "addq.l" || om == "subq.l" ||
+                              om == "lsl.l" || om == "lsr.l" || om == "asl.l" || om == "asr.l" || om == "eor.l";
+                fits = simple && oo.Length == 2 && oo[1] == "%d0" && !Mentions(oo[0], "%d0");
+                if (fits)
+                    j += 1;
+            }
+            var mo = j < lines.Count() ? Operands(lines.Get(j)) : new string[0];
+            if (fits && j > i + 1 && j < lines.Count() && Mnemonic(lines.Get(j)) == "move.l" && mo.Length == 2 && mo[0] == "%d0" &&
+                IsDataRegister(mo[1]) && mo[1] != "%d0" && DeadOnAllPaths(lines, j + 1, "%d0") &&
+                !ReadsFlagsAt(lines, LineLabels(lines), j + 1))
+            {
+                bool clean = true;
+                for (var q = i + 1; q < j; q += 1)
+                    clean = clean && !Mentions(Operands(lines.Get(q))[0], mo[1]);
+                if (clean)
+                {
+                    lines.Set(i, Instr("move.l", ops[0] + "," + mo[1]));
+                    for (var q = i + 1; q < j; q += 1)
+                        lines.Set(q, Instr(Mnemonic(lines.Get(q)), Operands(lines.Get(q))[0] + "," + mo[1]));
+                    lines.RemoveAt(j);
+                    changed = true;
+                    continue;
+                }
             }
         }
 
@@ -1354,6 +1483,110 @@ bool ScratchWrittenFirst(List<string> lines, int from, int to, string reg)
         }
     }
     return true;
+}
+
+// A short copy loop whose count is known to be small: 'and.l #m,%dN / add.l #c,%dN / L: move.b (%a3)+,(%a2)+ /
+// dbra %dN,L' (an LZ match of (x & 15) + 3 bytes) runs at most m + c + 1 rounds. It jumps into that many copies of the
+// move instead (the last copies as many rounds as the count says): 'add.w %dN,%dN / lea Lm,%a0 / suba.w %dN,%a0 /
+// jmp (%a0)', 32 cycles once, then 12 a byte instead of 22 (the dbra). Each move is one word (no extension), the
+// count register is not read afterwards (it holds twice the count then), and neither is a0.
+void ShortCopies(Gen g, List<string> lines)
+{
+    for (var k = 2; k + 2 < lines.Count(); k += 1)
+    {
+        string label = lines.Get(k);
+        if (IsInstrLine(label) || !label.EndsWith(":") || label.StartsWith("\t"))
+            continue;
+        string name = label.Substring(0, label.Length - 1).ToString();
+        string body = lines.Get(k + 1);
+        string bmn = Mnemonic(body);
+        var bops = Operands(body);
+        if ((bmn != "move.b" && bmn != "move.w" && bmn != "move.l") || bops.Length != 2 || !bops[0].EndsWith(")+") ||
+            !bops[1].EndsWith(")+") || !bops[0].StartsWith("(%a") || !bops[1].StartsWith("(%a") || Mentions(body, "%a0"))
+            continue;
+        var dops = Operands(lines.Get(k + 2));
+        if (Mnemonic(lines.Get(k + 2)) != "dbra" || dops.Length != 2 || dops[1] != name)
+            continue;
+        string reg = dops[0];
+        if (Mentions(body, reg))
+            continue;
+        // only the dbra comes to the loop's start
+        int refs = 0;
+        foreach (var l in lines.ToArray())
+        {
+            if (IsInstrLine(l) && (l.EndsWith("," + name) || l.EndsWith("\t" + name)))
+                refs += 1;
+        }
+        if (refs != 1)
+            continue;
+        // the count before it: and.l #m / add.l #c (labels between them that nothing branches to)
+        int at = k - 1;
+        int64 c = -1;
+        int64 m = -1;
+        for (var step = 0; step < 2 && at >= 0; step += 1)
+        {
+            while (at >= 0 && !IsInstrLine(lines.Get(at)) && lines.Get(at).EndsWith(":") && !lines.Get(at).StartsWith("\t") &&
+                   !Referenced(lines, lines.Get(at).Substring(0, lines.Get(at).Length - 1).ToString()))
+                at -= 1;
+            if (at < 0)
+                break;
+            string mn = Mnemonic(lines.Get(at));
+            var ops = Operands(lines.Get(at));
+            // (moveq #m,%dN / and.l %dX,%dN: the mask in the register)
+            if (step == 1 && mn == "and.l" && ops.Length == 2 && ops[1] == reg && IsDataRegister(ops[0]) && at >= 1 &&
+                Mnemonic(lines.Get(at - 1)) == "moveq" && Operands(lines.Get(at - 1)).Length == 2 &&
+                Operands(lines.Get(at - 1))[1] == reg)
+            {
+                at -= 1;
+                mn = "and.l";
+                ops = Operands(lines.Get(at));
+            }
+            if (ops.Length != 2 || ops[1] != reg || !ops[0].StartsWith("#"))
+                break;
+            string digits = ops[0].Substring(1).ToString();
+            bool plainNumber = digits.Length > 0 && digits.Length < 6;
+            for (var q = 0; q < digits.Length; q += 1)
+                plainNumber = plainNumber && digits[q] >= '0' && digits[q] <= '9';
+            if (!plainNumber)
+                break;
+            int64 v = ParseInt(digits);
+            if (step == 0 && (mn == "add.l" || mn == "addq.l"))
+                c = v;
+            else if (step == 1 && (mn == "and.l" || mn == "andi.l"))
+                m = v;
+            else
+                break;
+            at -= 1;
+        }
+        if (c < 0 || m < 0 || m + c + 1 > 64 || !DeadOnAllPaths(lines, k + 3, reg) || !DeadOnAllPaths(lines, k + 3, "%a0"))
+            continue;
+        int rounds = (int)(m + c + 1);
+        string last = g.NewLabel();
+        var copy = List<string>.Create();
+        copy.Add(Instr("add.w", reg + "," + reg));
+        copy.Add(Instr("lea", last + ",%a0"));
+        copy.Add(Instr("suba.w", reg + ",%a0"));
+        copy.Add(Instr("jmp", "(%a0)"));
+        for (var r = 0; r < rounds - 1; r += 1)
+            copy.Add(body);
+        copy.Add(last + ":");
+        copy.Add(body);
+        lines.RemoveAt(k + 2);
+        lines.RemoveAt(k + 1);
+        for (var t = copy.Count() - 1; t >= 0; t -= 1)
+            lines.Insert(k + 1, copy.Get(t));
+        k += copy.Count();
+    }
+}
+
+bool Referenced(List<string> lines, string name)
+{
+    foreach (var l in lines.ToArray())
+    {
+        if (IsInstrLine(l) && (l.EndsWith("," + name) || l.EndsWith("\t" + name)))
+            return true;
+    }
+    return false;
 }
 
 // A branch to the end of a loop's round (a few instructions with its dbra, as after the one way of an if/else in the

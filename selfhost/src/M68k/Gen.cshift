@@ -47,7 +47,8 @@ struct Gen
     HashSet<string> NegatedIndex;         // getelementptrs whose index is subtracted ('p - x': Prepare.cshift)
     Dictionary<string, string> BlockLabel; // IR block -> assembly label
     string[] Fn;                          // [0] the IR name of the function, [1] the current IR block, [2] the epilogue
-    int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer)
+    int[] Frame;                          // [0] frame size, [1] 1 if the function returns a struct (hidden pointer),
+                                          // [2] 1 if its result takes d1 too (8 bytes)
 
     static Gen Create(IrModule m)
     {
@@ -57,7 +58,7 @@ struct Gen
                       NoWrap = HashSet<string>.Create(), NegatedIndex = HashSet<string>.Create(),
                       Counters = new int[3], Errors = List<string>.Create() };
         g.Fn = new string[3];
-        g.Frame = new int[2];
+        g.Frame = new int[3];
         return g;
     }
 
@@ -497,6 +498,7 @@ void GenFunction(Gen g, IrFunc f)
     g.Fn[0] = f.Name;
     g.Fn[2] = g.NewLabel();
     g.Frame[1] = ReturnsStruct(g, f.Ret) ? 1 : 0;
+    g.Frame[2] = g.Frame[1] == 0 && g.T.Kind(f.Ret) != IrKind.Void && g.L.Size(f.Ret) > 4 ? 1 : 0;
     PrepareFunction(g, f);
 
     // parameters: above the return address and the saved a6
