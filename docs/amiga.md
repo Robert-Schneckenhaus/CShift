@@ -267,7 +267,10 @@ IR (text) ─▶ IrReader ─▶ Prepare (inlining, folding, facts, loops) ─�
   move through `d0` where no way afterwards reads `d0`, `eor.b d2,(8,a2,d4.l)` instead of a load, the operation and
   a store, `add.l #2,d4` instead of a copy, the add and a copy back, `btst #7,d7` instead of a copy, an `and.l #128` and
   the branch on it, `cmp.l a2,a5` instead of a copy of the pointer into a data register, `(a3)` instead of `(0,a3)`, `moveq #0,d6` / `move.b (a5),d6` instead of a load
-  into `d0` and a copy); with `-O2`/`-O3` a `bra` to the end of a loop's round (its last few instructions with the
+  into `d0` and a copy); a register that is only tested by `btst #7` (with a beq/bne after it) and shifted
+  by `lsl.l #1` (each test followed by a shift on every way, each shift by a test) is tested by `add.b` / `bcc`
+  instead and the shifts go (FuseBitShifts: only bit 7 of the low byte is read, and no way reads the X flag before it
+  is set again); with `-O2`/`-O3` a `bra` to the end of a loop's round (its last few instructions with the
   `dbra`) is a copy of that end; the address of an access by `i + c` is
   `(c + 8,a2,d4.l)` with `i` in `d4` (Prepare.cshift); **Asm.cshift** encodes it (68000 only, branches made short where they fit);
   **Hunk.cshift** writes the AmigaOS executable, **Elf.cshift** an ELF object.
