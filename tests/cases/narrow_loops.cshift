@@ -45,6 +45,23 @@ uint8[] CryptCopy(ReadOnlySlice<uint8> source, uint16 key)
     return data;
 }
 
+// a loop that steps by 3 over words and reads and writes the elements i, i + 1 and i + 2 (a walking pointer, the
+// accesses one after the other: (a4)+)
+int Triples(uint16[] w, int from)
+{
+    int sum = 0;
+    int i = from;
+    int last = w.Length - 2;
+    while (i < last)
+    {
+        sum = ((sum << 3) ^ w[i] ^ (w[i + 2] << 1)) & 0xfffff;
+        w[i + 1] = (uint16)(w[i + 1] + w[i]);
+        w[i + 2] ^= 0x5555;
+        i += 3;
+    }
+    return sum + i;
+}
+
 void Crypt(uint8[] data, uint16 key, int offset)
 {
     int last = data.Length - 1;
@@ -171,6 +188,16 @@ int Main()
         Check("crypt copy " + n.ToString(), differ, 0);
     }
     Check("crypt copy empty", CryptCopy(d[0..0], 7).Length, 0);
+    var words = new uint16[50];
+    for (var i = 0; i < words.Length; i += 1)
+        words[i] = (uint16)(i * 1311);
+    Check("triples 0", Triples(words, 0), 999249);
+    Check("triples 1", Triples(words, 1), 127422);
+    Check("triples 49", Triples(words, 49), 49);
+    int wsum = 0;
+    foreach (var x in words)
+        wsum = (wsum * 3 + x) & 0xfffff;
+    Check("triples written", wsum, 14767);
 
     Check("bytes 1", Bytes(1), 20906354);
     Check("bytes -5", Bytes(-5), 16748718);

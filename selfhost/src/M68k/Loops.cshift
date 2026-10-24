@@ -32,6 +32,7 @@ struct CountedLoop
     int Cmp;            // the header's comparison (instruction index)
     bool[] InLoop;      // the blocks of the loop, the header included
     int Step;           // the store of i in the latch (instruction index)
+    int StepBy;         // what the latch adds to i (1, or up to 16 for walking pointers)
 }
 
 // the instructions of a block that are written (not skipped)
@@ -135,19 +136,19 @@ Optional<CountedLoop> FindCountedLoop(Gen g, IrFunc f, Edges e, int[] idom, Dict
     var stored = g.M.Vals.Get(latchInsts[step].Args[0]);
     if (stored.Kind != ValKind.Local)
         return null;
-    bool plusOne = false;
+    int stepBy = 0;
     foreach (var k in LiveInsts(g, blocks[latch]))
     {
         var inst = latchInsts[k];
         int64 c = 0;
         if (inst.Res == stored.Name && inst.Op == "add" && inst.Args.Length == 2 && IsLocalNamed(g, inst.Args[0], load.Res) &&
-            ConstInt(g, inst.Args[1], ref c) && c == 1 && k < step)
-            plusOne = true;
+            ConstInt(g, inst.Args[1], ref c) && c >= 1 && c <= 16 && k < step)
+            stepBy = (int)c;
     }
-    if (!plusOne)
+    if (stepBy == 0)
         return null;
     return CountedLoop { Header = h, Pre = pre, Latch = latch, Body = body, Exit = exit, Counter = counter, Index = load.Res,
-                         Cmp = live.Get(1), InLoop = inLoop, Step = step };
+                         Cmp = live.Get(1), InLoop = inLoop, Step = step, StepBy = stepBy };
 }
 
 // the blocks of the loop of the branch back from 'latch' to 'header': the header, and the blocks that reach the latch
@@ -203,6 +204,7 @@ struct WalkedAddress
     int Block;
     int At;
     string Res;
+    int K;              // the address is of element i + K
 }
 
 struct PointerWalk
@@ -292,7 +294,7 @@ void WalkPointers(Gen g, IrFunc f)
             if (stored.Kind != ValKind.Local || !defs.ContainsKey(stored.Name))
                 continue;
             var add = defs.Get(stored.Name);
-            if (add.Op != "add" || add.Args.Length != 2 || !ConstInt(g, add.Args[1], ref c) || c != 1)
+            if (add.Op != "add" || add.Args.Length != 2 || !ConstInt(g, add.Args[1], ref c) || c != 1 || loop.StepBy != 1)
                 continue;
             var from = g.M.Vals.Get(add.Args[0]);
             if (from.Kind != ValKind.Local || !defs.ContainsKey(from.Name))
@@ -329,6 +331,13 @@ void WalkPointers(Gen g, IrFunc f)
                     continue;
                 string indexName = g.M.Vals.Get(inst.Args[1]).Name;
                 string indexVar = indexName == loop.Index ? loop.Counter : follows.GetOrDefault(indexName, "");
+                // (an element after i's: a[i + 1] in a loop that steps by 2)
+                int64 plusK = 0;
+                if (indexVar.Length == 0 && defs.TryGet(indexName) is IrInst plus && plus.Op == "add" && plus.Args.Length == 2 &&
+                    IsLocalNamed(g, plus.Args[0], loop.Index) && ConstInt(g, plus.Args[1], ref plusK) && plusK >= 1 && plusK <= 64)
+                    indexVar = loop.Counter;
+                else
+                    plusK = 0;
                 if (indexVar.Length == 0)
                     continue;
                 int stride = g.L.Stride(inst.OpType);
@@ -366,7 +375,7 @@ void WalkPointers(Gen g, IrFunc f)
                                              Index = indexVar });
                     gi = groups.Count() - 1;
                 }
-                groups.Get(gi).Addresses.Add(WalkedAddress { Block = j, At = k, Res = inst.Res });
+                groups.Get(gi).Addresses.Add(WalkedAddress { Block = j, At = k, Res = inst.Res, K = (int)plusK });
             }
         }
         if (groups.Count() == 0)
@@ -390,6 +399,7 @@ void WalkPointers(Gen g, IrFunc f)
                 counterHasStart = ConstInt(g, inst.Args[0], ref start);
         }
         var steps = List<IrInst>.Create();
+        var later = List<WalkedAddress>.Create();   // the loads of a variable for the addresses i + K (K: the variable)
         for (var gi = 0; gi < groups.Count(); gi += 1)
         {
             var walk = groups.Get(gi);
@@ -436,17 +446,26 @@ void WalkPointers(Gen g, IrFunc f)
             }
             pre.Add(LoopInst("store", "", g.T.Void, ptr,
                              [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = name + ".first" }), variable]));
-            // the addresses in the loop: the variable's value
+            // the addresses in the loop: the variable's value (plus K elements: its load comes right before)
             foreach (var a in walk.Addresses)
             {
                 var bi = f.Blocks.Get(a.Block).Insts;
-                bi.Set(a.At, LoopInst("load", a.Res, ptr, ptr, [variable]));
+                if (a.K == 0)
+                {
+                    bi.Set(a.At, LoopInst("load", a.Res, ptr, ptr, [variable]));
+                    continue;
+                }
+                string at = a.Res + ".walk";
+                bi.Set(a.At, LoopInst("getelementptr", a.Res, ptr, walk.ElemType,
+                                      [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = at }),
+                                       g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = a.K })]));
+                later.Add(WalkedAddress { Block = a.Block, At = a.At, Res = at, K = variable });
             }
             // the step at the end of the round (an access before it becomes (a3)+: Peephole.cshift)
             steps.Add(LoopInst("load", name + ".cur", ptr, ptr, [variable]));
             steps.Add(LoopInst("getelementptr", name + ".next", ptr, walk.ElemType,
                                [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = name + ".cur" }),
-                                g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = 1 })]));
+                                g.M.AddVal(IrVal { Kind = ValKind.Int, Type = i32, Int = loop.StepBy })]));
             steps.Add(LoopInst("store", "", g.T.Void, ptr,
                                [g.M.AddVal(IrVal { Kind = ValKind.Local, Type = ptr, Name = name + ".next" }), variable]));
             walks += 1;
@@ -455,6 +474,21 @@ void WalkPointers(Gen g, IrFunc f)
         var latch = f.Blocks.Get(loop.Latch).Insts;
         for (var st = steps.Count() - 1; st >= 0; st -= 1)
             latch.Insert(loop.Step, steps.Get(st));
+        // (from the last place of a block to its first: the places before stay where they are; those in the latch are
+        // before the step)
+        for (var x = 0; x < later.Count(); x += 1)
+        {
+            int best = x;
+            for (var y = x + 1; y < later.Count(); y += 1)
+            {
+                if (later.Get(y).At > later.Get(best).At)
+                    best = y;
+            }
+            var a = later.Get(best);
+            later.Set(best, later.Get(x));
+            later.Set(x, a);
+            f.Blocks.Get(a.Block).Insts.Insert(a.At, LoopInst("load", a.Res, ptr, ptr, [a.K]));
+        }
         // a variable that steps with i whose element addresses walk now: when nothing else reads it in the loop and it
         // is written before it is read after the loop, its step goes (it needs no register in the loop)
         var followers = HashSet<string>.Create();
@@ -602,6 +636,8 @@ void RotateLoops(Gen g, IrFunc f)
         var e = BlockEdges(f);
         var defBlock = DefinitionBlocks(f);
         if (FindCountedLoop(g, f, e, Dominators(f), plain, defBlock, h) is not CountedLoop loop)
+            continue;
+        if (loop.StepBy != 1)
             continue;
         var blocks = f.Blocks.ToArray();
         // the loop's start has only the header before it, and no phis there or at the exit
