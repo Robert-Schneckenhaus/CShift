@@ -1234,7 +1234,8 @@ bool NeedsD2D3(Gen g, IrFunc f)
             if (inst.Res.Length > 0 && g.Skip.Contains(inst.Res))
                 continue;
             string op = inst.Op;
-            if (op == "srem" || op == "urem" || op == "sdiv" || op == "udiv")
+            // (a division by 1 or a power of two is a shift or nothing: '(int)(p - q)' divides by sizeof(uint8))
+            if ((op == "srem" || op == "urem" || op == "sdiv" || op == "udiv") && !CheapDivisor(g, inst))
                 return true;
             if (op == "mul" && !SmallFactor(g, inst.Args[0]) && !SmallFactor(g, inst.Args[1]))
                 return true;
@@ -1245,13 +1246,33 @@ bool NeedsD2D3(Gen g, IrFunc f)
             if (op == "call" && inst.Callee >= 0)
             {
                 var c = g.M.Vals.Get(inst.Callee);
+                // (a checked 32-bit product by a power of two from 2 to 256 is an asl and a bvs)
                 if (c.Kind == ValKind.Global && c.Name.StartsWith("llvm.") &&
-                    (c.Name.Contains("mul") || c.Name.EndsWith(".i64")))
+                    (c.Name.Contains("mul") || c.Name.EndsWith(".i64")) &&
+                    !(c.Name == "llvm.smul.with.overflow.i32" && inst.Args.Length == 2 &&
+                      (ShiftFactor(g, inst.Args[0]) || ShiftFactor(g, inst.Args[1]))))
                     return true;
             }
         }
     }
     return false;
+}
+
+// a constant 2, 4, ... 256
+bool ShiftFactor(Gen g, int vi)
+{
+    var v = g.M.Vals.Get(vi);
+    return v.Kind == ValKind.Int && v.Int >= 2 && v.Int <= 256 && (v.Int & (v.Int - 1)) == 0;
+}
+
+// a 32-bit division or remainder by a constant 1 or 2..2^30, which Gen.cshift makes without d2/d3 (but a signed
+// remainder by a power of two: it keeps the dividend in d2)
+bool CheapDivisor(Gen g, IrInst inst)
+{
+    int64 c = 0;
+    if (inst.Args.Length != 2 || Is64(g, inst.Type) || !ConstFactor(g, inst.Args[1], ref c))
+        return false;
+    return c == 1 || (inst.Op != "srem" && PowerOfTwo(c) >= 1 && PowerOfTwo(c) <= 30);
 }
 
 // a constant factor whose product takes neither d2 nor d3: a power of two or one of 16 bits

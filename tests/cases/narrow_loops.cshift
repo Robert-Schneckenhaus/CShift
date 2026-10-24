@@ -7,6 +7,8 @@
 // - a branch to the end of a round replaced by a copy of it (CopyLoopEnds);
 // - a counted loop whose bound has a known range ('(x & 15) + 3', 'x & 0xffff'): its test before the loop is known,
 //   and a count below 65536 is a plain dbra (up to 65535 rounds); a bound that may be larger keeps the long count;
+// - a function whose only divisions are by 1 or powers of two, and whose checked products are by powers of two, keeps
+//   values in d2 and d3 too (Regalloc.cshift: NeedsD2D3);
 // - the bits of a byte tested by bit 7 and shifted: 'add.b d7,d7' / bcc (FuseBitShifts), also with 64-bit
 //   arithmetic (which reads the X flag that add.b sets) in the round.
 // expect-stdout: narrow loops ok
@@ -79,6 +81,29 @@ int Rounds(int x)
     return n * 1000000 + words * 2 + longer;
 }
 
+unsafe int Spread(uint8[] data, int a, int b)
+{
+    uint8* p = &data[0];
+    uint8* q = p + data.Length;
+    int s1 = 0;
+    int s2 = 0;
+    int s3 = 0;
+    int s4 = 0;
+    int s5 = 0;
+    int s6 = 0;
+    int k = a * 8;
+    for (var i = 0; i < data.Length; i += 1)
+    {
+        s1 += data[i] / 4;
+        s2 += (data[i] - 100) / 2;
+        s3 += (uint32)data[i] % 8u > 3 ? 1 : 0;
+        s4 += (data[i] - b) % 4;
+        s5 += i * k;
+        s6 += (int)(q - p) / 1;
+    }
+    return s1 + s2 * 3 + s3 * 7 + s4 * 11 + s5 + s6;
+}
+
 int64 Wide(int header, int64 total)
 {
     for (var n = 0; n < 8; n += 1)
@@ -122,6 +147,10 @@ int Main()
     Check("bits 0", Bits(0), 28);
     Check("bits 0xff", Bits(0xff), 800);
     Check("back", Back(d, 3), d[98]);
+    var spread = new uint8[37];
+    for (var i = 0; i < spread.Length; i += 1)
+        spread[i] = (uint8)(i * 41);
+    Check("spread", Spread(spread, 3, 77), 20094);
     Check("rounds 0", Rounds(0), 3000000);
     Check("rounds 1", Rounds(1), 4000003);
     Check("rounds ffff", Rounds(0xffff), 18000000 + 65535 * 3);
