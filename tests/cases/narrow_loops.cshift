@@ -25,6 +25,26 @@ void Check(string what, int got, int expected)
     }
 }
 
+// the same into a new array: the length of 'new uint8[n]' is n, so neither array needs a bounds check, and the bytes
+// are xor'ed as bytes (eor.b)
+uint8[] CryptCopy(ReadOnlySlice<uint8> source, uint16 key)
+{
+    var data = new uint8[source.Length];
+    int last = data.Length - 1;
+    int d0 = key;
+    int index = 0;
+    while (index < last)
+    {
+        data[index] = (uint8)(source[index] ^ (d0 >> 8));
+        data[index + 1] = (uint8)(source[index + 1] ^ d0);
+        d0 = ((d0 << 4) + d0 + 87) & 0xffff;
+        index += 2;
+    }
+    if (index == last)
+        data[index] = (uint8)(source[index] ^ (d0 >> 8));
+    return data;
+}
+
 void Crypt(uint8[] data, uint16 key, int offset)
 {
     int last = data.Length - 1;
@@ -139,6 +159,18 @@ int Main()
     Crypt(d, 0x4321, 3);
     Crypt(d, 0x1234, 0);
     Check("crypt back", d[50], 94);
+    for (var n = 0; n < 6; n += 1)
+    {
+        // even and odd lengths, from the start and from an offset
+        var copy = CryptCopy(d[n..d.Length - n * 2], 0x5a5a);
+        var same = d[n..d.Length - n * 2].ToArray();
+        Crypt(same, 0x5a5a, 0);
+        int differ = copy.Length == same.Length ? 0 : 1000;
+        for (var i = 0; i < copy.Length && differ == 0; i += 1)
+            differ += copy[i] == same[i] ? 0 : 1;
+        Check("crypt copy " + n.ToString(), differ, 0);
+    }
+    Check("crypt copy empty", CryptCopy(d[0..0], 7).Length, 0);
 
     Check("bytes 1", Bytes(1), 20906354);
     Check("bytes -5", Bytes(-5), 16748718);

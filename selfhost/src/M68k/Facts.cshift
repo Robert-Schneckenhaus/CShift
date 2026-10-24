@@ -1023,6 +1023,20 @@ bool IsNonNegative(HashSet<string> nonNegative, string key)
     return nonNegative.Contains(key) || (key.StartsWith("#") && !key.StartsWith("#-"));
 }
 
+// whether a value is never negative, or not where the facts hold ('n >= 0', as after the test of 'new T[n]')
+bool NonNegativeHere(HashSet<string> nonNegative, List<Fact> facts, string key)
+{
+    if (IsNonNegative(nonNegative, key))
+        return true;
+    foreach (var fact in facts)
+    {
+        if ((fact.Pred == "sge" && fact.A == key && fact.B == "#0") || (fact.Pred == "sle" && fact.B == key && fact.A == "#0") ||
+            (fact.Pred == "sgt" && fact.A == key && fact.B == "#-1") || (fact.Pred == "slt" && fact.B == key && fact.A == "#-1"))
+            return true;
+    }
+    return false;
+}
+
 bool IsOverflowCall(Gen g, IrInst inst, string name)
 {
     if (inst.Op != "call" || inst.Callee < 0 || inst.Args.Length != 2 || inst.Res.Length == 0)
@@ -1066,9 +1080,9 @@ bool CannotOverflow(Gen g, IrInst inst, List<Fact> facts, Dictionary<string, Off
                 y = fact.B;
                 signedFact = true;
             }
-            else if (fact.Pred == "ult" && IsNonNegative(nonNegative, fact.B))
+            else if (fact.Pred == "ult" && NonNegativeHere(nonNegative, facts, fact.B))
                 y = fact.A;
-            else if (fact.Pred == "ugt" && IsNonNegative(nonNegative, fact.A))
+            else if (fact.Pred == "ugt" && NonNegativeHere(nonNegative, facts, fact.A))
                 y = fact.B;
             if (y.Length == 0)
                 continue;
@@ -2060,7 +2074,8 @@ bool GrowsInLoop(Gen g, IrFunc f, Dictionary<string, IrInst> defs, Dictionary<st
 // bits of these depend only on the low bits of their operands, so they are computed in 16 (8) bits (add.w, lsl.w, an
 // immediate word) and the result is zero-extended. '((d0 << 4) + d0 + 87) & 0xffff' takes lsl.w, add.w, add.w #87
 // and a moveq/move.w instead of the long operations and an and.l #65535. The narrow operations are placed before the
-// and (their operands are there); the wide ones go if nothing else uses them.
+// and (their operands are there); the wide ones go if nothing else uses them. A trunc to 8 or 16 bits of such a value
+// is the narrow computation itself: '(uint8)(source[i] ^ k)' is a byte xor (eor.b).
 void NarrowMasks(Gen g, IrFunc f)
 {
     var uses = LocalUses(g, f);
@@ -2080,6 +2095,22 @@ void NarrowMasks(Gen g, IrFunc f)
         for (var k = 0; k < insts.Count(); k += 1)
         {
             var inst = insts.Get(k);
+            if (inst.Op == "trunc" && inst.OpType == i32 && inst.Res.Length > 0 && inst.Args.Length == 1 &&
+                (inst.Type == g.T.IntType(8) || inst.Type == g.T.IntType(16)) &&
+                Narrowable(g, defs, uses, inst.Args[0], g.T.Bits(inst.Type), 0))
+            {
+                // the low bits of such a value: the narrow computation itself (a byte xor'ed and stored is an eor.b)
+                var parts = List<IrInst>.Create();
+                int low = NarrowValue(g, defs, uses, inst.Args[0], g.T.Bits(inst.Type), parts, 0);
+                var last = parts.Get(parts.Count() - 1);
+                parts.Set(parts.Count() - 1, LoopInst(last.Op, inst.Res, last.Type, last.OpType, last.Args));
+                insts.RemoveAt(k);
+                for (var a = 0; a < parts.Count(); a += 1)
+                    insts.Insert(k + a, parts.Get(a));
+                k += parts.Count() - 1;
+                defs.Set(inst.Res, parts.Get(parts.Count() - 1));
+                continue;
+            }
             int64 mask = 0;
             if (inst.Op != "and" || inst.Type != i32 || inst.Args.Length != 2 || !ConstInt(g, inst.Args[1], ref mask) ||
                 (mask != 0xffff && mask != 0xff))
