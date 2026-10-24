@@ -7,6 +7,8 @@ into the executable (HUNK_SYMBOL).
     python3 tools/amiga/profile.py [--cpu 68000] [--ram 8192] [--top 30] [--annotate NAME] program [arguments]
 
 --annotate NAME also lists the instructions of the functions whose name contains NAME, each with how often it ran.
+--callers NAME lists, for the functions whose name contains NAME, the functions that call them, with the calls and the
+instructions run in the called function for them (e.g. --callers memcpy: who copies how much).
 The trace is slow (about 30,000 instructions per second); the program's own output goes to stdout as usual.
 """
 import argparse
@@ -85,6 +87,7 @@ def main():
     parser.add_argument('--ram', type=int, default=8192, help='the memory of the Amiga in KB (default 8192; vamos alone has 1 MB)')
     parser.add_argument('--top', type=int, default=30, help='the number of functions to list (default 30)')
     parser.add_argument('--annotate', metavar='NAME', help='list the instructions of the functions whose name contains NAME')
+    parser.add_argument('--callers', metavar='NAME', help='list the callers of the functions whose name contains NAME')
     parser.add_argument('program')
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -99,13 +102,33 @@ def main():
     text = {}
     base = None
     cycles = None
+    # --callers: the entries of the functions asked for, and per (callee, caller) the calls and instructions
+    called = {}
+    by_caller = collections.Counter()
+    calls_by_caller = collections.Counter()
+    previous = None
+    current = None  # (callee, caller) while in a callee
     for line in process.stderr:
         m = trace.search(line)
         if m:
             pc = int(m.group(1), 16)
             if base is None:
                 base = pc  # the first instruction is the start of the code hunk (the startup code)
+                if args.callers:
+                    called = {base + offset: name for offset, name in symbols if args.callers in name}
             counts[pc] += 1
+            if args.callers:
+                if pc in called and previous is not None:
+                    i = bisect.bisect_right(starts, previous - base) - 1
+                    current = (called[pc], symbols[i][1] if i >= 0 else '?')
+                    calls_by_caller[current] += 1
+                if current is not None:
+                    i = bisect.bisect_right(starts, pc - base) - 1
+                    if i >= 0 and symbols[i][1] == current[0]:
+                        by_caller[current] += 1
+                    elif i >= 0 and pc not in called:
+                        current = None
+                previous = pc
             if pc not in text:
                 text[pc] = m.group(2).rstrip()
         elif 'total cycles:' in line:
@@ -133,6 +156,12 @@ def main():
     print(f'{"instructions":>12} {"share":>6} {"entries":>9}  function')
     for name, n in per_function.most_common(args.top):
         print(f'{n:12d} {100.0 * n / total:5.1f}% {calls[name]:9d}  {name}')
+
+    if args.callers:
+        print()
+        print(f'{"instructions":>12} {"calls":>9}  called function <- caller')
+        for (callee, caller), n in by_caller.most_common(args.top):
+            print(f'{n:12d} {calls_by_caller[(callee, caller)]:9d}  {callee} <- {caller}')
 
     if args.annotate:
         for offset, name in symbols:

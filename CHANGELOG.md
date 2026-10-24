@@ -101,6 +101,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   cycles on a 68000.
 - `tools/amiga/profile.py`: `--ram` (the memory of the Amiga, 8 MB by default; vamos alone has 1 MB), and the
   options of the program are its own (vamos took `-c1`, `-v` or `-x` for itself).
+- `tools/amiga/profile.py`: `--callers NAME` lists the functions that call the functions whose name contains `NAME`,
+  with the calls and the instructions run for them (`--callers memcpy`: who copies how much).
+
+### Standard library
+- `File.ReadAllBytes` reads a file into an array of its size (it asks for the size first) and returns that array,
+  instead of reading into a buffer that doubles from 4 KB and copying the bytes into the result at the end. A file
+  that cannot tell its size (a pipe) is read as before. Unpacking Ambermoon's monster.amb (a 500 KB file) takes 46
+  instead of 52 million cycles on a 68000.
 
 ### Fixed
 - `b ? [1, 2] : [3]` (a collection expression in both branches of a conditional) no longer stops the compiler with an
