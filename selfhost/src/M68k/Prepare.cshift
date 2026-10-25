@@ -48,6 +48,7 @@ void PrepareFunction(Gen g, IrFunc f)
     ThreadConditions(g, f); // (before the facts: the blocks of 'c1 && c2' follow the block of c2 then)
     GuardLowerBounds(g, f); // (before ForwardLoads: its test of i then reads i's value before the loop)
     ForwardLoads(g, f);
+    ForwardFields(g, f);
     ShareLengths(g, f);
     FoldConstants(g, f); // (constant shift counts and masks for the ranges)
     CommonValues(g, f);

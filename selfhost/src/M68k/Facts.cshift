@@ -285,6 +285,343 @@ int KnownValue(Gen g, IrBlock[] blocks, Edges e, int[] idom, HashSet<string>[] s
 }
 
 // ---------------------------------------------------------------------------
+// Known fields
+// ---------------------------------------------------------------------------
+
+// A load of a scalar field (getelementptr %S, base, 0, k) that an earlier load or store of the same field dominates
+// is that value, if nothing on the way can write the field: no call (but those of the runtime that write no fields),
+// no store but to a plain variable, to an element of an array of integers, to another field of a struct of the same
+// type or to a local struct whose address goes nowhere else (and that is not the one loaded from). Fields of other
+// struct types may share the memory (the variants of a union). ('this.f[i] = x; ... this.f[j]': the array of the
+// field is loaded once.)
+void ForwardFields(Gen g, IrFunc f)
+{
+    var blocks = f.Blocks.ToArray();
+    int n = blocks.Length;
+    if (n == 0)
+        return;
+    var plain = PlainVariables(g, f);
+    var geps = Dictionary<string, IrInst>.Create();
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "getelementptr" && inst.Res.Length > 0)
+                geps.Set(inst.Res, inst);
+        }
+    }
+    var locals = _LocalStructs(g, blocks, geps);
+    // per block: whether it writes anything, else the fields it stores ("S k") and the local structs ("@name")
+    var writesAll = new bool[n];
+    var storedFields = new HashSet<string>[n];
+    bool any = false;
+    for (var j = 0; j < n; j += 1)
+    {
+        storedFields[j] = HashSet<string>.Create();
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            string kind = _FieldWrite(g, inst, plain, geps, locals);
+            if (kind == "*")
+                writesAll[j] = true;
+            else if (kind.Length > 0)
+                storedFields[j].Add(kind);
+            if (inst.Op == "load" && _FieldKey(g, inst, geps).Length > 0)
+                any = true;
+        }
+    }
+    if (!any)
+        return;
+    var idom = Dominators(f);
+    var e = BlockEdges(f);
+    var replaced = Dictionary<string, int>.Create();
+    for (var j = 0; j < n; j += 1)
+    {
+        if (j > 0 && idom[j] < 0)
+            continue; // (not reached)
+        var insts = blocks[j].Insts.ToArray();
+        for (var k = 0; k < insts.Length; k += 1)
+        {
+            var inst = insts[k];
+            if (inst.Op != "load" || inst.Res.Length == 0 || inst.Volatile)
+                continue;
+            string key = _FieldKey(g, inst, geps);
+            if (key.Length == 0)
+                continue;
+            string root = _LocalRoot(g, inst.Args[0], geps, locals);
+            int known = _KnownField(g, blocks, e, idom, writesAll, storedFields, plain, geps, locals, key, root,
+                                    inst.Type, j, k);
+            if (known >= 0)
+                replaced.Set(inst.Res, known);
+        }
+    }
+    if (replaced.Count() == 0)
+        return;
+    foreach (var entry in replaced.Entries())
+    {
+        int vi = entry.Value;
+        for (var guard = 0; guard < 1000; guard += 1)
+        {
+            var v = g.M.Vals.Get(vi);
+            if (v.Kind != ValKind.Local || !replaced.ContainsKey(v.Name))
+                break;
+            vi = replaced.Get(v.Name);
+        }
+        replaced.Set(entry.Key, vi);
+    }
+    for (var j = 0; j < n; j += 1)
+    {
+        var kept = List<IrInst>.Create();
+        foreach (var inst in blocks[j].Insts.ToArray())
+        {
+            if (!(inst.Op == "load" && replaced.ContainsKey(inst.Res)))
+                kept.Add(inst);
+        }
+        f.Blocks.Set(j, IrBlock { Label = blocks[j].Label, Insts = kept });
+    }
+    foreach (var entry in replaced.Entries())
+        ReplaceUses(g, f, entry.Key, entry.Value);
+}
+
+// "S k" of the struct field that a getelementptr %S, base, 0, k computes (a scalar field), "" otherwise
+string _FieldOf(Gen g, int address, Dictionary<string, IrInst> geps)
+{
+    var av = g.M.Vals.Get(address);
+    if (av.Kind != ValKind.Local || !geps.ContainsKey(av.Name))
+        return "";
+    var gep = geps.Get(av.Name);
+    if (gep.Args.Length != 3 || g.T.Kind(gep.OpType) != IrKind.Struct)
+        return "";
+    int64 zero = 0;
+    int64 field = 0;
+    if (!ConstInt(g, gep.Args[1], ref zero) || zero != 0 || !ConstInt(g, gep.Args[2], ref field))
+        return "";
+    var fields = g.T.Info(gep.OpType).Fields;
+    if (field < 0 || field >= fields.Length || !IsScalar4(g, fields[(int)field]))
+        return "";
+    return gep.OpType.ToString() + " " + field.ToString();
+}
+
+// the key of the field that a load or store accesses: "S k base", "" if it is no scalar field of a struct
+string _FieldKey(Gen g, IrInst inst, Dictionary<string, IrInst> geps)
+{
+    int a = inst.Op == "load" ? 0 : inst.Op == "store" ? 1 : -1;
+    if (a < 0 || inst.Args.Length <= a)
+        return "";
+    string field = _FieldOf(g, inst.Args[a], geps);
+    if (field.Length == 0)
+        return "";
+    string b = ValueKey(g, geps.Get(g.M.Vals.Get(inst.Args[a]).Name).Args[0]);
+    if (b.Length == 0)
+        return "";
+    int t = inst.Op == "load" ? inst.Type : inst.OpType;
+    if (!IsScalar4(g, t))
+        return "";
+    return field + " " + b;
+}
+
+// the allocas that only loads, stores and getelementptrs use as an address (also through those getelementptrs): no
+// other pointer can reach them
+HashSet<string> _LocalStructs(Gen g, IrBlock[] blocks, Dictionary<string, IrInst> geps)
+{
+    var locals = HashSet<string>.Create();
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            if (inst.Op == "alloca" && inst.Res.Length > 0)
+                locals.Add(inst.Res);
+        }
+    }
+    var all = HashSet<string>.Create();
+    foreach (var name in locals.ToArray())
+        all.Add(name);
+    foreach (var b in blocks)
+    {
+        foreach (var inst in b.Insts.ToArray())
+        {
+            for (var a = 0; a < inst.Args.Length; a += 1)
+            {
+                bool address = (inst.Op == "load" && a == 0) || (inst.Op == "store" && a == 1) ||
+                               (inst.Op == "getelementptr" && a == 0);
+                if (address)
+                    continue;
+                string root = _LocalRoot(g, inst.Args[a], geps, all);
+                if (root.Length > 0)
+                    locals.Remove(root);
+            }
+            if (inst.Callee >= 0)
+            {
+                string root = _LocalRoot(g, inst.Callee, geps, all);
+                if (root.Length > 0)
+                    locals.Remove(root);
+            }
+        }
+    }
+    return locals;
+}
+
+// the alloca of 'locals' that an address is in (through getelementptrs), "" if none
+string _LocalRoot(Gen g, int address, Dictionary<string, IrInst> geps, HashSet<string> locals)
+{
+    int vi = address;
+    for (var guard = 0; guard < 100; guard += 1)
+    {
+        var v = g.M.Vals.Get(vi);
+        if (v.Kind != ValKind.Local)
+            return "";
+        if (locals.Contains(v.Name))
+            return v.Name;
+        if (!geps.ContainsKey(v.Name))
+            return "";
+        vi = geps.Get(v.Name).Args[0];
+    }
+    return "";
+}
+
+// what an instruction can write in fields: "" nothing, "S k" that field of a struct of the type (and any field of other
+// types), "@name" only the local struct 'name', "*" anything
+string _FieldWrite(Gen g, IrInst inst, Dictionary<string, int> plain, Dictionary<string, IrInst> geps,
+                   HashSet<string> locals)
+{
+    switch (inst.Op)
+    {
+    case "store":
+    {
+        if (inst.Volatile)
+            return "*";
+        if (AccessedVariable(g, inst, plain).Length > 0)
+            return "";
+        string root = _LocalRoot(g, inst.Args[1], geps, locals);
+        if (root.Length > 0)
+            return "@" + root;
+        string field = _FieldOf(g, inst.Args[1], geps);
+        if (field.Length > 0 && IsScalar4(g, inst.OpType))
+            return field;
+        if (_IsScalarElement(g, inst.Args[1], geps) && g.T.Kind(inst.OpType) == IrKind.Int)
+            return "";
+        return "*";
+    }
+    case "call":
+    {
+        if (inst.Callee >= 0)
+        {
+            var c = g.M.Vals.Get(inst.Callee);
+            if (c.Kind == ValKind.Global &&
+                (c.Name == "__cs_len" || c.Name == "__cs_retain" || c.Name.StartsWith("__cs_panic") ||
+                 (c.Name.StartsWith("llvm.") && c.Name.Contains(".with.overflow."))))
+                return "";
+        }
+        return "*";
+    }
+    case "atomicrmw":
+    case "cmpxchg":
+    case "invoke":
+        return "*";
+    }
+    return "";
+}
+
+// whether an address is an element of an array of integers: getelementptr iN, (getelementptr i8, array, 8), index
+bool _IsScalarElement(Gen g, int address, Dictionary<string, IrInst> geps)
+{
+    var av = g.M.Vals.Get(address);
+    if (av.Kind != ValKind.Local || !geps.ContainsKey(av.Name))
+        return false;
+    var gep = geps.Get(av.Name);
+    if (gep.Args.Length != 2 || g.T.Kind(gep.OpType) != IrKind.Int)
+        return false;
+    var dv = g.M.Vals.Get(gep.Args[0]);
+    if (dv.Kind != ValKind.Local || !geps.ContainsKey(dv.Name))
+        return false;
+    var data = geps.Get(dv.Name);
+    if (data.Args.Length != 2 || g.T.Kind(data.OpType) != IrKind.Int || g.T.Bits(data.OpType) != 8)
+        return false;
+    int64 header = 0;
+    return ConstInt(g, data.Args[1], ref header) && header == 8;
+}
+
+// whether an instruction can write the field "S k base" (key) of a load from the local struct 'root' ("" if none)
+bool _WritesField(Gen g, IrInst inst, Dictionary<string, int> plain, Dictionary<string, IrInst> geps,
+                  HashSet<string> locals, string key, string root)
+{
+    string w = _FieldWrite(g, inst, plain, geps, locals);
+    if (w.Length == 0)
+        return false;
+    if (w == "*")
+        return true;
+    if (w.StartsWith("@"))
+        return w == "@" + root;
+    return _ClobbersField(w, key.Substring(0, key.LastIndexOf(' ')));
+}
+
+// whether a store to the field "S k" (stored) can write the field "S k" (loaded): unless both are of the same struct
+// type and the fields differ (fields of different types may share memory)
+bool _ClobbersField(string stored, string loaded)
+{
+    return stored == loaded || stored.Substring(0, stored.IndexOf(' ')) != loaded.Substring(0, loaded.IndexOf(' '));
+}
+
+// the value of the field before instruction k of block j, -1 if it is not known (like KnownValue)
+int _KnownField(Gen g, IrBlock[] blocks, Edges e, int[] idom, bool[] writesAll, HashSet<string>[] storedFields,
+                Dictionary<string, int> plain, Dictionary<string, IrInst> geps, HashSet<string> locals, string key,
+                string root, int type, int j, int k)
+{
+    string field = key.Substring(0, key.LastIndexOf(' '));
+    var insts = blocks[j].Insts.ToArray();
+    for (var i = k - 1; i >= 0; i -= 1)
+    {
+        int found = _FieldValue(g, insts[i], geps, key, type);
+        if (found >= 0)
+            return found;
+        if (_WritesField(g, insts[i], plain, geps, locals, key, root))
+            return -1;
+    }
+    int d = idom[j];
+    while (d >= 0)
+    {
+        var dinsts = blocks[d].Insts.ToArray();
+        for (var i = dinsts.Length - 1; i >= 0; i -= 1)
+        {
+            int found = _FieldValue(g, dinsts[i], geps, key, type);
+            if (found < 0)
+            {
+                if (_WritesField(g, dinsts[i], plain, geps, locals, key, root))
+                    return -1;
+                continue;
+            }
+            var between = Between(e, d, j);
+            for (var b = 0; b < between.Length; b += 1)
+            {
+                if (!between[b])
+                    continue;
+                if (writesAll[b])
+                    return -1;
+                foreach (var w in storedFields[b].ToArray())
+                {
+                    if (w.StartsWith("@") ? w == "@" + root : _ClobbersField(w, field))
+                        return -1;
+                }
+            }
+            return found;
+        }
+        if (d == 0)
+            break;
+        d = idom[d];
+    }
+    return -1;
+}
+
+// the value of the field "S k base" that a load of it gives or a store writes (of this type), -1 for other instructions
+int _FieldValue(Gen g, IrInst inst, Dictionary<string, IrInst> geps, string key, int type)
+{
+    if (inst.Op == "load" && !inst.Volatile && inst.Type == type && _FieldKey(g, inst, geps) == key)
+        return ResultValue(g, inst);
+    if (inst.Op == "store" && !inst.Volatile && inst.OpType == type && _FieldKey(g, inst, geps) == key)
+        return inst.Args[0];
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
 // Known conditions
 // ---------------------------------------------------------------------------
 

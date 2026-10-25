@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Amiga
+- Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on
+  the way can write it (no call but runtime functions that write no fields, no store but to a local variable, to an
+  element of an array of integers or to another field). The array of `this.items[i]` is loaded
+  once for several elements, also after a store to one of them. Packing Ambermoon data with LOB takes 4.7 % fewer
+  cycles.
+
 ## [0.40] - 2026-10-24
 
 ### Amiga
