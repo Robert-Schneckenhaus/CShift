@@ -6,6 +6,8 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+## [0.41] - 2026-10-25
+
 ### Amiga
 - Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on
   the way can write it (no call but runtime functions that write no fields, no store but to a local variable, to an
