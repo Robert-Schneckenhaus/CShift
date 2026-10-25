@@ -1,0 +1,120 @@
+// A field loaded again after an earlier load or store of it with the 68000 backend (Facts.cshift: ForwardFields) must
+// still see every write: a call that replaces the field's array, a store through another reference to the same
+// struct, a store in a loop or a branch on the way, and a store to the same field of another struct of the type.
+// Stores to array elements and to other fields keep the value.
+// expect-stdout: forward fields ok
+using System;
+
+int failures = 0;
+
+void Check(string what, int got, int expected)
+{
+    if (got != expected)
+    {
+        Console.WriteLine(what + ": " + got.ToString() + " instead of " + expected.ToString());
+        failures += 1;
+    }
+}
+
+struct Box
+{
+    int[] Data;
+    int Count;
+    int Other;
+
+    // replaces the array (like a list that grows)
+    void Grow()
+    {
+        var bigger = new int[Data.Length * 2];
+        for (var i = 0; i < Data.Length; i += 1)
+            bigger[i] = Data[i] + 100;
+        Data = bigger;
+    }
+
+    // the array before and after a call that replaces it
+    int AcrossCall()
+    {
+        int before = Data.Length;
+        Data[0] = 1;
+        Grow();
+        Data[1] = 2;
+        return before * 1000 + Data.Length * 10 + Data[0] - 100;
+    }
+
+    // stores to elements and to other fields keep the array and the count
+    int ElementsAndFields()
+    {
+        Data[0] = Count;
+        Other = 9;
+        Data[1] = Count + 1;
+        Other += Data[1];
+        return Data[0] * 100 + Data[1] * 10 + Count + Other;
+    }
+
+    // a store of the field itself
+    int StoreThenLoad(int n)
+    {
+        Count = n;
+        Data[0] = 4;
+        return Count * 2;
+    }
+
+    // a store on some rounds of a loop
+    int InLoop(int rounds)
+    {
+        int first = Count;
+        for (var i = 0; i < rounds; i += 1)
+        {
+            if ((i & 1) == 1)
+                Count += 3;
+            Data[0] += 1;
+        }
+        return first * 100 + Count;
+    }
+
+    // a store in one branch
+    int InBranch(bool replace)
+    {
+        int length = Data.Length;
+        if (replace)
+            Data = new int[length + 5];
+        return Data.Length - length;
+    }
+}
+
+// the same struct through two references
+int Aliased(ref Box a, ref Box b)
+{
+    int x = a.Count;
+    b.Count = x + 7;
+    return a.Count * 10 + x;
+}
+
+// the same field of another struct of the type (here the same one)
+int OtherBox(Box[] boxes, int i, int j)
+{
+    int x = boxes[i].Count;
+    boxes[j].Count = 50;
+    return boxes[i].Count + x;
+}
+
+int Main()
+{
+    var box = Box { Data = new int[4], Count = 3 };
+    Check("across a call", box.AcrossCall(), 4000 + 80 + 1);
+    Check("elements and fields", box.ElementsAndFields(), 300 + 40 + 3 + 13);
+    Check("store then load", box.StoreThenLoad(6), 12);
+    Check("in a loop", box.InLoop(5), 600 + 12);
+    Check("in a loop, no rounds", box.InLoop(0), 1200 + 12);
+    Check("in a branch", box.InBranch(true), 5);
+    Check("not in the branch", box.InBranch(false), 0);
+    Check("aliased", Aliased(ref box, ref box), 19 * 10 + 12);
+    var boxes = new Box[3];
+    boxes[1].Count = 4;
+    Check("other box, same", OtherBox(boxes, 1, 1), 54);
+    boxes[1].Count = 4;
+    Check("other box, different", OtherBox(boxes, 1, 2), 8);
+    if (failures == 0)
+        Console.WriteLine("forward fields ok");
+    return failures;
+}
