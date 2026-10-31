@@ -937,7 +937,8 @@ struct Ui
     /// frame in which it was clicked.
     bool TreeLeaf(string label, bool selected) { return _S[0].ListItemAt(label, selected, _S[0].Px(16)); }
 
-    /// Opens or closes the tree node with this label (from this frame on, if it comes after this).
+    /// Opens or closes the tree node with this label (from this frame on, if it comes after this). Call it in the group
+    /// in which the node is drawn: its id comes from the label and the groups around it (see [Ui.Id]).
     void SetTreeOpen(string label, bool open) { _S[0].TreeOpen.Set(_S[0].IdOf("#tree:" + label), open); _S[0].Again = true; }
 
     /// The widgets of the block are moved to the right by one step of a tree (16 pixels at scale 1), in a column:

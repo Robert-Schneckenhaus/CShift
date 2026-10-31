@@ -165,7 +165,8 @@ using (ui.Row())
 ```
 
 A tree is made of nodes and leaves; the Ui keeps which nodes are open (closed at first, `ui.SetTreeOpen(label, open)`
-opens or closes one), and the children of an open node go into `ui.Indent()`, which moves them one step (16 pixels) to
+opens or closes one; call it in the group in which the node is drawn, since the id of a node comes from the groups around
+it), and the children of an open node go into `ui.Indent()`, which moves them one step (16 pixels) to
 the right. Tabs are a row: `ui.TabBar()` draws the line under it, the page of the chosen tab follows.
 
 ```csharp
