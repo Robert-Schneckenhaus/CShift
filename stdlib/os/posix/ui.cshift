@@ -90,6 +90,8 @@ struct _UiXWindow
     nuint CursorHand;
     nuint CursorCross;
     nuint CursorMove;
+    nuint CursorResizeColumn;
+    nuint CursorResizeRow;
     Cursor Cursor;
 }
 
@@ -401,6 +403,8 @@ struct _UiOs
             _UiXw.CursorHand = _UiX.CreateFontCursor(display, 60u); // XC_hand2
             _UiXw.CursorCross = _UiX.CreateFontCursor(display, 34u); // XC_crosshair
             _UiXw.CursorMove = _UiX.CreateFontCursor(display, 52u); // XC_fleur
+            _UiXw.CursorResizeColumn = _UiX.CreateFontCursor(display, 108u); // XC_sb_h_double_arrow
+            _UiXw.CursorResizeRow = _UiX.CreateFontCursor(display, 116u);    // XC_sb_v_double_arrow
             _UiX.DefineCursor(display, window, _UiXw.CursorArrow);
             SetTitle(title);
             _UiX.MapWindow(display, window);
@@ -507,7 +511,8 @@ struct _UiOs
             return;
         _UiXw.Cursor = cursor;
         nuint shape = cursor == Cursor.Text ? _UiXw.CursorText : cursor == Cursor.Hand ? _UiXw.CursorHand :
-                      cursor == Cursor.Crosshair ? _UiXw.CursorCross : cursor == Cursor.Move ? _UiXw.CursorMove : _UiXw.CursorArrow;
+                      cursor == Cursor.Crosshair ? _UiXw.CursorCross : cursor == Cursor.Move ? _UiXw.CursorMove :
+                      cursor == Cursor.ResizeColumn ? _UiXw.CursorResizeColumn : cursor == Cursor.ResizeRow ? _UiXw.CursorResizeRow : _UiXw.CursorArrow;
         unsafe
         {
             _UiX.DefineCursor(_UiXw.Display, _UiXw.Window, shape);

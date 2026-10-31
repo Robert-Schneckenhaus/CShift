@@ -86,6 +86,8 @@ struct _UiWin32
     void* CursorHand;
     void* CursorCross;
     void* CursorMove;
+    void* CursorResizeColumn;
+    void* CursorResizeRow;
     void* Cursor;
 }
 
@@ -317,6 +319,8 @@ struct _UiOs
             _UiWin.CursorHand = LoadCursorW(null, 32649);
             _UiWin.CursorCross = LoadCursorW(null, 32515); // IDC_CROSS
             _UiWin.CursorMove = LoadCursorW(null, 32646);  // IDC_SIZEALL
+            _UiWin.CursorResizeColumn = LoadCursorW(null, 32644); // IDC_SIZEWE
+            _UiWin.CursorResizeRow = LoadCursorW(null, 32645);    // IDC_SIZENS
             _UiWin.Cursor = _UiWin.CursorArrow;
             // the size for the screen's scale
             _UiWin.Dpi = GetDpiForWindow(hwnd);
@@ -415,7 +419,8 @@ struct _UiOs
     static void SetPointer(Cursor cursor)
     {
         void* wanted = cursor == Cursor.Text ? _UiWin.CursorText : cursor == Cursor.Hand ? _UiWin.CursorHand :
-                       cursor == Cursor.Crosshair ? _UiWin.CursorCross : cursor == Cursor.Move ? _UiWin.CursorMove : _UiWin.CursorArrow;
+                       cursor == Cursor.Crosshair ? _UiWin.CursorCross : cursor == Cursor.Move ? _UiWin.CursorMove :
+                       cursor == Cursor.ResizeColumn ? _UiWin.CursorResizeColumn : cursor == Cursor.ResizeRow ? _UiWin.CursorResizeRow : _UiWin.CursorArrow;
         if (wanted != _UiWin.Cursor)
         {
             _UiWin.Cursor = wanted;

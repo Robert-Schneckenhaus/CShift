@@ -77,6 +77,10 @@ needs no graphics library, and the same frames can be drawn without a window: fo
 | `ui.Submitted(id)` | | `true` in the frame in which Enter was pressed in that text box |
 | `ui.ProgressBar(fraction)` | a bar filled from 0.0 to 1.0 | |
 | `ui.ListItem(label, selected)` | a line of a list, highlighted if selected | `true` when clicked |
+| `ui.TreeNode(label, selected)` | a node of a tree: an arrow that opens and closes it, a label that selects it | `UiTreeNode`: `Open` (draw the children), `Clicked` |
+| `ui.TreeLeaf(label, selected)` | a leaf of a tree (its label lines up with the labels of the nodes) | `true` when clicked |
+| `ui.Splitter(id, ref int size, min, max)` | a bar the mouse drags: between columns of a row a width, under a widget of a column a height ([layout](#layout)) | `true` when `size` changed |
+| `ui.Tab(label, ref int selected, index)` | a tab of a `ui.TabBar()` ([layout](#layout)) | `true` when it was chosen (`selected` becomes `index`) |
 | `ui.ComboBox(id, ref int selected, items)` | the chosen item of a `List<string>`; a click opens the list over the rest | `true` when `selected` changed |
 | `ui.IntBox(id, ref int value, min, max)` | a text box for a whole number (digits and `-`, Up and Down add 1) | `true` when `value` changed |
 | `ui.Image(image)` | an image in its own size | |
@@ -87,7 +91,8 @@ The text box edits with the arrow keys, Home, End, Backspace and Delete (Shift s
 Ctrl+V, and the mouse (click, drag to select); Escape ends the editing. Tab and Shift+Tab move the keyboard focus
 through the widgets; a focused slider moves with the arrow keys, Home and End. A focused combo box chooses the item
 before or after with Up and Down; Enter or Space open its list, where Up, Down, Home, End and Enter choose and Escape
-or a click outside closes it. Long lists scroll (the wheel, the scroll bar).
+or a click outside closes it. Long lists scroll (the wheel, the scroll bar). A focused tree node opens with Right and
+closes with Left, a focused splitter moves by 8 pixels with the arrow keys.
 
 ## Layout
 
@@ -137,6 +142,50 @@ using (ui.Row())
         }
     }
 }
+```
+
+A splitter between the columns lets the user change their width; under a scroll area of a column it changes its
+height. The size is the program's (save it with the rest of its settings): the splitter only changes it and, in that
+frame, asks for another one, so the widgets before it are drawn with the new size at once.
+
+```csharp
+using (ui.Row())
+{
+    using (ui.Column(app.TreeWidth))
+    {
+        using (ui.Scroll("tree", app.TreeHeight))
+            DrawTree(ui, ref app);
+        ui.Splitter("tree-height", ref app.TreeHeight, 60, 600);   // changes the height of the scroll area above
+        DrawProperties(ui, ref app);
+    }
+    ui.Splitter("tree-width", ref app.TreeWidth, 120, 500);        // changes the width of the column before it
+    using (ui.Column(0))
+        DrawMap(ui, ref app);
+}
+```
+
+A tree is made of nodes and leaves; the Ui keeps which nodes are open (closed at first, `ui.SetTreeOpen(label, open)`
+opens or closes one), and the children of an open node go into `ui.Indent()`, which moves them one step (16 pixels) to
+the right. Tabs are a row: `ui.TabBar()` draws the line under it, the page of the chosen tab follows.
+
+```csharp
+var maps = ui.TreeNode("Maps", app.Selected == "maps");
+if (maps.Clicked) app.Selected = "maps";
+if (maps.Open)
+{
+    using (ui.Indent())
+    {
+        foreach (var map in app.Maps)
+            if (ui.TreeLeaf(map + "##map", app.Selected == map)) app.Selected = map;
+    }
+}
+
+using (ui.TabBar())
+{
+    ui.Tab("Map", ref app.Tab, 0);
+    ui.Tab("Events", ref app.Tab, 1);
+}
+if (app.Tab == 0) DrawMap(ui, ref app); else DrawEvents(ui, ref app);
 ```
 
 `ui.ScrollArea(id, width, height)` scrolls both ways: content wider than the area (an `Area` of a fixed size, a long
@@ -300,7 +349,8 @@ if (input.Pressed(Key.S, KeyModifiers.Ctrl | KeyModifiers.Shift)) SaveAs(ref app
 ```
 
 `ui.SetCursor(cursor)` sets the mouse pointer for the frame, whatever the widgets ask for: `Cursor.Arrow`, `Text`,
-`Hand`, `Crosshair` (pointing at a tile) and `Move` (moving something):
+`Hand`, `Crosshair` (pointing at a tile), `Move` (moving something), `ResizeColumn` and `ResizeRow` (changing a width or
+a height; a splitter shows them by itself):
 
 ```csharp
 var r = ui.Area(0, 0);

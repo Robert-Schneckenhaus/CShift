@@ -6,6 +6,15 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### System.Ui
+- Trees: `ui.TreeNode(label, selected)` (an arrow that opens and closes the node, Right and Left with the focus; the Ui
+  keeps whether it is open, `ui.SetTreeOpen(label, open)` sets it), `ui.TreeLeaf(label, selected)` and `ui.Indent()`
+  for the children.
+- Splitters: `ui.Splitter(id, ref size, min, max)` between the columns of a row changes the width of the column before
+  it, under a widget of a column a height; the arrow keys move it by 8 pixels.
+- Tabs: `using (ui.TabBar()) { ui.Tab("Map", ref tab, 0); ... }`.
+- The mouse pointers `Cursor.ResizeColumn` and `Cursor.ResizeRow` (Windows, X11, the browser).
+
 ### Amiga
 - Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on
   the way can write it (no call but runtime functions that write no fields, no store but to a local variable, to an

@@ -926,7 +926,7 @@ class Program {
                 ui.context.putImageData(ui.image, 0, 0);
             },
             cshift_ui_cursor(kind) {
-                self.canvas.style.cursor = ["default", "text", "pointer", "crosshair", "move"][kind] ?? "default";
+                self.canvas.style.cursor = ["default", "text", "pointer", "crosshair", "move", "col-resize", "row-resize"][kind] ?? "default";
             },
             cshift_ui_title(title) {
                 if (self.options.setTitle !== false && globalThis.document) document.title = self.cstring(title);
