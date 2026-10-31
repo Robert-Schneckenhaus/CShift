@@ -328,8 +328,9 @@ Every widget, and every `ui.Area`, takes the mouse. What the mouse did with the 
 The input of the frame has all of it: `ui.Input()` is a `UiInput` with the position (`MouseX`, `MouseY`), the left
 button (`MouseDown`, `MousePressed`, `MouseReleased`), the right one (`RightDown`, `RightPressed`, `RightReleased`),
 the middle one (`MiddleDown`, `MiddlePressed`, `MiddleReleased`), the wheel (`Wheel`, and `WheelX` sideways), the
-modifier keys (`Ctrl`, `Shift`, `Alt`), the keys pressed (`Keys`, `Pressed(Key.Plus)`) and the text typed (`Text`). A
-press of any button gets a frame of its own.
+modifier keys (`Ctrl`, `Shift`, `Alt`), the keys pressed (`Keys`, `Pressed(Key.Plus)`), the keys held down at the end
+of the frame (`Held`: a game walks while an arrow key is held; empty on AmigaOS) and the text typed (`Text`). A press of
+any button gets a frame of its own.
 
 **Shortcuts.** A frame collects all keys pressed since the last one, so a quick Ctrl+S (Ctrl down, S down and up, Ctrl
 up) can be over before the frame is made - on a slow machine (a frame of a few tenths of a second on an A1200) that is

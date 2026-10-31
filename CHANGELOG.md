@@ -14,6 +14,9 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   it, under a widget of a column a height; the arrow keys move it by 8 pixels.
 - Tabs: `using (ui.TabBar()) { ui.Tab("Map", ref tab, 0); ... }`.
 - The mouse pointers `Cursor.ResizeColumn` and `Cursor.ResizeRow` (Windows, X11, the browser).
+- `UiInput.Held`: the keys held down at the end of the frame (Windows, X11, the browser; losing the focus lets them go).
+  A game that runs in a Ui (an editor that plays its game) walks while an arrow key is held. In the browser it needs
+  the new web/cshift.js; an older one reports no keys held.
 
 ### Amiga
 - Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on

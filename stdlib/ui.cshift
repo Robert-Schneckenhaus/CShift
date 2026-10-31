@@ -315,6 +315,10 @@ struct UiInput
     int WheelX;
     /// The keys pressed since the last frame, in order, including the repeats of a key that is held.
     List<Key> Keys;
+    /// The keys that are held down at the end of the frame (a game walks while an arrow key is held), without the
+    /// modifier keys (see [UiInput.Ctrl]). Losing the focus lets them go. Empty where the window does not report it
+    /// (AmigaOS, the browser with a cshift.js before 0.41).
+    List<Key> Held;
     /// The modifier keys held at each key of [UiInput.Keys], in the same order (a [Window] fills it in; use
     /// [UiInput.AddKey] to add a key with its modifiers). A key without an entry here, in an input that a program
     /// made, counts with the state of Ctrl, Shift and Alt.
@@ -342,7 +346,7 @@ struct UiInput
     /// No mouse button, no keys, the mouse outside of everything.
     static UiInput Create()
     {
-        return UiInput { MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Text = "" };
+        return UiInput { MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Held = List<Key>.Create(), Text = "" };
     }
 
     /// True if the key was pressed since the last frame.

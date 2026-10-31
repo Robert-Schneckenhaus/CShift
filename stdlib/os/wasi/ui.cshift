@@ -9,8 +9,9 @@
 // The functions of the host:
 //   int cshift_ui_open(char* title, int width, int height)   0: the canvas has the size (pixels at scale 1), 1: none
 //   void cshift_ui_wait(int milliseconds)                    suspends until input, or the time (-1: no limit)
-//   int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity)   (state: 17 ints)
-//       the input since the last call (see _UiOs.TakeInput); returns the number of keys
+//   int cshift_ui_take(int* state, int* keys, int keyCapacity, char* text, int textCapacity)   (state: 18 ints)
+//       the input since the last call (see _UiOs.TakeInput); returns the number of keys pressed; the keys held come
+//       after them in keys (state[17] of them)
 //   int cshift_ui_width(), int cshift_ui_height()            the canvas in its pixels
 //   double cshift_ui_scale()                                 devicePixelRatio (or the option pixelRatio)
 //   void cshift_ui_present(void* pixels, int width, int height)   ARGB pixels (uint32, little endian)
@@ -82,8 +83,9 @@ struct _UiOs
         unsafe
         {
             // mouse x, y, down, pressed, released, wheel, ctrl, shift, alt, the length of the text; the right button
-            // (down, pressed, released), the middle one, the horizontal wheel (zero from a cshift.js before 0.34)
-            var state = new int32[17];
+            // (down, pressed, released), the middle one, the horizontal wheel (zero from a cshift.js before 0.34), the
+            // number of keys held (zero from a cshift.js before 0.41)
+            var state = new int32[18];
             var keys = new int32[64];
             var text = new uint8[1024];
             int count = cshift_ui_take(&state[0], &keys[0], keys.Length, (char*)&text[0], text.Length);
@@ -113,6 +115,13 @@ struct _UiOs
                 var key = _UiKeyOfVk(value & 0xFFFF);
                 if (key != Key.None)
                     input.AddKey(key, (value & 0x10000) != 0 ? (KeyModifiers)((value >> 17) & 7) : held);
+            }
+            int pressed = Math.Min(count, keys.Length);
+            for (var i = pressed; i < Math.Min(pressed + state[17], keys.Length); i += 1)
+            {
+                var key = _UiKeyOfVk(keys[i] & 0xFFFF);
+                if (key != Key.None && !input.Held.Contains(key))
+                    input.Held.Add(key);
             }
             int length = Math.Clamp(state[9], 0, text.Length);
             input.Text = string.FromBytes(text[..length].ToArray());
