@@ -109,6 +109,11 @@ document.send("mouseup", { clientX: bx, clientY: by, button: 1 });
 await waitFor("middle");
 canvas.send("keydown", { key: "+", keyCode: 187 });
 await waitFor("plus");
+// a key that is held (UiInput.Held) until its keyup
+canvas.send("keydown", { key: "ArrowRight", keyCode: 39 });
+await waitFor("held right");
+canvas.send("keyup", { key: "ArrowRight", keyCode: 39 });
+await waitFor("released right");
 // a whole Ctrl+Q before the program's next frame: Ctrl is let go again at once
 canvas.send("keydown", { key: "Control", keyCode: 17, ctrlKey: true });
 canvas.send("keydown", { key: "q", keyCode: 81, ctrlKey: true });

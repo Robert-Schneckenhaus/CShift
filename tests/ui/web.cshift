@@ -1,6 +1,6 @@
 // System.Ui in the browser (--backend wasm): run by tests/ui-web-check.mjs with web/cshift.js and a canvas that only
 // pretends. The program tells where its widgets are; the test clicks the button (also with the right and the middle
-// button), presses +, types into the text box and pastes,
+// button), presses +, holds the right arrow key and lets it go, types into the text box and pastes,
 // and the program ends when it got all of it. Between those inputs it waits (the program is suspended until input).
 // At the end it draws frames without input (Ui.RequestFrame), each about 30 ms after the one before.
 
@@ -19,6 +19,7 @@ int Main()
     string text = "";
     int clicks = 0;
     int frames = 0;
+    bool right = false;
     while (window.Update())
     {
         frames += 1;
@@ -35,6 +36,11 @@ int Main()
             Console.WriteLine("middle");
         if (ui.Input().Pressed(Key.Plus))
             Console.WriteLine("plus");
+        if (ui.Input().Held.Contains(Key.Right) != right)
+        {
+            right = !right;
+            Console.WriteLine(right ? "held right" : "released right");
+        }
         if (ui.Input().Pressed(Key.Q, KeyModifiers.Ctrl) && ui.Input().Ctrl)
             Console.WriteLine("ctrl q");
         if (ui.TextBox("text", ref text))

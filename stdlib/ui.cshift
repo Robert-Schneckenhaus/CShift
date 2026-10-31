@@ -275,7 +275,11 @@ enum Cursor : int32
     /// Cross hairs: for pointing at a pixel or a tile.
     Crosshair = 3,
     /// Arrows to all four sides: for moving something.
-    Move = 4
+    Move = 4,
+    /// Arrows to the left and the right: for changing a width (a [Ui.Splitter] between columns).
+    ResizeColumn = 5,
+    /// Arrows up and down: for changing a height (a [Ui.Splitter] between widgets of a column).
+    ResizeRow = 6
 }
 
 /// What the user did since the last frame: the state of the mouse and the keys that were pressed. A [Window] fills
@@ -311,6 +315,10 @@ struct UiInput
     int WheelX;
     /// The keys pressed since the last frame, in order, including the repeats of a key that is held.
     List<Key> Keys;
+    /// The keys that are held down at the end of the frame (a game walks while an arrow key is held), without the
+    /// modifier keys (see [UiInput.Ctrl]). Losing the focus lets them go. Empty where the window does not report it
+    /// (AmigaOS, the browser with a cshift.js before 0.41).
+    List<Key> Held;
     /// The modifier keys held at each key of [UiInput.Keys], in the same order (a [Window] fills it in; use
     /// [UiInput.AddKey] to add a key with its modifiers). A key without an entry here, in an input that a program
     /// made, counts with the state of Ctrl, Shift and Alt.
@@ -338,7 +346,7 @@ struct UiInput
     /// No mouse button, no keys, the mouse outside of everything.
     static UiInput Create()
     {
-        return UiInput { MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Text = "" };
+        return UiInput { MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Held = List<Key>.Create(), Text = "" };
     }
 
     /// True if the key was pressed since the last frame.
@@ -503,8 +511,17 @@ struct Theme
     }
 }
 
+/// What a [Ui.TreeNode] did in this frame.
+struct UiTreeNode
+{
+    /// True if the node is open: draw its children now (in [Ui.Indent]).
+    bool Open;
+    /// True in the frame in which its label was clicked (or Enter or Space pressed on it): select it.
+    bool Clicked;
+}
+
 /// The end of a group that [Ui.Row], [Ui.Columns], [Ui.Panel], [Ui.Scroll], [Ui.Id], [Ui.Popup], [Ui.Modal],
-/// [Ui.MenuBar] or [Ui.Menu] started: `using (ui.Row()) { ... }` ends it when the block is left.
+/// [Ui.MenuBar], [Ui.Menu], [Ui.Indent] or [Ui.TabBar] started: `using (ui.Row()) { ... }` ends it when the block is left.
 struct UiScope : IDisposable
 {
     /// The Ui it belongs to (internal).
@@ -910,6 +927,39 @@ struct Ui
     /// A line of a list that can be selected; true in the frame in which it was clicked.
     bool ListItem(string label, bool selected) { return _S[0].ListItem(label, selected); }
 
+    /// A node of a tree: an arrow that opens and closes it, and a label that can be selected. The Ui keeps whether it is
+    /// open (closed at first, see [Ui.SetTreeOpen]); a click on the arrow, Right and Left (with the focus) open and close
+    /// it, a click on the label, Enter or Space select it. Draw its children when it is open:
+    /// `if (ui.TreeNode("Maps", sel == 0).Open) using (ui.Indent()) { ... }`.
+    UiTreeNode TreeNode(string label, bool selected) { return _S[0].TreeNode(label, selected); }
+
+    /// A leaf of a tree: a line of a list whose label lines up with the labels of the nodes next to it; true in the
+    /// frame in which it was clicked.
+    bool TreeLeaf(string label, bool selected) { return _S[0].ListItemAt(label, selected, _S[0].Px(16)); }
+
+    /// Opens or closes the tree node with this label (from this frame on, if it comes after this). Call it in the group
+    /// in which the node is drawn: its id comes from the label and the groups around it (see [Ui.Id]).
+    void SetTreeOpen(string label, bool open) { _S[0].TreeOpen.Set(_S[0].IdOf("#tree:" + label), open); _S[0].Again = true; }
+
+    /// The widgets of the block are moved to the right by one step of a tree (16 pixels at scale 1), in a column:
+    /// `using (ui.Indent()) { ... }`.
+    UiScope Indent() { _S[0].BeginIndent(); return UiScope { State = _S }; }
+
+    /// A bar that the mouse drags to change `size` (pixels at scale 1, kept from `min` to `max`). In a row it stands
+    /// between two columns, as high as the row so far, and changes a width: `using (ui.Column(left)) {...}
+    /// ui.Splitter("left", ref left, 100, 400); using (ui.Column()) {...}`. In a column it lies under a widget and changes
+    /// a height (of a [Ui.Scroll] above it, say). With the focus the arrow keys move it by 8. True in the frames in which
+    /// `size` changed (the Ui then draws another frame at once, so the widgets before it get the new size).
+    bool Splitter(string id, ref int size, int min, int max) { return _S[0].Splitter(id, ref size, min, max); }
+
+    /// A row of tabs ([Ui.Tab]) with a line under it: `using (ui.TabBar()) { ui.Tab("Map", ref tab, 0); ... }`; then
+    /// draw the page of `tab`.
+    UiScope TabBar() { _S[0].BeginTabBar(); return UiScope { State = _S }; }
+
+    /// A tab of a [Ui.TabBar]: it is shown as chosen when `selected == index`, and a click (Enter or Space) sets
+    /// `selected` to `index`; true in that frame.
+    bool Tab(string label, ref int selected, int index) { return _S[0].Tab(label, ref selected, index); }
+
     /// A drop-down list: shows the item `selected` (an index into `items`), and a click opens the list over the other
     /// widgets (it scrolls if it is long). Choosing an item sets `selected` and closes it, Escape or a click outside
     /// closes it too. With the focus: Up and Down choose the previous or next item, Enter or Space open the list (in
@@ -1073,6 +1123,7 @@ struct _UiState
     Dictionary<uint32, int> PanelHeights;
     Dictionary<uint32, _UiScroll> Scrolls;
     Dictionary<uint32, _UiRowMemo> RowMemos;
+    Dictionary<uint32, bool> TreeOpen; // the tree nodes that are open (Ui.TreeNode)
     int RowCount;               // rows begun in this frame (their keys)
 
     Rect Last;                  // the widget placed last
@@ -1139,6 +1190,7 @@ struct _UiState
             PanelHeights = Dictionary<uint32, int>.Create(),
             Scrolls = Dictionary<uint32, _UiScroll>.Create(),
             RowMemos = Dictionary<uint32, _UiRowMemo>.Create(),
+            TreeOpen = Dictionary<uint32, bool>.Create(),
             WaitMs = -1,
             Deferred = new List<UiCommand>[4],
             Popups = List<_UiPopup>.Create(),
@@ -1722,6 +1774,20 @@ struct _UiState
         l.X = slot.X;
         l.Y = slot.Y;
         l.Right = slot.X;
+        l.Bottom = slot.Y;
+        l.SavedClip = Clip;
+        Push(l);
+    }
+
+    // a column moved to the right by one step of a tree
+    void BeginIndent()
+    {
+        var slot = Slot();
+        int indent = Math.Min(Px(16), Math.Max(0, slot.Width));
+        var l = _UiLayout { Kind = 0, Area = Rect.Create(slot.X + indent, slot.Y, Math.Max(0, slot.Width - indent), 0), Scope = 0, Id = Seed() };
+        l.X = l.Area.X;
+        l.Y = slot.Y;
+        l.Right = l.Area.X;
         l.Bottom = slot.Y;
         l.SavedClip = Clip;
         Push(l);
@@ -3036,9 +3102,15 @@ struct _UiState
 
     bool ListItem(string label, bool selected)
     {
+        return ListItemAt(label, selected, 0);
+    }
+
+    // a list item whose label starts `offset` pixels to the right (a leaf of a tree)
+    bool ListItemAt(string label, bool selected, int offset)
+    {
         uint32 id = IdOf(label);
         string shown = Shown(label);
-        var r = Place(Font.Measure(shown) + 2 * Pad, ControlHeight, true);
+        var r = Place(offset + Font.Measure(shown) + 2 * Pad, ControlHeight, true);
         bool hot = Interact(id, r, true);
         bool clicked = Clicked(id, hot) || Activated(id);
         if (selected)
@@ -3047,8 +3119,147 @@ struct _UiState
             FillRoundRect(r, Radius, Theme.Selection);
         if (Focus == id)
             FocusRing(r, Radius);
-        DrawText(r.X + Pad, TextY(r), shown, selected ? Theme.AccentText : Theme.Text);
+        DrawText(r.X + offset + Pad, TextY(r), shown, selected ? Theme.AccentText : Theme.Text);
         return clicked;
+    }
+
+    UiTreeNode TreeNode(string label, bool selected)
+    {
+        uint32 id = IdOf("#tree:" + label);
+        string shown = Shown(label);
+        int arrow = Px(16);
+        var r = Place(arrow + Font.Measure(shown) + Pad, ControlHeight, true);
+        bool hot = Interact(id, r, true);
+        bool open = TreeOpen.GetOrDefault(id, false);
+        bool was = open;
+        bool clicked = false;
+        if (Clicked(id, hot))
+        {
+            if (In.MouseX < r.X + arrow)
+                open = !open;
+            else
+                clicked = true;
+        }
+        if (HasKeys(id))
+        {
+            if (In.Pressed(Key.Right))
+                open = true;
+            if (In.Pressed(Key.Left))
+                open = false;
+            if (In.Pressed(Key.Enter) || In.Pressed(Key.Space))
+                clicked = true;
+        }
+        if (open != was)
+            TreeOpen.Set(id, open);
+        if (selected)
+            FillRoundRect(r, Radius, Theme.Accent);
+        else if (hot)
+            FillRoundRect(r, Radius, Theme.Selection);
+        if (Focus == id)
+            FocusRing(r, Radius);
+        Color ink = selected ? Theme.AccentText : Theme.TextMuted;
+        // the arrow, in 1/16 pixels: ">" closed, "v" open
+        int cx = (r.X + arrow / 2) * 16;
+        int cy = (r.Y + r.Height / 2) * 16;
+        int s = Math.Max(2, Px(3)) * 16;
+        int w = Math.Max(20, (24 * ScaleQ + 128) >> 8);
+        if (open)
+        {
+            DrawLine(cx - s, cy - s / 2, cx, cy + s / 2, w, ink);
+            DrawLine(cx, cy + s / 2, cx + s, cy - s / 2, w, ink);
+        }
+        else
+        {
+            DrawLine(cx - s / 2, cy - s, cx + s / 2, cy, w, ink);
+            DrawLine(cx + s / 2, cy, cx - s / 2, cy + s, w, ink);
+        }
+        DrawText(r.X + arrow, TextY(r), shown, selected ? Theme.AccentText : Theme.Text);
+        return UiTreeNode { Open = open, Clicked = clicked };
+    }
+
+    // pixels of the frame -> pixels at scale 1
+    int Unpx(int size)
+    {
+        int q = Math.Max(1, ScaleQ);
+        return size >= 0 ? (size * 256 + q / 2) / q : -((-size * 256 + q / 2) / q);
+    }
+
+    bool Splitter(string name, ref int size, int min, int max)
+    {
+        uint32 id = IdOf("#splitter:" + name);
+        int t = Depth - 1;
+        bool between = Stack[t].Kind == 1; // in a row: between columns, it changes a width
+        int thick = Px(6);
+        Rect r;
+        if (between)
+        {
+            int h = Stack[t].LineHeight > 0 ? Stack[t].LineHeight : RestHeight(Slot().Y);
+            r = Place(thick, h, false);
+        }
+        else
+            r = Place(thick, thick, true);
+        bool hot = Interact(id, r, true);
+        int old = size;
+        int lo = Math.Min(min, max);
+        int hi = Math.Max(min, max);
+        int at = between ? In.MouseX : In.MouseY;
+        if (hot && In.MousePressed && Active == id)
+            DragOffset = at - Px(size);
+        else if (Dragging(id))
+            size = Math.Clamp(Unpx(at - DragOffset), lo, hi);
+        if (HasKeys(id))
+        {
+            if (In.Pressed(between ? Key.Left : Key.Up))
+                size = Math.Clamp(size - 8, lo, hi);
+            if (In.Pressed(between ? Key.Right : Key.Down))
+                size = Math.Clamp(size + 8, lo, hi);
+        }
+        if (hot || Active == id)
+            WantCursor = between ? Cursor.ResizeColumn : Cursor.ResizeRow;
+        if (hot || Active == id)
+            FillRoundRect(r, Radius, Active == id ? Theme.ControlPressed : Theme.ControlHover);
+        else if (between)
+            FillRect(Rect.Create(r.X + (r.Width - Line) / 2, r.Y, Line, r.Height), Theme.Border);
+        else
+            FillRect(Rect.Create(r.X, r.Y + (r.Height - Line) / 2, r.Width, Line), Theme.Border);
+        if (Focus == id)
+            FocusRing(r, Radius);
+        if (size != old)
+            Again = true;
+        return size != old;
+    }
+
+    void BeginTabBar()
+    {
+        var slot = Slot();
+        FillRect(Rect.Create(slot.X, slot.Y + ControlHeight - Line, slot.Width, Line), Theme.Border);
+        BeginLayout(1, 0);
+    }
+
+    bool Tab(string label, ref int selected, int index)
+    {
+        uint32 id = IdOf("#tab:" + label);
+        string shown = Shown(label);
+        var r = Place(Font.Measure(shown) + 2 * Px(12), ControlHeight, false);
+        bool hot = Interact(id, r, true);
+        bool chosen = Clicked(id, hot) || Activated(id);
+        if (chosen && selected != index)
+            selected = index;
+        else
+            chosen = false;
+        bool on = selected == index;
+        if (on)
+            FillRect(Rect.Create(r.X, r.Y, r.Width, r.Height - Line), Theme.Background);
+        else if (hot)
+            FillRect(Rect.Create(r.X, r.Y, r.Width, r.Height - Line), Theme.ControlHover);
+        if (on)
+            FillRect(Rect.Create(r.X, r.Y + r.Height - Px(3), r.Width, Px(3)), Theme.Accent);
+        if (Focus == id)
+            FocusRing(r, Radius);
+        DrawText(r.X + Px(12), TextY(r), shown, on ? Theme.Text : Theme.TextMuted);
+        if (hot)
+            WantCursor = Cursor.Hand;
+        return chosen;
     }
 
     void ImageWidget(Image image)

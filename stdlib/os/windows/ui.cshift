@@ -77,6 +77,7 @@ struct _UiWin32
     int WheelDelta;       // 1/120 notches
     int WheelXDelta;
     List<Key> Keys;
+    List<Key> Held;             // the keys that are down (WM_KEYDOWN adds, WM_KEYUP and WM_KILLFOCUS remove)
     List<KeyModifiers> Mods;   // held at each of Keys
     StringBuilder Text;
     int HighSurrogate;
@@ -86,6 +87,8 @@ struct _UiWin32
     void* CursorHand;
     void* CursorCross;
     void* CursorMove;
+    void* CursorResizeColumn;
+    void* CursorResizeRow;
     void* Cursor;
 }
 
@@ -97,6 +100,9 @@ const uint32 _WmClose = 0x0010u;
 const uint32 _WmEraseBackground = 0x0014u;
 const uint32 _WmSetCursor = 0x0020u;
 const uint32 _WmKeyDown = 0x0100u;
+const uint32 _WmKeyUp = 0x0101u;
+const uint32 _WmSysKeyUp = 0x0105u;
+const uint32 _WmKillFocus = 0x0008u;
 const uint32 _WmChar = 0x0102u;
 const uint32 _WmSysKeyDown = 0x0104u;
 const uint32 _WmMouseMove = 0x0200u;
@@ -209,6 +215,8 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
             var key = _UiKeyOfVk((int)(w & 0xFFul));
             if (key != Key.None)
             {
+                if (!_UiWin.Held.Contains(key))
+                    _UiWin.Held.Add(key);
                 _UiWin.Keys.Add(key);
                 // the state of the modifier keys at this message
                 _UiWin.Mods.Add(_UiModifiers(GetKeyState(0x11) < 0, GetKeyState(0x10) < 0, GetKeyState(0x12) < 0));
@@ -217,6 +225,13 @@ nint _UiWndProc(void* hwnd, uint32 message, nuint wParam, nint lParam)
                 return 0;
             break; // Alt+F4 and the like
         }
+        case _WmKeyUp:
+        case _WmSysKeyUp:
+            _UiWin.Held.Remove(_UiKeyOfVk((int)(w & 0xFFul)));
+            break;
+        case _WmKillFocus: // the keys that were held go up elsewhere
+            _UiWin.Held.Clear();
+            break;
         case _WmChar:
             _UiChar((int)(w & 0xFFFFul));
             return 0;
@@ -310,13 +325,16 @@ struct _UiOs
                                          null, null, instance, null);
             if (hwnd == null)
                 return 1;
-            _UiWin = _UiWin32 { Hwnd = hwnd, Open = true, Keys = List<Key>.Create(), Mods = List<KeyModifiers>.Create(), Text = StringBuilder.Create(), Last = Image.Create(0, 0),
+            _UiWin = _UiWin32 { Hwnd = hwnd, Open = true, Keys = List<Key>.Create(), Held = List<Key>.Create(), Mods = List<KeyModifiers>.Create(), Text = StringBuilder.Create(),
+                                Last = Image.Create(0, 0),
                                 MouseX = -1, MouseY = -1 };
             _UiWin.CursorArrow = LoadCursorW(null, 32512);
             _UiWin.CursorText = LoadCursorW(null, 32513);
             _UiWin.CursorHand = LoadCursorW(null, 32649);
             _UiWin.CursorCross = LoadCursorW(null, 32515); // IDC_CROSS
             _UiWin.CursorMove = LoadCursorW(null, 32646);  // IDC_SIZEALL
+            _UiWin.CursorResizeColumn = LoadCursorW(null, 32644); // IDC_SIZEWE
+            _UiWin.CursorResizeRow = LoadCursorW(null, 32645);    // IDC_SIZENS
             _UiWin.Cursor = _UiWin.CursorArrow;
             // the size for the screen's scale
             _UiWin.Dpi = GetDpiForWindow(hwnd);
@@ -375,6 +393,7 @@ struct _UiOs
         input.WheelX = _UiWin.WheelXDelta / 120;
         _UiWin.WheelXDelta -= input.WheelX * 120;
         input.Modifiers = List<KeyModifiers>.Create();
+        input.Held.AddRange(_UiWin.Held.ToArray());
         for (var i = 0; i < _UiWin.Keys.Count(); i += 1)
             input.AddKey(_UiWin.Keys.Get(i), _UiWin.Mods.Get(i));
         input.Text = _UiWin.Text.ToString();
@@ -415,7 +434,8 @@ struct _UiOs
     static void SetPointer(Cursor cursor)
     {
         void* wanted = cursor == Cursor.Text ? _UiWin.CursorText : cursor == Cursor.Hand ? _UiWin.CursorHand :
-                       cursor == Cursor.Crosshair ? _UiWin.CursorCross : cursor == Cursor.Move ? _UiWin.CursorMove : _UiWin.CursorArrow;
+                       cursor == Cursor.Crosshair ? _UiWin.CursorCross : cursor == Cursor.Move ? _UiWin.CursorMove :
+                       cursor == Cursor.ResizeColumn ? _UiWin.CursorResizeColumn : cursor == Cursor.ResizeRow ? _UiWin.CursorResizeRow : _UiWin.CursorArrow;
         if (wanted != _UiWin.Cursor)
         {
             _UiWin.Cursor = wanted;

@@ -1,0 +1,197 @@
+// Standard library: a tree (Ui.TreeNode, Ui.TreeLeaf, Ui.Indent), a splitter between two columns of a row and under a
+// scroll area (Ui.Splitter), and tabs (Ui.TabBar, Ui.Tab). Main returns the number of failed checks.
+// expect-stdout: left 180 top 92 tab 1 selected 1
+// expect-exit: 0
+
+using System;
+using System.Ui;
+
+int Failures;
+
+void Check(bool ok, string what)
+{
+    if (!ok)
+    {
+        Console.WriteLine("FAILED: " + what);
+        Failures += 1;
+    }
+}
+
+UiInput At(int x, int y)
+{
+    var input = UiInput.Create();
+    input.MouseX = x;
+    input.MouseY = y;
+    return input;
+}
+
+UiInput Press(int x, int y)
+{
+    var input = At(x, y);
+    input.MousePressed = true;
+    input.MouseDown = true;
+    return input;
+}
+
+UiInput Drag(int x, int y)
+{
+    var input = At(x, y);
+    input.MouseDown = true;
+    return input;
+}
+
+UiInput Release(int x, int y)
+{
+    var input = At(x, y);
+    input.MouseReleased = true;
+    return input;
+}
+
+UiInput KeysOf(Key key)
+{
+    var input = UiInput.Create();
+    input.Keys.Add(key);
+    return input;
+}
+
+struct Rects
+{
+    Rect Tab1;
+    Rect Node;
+    Rect Leaf;
+    bool LeafShown;
+    Rect Split;
+    Rect Right;
+    Rect TopSplit;
+    Rect Below;
+}
+
+int Tab;
+int Left = 150;
+int Top = 80;
+int Selected = -1;
+
+void Frame(Ui ui, UiInput input, ref Rects rects)
+{
+    ui.Begin(input, 600, 400, 1.0);
+    using (ui.TabBar())
+    {
+        ui.Tab("Map", ref Tab, 0);
+        ui.Tab("Data", ref Tab, 1);
+        rects.Tab1 = ui.LastRect();
+    }
+    using (ui.Row())
+    {
+        using (ui.Column(Left))
+        {
+            var node = ui.TreeNode("Maps", Selected == 0);
+            rects.Node = ui.LastRect();
+            if (node.Clicked)
+                Selected = 0;
+            rects.LeafShown = node.Open;
+            if (node.Open)
+            {
+                using (ui.Indent())
+                {
+                    if (ui.TreeLeaf("village", Selected == 1))
+                        Selected = 1;
+                    rects.Leaf = ui.LastRect();
+                }
+            }
+            using (ui.Scroll("list", Top)) { ui.Label("a"); }
+            ui.Splitter("top", ref Top, 40, 200);
+            rects.TopSplit = ui.LastRect();
+            ui.Label("below");
+            rects.Below = ui.LastRect();
+        }
+        ui.Splitter("left", ref Left, 100, 300);
+        rects.Split = ui.LastRect();
+        using (ui.Column())
+        {
+            ui.Label("right");
+            rects.Right = ui.LastRect();
+        }
+    }
+    ui.End();
+}
+
+// a frame and the frames the layout asks for (the mouse stays where it is, the button as it is at the end of the frame)
+void Frames(Ui ui, UiInput input, ref Rects rects)
+{
+    Frame(ui, input, ref rects);
+    var next = At(input.MouseX, input.MouseY);
+    next.MouseDown = (input.MouseDown || input.MousePressed) && !input.MouseReleased;
+    for (var i = 0; i < 4 && ui.WaitMilliseconds() == 0; i += 1)
+        Frame(ui, next, ref rects);
+}
+
+void Click(Ui ui, int x, int y, ref Rects rects)
+{
+    Frames(ui, Press(x, y), ref rects);
+    Frames(ui, Release(x, y), ref rects);
+}
+
+int Main()
+{
+    var ui = Ui.Create();
+    var rects = Rects { };
+    Frames(ui, UiInput.Create(), ref rects);
+    Check(!rects.LeafShown, "the node is closed at first");
+    Check(rects.Split.X >= rects.Node.X + 150, "the splitter comes after the column");
+    Check(rects.Split.Height > 100, "the splitter is as high as the row");
+    Check(rects.Right.X > rects.Split.X, "the right column comes after the splitter");
+
+    // the label selects, the arrow opens
+    Click(ui, rects.Node.X + 40, rects.Node.Y + 5, ref rects);
+    Check(Selected == 0 && !rects.LeafShown, "a click on the label selects the node");
+    Click(ui, rects.Node.X + 6, rects.Node.Y + 5, ref rects);
+    Check(rects.LeafShown, "a click on the arrow opens the node");
+    Check(rects.Leaf.X == rects.Node.X + 16, "the leaf is indented");
+    Click(ui, rects.Leaf.X + 30, rects.Leaf.Y + 5, ref rects);
+    Check(Selected == 1, "the leaf is selected");
+    // Left closes the node that has the focus, Right opens it
+    Click(ui, rects.Node.X + 40, rects.Node.Y + 5, ref rects);
+    Frames(ui, KeysOf(Key.Left), ref rects);
+    Check(!rects.LeafShown, "Left closes the node");
+    Frames(ui, KeysOf(Key.Right), ref rects);
+    Check(rects.LeafShown, "Right opens the node");
+    ui.SetTreeOpen("Maps", false);
+    Frames(ui, UiInput.Create(), ref rects);
+    Check(!rects.LeafShown, "SetTreeOpen closes the node");
+    Selected = 1;
+
+    // drag the splitter 30 pixels to the right: the column gets wider in the same frame
+    int x = rects.Split.X + 2;
+    int y = rects.Split.Y + 20;
+    Frames(ui, Press(x, y), ref rects);
+    Frames(ui, Drag(x + 30, y), ref rects);
+    Frames(ui, Release(x + 30, y), ref rects);
+    Check(Left == 180, "the splitter changes the width");
+    Check(rects.Split.X == x - 2 + 30, "the splitter moved with the mouse");
+    // dragged past the end it stops at max
+    Frames(ui, Press(rects.Split.X + 2, y), ref rects);
+    Frames(ui, Drag(rects.Split.X + 400, y), ref rects);
+    Check(Left == 300, "the width stops at max");
+    Frames(ui, Drag(rects.Split.X - 120 + 2, y), ref rects);
+    Frames(ui, Release(rects.Split.X + 2, y), ref rects);
+    Check(Left == 180, "and comes back");
+
+    // a splitter in a column changes the height of the scroll area above it; with the focus the arrows move it by 8
+    int below = rects.Below.Y;
+    int sx = rects.TopSplit.X + 20;
+    int sy = rects.TopSplit.Y + 2;
+    Frames(ui, Press(sx, sy), ref rects);
+    Frames(ui, Drag(sx, sy + 4), ref rects);
+    Frames(ui, Release(sx, sy + 4), ref rects);
+    Check(Top == 84, "the splitter changes the height");
+    Check(rects.Below.Y == below + 4, "the widgets under it move down");
+    Frames(ui, KeysOf(Key.Down), ref rects);
+    Check(Top == 92, "Down makes it higher");
+
+    // tabs
+    Click(ui, rects.Tab1.X + 10, rects.Tab1.Y + 5, ref rects);
+    Check(Tab == 1, "a click chooses the tab");
+
+    Console.WriteLine("left " + Left + " top " + Top + " tab " + Tab + " selected " + Selected);
+    return Failures;
+}
