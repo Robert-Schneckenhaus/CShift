@@ -807,6 +807,7 @@ class Program {
             canvas.addEventListener("contextmenu", (e) => e.preventDefault());
             // the window lost the focus (another window, a dialog of the browser): no button stays held
             globalThis.addEventListener?.("blur", releaseAll);
+            globalThis.addEventListener?.("blur", () => { ui.held.clear(); ui.input = true; });
             canvas.addEventListener("wheel", (e) => {
                 e.preventDefault();
                 ui.wheelDelta -= e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY;
@@ -826,11 +827,13 @@ class Program {
                 if (ui.ctrl && e.keyCode === 86) return;
                 if (!(ui.ctrl && (e.keyCode === 67 || e.keyCode === 88))) e.preventDefault();
                 ui.keys.push(withMods(e.keyCode));
+                ui.held.add(e.keyCode);
                 if ([...e.key].length === 1 && !ui.ctrl) ui.text += e.key; // a character, not "Enter" or "Shift"
                 ui.input = true;
             });
             canvas.addEventListener("keyup", (e) => {
                 mods(e);
+                ui.held.delete(e.keyCode);
                 ui.input = true;
             });
             canvas.addEventListener("paste", (e) => {
@@ -867,7 +870,7 @@ class Program {
                     ratio, x: -1, y: -1, down: false, pressed: false, released: false, wheel: 0, wheelDelta: 0,
                     rightDown: false, rightPressed: false, rightReleased: false,
                     middleDown: false, middlePressed: false, middleReleased: false, wheelX: 0, wheelXDelta: 0,
-                    ctrl: false, shift: false, alt: false, keys: [], text: "", input: true, closed: false,
+                    ctrl: false, shift: false, alt: false, keys: [], held: new Set(), text: "", input: true, closed: false,
                     clipboard: "", context: self.canvas.getContext("2d"), image: null,
                 };
                 self.uiState = ui;
@@ -887,6 +890,10 @@ class Program {
                 more.forEach((value, i) => d.setInt32(state + 4 * (10 + i), Number(value), true));
                 const count = Math.min(ui.keys.length, keyCapacity);
                 for (let i = 0; i < count; i++) d.setInt32(keys + 4 * i, ui.keys[i], true);
+                // the keys held, after the ones pressed (state[17]: how many)
+                const held = [...ui.held].slice(0, keyCapacity - count);
+                held.forEach((code, i) => d.setInt32(keys + 4 * (count + i), code, true));
+                d.setInt32(state + 4 * 17, held.length, true);
                 // the text: what fits (whole characters), the rest in the next frame
                 let taken = ui.text;
                 let bytes = encoder.encode(taken);
@@ -926,7 +933,7 @@ class Program {
                 ui.context.putImageData(ui.image, 0, 0);
             },
             cshift_ui_cursor(kind) {
-                self.canvas.style.cursor = ["default", "text", "pointer", "crosshair", "move"][kind] ?? "default";
+                self.canvas.style.cursor = ["default", "text", "pointer", "crosshair", "move", "col-resize", "row-resize"][kind] ?? "default";
             },
             cshift_ui_title(title) {
                 if (self.options.setTitle !== false && globalThis.document) document.title = self.cstring(title);

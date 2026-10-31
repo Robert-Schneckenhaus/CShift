@@ -82,6 +82,7 @@ struct _UiXWindow
     bool Shift;
     bool Alt;
     List<Key> Keys;
+    List<Key> Held;             // the keys that are down (KeyPress adds, KeyRelease and FocusOut remove)
     List<KeyModifiers> Mods;   // held at each of Keys
     StringBuilder Text;
     Image Last;
@@ -90,6 +91,8 @@ struct _UiXWindow
     nuint CursorHand;
     nuint CursorCross;
     nuint CursorMove;
+    nuint CursorResizeColumn;
+    nuint CursorResizeRow;
     Cursor Cursor;
 }
 
@@ -264,9 +267,17 @@ void _UiXEvent(int64[] buffer)
                 _UiXw.Ctrl = down;
             else if (k == 0xFFE9 || k == 0xFFEA)
                 _UiXw.Alt = down;
+            var key = _UiXKeyOf(keysym);
+            if (key != Key.None)
+            {
+                // a held key repeats as KeyRelease and KeyPress: it is down again before the frame takes the input
+                if (!down)
+                    _UiXw.Held.Remove(key);
+                else if (!_UiXw.Held.Contains(key))
+                    _UiXw.Held.Add(key);
+            }
             if (!down)
                 break;
-            var key = _UiXKeyOf(keysym);
             if (key != Key.None)
             {
                 _UiXw.Keys.Add(key);
@@ -277,6 +288,9 @@ void _UiXEvent(int64[] buffer)
                 _UiAppendUtf8(_UiXw.Text, code);
             break;
         }
+        case 10: // FocusOut: the keys that were held go up elsewhere
+            _UiXw.Held.Clear();
+            break;
         case 4: // ButtonPress
         case 5: // ButtonRelease
         {
@@ -386,13 +400,13 @@ struct _UiOs
                 return 3;
             }
             _UiXw = _UiXWindow { Loaded = true, Open = true, Display = display, Window = window, Screen = screen, Width = w, Height = h,
-                                 Scale = scale, MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Mods = List<KeyModifiers>.Create(), Text = StringBuilder.Create(),
-                                 Last = Image.Create(0, 0) };
+                                 Scale = scale, MouseX = -1, MouseY = -1, Keys = List<Key>.Create(), Held = List<Key>.Create(), Mods = List<KeyModifiers>.Create(),
+                                 Text = StringBuilder.Create(), Last = Image.Create(0, 0) };
             _UiXw.Gc = _UiX.DefaultGC(display, screen);
             _UiXw.Visual = _UiX.DefaultVisual(display, screen);
             _UiXw.Depth = _UiX.DefaultDepth(display, screen);
-            // keys, buttons, motion, exposure, structure (resizing)
-            _UiX.SelectInput(display, window, (nint)(1 | 2 | 4 | 8 | 64 | 32768 | 131072));
+            // keys, buttons, motion, exposure, structure (resizing), focus (the held keys are let go when it is lost)
+            _UiX.SelectInput(display, window, (nint)(1 | 2 | 4 | 8 | 64 | 32768 | 131072 | 2097152));
             nuint delete = _UiX.InternAtom(display, "WM_DELETE_WINDOW".CStr(), 0);
             _UiXw.DeleteAtom = delete;
             _UiX.SetWMProtocols(display, window, &delete, 1);
@@ -401,6 +415,8 @@ struct _UiOs
             _UiXw.CursorHand = _UiX.CreateFontCursor(display, 60u); // XC_hand2
             _UiXw.CursorCross = _UiX.CreateFontCursor(display, 34u); // XC_crosshair
             _UiXw.CursorMove = _UiX.CreateFontCursor(display, 52u); // XC_fleur
+            _UiXw.CursorResizeColumn = _UiX.CreateFontCursor(display, 108u); // XC_sb_h_double_arrow
+            _UiXw.CursorResizeRow = _UiX.CreateFontCursor(display, 116u);    // XC_sb_v_double_arrow
             _UiX.DefineCursor(display, window, _UiXw.CursorArrow);
             SetTitle(title);
             _UiX.MapWindow(display, window);
@@ -453,6 +469,7 @@ struct _UiOs
         input.Wheel = _UiXw.Wheel;
         input.WheelX = _UiXw.WheelX;
         input.Modifiers = List<KeyModifiers>.Create();
+        input.Held.AddRange(_UiXw.Held.ToArray());
         for (var i = 0; i < _UiXw.Keys.Count(); i += 1)
             input.AddKey(_UiXw.Keys.Get(i), _UiXw.Mods.Get(i));
         input.Text = _UiXw.Text.ToString();
@@ -507,7 +524,8 @@ struct _UiOs
             return;
         _UiXw.Cursor = cursor;
         nuint shape = cursor == Cursor.Text ? _UiXw.CursorText : cursor == Cursor.Hand ? _UiXw.CursorHand :
-                      cursor == Cursor.Crosshair ? _UiXw.CursorCross : cursor == Cursor.Move ? _UiXw.CursorMove : _UiXw.CursorArrow;
+                      cursor == Cursor.Crosshair ? _UiXw.CursorCross : cursor == Cursor.Move ? _UiXw.CursorMove :
+                      cursor == Cursor.ResizeColumn ? _UiXw.CursorResizeColumn : cursor == Cursor.ResizeRow ? _UiXw.CursorResizeRow : _UiXw.CursorArrow;
         unsafe
         {
             _UiX.DefineCursor(_UiXw.Display, _UiXw.Window, shape);
