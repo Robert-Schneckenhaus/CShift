@@ -2384,9 +2384,21 @@ void GenGep(Gen g, IrInst inst)
             g.Line(addOrSub + direct + "," + dst); // (adda.l/suba.l)
             continue;
         }
+        // a 68020 adds an index times 2, 4 or 8 with one lea
+        string scale = Is020(g) && addOrSub == "add.l\t" ? IndexScale(stride) : "";
+        if (scale.Length > 0 && ib == 32 && (direct.StartsWith("%d") || direct.StartsWith("%a")))
+        {
+            g.Line("lea\t(0," + dst + "," + direct + ".l" + scale + ")," + dst);
+            continue;
+        }
         Load32(g, idx, "%d1");
         if (ib < 32)
             Extend(g, "%d1", ib, true);
+        if (scale.Length > 0)
+        {
+            g.Line("lea\t(0," + dst + ",%d1.l" + scale + ")," + dst);
+            continue;
+        }
         ScaleD1(g, stride);
         g.Line(addOrSub + "%d1," + dst);
     }

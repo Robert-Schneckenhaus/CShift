@@ -47,7 +47,9 @@ The m68k backend accepts m68k targets only:
 then multiplies and divides 32-bit integers with the instructions of the 68020: `muls.l`/`mulu.l` (also for the
 overflow check of a product: they set V) and `divs.l`/`divu.l` (a remainder is `a - (a / b) * b`), where the 68000
 needs `muls.w`/`divu.w` with a test of the size and a call of `__cs68k_mul32`, `__cs68k_udivmod` or
-`__cs68k_sdivmod` for the rest. Indexing an array of structs of an odd size multiplies too. Everything else is the same
+`__cs68k_sdivmod` for the rest. Indexing an array of structs of an odd size multiplies too. An index of an array of
+elements of 2, 4 or 8 bytes is scaled by the addressing mode (`move.l (8,%a4,%d4.l*4),%d5`, `lea (0,%a0,%d1.l*8),%a0`)
+instead of shifted first. Everything else is the same
 code; the 64-bit multiplication stays in software (the 68060 does not have `mulu.l` with a 64-bit product).
 
 An AmigaOS program built for a 68020 tests the processor first (`AttnFlags` of exec.library): on a 68000 or 68010 it

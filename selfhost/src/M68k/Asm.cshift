@@ -30,6 +30,7 @@ struct AsmOperand
     int Reg;
     int IndexReg;   // 0-7 d0-d7, 8-15 a0-a7
     bool IndexLong;
+    int Scale;      // the index times 1, 2, 4 or 8 (0..3; 68020: "%d1.l*4")
     int64 Value;
     string Sym;     // "" for a plain number
 }
@@ -312,7 +313,7 @@ int ParseRegister(string s)
 
 AsmOperand PlainOperand(OpMode mode, int reg)
 {
-    return AsmOperand { Mode = mode, Reg = reg, IndexReg = 0, IndexLong = false, Value = 0, Sym = "" };
+    return AsmOperand { Mode = mode, Reg = reg, IndexReg = 0, IndexLong = false, Scale = 0, Value = 0, Sym = "" };
 }
 
 Optional<AsmOperand> ParseOperand(string s)
@@ -369,6 +370,16 @@ Optional<AsmOperand> ParseOperand(string s)
             if (inner.Length == 3)
             {
                 string x = inner[2].Trim().ToString();
+                int scale = 0;
+                int star = x.IndexOf('*');
+                if (star > 0)
+                {
+                    string factor = x.Substring(star + 1).ToString();
+                    scale = factor == "1" ? 0 : factor == "2" ? 1 : factor == "4" ? 2 : factor == "8" ? 3 : -1;
+                    if (scale < 0)
+                        return null;
+                    x = x.Substring(0, star).ToString();
+                }
                 bool isLong = true;
                 if (x.EndsWith(".w") || x.EndsWith(".l"))
                 {
@@ -382,6 +393,7 @@ Optional<AsmOperand> ParseOperand(string s)
                 o.Value = d.Value;
                 o.IndexReg = xr;
                 o.IndexLong = isLong;
+                o.Scale = scale;
                 return o;
             }
         }
@@ -723,7 +735,7 @@ void EaExtension(Encoder enc, AsmItem item, AsmSection sec, AsmOperand o, int si
         case OpMode.Index:
             if (o.Value < -128 || o.Value > 127)
                 EncError(enc, item, "the displacement " + o.Value.ToString() + " does not fit in 8 bits");
-            EmitWord(sec, ((o.IndexReg & 15) << 12) | (o.IndexLong ? 2048 : 0) | ((int)o.Value & 255));
+            EmitWord(sec, ((o.IndexReg & 15) << 12) | (o.IndexLong ? 2048 : 0) | (o.Scale << 9) | ((int)o.Value & 255));
             break;
         case OpMode.Abs:
             LongField(sec, o.Value, o.Sym);

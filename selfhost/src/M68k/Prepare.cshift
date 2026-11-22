@@ -1163,14 +1163,23 @@ string FoldedOperand(Gen g, AddrFold fold)
         return fold.Offset == 0 ? "(" + baseReg + ")" : "(" + fold.Offset.ToString() + "," + baseReg + ")";
     // an index of 32 bits that is not scaled: straight from its register
     var iv = g.M.Vals.Get(fold.Index);
-    if (fold.IndexBits == 32 && fold.Stride == 1 && iv.Kind == ValKind.Local && g.Home.TryGet(iv.Name) is string ir &&
-        (ir.StartsWith("%d") || ir.StartsWith("%a")))
-        return "(" + fold.Offset.ToString() + "," + baseReg + "," + ir + ".l)";
+    // a 68020 scales the index itself by 2, 4 or 8 ("%d1.l*4")
+    string scale = Is020(g) ? IndexScale(fold.Stride) : "";
+    if (fold.IndexBits == 32 && (fold.Stride == 1 || scale.Length > 0) && iv.Kind == ValKind.Local &&
+        g.Home.TryGet(iv.Name) is string ir && (ir.StartsWith("%d") || ir.StartsWith("%a")))
+        return "(" + fold.Offset.ToString() + "," + baseReg + "," + ir + ".l" + scale + ")";
     Load32(g, fold.Index, "%d1");
     if (fold.IndexBits < 32)
         Extend(g, "%d1", fold.IndexBits, true);
-    ScaleD1(g, fold.Stride);
-    return "(" + fold.Offset.ToString() + "," + baseReg + ",%d1.l)";
+    if (scale.Length == 0)
+        ScaleD1(g, fold.Stride);
+    return "(" + fold.Offset.ToString() + "," + baseReg + ",%d1.l" + scale + ")";
+}
+
+// The scale of an index of the 68020 for a stride: "*2", "*4", "*8", or "" (1, or one it does not have).
+string IndexScale(int stride)
+{
+    return stride == 2 ? "*2" : stride == 4 ? "*4" : stride == 8 ? "*8" : "";
 }
 
 // A load of an aggregate whose only uses are extractvalues of scalar fields: each field that is used is loaded on its
