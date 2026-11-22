@@ -17,6 +17,10 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 - `UiInput.Held`: the keys held down at the end of the frame (Windows, X11, the browser; losing the focus lets them go).
   A game that runs in a Ui (an editor that plays its game) walks while an arrow key is held. In the browser it needs
   the new web/cshift.js; an older one reports no keys held.
+- AmigaOS: an Amiga key counts as Ctrl and types nothing (Amiga+C, Amiga+X, Amiga+V and Amiga+A in a text box, Amiga+S
+  for `Pressed(Key.S, KeyModifiers.Ctrl)`). Alt with a cursor key is Home or End, which the keyboard of the Amiga does
+  not have. Dashes, typographic quotes, `…`, `•`, `€`, arrows and triangles become the nearest character of Latin-1
+  instead of `?` (`€` the currency sign `¤`).
 
 ### Amiga
 - Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on

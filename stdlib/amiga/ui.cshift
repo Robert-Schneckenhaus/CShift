@@ -119,6 +119,7 @@ struct _UiAmiga
     bool Ctrl;
     bool Shift;
     bool Alt;
+    bool Amiga;                // one of the Amiga keys is held (the shortcuts of AmigaOS: Amiga+C, Amiga+V, ...)
     List<Key> Keys;
     List<KeyModifiers> Mods;   // held at each of Keys (the qualifier of its message)
     StringBuilder Text;
@@ -139,7 +140,38 @@ const int _UiImageCache = 32;
 _UiAmiga _UiA;
 string _UiClipboardText;
 
-// UTF-8 as Latin-1 (the characters of AmigaOS), NUL-terminated; other characters become '?'.
+// A character as one of Latin-1 (the characters of AmigaOS): the marks that the fonts of the desktop have beyond it
+// become the nearest one of Latin-1 (one character for one, so the widths of the layout stay right), others '?'.
+uint8 _UiLatin1Char(int code)
+{
+    if (code < 256)
+        return (uint8)code;
+    switch (code)
+    {
+    case 0x2013: return (uint8)'-';     // en dash
+    case 0x2014: return (uint8)'-';     // em dash
+    case 0x2018: return (uint8)'\'';    // single quotes
+    case 0x2019: return (uint8)'\'';
+    case 0x201A: return (uint8)'\'';
+    case 0x201C: return (uint8)'"';     // double quotes
+    case 0x201D: return (uint8)'"';
+    case 0x201E: return (uint8)'"';
+    case 0x2022: return (uint8)0xB7;    // bullet: middle dot
+    case 0x2026: return (uint8)'.';     // ellipsis
+    case 0x20AC: return (uint8)0xA4;    // euro: the currency sign, which ISO 8859-15 replaced with it
+    case 0x2190: return (uint8)'<';     // arrows
+    case 0x2191: return (uint8)'^';
+    case 0x2192: return (uint8)'>';
+    case 0x2193: return (uint8)'v';
+    case 0x25B2: return (uint8)'^';     // triangles
+    case 0x25B6: return (uint8)'>';
+    case 0x25BC: return (uint8)'v';
+    case 0x25C0: return (uint8)'<';
+    default: return (uint8)'?';
+    }
+}
+
+// UTF-8 as Latin-1 (the characters of AmigaOS, see _UiLatin1Char), NUL-terminated.
 uint8[] _UiLatin1(StringSlice text)
 {
     var bytes = List<uint8>.Create();
@@ -149,7 +181,7 @@ uint8[] _UiLatin1(StringSlice text)
         int length = 1;
         int code = _DecodeChar(text, i, ref length);
         i += length;
-        bytes.Add(code < 256 ? (uint8)code : (uint8)'?');
+        bytes.Add(_UiLatin1Char(code));
     }
     bytes.Add(0);
     return bytes.ToArray();
@@ -469,7 +501,7 @@ void _UiText(UiCommand c)
     int y = c.Rect.Y;
     if (y < clip.Y || y + _UiA.FontHeight > clip.Y + clip.Height || cw <= 0)
         return; // a line that is cut off at the top or the bottom (in a scroll area) is left out
-    // UTF-8 as Latin-1 (the characters of AmigaOS; others become '?') into the buffer
+    // UTF-8 as Latin-1 (the characters of AmigaOS, see _UiLatin1Char) into the buffer
     var text = c.Text;
     if (_UiA.Chars.Length < text.Length)
         _UiA.Chars = new uint8[text.Length + 32];
@@ -488,7 +520,7 @@ void _UiText(UiCommand c)
         {
             int length = 1;
             int code = _DecodeChar(text, i, ref length);
-            chars[count] = code < 256 ? (uint8)code : (uint8)'?';
+            chars[count] = _UiLatin1Char(code);
             i += length;
         }
         count += 1;
@@ -573,7 +605,8 @@ void _UiMessage(uint8* m)
         int mx = (int)*(int16*)(m + 32) - (int)w[54];
         int my = (int)*(int16*)(m + 34) - (int)w[55];
         _UiA.Shift = (qualifier & 3) != 0;
-        _UiA.Ctrl = (qualifier & 8) != 0;
+        _UiA.Amiga = (qualifier & 0xC0) != 0;
+        _UiA.Ctrl = (qualifier & 8) != 0 || _UiA.Amiga; // Amiga+C is the Ctrl+C of AmigaOS
         _UiA.Alt = (qualifier & 0x30) != 0;
         switch (cls)
         {
@@ -657,6 +690,15 @@ void _UiVanilla(int c)
         _UiAKey((Key)((int)Key.A + c - 1)); // Ctrl+A ... Ctrl+Z
         return;
     }
+    if (_UiA.Amiga)
+    {
+        // Amiga with a key is a shortcut and types nothing: Amiga+C comes as 'c' (or 'C' with Shift)
+        if (c >= 97 && c <= 122)
+            _UiAKey((Key)((int)Key.A + c - 97));
+        else if (c >= 65 && c <= 90)
+            _UiAKey((Key)((int)Key.A + c - 65));
+        return;
+    }
     if (c == 32)
         _UiAKey(Key.Space);
     else if (c == 43) // +
@@ -676,10 +718,12 @@ void _UiRawKey(int code)
 {
     switch (code)
     {
-    case 0x4C: _UiAKey(Key.Up); break;
-    case 0x4D: _UiAKey(Key.Down); break;
-    case 0x4E: _UiAKey(Key.Right); break;
-    case 0x4F: _UiAKey(Key.Left); break;
+    // Alt with a cursor key is Home (left, up) or End (right, down): the keyboard of the Amiga has neither, and Shift
+    // selects. The start or the end of the text in a text box, the first or the last item of a list, a slider's ends.
+    case 0x4C: _UiAKey(_UiA.Alt ? Key.Home : Key.Up); break;
+    case 0x4D: _UiAKey(_UiA.Alt ? Key.End : Key.Down); break;
+    case 0x4E: _UiAKey(_UiA.Alt ? Key.End : Key.Right); break;
+    case 0x4F: _UiAKey(_UiA.Alt ? Key.Home : Key.Left); break;
     case 0x7A: _UiA.Wheel += 1; break;
     case 0x7B: _UiA.Wheel -= 1; break;
     default:

@@ -540,7 +540,9 @@ window does not link. Under node or wasmtime there is no canvas: `Window.Open` r
 A 68000 cannot paint every pixel of a frame in 32 bits, so on AmigaOS the Ui does not draw into an image: it records
 the frame as drawing commands, and the window draws them with graphics.library. Rectangles are `RectFill`s (rounded
 corners and circles as a few runs of rows), lines `Move`/`Draw`, text the system font (Topaz 8, or the font of the
-preferences; the Ui takes its size for the layout), and the colors of the theme become the nearest pens of the
+preferences; the Ui takes its size for the layout; the characters are those of Latin-1, and the marks the desktop
+fonts have beyond it become the nearest one: dashes `-`, typographic quotes `'` and `"`, `…` a `.`, `•` a `·`, `€` the
+currency sign `¤`, arrows and triangles `< > ^ v`; others `?`), and the colors of the theme become the nearest pens of the
 Workbench screen (`ObtainBestPenA`). The frame is drawn into a bitmap of its own and copied into the window in one blit,
 so nothing flickers. The same program runs on the Amiga and on the desktop:
 
@@ -558,7 +560,12 @@ inside the program. The right mouse button is the menu button (the window has no
 too; nothing lights up under the mouse, so tooltips do not show, and the rest of the window is not dimmed behind a
 modal dialog (it still gets no input). The keyboard: Tab, Return, Esc, Backspace, Del, the cursor keys, F1 to F10,
 Ctrl with a letter, `+`, `-`, `,` and `.` (the digits of the number pad come as the digits), and the wheel of
-NewMouse (no horizontal wheel). The modifier keys of each key press come from the qualifier of its message, so a
+NewMouse (no horizontal wheel). An Amiga key counts as Ctrl and types nothing, so Amiga+C, Amiga+X, Amiga+V and
+Amiga+A copy, cut, paste and select in a text box as on AmigaOS, and `Pressed(Key.S, KeyModifiers.Ctrl)` is also
+Amiga+S. Alt with a cursor key is Home (left, up) or End (right, down), which the keyboard of the Amiga does not
+have: the start or the end of a text box (with Shift: selecting), the first or the last item of a list or a combo
+box, the ends of a slider. Ctrl+H, Ctrl+I and Ctrl+M come as Backspace, Tab and Return (AmigaOS gives them the same
+character). The modifier keys of each key press come from the qualifier of its message, so a
 shortcut typed during a slow frame is not lost (`Pressed(Key.S, KeyModifiers.Ctrl)`).
 
 **Images.** `ui.Image`, `ui.DrawImage` and `Canvas.DrawImage` of a frame with commands are drawn, also scaled and
