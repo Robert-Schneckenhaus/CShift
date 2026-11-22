@@ -1,0 +1,49 @@
+namespace BlackTemple.Common;
+
+/// A 3D vector. World space: X = east, Y = up, Z = south; map position (x, y) is world (x, height, y).
+struct Vec3
+{
+    float X;
+    float Y;
+    float Z;
+
+    static Vec3 Create(float x, float y, float z) { return Vec3 { X = x, Y = y, Z = z }; }
+    static Vec3 Zero() { return Vec3 { X = 0, Y = 0, Z = 0 }; }
+    static Vec3 UnitY() { return Vec3 { X = 0, Y = 1, Z = 0 }; }
+
+    /// The world position of a map position at a height.
+    static Vec3 FromMap(Vec2 position, float height) { return Vec3 { X = position.X, Y = height, Z = position.Y }; }
+
+    Vec3 Add(Vec3 other) { return Vec3 { X = X + other.X, Y = Y + other.Y, Z = Z + other.Z }; }
+    Vec3 Sub(Vec3 other) { return Vec3 { X = X - other.X, Y = Y - other.Y, Z = Z - other.Z }; }
+    Vec3 Mul(float factor) { return Vec3 { X = X * factor, Y = Y * factor, Z = Z * factor }; }
+    float Dot(Vec3 other) { return X * other.X + Y * other.Y + Z * other.Z; }
+    float Length() { return MathUtil.Sqrt(X * X + Y * Y + Z * Z); }
+
+    Vec3 Cross(Vec3 other)
+    {
+        return Vec3
+        {
+            X = Y * other.Z - Z * other.Y,
+            Y = Z * other.X - X * other.Z,
+            Z = X * other.Y - Y * other.X
+        };
+    }
+
+    Vec3 Normalized()
+    {
+        float length = Length();
+
+        if (length < 0.000001f)
+            return Zero();
+
+        return Mul(1.0f / length);
+    }
+
+    static Vec3 Lerp(Vec3 a, Vec3 b, float t)
+    {
+        return Vec3 { X = MathUtil.Lerp(a.X, b.X, t), Y = MathUtil.Lerp(a.Y, b.Y, t), Z = MathUtil.Lerp(a.Z, b.Z, t) };
+    }
+
+    string ToString() { return $"({X}, {Y}, {Z})"; }
+}

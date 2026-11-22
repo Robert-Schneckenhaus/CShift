@@ -51,11 +51,13 @@
     },
     "E": {
       "floor": "cobble",
-      "teleport": {
-        "map": "temple",
-        "x": 11.5,
-        "y": 12.5,
-        "facing": "north"
+      "event": {
+        "teleport": {
+          "map": "temple",
+          "x": 11.5,
+          "y": 12.5,
+          "facing": "north"
+        }
       }
     }
   },

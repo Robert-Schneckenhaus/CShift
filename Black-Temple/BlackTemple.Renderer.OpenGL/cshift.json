@@ -1,0 +1,12 @@
+{
+	"name": "BlackTemple.Renderer.OpenGL",
+	"version": "0.1.0",
+	"type": "library",
+	"sources": ["."],
+	"includePaths": ["include"],
+	"dependencies": ["../BlackTemple.Core"],
+	"platforms": {
+		"windows": { "links": ["opengl32"] },
+		"linux": { "links": ["GL"] }
+	}
+}

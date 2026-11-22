@@ -1,0 +1,76 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// The keyframes that outdoor maps use when they define none of their own.
+const string DefaultDayNightKeys = embed("daynight.json");
+
+/// Reads the day/night cycle of an outdoor map:
+///
+/// ```json
+/// "dayNight": { "startHour": 17.5, "minutesPerSecond": 6,
+///               "keys": [ { "hour": 12, "zenith": "#2c64c8", "horizon": "#b0d0f0", "ambient": "#ffffff",
+///                           "fog": "#b0c8e0", "sun": "#ffffff", "night": 0 }, ... ] }
+/// ```
+struct DayNightReader
+{
+    static Error<DayNightData> Read(JsonObject json)
+    {
+        var keyObjects = json.Items("keys");
+
+        if (keyObjects.Count() == 0)
+        {
+            var defaults = JsonObject.Create(try Json.Parse(DefaultDayNightKeys), "daynight.json", "");
+
+            for (var i = 0; i < defaults.Value.Count(); i += 1)
+                keyObjects.Add(JsonObject.Create(defaults.Value[i], "daynight.json", $"[{i}]"));
+        }
+
+        var keys = List<DayNightKey>.Create();
+
+        foreach (var k in keyObjects)
+        {
+            float hour = try k.Float("hour", 0);
+
+            if (hour < 0 || hour >= 24)
+                return error($"{k.Context()}: hour must be in 0..24");
+
+            keys.Add(DayNightKey
+            {
+                Hour = hour,
+                Colors = SkyColors
+                {
+                    Zenith = try k.Color("zenith", Color.Black()),
+                    Horizon = try k.Color("horizon", Color.Black()),
+                    Ambient = try k.Color("ambient", Color.Black()),
+                    Fog = try k.Color("fog", Color.Black()),
+                    Sun = try k.Color("sun", Color.Black()),
+                    Night = try k.Float("night", 0)
+                }
+            });
+        }
+
+        // a handful of keys: insertion sort by hour
+        for (var i = 1; i < keys.Count(); i += 1)
+        {
+            var key = keys[i];
+            var j = i - 1;
+
+            while (j >= 0 && keys[j].Hour > key.Hour)
+            {
+                keys[j + 1] = keys[j];
+                j -= 1;
+            }
+
+            keys[j + 1] = key;
+        }
+
+        return DayNightData
+        {
+            StartHour = try json.Float("startHour", 10),
+            MinutesPerSecond = try json.Float("minutesPerSecond", 2),
+            Keys = keys.ToArray()
+        };
+    }
+}

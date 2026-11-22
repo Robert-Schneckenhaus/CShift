@@ -1,0 +1,59 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// Reads an object type of objects.json:
+///
+/// ```json
+/// "torch": { "sprites": ["torch_0", "torch_1"], "frameTime": 0.12, "width": 0.18, "baseHeight": 0.45,
+///            "fullbright": true, "blocking": false, "radius": 0.25, "light": { ... } }
+/// ```
+///
+/// Without "height", the height follows the aspect ratio of the first sprite.
+struct ObjectTypeReader
+{
+    static Error<ObjectType> Read(string name, JsonObject json, const ref TextureSet sprites)
+    {
+        var spriteIds = List<int>.Create();
+
+        foreach (var spriteName in try json.Strings("sprites"))
+        {
+            int id = sprites.Find(spriteName);
+
+            if (id < 0)
+                return error($"{json.Context()}: there is no sprite '{spriteName}' (Assets/Sprites/{spriteName}.png)");
+
+            spriteIds.Add(id);
+        }
+
+        if (spriteIds.Count() == 0)
+            return error($"{json.Context()}: an object type needs at least one sprite");
+
+        var first = sprites.Get(spriteIds[0]);
+        float width = try json.Float("width", 0.5f);
+        var type = ObjectType
+        {
+            Name = name,
+            Sprites = spriteIds.ToArray(),
+            FrameTime = try json.Float("frameTime", 0.15f),
+            Width = width,
+            Height = try json.Float("height", width * first.Height / first.Width),
+            BaseHeight = try json.Float("baseHeight", 0),
+            Fullbright = try json.Bool("fullbright", false),
+            Blocking = try json.Bool("blocking", false),
+            Radius = try json.Float("radius", 0.25f)
+        };
+
+        if (type.FrameTime <= 0)
+            return error($"{json.Context()}: frameTime must be greater than 0");
+
+        if (json.Has("light"))
+        {
+            type.HasLight = true;
+            type.Light = try LightReader.Read(json.Child("light"));
+        }
+
+        return type;
+    }
+}

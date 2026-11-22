@@ -1,0 +1,215 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// What a map refers to by name: textures, object types and light presets.
+struct MapReferences
+{
+    TextureSet Textures;
+    Dictionary<string, int> ObjectTypes;
+    Dictionary<string, LightData> LightPresets;
+}
+
+/// Reads a map (Assets/Maps/<id>.json):
+///
+/// ```json
+/// {
+///   "name": "Hall of the Flame", "type": "indoor", "wallHeight": 1.6, "wallTextureRepeat": 1,
+///   "ambient": "#16121c",
+///   "fog": { "color": "#000000", "start": 3, "end": 13, "useSkyColor": true },
+///   "dayNight": { ... },
+///   "start": { "x": 11.5, "y": 12.5, "facing": "north" },
+///   "legend": {
+///     "#": { "wall": "temple_wall" },
+///     ".": { "floor": "temple_floor", "ceiling": "stone_ceiling" },
+///     "B": { "floor": "temple_floor", "ceiling": "stone_ceiling", "object": "brazier" },
+///     "E": { "floor": "stone_floor", "event": { "teleport": { "map": "courtyard", "x": 10.5, "y": 3.5 } } }
+///   },
+///   "rows": [ "#####", "#.B.#", "#.E.#", "#####" ],
+///   "objects": [ { "type": "torch", "x": 8.12, "y": 11.5, "baseHeight": 0.45 } ],
+///   "lights": [ { "preset": "pulse_red", "x": 11.5, "y": 2.5, "height": 1.4 },
+///               { "x": 3.5, "y": 3.5, "color": "#8090c0", "radius": 5 } ],
+///   "events": [ { "x": 4, "y": 2, "teleport": { "x": 9.5, "y": 9.5 } } ]
+/// }
+/// ```
+///
+/// A space in "rows" is void: solid and invisible. Positions are in tiles, 0.5 = the middle of the first tile.
+struct MapReader
+{
+    static Error<MapData> Read(string id, JsonObject json, const ref MapReferences refs)
+    {
+        var rows = try json.Strings("rows");
+
+        if (rows.Count() == 0)
+            return error($"{json.Context()}: the map has no rows");
+
+        int width = 0;
+
+        foreach (var row in rows)
+            width = Math.Max(width, row.Length);
+
+        string kind = try json.String("type", "indoor");
+
+        if (kind != "indoor" && kind != "outdoor")
+            return error($"{json.Context()}: type must be \"indoor\" or \"outdoor\"");
+
+        var fog = json.Child("fog");
+        var start = json.Child("start");
+        var map = MapData
+        {
+            Id = id,
+            Name = try json.String("name", id),
+            Kind = kind == "outdoor" ? MapKind.Outdoor : MapKind.Indoor,
+            Width = width,
+            Height = rows.Count(),
+            WallHeight = try json.Float("wallHeight", 1.25f),
+            WallTextureRepeat = try json.Float("wallTextureRepeat", 1),
+            Ambient = try json.Color("ambient", Color.Create(0.12f, 0.12f, 0.14f)),
+            Fog = FogData
+            {
+                Color = try fog.Color("color", Color.Black()),
+                Start = try fog.Float("start", 3),
+                End = try fog.Float("end", 10),
+                UseSkyColor = try fog.Bool("useSkyColor", true)
+            },
+            Start = PlayerStart
+            {
+                Position = Vec2.Create(try start.Float("x", 1.5f), try start.Float("y", 1.5f)),
+                Yaw = try start.Direction("facing", 0)
+            },
+            TileTypes = List<TileType>.Create(),
+            Tiles = new int[width * rows.Count()],
+            Objects = List<ObjectPlacement>.Create(),
+            Lights = List<LightPlacement>.Create(),
+            Events = List<EventPlacement>.Create()
+        };
+
+        if (map.IsOutdoor())
+            map.DayNight = try DayNightReader.Read(json.Child("dayNight"));
+
+        try _ReadTiles(ref map, json, rows, refs);
+
+        foreach (var o in json.Items("objects"))
+        {
+            int type = try _ObjectType(o, try o.RequireString("type"), refs);
+            var position = Vec2.Create(try o.Float("x", 0.5f), try o.Float("y", 0.5f));
+            map.Objects.Add(ObjectPlacement { Type = type, Position = position, BaseHeight = try o.Float("baseHeight", -1) });
+        }
+
+        foreach (var l in json.Items("lights"))
+        {
+            LightData light;
+
+            if (l.Has("preset"))
+            {
+                string preset = try l.RequireString("preset");
+
+                if (refs.LightPresets.TryGet(preset) is LightData p)
+                    light = p;
+                else
+                    return error($"{l.Context()}: there is no light preset '{preset}'");
+            }
+            else
+            {
+                light = try LightReader.Read(l);
+            }
+
+            var position = Vec2.Create(try l.Float("x", 0.5f), try l.Float("y", 0.5f));
+            map.Lights.Add(LightPlacement { Light = light, Position = position, Height = try l.Float("height", light.Height) });
+        }
+
+        foreach (var e in json.Items("events"))
+        {
+            int x = (int)try e.Float("x", 0);
+            int y = (int)try e.Float("y", 0);
+
+            if (!map.InBounds(x, y))
+                return error($"{e.Context()}: the tile ({x}, {y}) is outside of the map");
+
+            map.Events.Add(EventPlacement { X = x, Y = y, Event = try EventReader.Read(e) });
+        }
+
+        return map;
+    }
+
+    static Error<void> _ReadTiles(ref MapData map, JsonObject json, List<string> rows, const ref MapReferences refs)
+    {
+        var legend = json.Child("legend");
+        var typeOfKey = Dictionary<string, int>.Create();
+
+        foreach (var key in legend.Keys())
+        {
+            var t = legend.Child(key);
+
+            if (key.Length != 1)
+                return error($"{t.Context()}: legend keys are single characters");
+
+            typeOfKey[key] = map.TileTypes.Count();
+            map.TileTypes.Add(TileType
+            {
+                Key = key,
+                WallTexture = try _Texture(t, "wall", refs),
+                FloorTexture = try _Texture(t, "floor", refs),
+                CeilingTexture = try _Texture(t, "ceiling", refs),
+                Blocking = t.Has("wall") || try t.Bool("blocking", false)
+            });
+        }
+
+        for (var y = 0; y < map.Height; y += 1)
+        {
+            string row = rows[y];
+
+            for (var x = 0; x < map.Width; x += 1)
+            {
+                int index = y * map.Width + x;
+                string key = x < row.Length ? row[x..x + 1].ToString() : " ";
+                map.Tiles[index] = -1;
+
+                if (typeOfKey.TryGet(key) is int type)
+                {
+                    map.Tiles[index] = type;
+                    var t = legend.Child(key);
+
+                    if (t.Has("object"))
+                    {
+                        int objectType = try _ObjectType(t, try t.RequireString("object"), refs);
+                        var position = Vec2.Create(x + 0.5f, y + 0.5f);
+                        map.Objects.Add(ObjectPlacement { Type = objectType, Position = position, BaseHeight = -1 });
+                    }
+
+                    if (t.Has("event"))
+                        map.Events.Add(EventPlacement { X = x, Y = y, Event = try EventReader.Read(t.Child("event")) });
+                }
+                else if (key != " ")
+                {
+                    return error($"{json.Context()}: the legend has no entry for '{key}' (row {y}, column {x})");
+                }
+            }
+        }
+
+        return;
+    }
+
+    static Error<int> _Texture(JsonObject tile, string key, const ref MapReferences refs)
+    {
+        if (!tile.Has(key))
+            return -1;
+
+        string name = try tile.RequireString(key);
+        int id = refs.Textures.Find(name);
+
+        if (id < 0)
+            return error($"{tile.Context()}.{key}: there is no texture '{name}' (Assets/Textures/{name}.png)");
+
+        return id;
+    }
+
+    static Error<int> _ObjectType(JsonObject json, string name, const ref MapReferences refs)
+    {
+        if (refs.ObjectTypes.TryGet(name) is int type)
+            return type;
+
+        return error($"{json.Context()}: there is no object type '{name}' (see objects.json)");
+    }
+}

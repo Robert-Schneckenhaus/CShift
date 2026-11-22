@@ -1,0 +1,38 @@
+namespace BlackTemple.Data;
+
+using BlackTemple.Common;
+
+/// One animation frame of a light.
+struct LightFrame
+{
+    Color Color;
+    float Intensity;
+    /// Distance (tiles) at which the light has faded out completely.
+    float Radius;
+}
+
+/// The description of a point light: of an object type (torches, braziers), a preset or a light placed in a map.
+/// A light with more than one frame is animated; an object's light runs in sync with the object's sprite animation,
+/// so light frame N is shown together with sprite frame N.
+struct LightData
+{
+    LightFrame[] Frames;
+    /// Seconds per frame. 0 = the frame time of the object the light belongs to.
+    float FrameTime;
+    /// Blend smoothly from one frame to the next instead of switching.
+    bool Interpolate;
+    /// Additional random variation of the intensity (0.1 = +-10 %).
+    float Flicker;
+    /// Height above the object's base (object lights) or above the floor (map lights).
+    float Height;
+
+    static LightData Constant(Color color, float intensity, float radius, float height)
+    {
+        return LightData
+        {
+            Frames = [LightFrame { Color = color, Intensity = intensity, Radius = radius }],
+            Interpolate = false,
+            Height = height
+        };
+    }
+}

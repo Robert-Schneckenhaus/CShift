@@ -1,0 +1,121 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+using BlackTemple.Core;
+
+/// The static geometry of a map: floors, ceilings and the sides of wall blocks that face open tiles. Built once per
+/// map. Vertex: position (3), uv (2), texture layer (1), normal (3).
+struct MapGeometry
+{
+    VertexBuffer Buffer;
+    ShaderProgram Program;
+
+    static Error<MapGeometry> Create()
+    {
+        return MapGeometry
+        {
+            Buffer = VertexBuffer.Create([3, 2, 1, 3]),
+            Program = try ShaderProgram.Create("world", WorldVertexShader, LightingFragmentShader)
+        };
+    }
+
+    void Build(const ref MapData map)
+    {
+        var v = List<float>.Create();
+        float h = map.WallHeight;
+        float repeat = map.WallTextureRepeat;
+
+        for (var y = 0; y < map.Height; y += 1)
+        {
+            for (var x = 0; x < map.Width; x += 1)
+            {
+                if (map.TileAt(x, y) is not TileType tile)
+                    continue;
+
+                if (tile.IsWall())
+                    continue;
+
+                float x0 = x;
+                float x1 = x + 1;
+                float z0 = y;
+                float z1 = y + 1;
+
+                if (tile.FloorTexture >= 0)
+                {
+                    _Quad(v, tile.FloorTexture, Vec3.UnitY(), 1,
+                        Vec3.Create(x0, 0, z1), Vec3.Create(x1, 0, z1), Vec3.Create(x1, 0, z0), Vec3.Create(x0, 0, z0));
+                }
+
+                if (tile.CeilingTexture >= 0)
+                {
+                    _Quad(v, tile.CeilingTexture, Vec3.Create(0, -1, 0), 1,
+                        Vec3.Create(x0, h, z0), Vec3.Create(x1, h, z0), Vec3.Create(x1, h, z1), Vec3.Create(x0, h, z1));
+                }
+
+                // the sides of neighboring wall blocks, as seen from this tile: bottom left, bottom right, top right,
+                // top left
+                if (map.TileAt(x, y - 1) is TileType north && north.IsWall())
+                {
+                    _Quad(v, north.WallTexture, Vec3.Create(0, 0, 1), repeat,
+                        Vec3.Create(x0, 0, z0), Vec3.Create(x1, 0, z0), Vec3.Create(x1, h, z0), Vec3.Create(x0, h, z0));
+                }
+
+                if (map.TileAt(x + 1, y) is TileType east && east.IsWall())
+                {
+                    _Quad(v, east.WallTexture, Vec3.Create(-1, 0, 0), repeat,
+                        Vec3.Create(x1, 0, z0), Vec3.Create(x1, 0, z1), Vec3.Create(x1, h, z1), Vec3.Create(x1, h, z0));
+                }
+
+                if (map.TileAt(x, y + 1) is TileType south && south.IsWall())
+                {
+                    _Quad(v, south.WallTexture, Vec3.Create(0, 0, -1), repeat,
+                        Vec3.Create(x1, 0, z1), Vec3.Create(x0, 0, z1), Vec3.Create(x0, h, z1), Vec3.Create(x1, h, z1));
+                }
+
+                if (map.TileAt(x - 1, y) is TileType west && west.IsWall())
+                {
+                    _Quad(v, west.WallTexture, Vec3.Create(1, 0, 0), repeat,
+                        Vec3.Create(x0, 0, z1), Vec3.Create(x0, 0, z0), Vec3.Create(x0, h, z0), Vec3.Create(x0, h, z1));
+                }
+            }
+        }
+
+        Buffer.Upload(v, false);
+    }
+
+    /// Two triangles; the texture's v runs from `vRepeat` at the bottom to 0 at the top.
+    static void _Quad(List<float> v, int layer, Vec3 normal, float vRepeat, Vec3 bottomLeft, Vec3 bottomRight, Vec3 topRight, Vec3 topLeft)
+    {
+        _Vertex(v, bottomLeft, 0, vRepeat, layer, normal);
+        _Vertex(v, bottomRight, 1, vRepeat, layer, normal);
+        _Vertex(v, topRight, 1, 0, layer, normal);
+        _Vertex(v, bottomLeft, 0, vRepeat, layer, normal);
+        _Vertex(v, topRight, 1, 0, layer, normal);
+        _Vertex(v, topLeft, 0, 0, layer, normal);
+    }
+
+    static void _Vertex(List<float> v, Vec3 p, float u, float tv, int layer, Vec3 n)
+    {
+        v.Add(p.X);
+        v.Add(p.Y);
+        v.Add(p.Z);
+        v.Add(u);
+        v.Add(tv);
+        v.Add(layer);
+        v.Add(n.X);
+        v.Add(n.Y);
+        v.Add(n.Z);
+    }
+
+    void Draw(const ref RenderFrame frame, ref LightSet lights, const ref Mat4 viewProjection, ref TextureArray textures)
+    {
+        Program.Use();
+        lights.Apply(ref Program, frame);
+        Program.SetMatrix("uViewProj", viewProjection);
+        Program.SetInt("uTexture", 0);
+        textures.Bind(0);
+        Buffer.Draw();
+    }
+}

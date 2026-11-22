@@ -1,0 +1,58 @@
+namespace BlackTemple.Core;
+
+/// What the player can do. Frontends map keys, buttons or anything else to these actions (see InputState), so the
+/// game itself never sees a key code.
+enum GameAction : int32
+{
+    MoveForward = 0,
+    MoveBackward = 1,
+    StrafeLeft = 2,
+    StrafeRight = 3,
+    TurnLeft = 4,
+    TurnRight = 5,
+    Run = 6,
+    /// Debug: let the day/night cycle run fast.
+    FastTime = 7,
+    /// Debug: fog on/off.
+    ToggleFog = 8,
+    /// Debug: move the fog farther away / nearer.
+    IncreaseFogDistance = 9,
+    DecreaseFogDistance = 10
+}
+
+const int GameActionCount = Enum<GameAction>.Count;
+
+/// The input of one frame: which actions are held, which were pressed in this frame, and how far the view was
+/// turned (mouse look, in radians).
+struct InputState
+{
+    Fixed<bool, GameActionCount> _held;
+    Fixed<bool, GameActionCount> _pressed;
+    float LookYaw;
+    float LookPitch;
+
+    bool IsHeld(GameAction action) { return _held[(int)action]; }
+
+    /// Pressed in this frame (held now, not held in the frame before).
+    bool WasPressed(GameAction action) { return _pressed[(int)action]; }
+
+    void Set(GameAction action, bool held, bool pressed)
+    {
+        _held[(int)action] = held;
+        _pressed[(int)action] = pressed;
+    }
+
+    /// 1 if only `positive` is held, -1 if only `negative` is held, else 0.
+    float Axis(GameAction positive, GameAction negative)
+    {
+        float value = 0;
+
+        if (IsHeld(positive))
+            value += 1;
+
+        if (IsHeld(negative))
+            value -= 1;
+
+        return value;
+    }
+}

@@ -1,0 +1,18 @@
+namespace BlackTemple.Tests;
+
+int Main()
+{
+    var tests = TestRunner.Create();
+    tests.Run("color parsing", ColorParsing);
+    tests.Run("map reading", MapReading);
+    tests.Run("map errors name their place", MapErrorsNameTheirPlace);
+    tests.Run("light frames follow the time", LightFramesFollowTheTime);
+    tests.Run("light frames interpolate", LightFramesInterpolate);
+    tests.Run("object lights run in sync with sprites", ObjectLightsRunInSyncWithSprites);
+    tests.Run("day/night wraps around midnight", DayNightWrapsAroundMidnight);
+    tests.Run("player slides along walls", PlayerSlidesAlongWalls);
+    tests.Run("exit teleports to the courtyard", ExitTeleportsToTheCourtyard);
+    Console.WriteLine($"{tests.Passed} passed, {tests.Failed} failed");
+
+    return tests.Failed == 0 ? 0 : 1;
+}

@@ -1,0 +1,169 @@
+namespace BlackTemple.Core;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+/// Debug switches for trying out maps.
+struct DebugSettings
+{
+    bool FogEnabled;
+    /// Multiplies the fog distances of the map.
+    float FogScale;
+    /// Multiplies the speed of the day/night cycle.
+    float TimeSpeed;
+
+    static DebugSettings Create() { return DebugSettings { FogEnabled = true, FogScale = 1, TimeSpeed = 1 }; }
+}
+
+/// The running game: the current map, the player, map events and transitions between maps.
+///
+/// The frontend calls Update with the input of each frame and then Render with its renderer.
+struct Game
+{
+    GameData Data;
+    Map Map;
+    /// Counts map loads (see RenderFrame.MapGeneration).
+    int MapGeneration;
+    Player Player;
+    MapTransition Transition;
+    DebugSettings Debug;
+    /// Game time in seconds (drives all animations).
+    double Time;
+    Random Random;
+    int _lastTileX;
+    int _lastTileY;
+
+    static Error<Game> Create(GameData data, string mapId)
+    {
+        var game = Game
+        {
+            Data = data,
+            Transition = MapTransition.Create(),
+            Debug = DebugSettings.Create(),
+            Random = Random.Create(12345)
+        };
+        try game.LoadMap(mapId);
+        game.PlacePlayer(game.Map.Data.Start.Position, game.Map.Data.Start.Yaw);
+
+        return game;
+    }
+
+    Error<void> LoadMap(string id)
+    {
+        var data = try Data.LoadMap(id);
+        Map = Map.Create(data, Data.ObjectTypes);
+        MapGeneration += 1;
+
+        return;
+    }
+
+    void PlacePlayer(Vec2 position, float yaw)
+    {
+        Player = Player.Create(position, yaw);
+        _lastTileX = position.TileX();
+        _lastTileY = position.TileY();
+    }
+
+    Error<void> Update(const ref InputState input, float deltaTime)
+    {
+        Time += deltaTime;
+        _UpdateDebug(input, deltaTime);
+
+        if (Transition.IsActive())
+        {
+            if (Transition.Update(deltaTime))
+                try _Teleport(Transition.Target);
+        }
+        else
+        {
+            Player.Update(input, deltaTime, Map);
+            _CheckTileEvents();
+        }
+
+        Map.Update(Time, deltaTime, Debug.TimeSpeed, ref Random);
+
+        return;
+    }
+
+    /// Triggers the event of a tile when the player steps onto it.
+    void _CheckTileEvents()
+    {
+        int x = Player.Position.TileX();
+        int y = Player.Position.TileY();
+
+        if (x == _lastTileX && y == _lastTileY)
+            return;
+
+        _lastTileX = x;
+        _lastTileY = y;
+
+        if (Map.EventAt(x, y) is MapEvent e)
+            _HandleEvent(e);
+    }
+
+    void _HandleEvent(MapEvent e)
+    {
+        switch (e)
+        {
+            case TeleportEvent teleport:
+                Transition.Start(teleport);
+                break;
+        }
+    }
+
+    Error<void> _Teleport(TeleportEvent target)
+    {
+        if (target.Map != "" && target.Map != Map.Data.Id)
+            try LoadMap(target.Map);
+
+        PlacePlayer(target.Position, target.KeepDirection ? Player.Yaw : target.Yaw);
+
+        return;
+    }
+
+    void _UpdateDebug(const ref InputState input, float deltaTime)
+    {
+        if (input.WasPressed(GameAction.ToggleFog))
+            Debug.FogEnabled = !Debug.FogEnabled;
+
+        if (input.IsHeld(GameAction.IncreaseFogDistance))
+            Debug.FogScale = Math.Min(4.0f, Debug.FogScale + deltaTime);
+
+        if (input.IsHeld(GameAction.DecreaseFogDistance))
+            Debug.FogScale = Math.Max(0.25f, Debug.FogScale - deltaTime);
+
+        Debug.TimeSpeed = input.IsHeld(GameAction.FastTime) ? 60.0f : 1.0f;
+    }
+
+    RenderFrame Frame()
+    {
+        var lighting = SceneLighting.Of(Map);
+        lighting.Brightness = Transition.Brightness;
+        lighting.FogStart *= Debug.FogScale;
+        lighting.FogEnd *= Debug.FogScale;
+
+        if (!Debug.FogEnabled)
+        {
+            lighting.FogStart = 1000;
+            lighting.FogEnd = 1001;
+        }
+
+        return RenderFrame { Map = Map, MapGeneration = MapGeneration, Camera = Player.GetCamera(), Lighting = lighting };
+    }
+
+    void Render(ref IRenderer renderer)
+    {
+        var frame = Frame();
+        renderer.Render(frame);
+    }
+
+    /// "Temple Courtyard - 17:30" (the time only outdoors).
+    string StatusText()
+    {
+        if (Map.Data.IsOutdoor())
+            return $"{Map.Data.Name} - {Map.Clock.TimeText()}";
+
+        return Map.Data.Name;
+    }
+}

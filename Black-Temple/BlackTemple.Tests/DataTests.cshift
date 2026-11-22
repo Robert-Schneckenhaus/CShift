@@ -1,0 +1,49 @@
+namespace BlackTemple.Tests;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+Error<void> ColorParsing()
+{
+    var color = Color.Parse("#ff8000");
+    try Check(color is Color, "#ff8000 should parse");
+
+    if (color is Color c)
+    {
+        try CheckNear(c.R, 1, "red");
+        try CheckNear(c.G, 128.0f / 255.0f, "green");
+        try CheckNear(c.B, 0, "blue");
+    }
+
+    try Check(Color.Parse("#12345") == null, "a color needs 6 digits");
+    try Check(Color.Parse("#12345g") == null, "only hex digits");
+
+    return;
+}
+
+Error<void> MapReading()
+{
+    var data = try GameData.Load(try AssetsPath());
+    var map = try data.LoadMap("temple");
+    try Check(map.Width == 23 && map.Height == 16, $"temple is 23x16, not {map.Width}x{map.Height}");
+    try Check(!map.IsOutdoor(), "temple is indoor");
+    try Check(map.IsWall(0, 0), "the corner is a wall");
+    try Check(!map.IsBlocking(11, 12), "the start tile is free");
+    try Check(map.Events.Count() == 1, "temple has one event (the exit)");
+
+    return;
+}
+
+Error<void> MapErrorsNameTheirPlace()
+{
+    var data = try GameData.Load(try AssetsPath());
+    var json = JsonObject.Create(try Json.Parse("{ \"rows\": [\"#X\"], \"legend\": { \"#\": { \"wall\": \"nope\" } } }"), "test.json", "");
+    var refs = MapReferences { Textures = data.Textures, ObjectTypes = data.ObjectTypeIds, LightPresets = data.LightPresets };
+    var result = MapReader.Read("test", json, refs);
+
+    if (result is error e)
+        return Check(e.Message.Contains("legend.#.wall") && e.Message.Contains("nope"), $"unexpected message: {e.Message}");
+
+    return error("an unknown texture must be an error");
+}

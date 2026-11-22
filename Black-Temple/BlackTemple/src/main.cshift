@@ -1,0 +1,112 @@
+// Black Temple: the frontend. Opens the window, loads the game data, and runs the main loop: input -> Game.Update ->
+// Game.Render(renderer) -> present.
+//
+//   W/S, Up/Down       walk            A/D          strafe
+//   Q/E, Left/Right    turn            Shift        run
+//   right mouse button look around     T (hold)     time runs fast (outdoors)
+//   F                  fog on/off      +/-          fog distance
+//   Esc                quit
+
+namespace BlackTemple;
+
+using System;
+using BlackTemple.Data;
+using BlackTemple.Core;
+using BlackTemple.Renderer.OpenGL;
+using Glfw from "GLFW/glfw3.h";
+using Gl from "glfuncs.h";
+
+Error<void> Run(string[] args)
+{
+    var options = try Options.Parse(args);
+    string assets = options.Assets;
+
+    if (assets == "")
+    {
+        if (GameData.FindAssets() is string found)
+            assets = found;
+        else
+            return error("cannot find the Assets folder (use --assets <folder>)");
+    }
+
+    var window = try GameWindow.Open(options.Width, options.Height, "Black Temple", !options.IsScreenshot());
+
+    if (!LoadGl(window.GlLoader()))
+        return error("the OpenGL 3.3 functions are incomplete");
+
+    Console.WriteLine($"OpenGL {GlString(Gl.GL_VERSION)} ({GlString(Gl.GL_RENDERER)})");
+
+    var data = try GameData.Load(assets);
+    var renderer = try GlRenderer.Create(data);
+    var game = try Game.Create(data, options.Map);
+
+    if (options.HasPosition)
+        game.PlacePlayer(options.Position, options.HasYaw ? options.Yaw : game.Player.Yaw);
+    else if (options.HasYaw)
+        game.Player.Yaw = options.Yaw;
+
+    if (options.Hour >= 0 && game.Map.Data.IsOutdoor())
+        game.Map.Clock.SetHour(options.Hour);
+
+    var bindings = KeyBindings.CreateDefault();
+    double lastTime = window.Time();
+    double titleTime = lastTime;
+    int framesSinceTitle = 0;
+    int frame = 0;
+
+    while (!window.ShouldClose())
+    {
+        double now = window.Time();
+        float deltaTime = options.IsScreenshot() ? 1.0f / 30.0f : (float)Math.Min(now - lastTime, 0.1);
+        lastTime = now;
+
+        if (window.IsKeyDown(Glfw.GLFW_KEY_ESCAPE))
+            window.Close();
+
+        var input = bindings.Poll(window);
+        try game.Update(input, deltaTime);
+
+        int width = 0;
+        int height = 0;
+        window.FramebufferSize(ref width, ref height);
+        renderer.SetViewport(width, height);
+        game.Render(ref renderer);
+        frame += 1;
+
+        if (options.IsScreenshot() && frame >= options.Frames)
+        {
+            if (renderer.Capture().Save(options.Screenshot) is error e)
+                return error($"cannot save '{options.Screenshot}': {e.Message}");
+
+            Console.WriteLine($"screenshot: {options.Screenshot}");
+            window.Close();
+        }
+
+        window.Present();
+        framesSinceTitle += 1;
+
+        if (now - titleTime >= 0.5)
+        {
+            int fps = (int)Math.Round(framesSinceTitle / (now - titleTime));
+            window.SetTitle($"Black Temple - {game.StatusText()} - {fps} FPS");
+            titleTime = now;
+            framesSinceTitle = 0;
+        }
+    }
+
+    window.Destroy();
+
+    return;
+}
+
+int Main(string[] args)
+{
+    if (Run(args) is error e)
+    {
+        Console.WriteErrorLine("error: " + e.Message);
+
+        return 1;
+    }
+
+    return 0;
+}

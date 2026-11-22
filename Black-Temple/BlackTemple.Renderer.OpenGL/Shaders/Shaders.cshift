@@ -1,0 +1,11 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+/// The GLSL sources, embedded into the program.
+const string WorldVertexShader = embed("world.vert");
+const string BillboardVertexShader = embed("billboard.vert");
+const string LightingFragmentShader = embed("lighting.glsl");
+const string SkyVertexShader = embed("sky.vert");
+const string SkyFragmentShader = embed("sky.frag");
+
+/// The number of point lights the lighting shader takes (MAX_LIGHTS in lighting.glsl).
+const int MaxLights = 32;

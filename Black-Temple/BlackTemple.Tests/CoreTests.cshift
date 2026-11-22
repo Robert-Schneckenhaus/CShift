@@ -1,0 +1,109 @@
+namespace BlackTemple.Tests;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+using BlackTemple.Core;
+
+LightData TwoFrameLight(bool interpolate)
+{
+    return LightData
+    {
+        Frames = [
+            LightFrame { Color = Color.White(), Intensity = 1, Radius = 4 },
+            LightFrame { Color = Color.White(), Intensity = 3, Radius = 4 }
+        ],
+        FrameTime = 0.5f,
+        Interpolate = interpolate
+    };
+}
+
+Error<void> LightFramesFollowTheTime()
+{
+    var random = Random.Create(1);
+    var light = Light.Create(TwoFrameLight(false), Vec3.Zero(), 0, 0);
+    light.Update(0.25, 0, ref random);
+    try CheckNear(light.Color.R, 1, "frame 0");
+    light.Update(0.75, 0, ref random);
+    try CheckNear(light.Color.R, 3, "frame 1");
+    light.Update(1.25, 0, ref random);
+    try CheckNear(light.Color.R, 1, "frame 0 again");
+
+    return;
+}
+
+Error<void> LightFramesInterpolate()
+{
+    var random = Random.Create(1);
+    var light = Light.Create(TwoFrameLight(true), Vec3.Zero(), 0, 0);
+    light.Update(0.25, 0, ref random);   // half way from frame 0 to frame 1
+    try CheckNear(light.Color.R, 2, "between the frames");
+
+    return;
+}
+
+Error<void> ObjectLightsRunInSyncWithSprites()
+{
+    var data = try GameData.Load(try AssetsPath());
+    var map = Map.Create(try data.LoadMap("temple"), data.ObjectTypes);
+    var random = Random.Create(1);
+
+    for (var step = 0; step < 20; step += 1)
+    {
+        double time = step * 0.037;
+        map.Update(time, 0.037f, 1, ref random);
+
+        foreach (var o in map.Objects)
+        {
+            if (o.Light >= 0)
+                try Check(map.Lights[o.Light].FrameAt(time) == o.Frame, "light frame = sprite frame");
+        }
+    }
+
+    return;
+}
+
+Error<void> DayNightWrapsAroundMidnight()
+{
+    var keys = new DayNightKey[2];
+    keys[0] = DayNightKey { Hour = 6, Colors = SkyColors { Night = 0 } };
+    keys[1] = DayNightKey { Hour = 22, Colors = SkyColors { Night = 1 } };
+    var clock = DayNightClock.Create(DayNightData { StartHour = 14, MinutesPerSecond = 60, Keys = keys });
+    try CheckNear(clock.Colors.Night, 0.5f, "14:00 is half way from 6:00 to 22:00");
+    clock.SetHour(2);
+    try CheckNear(clock.Colors.Night, 0.5f, "2:00 is half way from 22:00 to 6:00");
+    clock.Update(60, 1);     // 60 in-game minutes per second for a minute: +60 h
+    try CheckNear(clock.Hour, 14, "the hour wraps");
+    try Check(clock.TimeText() == "14:00", $"time text {clock.TimeText()}");
+
+    return;
+}
+
+Error<void> PlayerSlidesAlongWalls()
+{
+    var data = try GameData.Load(try AssetsPath());
+    var map = Map.Create(try data.LoadMap("temple"), data.ObjectTypes);
+    var player = Player.Create(Vec2.Create(11.5f, 12.5f), 0);
+    player.Move(Vec2.Create(-10, 0), map);   // west wall of the entrance hall: x = 8
+    try Check(player.Position.X >= 8 + player.Radius - 0.01f, $"stopped at the wall, x = {player.Position.X}");
+    try CheckNear(player.Position.Y, 12.5f, "y unchanged");
+
+    return;
+}
+
+Error<void> ExitTeleportsToTheCourtyard()
+{
+    var data = try GameData.Load(try AssetsPath());
+    var game = try Game.Create(data, "temple");
+    var input = new InputState();
+    input.Set(GameAction.MoveBackward, true, true);   // the exit is south of the start
+
+    for (var i = 0; i < 120 && game.MapGeneration == 1; i += 1)
+        try game.Update(input, 1.0f / 30.0f);
+
+    try Check(game.Map.Data.Id == "courtyard", $"expected the courtyard, on '{game.Map.Data.Id}'");
+    try CheckNear(game.Player.Position.X, 10.5f, "target x");
+    try CheckNear(game.Player.Position.Y, 3.5f, "target y");
+
+    return;
+}

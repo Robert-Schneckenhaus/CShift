@@ -1,0 +1,76 @@
+namespace BlackTemple.Common;
+
+/// A 4x4 matrix stored the way OpenGL expects it: column-major, element (row, column) at M[column * 4 + row].
+struct Mat4
+{
+    Fixed<float, 16> M;
+
+    static Mat4 Identity()
+    {
+        var m = new Mat4();
+        m.M[0] = 1;
+        m.M[5] = 1;
+        m.M[10] = 1;
+        m.M[15] = 1;
+
+        return m;
+    }
+
+    /// this * other: applies `other` first, then `this`.
+    Mat4 Multiply(const ref Mat4 other)
+    {
+        var result = new Mat4();
+
+        for (var column = 0; column < 4; column += 1)
+        {
+            for (var row = 0; row < 4; row += 1)
+            {
+                float sum = 0;
+
+                for (var k = 0; k < 4; k += 1)
+                    sum += M[k * 4 + row] * other.M[column * 4 + k];
+
+                result.M[column * 4 + row] = sum;
+            }
+        }
+
+        return result;
+    }
+
+    /// Like gluPerspective: vertical field of view in radians, looking down -Z.
+    static Mat4 Perspective(float fovY, float aspect, float near, float far)
+    {
+        var m = new Mat4();
+        float f = 1.0f / MathUtil.Tan(fovY / 2.0f);
+        m.M[0] = f / aspect;
+        m.M[5] = f;
+        m.M[10] = (far + near) / (near - far);
+        m.M[11] = -1;
+        m.M[14] = 2 * far * near / (near - far);
+
+        return m;
+    }
+
+    /// A view matrix for an eye looking along `forward`, with `up` roughly up.
+    static Mat4 LookDirection(Vec3 eye, Vec3 forward, Vec3 up)
+    {
+        Vec3 f = forward.Normalized();
+        Vec3 s = f.Cross(up).Normalized();
+        Vec3 u = s.Cross(f);
+        var m = Identity();
+        m.M[0] = s.X;
+        m.M[4] = s.Y;
+        m.M[8] = s.Z;
+        m.M[1] = u.X;
+        m.M[5] = u.Y;
+        m.M[9] = u.Z;
+        m.M[2] = -f.X;
+        m.M[6] = -f.Y;
+        m.M[10] = -f.Z;
+        m.M[12] = -s.Dot(eye);
+        m.M[13] = -u.Dot(eye);
+        m.M[14] = f.Dot(eye);
+
+        return m;
+    }
+}

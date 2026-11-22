@@ -1,0 +1,88 @@
+namespace BlackTemple;
+
+using System;
+using BlackTemple.Core;
+using Glfw from "GLFW/glfw3.h";
+
+/// Maps keys and the mouse to game actions and turns them into the InputState of each frame.
+///
+/// Every action can have several keys. Mouse look: hold the right mouse button.
+struct KeyBindings
+{
+    List<List<int>> _keys;
+    Fixed<bool, GameActionCount> _wasHeld;
+    float MouseSensitivity;
+    double _lastMouseX;
+    double _lastMouseY;
+    bool _looking;
+
+    static KeyBindings CreateDefault()
+    {
+        var bindings = KeyBindings { _keys = List<List<int>>.Create(), MouseSensitivity = 0.0035f };
+
+        for (var i = 0; i < GameActionCount; i += 1)
+            bindings._keys.Add(List<int>.Create());
+
+        bindings.Bind(GameAction.MoveForward, Glfw.GLFW_KEY_W);
+        bindings.Bind(GameAction.MoveForward, Glfw.GLFW_KEY_UP);
+        bindings.Bind(GameAction.MoveBackward, Glfw.GLFW_KEY_S);
+        bindings.Bind(GameAction.MoveBackward, Glfw.GLFW_KEY_DOWN);
+        bindings.Bind(GameAction.StrafeLeft, Glfw.GLFW_KEY_A);
+        bindings.Bind(GameAction.StrafeRight, Glfw.GLFW_KEY_D);
+        bindings.Bind(GameAction.TurnLeft, Glfw.GLFW_KEY_Q);
+        bindings.Bind(GameAction.TurnLeft, Glfw.GLFW_KEY_LEFT);
+        bindings.Bind(GameAction.TurnRight, Glfw.GLFW_KEY_E);
+        bindings.Bind(GameAction.TurnRight, Glfw.GLFW_KEY_RIGHT);
+        bindings.Bind(GameAction.Run, Glfw.GLFW_KEY_LEFT_SHIFT);
+        bindings.Bind(GameAction.Run, Glfw.GLFW_KEY_RIGHT_SHIFT);
+        bindings.Bind(GameAction.FastTime, Glfw.GLFW_KEY_T);
+        bindings.Bind(GameAction.ToggleFog, Glfw.GLFW_KEY_F);
+        bindings.Bind(GameAction.IncreaseFogDistance, Glfw.GLFW_KEY_EQUAL);
+        bindings.Bind(GameAction.IncreaseFogDistance, Glfw.GLFW_KEY_KP_ADD);
+        bindings.Bind(GameAction.DecreaseFogDistance, Glfw.GLFW_KEY_MINUS);
+        bindings.Bind(GameAction.DecreaseFogDistance, Glfw.GLFW_KEY_KP_SUBTRACT);
+
+        return bindings;
+    }
+
+    void Bind(GameAction action, int key)
+    {
+        _keys[(int)action].Add(key);
+    }
+
+    InputState Poll(const ref GameWindow window)
+    {
+        var input = new InputState();
+
+        for (var i = 0; i < GameActionCount; i += 1)
+        {
+            bool held = false;
+
+            foreach (var key in _keys[i])
+            {
+                if (window.IsKeyDown(key))
+                    held = true;
+            }
+
+            input.Set((GameAction)i, held, held && !_wasHeld[i]);
+            _wasHeld[i] = held;
+        }
+
+        double x = 0;
+        double y = 0;
+        window.CursorPosition(ref x, ref y);
+        bool looking = window.IsMouseButtonDown(Glfw.GLFW_MOUSE_BUTTON_RIGHT);
+
+        if (looking && _looking)
+        {
+            input.LookYaw = (float)(x - _lastMouseX) * MouseSensitivity;
+            input.LookPitch = -(float)(y - _lastMouseY) * MouseSensitivity;
+        }
+
+        _looking = looking;
+        _lastMouseX = x;
+        _lastMouseY = y;
+
+        return input;
+    }
+}

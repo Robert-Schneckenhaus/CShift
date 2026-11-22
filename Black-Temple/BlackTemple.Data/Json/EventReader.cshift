@@ -1,0 +1,32 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// Reads a map event. The object has exactly one key, the kind of the event:
+///
+/// ```json
+/// { "teleport": { "map": "courtyard", "x": 10.5, "y": 3.5, "facing": "south" } }
+/// ```
+///
+/// Without "map" the target is on the same map; without "facing" the player keeps the viewing direction.
+struct EventReader
+{
+    static Error<MapEvent> Read(JsonObject json)
+    {
+        if (json.Has("teleport"))
+        {
+            var t = json.Child("teleport");
+
+            return TeleportEvent
+            {
+                Map = try t.String("map", ""),
+                Position = Vec2.Create(try t.Float("x", 0.5f), try t.Float("y", 0.5f)),
+                KeepDirection = !t.Has("facing"),
+                Yaw = try t.Direction("facing", 0)
+            };
+        }
+
+        return error($"{json.Context()}: unknown event (known: teleport)");
+    }
+}

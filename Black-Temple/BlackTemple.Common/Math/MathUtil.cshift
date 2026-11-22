@@ -1,0 +1,42 @@
+namespace BlackTemple.Common;
+
+/// Small helpers for float math (the standard library's Math works with doubles).
+struct MathUtil
+{
+    static float Pi() { return (float)Math.PI; }
+
+    static float Clamp01(float value)
+    {
+        if (value < 0)
+            return 0;
+
+        if (value > 1)
+            return 1;
+
+        return value;
+    }
+
+    static float Lerp(float a, float b, float t)
+    {
+        return a + (b - a) * t;
+    }
+
+    /// Hermite interpolation of `t` (clamped to 0..1): slow at both ends.
+    static float Smoothstep(float t)
+    {
+        t = Clamp01(t);
+
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    static float DegreesToRadians(float degrees)
+    {
+        return (float)(degrees * Math.PI / 180.0);
+    }
+
+    static float Sin(float angle) { return (float)Math.Sin(angle); }
+    static float Cos(float angle) { return (float)Math.Cos(angle); }
+    static float Tan(float angle) { return (float)Math.Tan(angle); }
+    static float Sqrt(float value) { return (float)Math.Sqrt(value); }
+    static float Floor(float value) { return (float)Math.Floor(value); }
+}

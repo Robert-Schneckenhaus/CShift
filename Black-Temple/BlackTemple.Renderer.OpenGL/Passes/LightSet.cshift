@@ -1,0 +1,80 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Core;
+
+/// The lighting uniforms of a frame: global lighting, fog and the point lights that matter most for the camera
+/// (the nearest ones relative to their radius, at most MaxLights).
+struct LightSet
+{
+    int Count;
+    float[] _positions;
+    float[] _colors;
+    float[] _radii;
+
+    static LightSet Create()
+    {
+        return LightSet { _positions = new float[MaxLights * 3], _colors = new float[MaxLights * 3], _radii = new float[MaxLights] };
+    }
+
+    void Collect(const ref Map map, Vec3 camera)
+    {
+        int total = map.Lights.Count();
+        var order = new int[total];
+        var score = new float[total];
+
+        for (var i = 0; i < total; i += 1)
+        {
+            var light = map.Lights[i];
+            order[i] = i;
+            score[i] = light.Position.Sub(camera).Length() - light.Radius;
+        }
+
+        Count = Math.Min(total, MaxLights);
+
+        // partial selection sort: the best Count lights first
+        for (var i = 0; i < Count; i += 1)
+        {
+            int best = i;
+
+            for (var j = i + 1; j < total; j += 1)
+            {
+                if (score[order[j]] < score[order[best]])
+                    best = j;
+            }
+
+            int swap = order[i];
+            order[i] = order[best];
+            order[best] = swap;
+
+            var light = map.Lights[order[i]];
+            _positions[i * 3] = light.Position.X;
+            _positions[i * 3 + 1] = light.Position.Y;
+            _positions[i * 3 + 2] = light.Position.Z;
+            _colors[i * 3] = light.Color.R;
+            _colors[i * 3 + 1] = light.Color.G;
+            _colors[i * 3 + 2] = light.Color.B;
+            _radii[i] = Math.Max(light.Radius, 0.01f);
+        }
+    }
+
+    /// Sets the uniforms of lighting.glsl.
+    void Apply(ref ShaderProgram program, const ref RenderFrame frame)
+    {
+        var lighting = frame.Lighting;
+        program.SetVec3("uCameraPos", frame.Camera.Position);
+        program.SetColor("uAmbient", lighting.Ambient);
+        program.SetFloat("uFaceShade", lighting.HasSky ? 0.1f : 0.18f);
+        program.SetVec3("uSunDir", lighting.SunDirection);
+        program.SetColor("uSunColor", lighting.SunColor);
+        program.SetColor("uFogColor", lighting.FogColor);
+        program.SetFloat("uFogStart", lighting.FogStart);
+        program.SetFloat("uFogEnd", lighting.FogEnd);
+        program.SetFloat("uBrightness", lighting.Brightness);
+        program.SetInt("uLightCount", Count);
+        program.SetVec3Array("uLightPos", _positions, Count);
+        program.SetVec3Array("uLightColor", _colors, Count);
+        program.SetFloatArray("uLightRadius", _radii, Count);
+    }
+}

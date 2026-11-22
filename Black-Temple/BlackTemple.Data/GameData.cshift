@@ -1,0 +1,79 @@
+namespace BlackTemple.Data;
+
+using System;
+
+/// Everything the game loads from the Assets folder:
+///
+/// ```text
+/// Assets/
+/// ├── Textures/*.png   wall, floor and ceiling textures
+/// ├── Sprites/*.png    billboard sprites
+/// ├── objects.json     object types and light presets
+/// └── Maps/*.json      maps, loaded on demand by LoadMap
+/// ```
+struct GameData
+{
+    string AssetsPath;
+    TextureSet Textures;
+    TextureSet Sprites;
+    List<ObjectType> ObjectTypes;
+    Dictionary<string, int> ObjectTypeIds;
+    Dictionary<string, LightData> LightPresets;
+
+    static Error<GameData> Load(string assetsPath)
+    {
+        var data = GameData
+        {
+            AssetsPath = assetsPath,
+            Textures = try TextureSet.LoadFolder(Path.Combine(assetsPath, "Textures")),
+            Sprites = try TextureSet.LoadFolder(Path.Combine(assetsPath, "Sprites")),
+            ObjectTypes = List<ObjectType>.Create(),
+            ObjectTypeIds = Dictionary<string, int>.Create(),
+            LightPresets = Dictionary<string, LightData>.Create()
+        };
+        var json = try JsonObject.LoadFile(Path.Combine(assetsPath, "objects.json"));
+        var objects = json.Child("objects");
+
+        foreach (var name in objects.Keys())
+        {
+            data.ObjectTypeIds[name] = data.ObjectTypes.Count();
+            data.ObjectTypes.Add(try ObjectTypeReader.Read(name, objects.Child(name), data.Sprites));
+        }
+
+        var presets = json.Child("lights");
+
+        foreach (var name in presets.Keys())
+            data.LightPresets[name] = try LightReader.Read(presets.Child(name));
+
+        return data;
+    }
+
+    /// Looks for the Assets folder in the current folder and the folders above it.
+    static Optional<string> FindAssets()
+    {
+        string path = "Assets";
+
+        for (var i = 0; i < 4; i += 1)
+        {
+            if (Directory.Exists(path))
+                return path;
+
+            path = "../" + path;
+        }
+
+        return null;
+    }
+
+    int FindObjectType(StringSlice name)
+    {
+        return ObjectTypeIds.GetOrDefault(name.ToString(), -1);
+    }
+
+    Error<MapData> LoadMap(string id)
+    {
+        var json = try JsonObject.LoadFile(Path.Combine(Path.Combine(AssetsPath, "Maps"), id + ".json"));
+        var refs = MapReferences { Textures = Textures, ObjectTypes = ObjectTypeIds, LightPresets = LightPresets };
+
+        return MapReader.Read(id, json, refs);
+    }
+}

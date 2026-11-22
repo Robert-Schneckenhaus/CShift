@@ -1,0 +1,79 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using Gl from "glfuncs.h";
+
+/// A vertex array object with one buffer of interleaved float attributes.
+struct VertexBuffer
+{
+    uint32 Vao;
+    uint32 Vbo;
+    int FloatsPerVertex;
+    int VertexCount;
+
+    /// `attributeSizes`: the number of floats of attribute 0, 1, 2 ... of a vertex.
+    static VertexBuffer Create(int[] attributeSizes)
+    {
+        int floats = 0;
+
+        foreach (var size in attributeSizes)
+            floats += size;
+
+        var buffer = VertexBuffer { FloatsPerVertex = floats };
+        uint32 vao = 0;
+        uint32 vbo = 0;
+
+        unsafe
+        {
+            gl.GenVertexArrays(1, &vao);
+            gl.GenBuffers(1, &vbo);
+        }
+
+        buffer.Vao = vao;
+        buffer.Vbo = vbo;
+        gl.BindVertexArray(vao);
+        gl.BindBuffer(Gl.GL_ARRAY_BUFFER, vbo);
+        int stride = floats * sizeof(float);
+        int offset = 0;
+
+        for (var i = 0; i < attributeSizes.Length; i += 1)
+        {
+            unsafe
+            {
+                gl.VertexAttribPointer((uint32)i, attributeSizes[i], Gl.GL_FLOAT, (uint8)Gl.GL_FALSE, stride, (void*)(offset * sizeof(float)));
+            }
+
+            gl.EnableVertexAttribArray((uint32)i);
+            offset += attributeSizes[i];
+        }
+
+        gl.BindVertexArray(0);
+
+        return buffer;
+    }
+
+    /// Replaces the vertices. `dynamic`: changed every frame.
+    void Upload(List<float> vertices, bool dynamic)
+    {
+        var data = vertices.ToArray();
+        VertexCount = data.Length / FloatsPerVertex;
+        gl.BindBuffer(Gl.GL_ARRAY_BUFFER, Vbo);
+
+        if (data.Length == 0)
+            return;
+
+        unsafe
+        {
+            gl.BufferData(Gl.GL_ARRAY_BUFFER, data.Length * sizeof(float), &data[0], dynamic ? (uint32)Gl.GL_STREAM_DRAW : (uint32)Gl.GL_STATIC_DRAW);
+        }
+    }
+
+    void Draw()
+    {
+        if (VertexCount == 0)
+            return;
+
+        gl.BindVertexArray(Vao);
+        gl.DrawArrays(Gl.GL_TRIANGLES, 0, VertexCount);
+    }
+}

@@ -1,0 +1,18 @@
+namespace BlackTemple.Core;
+
+/// Everything a renderer needs to draw a frame.
+struct RenderFrame
+{
+    Map Map;
+    /// Changes whenever another map was loaded (renderers rebuild their map geometry then).
+    int MapGeneration;
+    Camera Camera;
+    SceneLighting Lighting;
+}
+
+/// Draws frames. The game only describes what is visible (RenderFrame); how it is drawn is up to the implementation
+/// (BlackTemple.Renderer.OpenGL).
+interface IRenderer
+{
+    void Render(const ref RenderFrame frame);
+}

@@ -1,0 +1,54 @@
+namespace BlackTemple.Data;
+
+using BlackTemple.Common;
+
+/// Distance fog of a map: everything fades into the fog color between Start and End (in tiles from the camera).
+struct FogData
+{
+    Color Color;
+    float Start;
+    float End;
+    /// Outdoor maps only: take the fog color from the day/night cycle instead of Color.
+    bool UseSkyColor;
+}
+
+/// The colors of the sky and the light at one time of day.
+struct SkyColors
+{
+    Color Zenith;
+    Color Horizon;
+    Color Ambient;
+    Color Fog;
+    Color Sun;
+    /// 0 = day, 1 = night (stars and moon are visible).
+    float Night;
+
+    static SkyColors Lerp(const ref SkyColors a, const ref SkyColors b, float t)
+    {
+        return SkyColors
+        {
+            Zenith = Color.Lerp(a.Zenith, b.Zenith, t),
+            Horizon = Color.Lerp(a.Horizon, b.Horizon, t),
+            Ambient = Color.Lerp(a.Ambient, b.Ambient, t),
+            Fog = Color.Lerp(a.Fog, b.Fog, t),
+            Sun = Color.Lerp(a.Sun, b.Sun, t),
+            Night = MathUtil.Lerp(a.Night, b.Night, t)
+        };
+    }
+}
+
+struct DayNightKey
+{
+    /// 0..24
+    float Hour;
+    SkyColors Colors;
+}
+
+/// The day/night cycle of an outdoor map: keyframes sorted by hour, interpolated in between (wrapping at midnight).
+struct DayNightData
+{
+    float StartHour;
+    /// In-game minutes per real second.
+    float MinutesPerSecond;
+    DayNightKey[] Keys;
+}

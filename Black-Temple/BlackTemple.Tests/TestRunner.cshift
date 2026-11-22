@@ -1,0 +1,53 @@
+namespace BlackTemple.Tests;
+
+using System;
+
+/// A minimal test runner: tests are functions that return Error<void>; Check fails them with a message.
+struct TestRunner
+{
+    int Passed;
+    int Failed;
+
+    static TestRunner Create() { return TestRunner { }; }
+
+    void Run(string name, Func<Error<void>> test)
+    {
+        if (test() is error e)
+        {
+            Failed += 1;
+            Console.WriteLine($"FAIL {name}: {e.Message}");
+        }
+        else
+        {
+            Passed += 1;
+            Console.WriteLine($"ok   {name}");
+        }
+    }
+}
+
+Error<void> Check(bool condition, string message)
+{
+    if (!condition)
+        return error(message);
+
+    return;
+}
+
+Error<void> CheckNear(float actual, float expected, string what)
+{
+    float difference = actual - expected;
+
+    if (difference > 0.001f || difference < -0.001f)
+        return error($"{what}: expected {expected}, got {actual}");
+
+    return;
+}
+
+/// The Assets folder of the repository (tests run from the repository or from BlackTemple.Tests).
+Error<string> AssetsPath()
+{
+    if (BlackTemple.Data.GameData.FindAssets() is string path)
+        return path;
+
+    return error("cannot find the Assets folder");
+}

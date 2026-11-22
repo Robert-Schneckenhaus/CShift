@@ -1,0 +1,129 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using System.Image;
+using BlackTemple.Data;
+using Gl from "glfuncs.h";
+
+/// Where an image lies in its layer of a texture array.
+struct TextureLayer
+{
+    int Width;
+    int Height;
+    /// The part of the layer the image covers (it sits in the top left corner).
+    float UvMaxU;
+    float UvMaxV;
+}
+
+enum TextureArrayMode : uint8
+{
+    /// All images are scaled to the size of the first one and repeat (walls, floors, ceilings).
+    Scaled = 0,
+    /// Layers are as large as the largest image; every image keeps its size (sprites, never distorted).
+    Padded = 1
+}
+
+/// A GL_TEXTURE_2D_ARRAY made of a texture set: layer N = texture id N. Pixel art stays crisp (nearest filtering).
+struct TextureArray
+{
+    uint32 Handle;
+    int Width;
+    int Height;
+    List<TextureLayer> Layers;
+
+    static TextureArray Create(const ref TextureSet set, TextureArrayMode mode)
+    {
+        int width = 0;
+        int height = 0;
+
+        foreach (var image in set.Images)
+        {
+            if (mode == TextureArrayMode.Padded)
+            {
+                width = Math.Max(width, image.Width);
+                height = Math.Max(height, image.Height);
+            }
+            else if (width == 0)
+            {
+                width = image.Width;
+                height = image.Height;
+            }
+        }
+
+        var array = TextureArray { Width = width, Height = height, Layers = List<TextureLayer>.Create() };
+        uint32 handle = 0;
+
+        unsafe
+        {
+            gl.GenTextures(1, &handle);
+        }
+
+        array.Handle = handle;
+        gl.BindTexture(Gl.GL_TEXTURE_2D_ARRAY, handle);
+        gl.PixelStorei(Gl.GL_UNPACK_ALIGNMENT, 4);
+
+        // start transparent: padded images only fill a part of their layer
+        int count = set.Count();
+        var empty = new uint32[width * height * count];
+
+        unsafe
+        {
+            gl.TexImage3D(Gl.GL_TEXTURE_2D_ARRAY, 0, (int)Gl.GL_RGBA8, width, height, count, 0, Gl.GL_BGRA, Gl.GL_UNSIGNED_BYTE, &empty[0]);
+        }
+
+        for (var layer = 0; layer < count; layer += 1)
+        {
+            Image image = set.Get(layer);
+
+            if (mode == TextureArrayMode.Scaled && (image.Width != width || image.Height != height))
+                image = _Scale(image, width, height);
+
+            // Image.Pixels are 0xAARRGGBB, in memory (little endian) the bytes B, G, R, A: GL_BGRA
+            unsafe
+            {
+                gl.TexSubImage3D(Gl.GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, image.Width, image.Height, 1, Gl.GL_BGRA, Gl.GL_UNSIGNED_BYTE, &image.Pixels[0]);
+            }
+
+            array.Layers.Add(TextureLayer
+            {
+                Width = image.Width,
+                Height = image.Height,
+                UvMaxU = (float)image.Width / width,
+                UvMaxV = (float)image.Height / height
+            });
+        }
+
+        int wrap = mode == TextureArrayMode.Padded ? (int)Gl.GL_CLAMP_TO_EDGE : (int)Gl.GL_REPEAT;
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_MAG_FILTER, (int)Gl.GL_NEAREST);
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_MIN_FILTER, (int)Gl.GL_NEAREST_MIPMAP_LINEAR);
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_WRAP_S, wrap);
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_WRAP_T, wrap);
+        gl.GenerateMipmap(Gl.GL_TEXTURE_2D_ARRAY);
+
+        return array;
+    }
+
+    void Bind(int unit)
+    {
+        gl.ActiveTexture(Gl.GL_TEXTURE0 + (uint32)unit);
+        gl.BindTexture(Gl.GL_TEXTURE_2D_ARRAY, Handle);
+    }
+
+    TextureLayer Layer(int id) { return Layers[id]; }
+
+    /// Nearest neighbor scaling.
+    static Image _Scale(Image source, int width, int height)
+    {
+        var target = Image.Create(width, height);
+
+        for (var y = 0; y < height; y += 1)
+        {
+            int sourceY = y * source.Height / height;
+
+            for (var x = 0; x < width; x += 1)
+                target.Pixels[y * width + x] = source.Pixels[sourceY * source.Width + x * source.Width / width];
+        }
+
+        return target;
+    }
+}

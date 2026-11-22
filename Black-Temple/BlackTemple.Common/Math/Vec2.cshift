@@ -1,0 +1,24 @@
+namespace BlackTemple.Common;
+
+/// A position or direction on the ground plane of a map: X grows to the east, Y to the south (in tiles).
+struct Vec2
+{
+    float X;
+    float Y;
+
+    static Vec2 Create(float x, float y) { return Vec2 { X = x, Y = y }; }
+    static Vec2 Zero() { return Vec2 { X = 0, Y = 0 }; }
+
+    Vec2 Add(Vec2 other) { return Vec2 { X = X + other.X, Y = Y + other.Y }; }
+    Vec2 Sub(Vec2 other) { return Vec2 { X = X - other.X, Y = Y - other.Y }; }
+    Vec2 Mul(float factor) { return Vec2 { X = X * factor, Y = Y * factor }; }
+    float Dot(Vec2 other) { return X * other.X + Y * other.Y; }
+    float LengthSquared() { return X * X + Y * Y; }
+    float Length() { return MathUtil.Sqrt(X * X + Y * Y); }
+
+    /// The tile the position is in.
+    int TileX() { return (int)MathUtil.Floor(X); }
+    int TileY() { return (int)MathUtil.Floor(Y); }
+
+    string ToString() { return $"({X}, {Y})"; }
+}

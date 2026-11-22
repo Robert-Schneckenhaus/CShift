@@ -1,0 +1,33 @@
+namespace BlackTemple.Core;
+
+using BlackTemple.Common;
+
+/// A first person camera. Yaw 0 looks north (-Z), PI/2 east (+X); a positive pitch looks up.
+struct Camera
+{
+    Vec3 Position;
+    float Yaw;
+    float Pitch;
+    /// Vertical field of view in radians.
+    float FieldOfView;
+
+    Vec3 Forward()
+    {
+        float cosPitch = MathUtil.Cos(Pitch);
+
+        return Vec3.Create(MathUtil.Sin(Yaw) * cosPitch, MathUtil.Sin(Pitch), -MathUtil.Cos(Yaw) * cosPitch);
+    }
+
+    /// The horizontal right vector (billboards only turn around the vertical axis).
+    Vec3 Right() { return Vec3.Create(MathUtil.Cos(Yaw), 0, MathUtil.Sin(Yaw)); }
+
+    Vec3 Up() { return Right().Cross(Forward()).Normalized(); }
+
+    Mat4 ViewProjection(float aspect)
+    {
+        var projection = Mat4.Perspective(FieldOfView, aspect, 0.05f, 200.0f);
+        var view = Mat4.LookDirection(Position, Forward(), Vec3.UnitY());
+
+        return projection.Multiply(view);
+    }
+}

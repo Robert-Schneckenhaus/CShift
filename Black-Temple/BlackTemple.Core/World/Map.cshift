@@ -1,0 +1,169 @@
+namespace BlackTemple.Core;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+/// An object in a running map.
+struct MapObject
+{
+    /// Index into GameData.ObjectTypes.
+    int Type;
+    Vec2 Position;
+    float BaseHeight;
+    /// Animation phase in seconds, so that equal objects don't animate in sync.
+    float Phase;
+    /// Current animation frame.
+    int Frame;
+    /// Index into Map.Lights, or -1.
+    int Light;
+}
+
+/// A map while it is played: the map data plus the state of its objects, lights and clock.
+struct Map
+{
+    MapData Data;
+    List<ObjectType> ObjectTypes;
+    List<MapObject> Objects;
+    List<Light> Lights;
+    /// Outdoor maps only.
+    DayNightClock Clock;
+    /// Per tile: index into Data.Events, or -1.
+    int[] _eventAt;
+
+    static Map Create(MapData data, List<ObjectType> objectTypes)
+    {
+        var map = Map
+        {
+            Data = data,
+            ObjectTypes = objectTypes,
+            Objects = List<MapObject>.Create(),
+            Lights = List<Light>.Create(),
+            _eventAt = new int[data.Width * data.Height]
+        };
+        var random = Random.Create(data.Id.GetHashCode());
+
+        foreach (var placement in data.Objects)
+            map._AddObject(placement, ref random);
+
+        foreach (var placement in data.Lights)
+        {
+            var position = Vec3.FromMap(placement.Position, placement.Height);
+            map.Lights.Add(Light.Create(placement.Light, position, 0, (float)random.NextDouble() * 10));
+        }
+
+        for (var i = 0; i < map._eventAt.Length; i += 1)
+            map._eventAt[i] = -1;
+
+        for (var i = 0; i < data.Events.Count(); i += 1)
+        {
+            var e = data.Events[i];
+            map._eventAt[e.Y * data.Width + e.X] = i;
+        }
+
+        if (data.IsOutdoor())
+            map.Clock = DayNightClock.Create(data.DayNight);
+
+        return map;
+    }
+
+    void _AddObject(ObjectPlacement placement, ref Random random)
+    {
+        var type = ObjectTypes[placement.Type];
+        float baseHeight = placement.BaseHeight >= 0 ? placement.BaseHeight : type.BaseHeight;
+        float phase = (float)random.NextDouble() * 10;
+        int light = -1;
+
+        if (type.HasLight)
+        {
+            light = Lights.Count();
+            var position = Vec3.FromMap(placement.Position, baseHeight + type.Light.Height);
+            Lights.Add(Light.Create(type.Light, position, type.FrameTime, phase));
+        }
+
+        Objects.Add(MapObject
+        {
+            Type = placement.Type,
+            Position = placement.Position,
+            BaseHeight = baseHeight,
+            Phase = phase,
+            Light = light
+        });
+    }
+
+    /// Advances animations and the clock. `timeSpeed` speeds up the day/night cycle.
+    void Update(double time, float deltaTime, float timeSpeed, ref Random random)
+    {
+        for (var i = 0; i < Objects.Count(); i += 1)
+        {
+            var o = Objects[i];
+            var type = ObjectTypes[o.Type];
+            int frames = type.Sprites.Length;
+            o.Frame = frames <= 1 ? 0 : (int)((time + o.Phase) / type.FrameTime) % frames;
+            Objects[i] = o;
+        }
+
+        for (var i = 0; i < Lights.Count(); i += 1)
+        {
+            var light = Lights[i];
+            light.Update(time, deltaTime, ref random);
+            Lights[i] = light;
+        }
+
+        if (Data.IsOutdoor())
+            Clock.Update(deltaTime, timeSpeed);
+    }
+
+    /// The event of a tile, if it has one.
+    Optional<MapEvent> EventAt(int x, int y)
+    {
+        if (!Data.InBounds(x, y))
+            return null;
+
+        int index = _eventAt[y * Data.Width + x];
+
+        if (index < 0)
+            return null;
+
+        return Data.Events[index].Event;
+    }
+
+    /// Whether a circle on the ground overlaps a blocking tile or a blocking object.
+    bool Collides(Vec2 center, float radius)
+    {
+        int x0 = (int)MathUtil.Floor(center.X - radius);
+        int x1 = (int)MathUtil.Floor(center.X + radius);
+        int y0 = (int)MathUtil.Floor(center.Y - radius);
+        int y1 = (int)MathUtil.Floor(center.Y + radius);
+
+        for (var y = y0; y <= y1; y += 1)
+        {
+            for (var x = x0; x <= x1; x += 1)
+            {
+                if (!Data.IsBlocking(x, y))
+                    continue;
+
+                // the point of the tile's square nearest to the center
+                var nearest = Vec2.Create(Math.Clamp(center.X, (float)x, (float)(x + 1)), Math.Clamp(center.Y, (float)y, (float)(y + 1)));
+
+                if (center.Sub(nearest).LengthSquared() < radius * radius)
+                    return true;
+            }
+        }
+
+        foreach (var o in Objects)
+        {
+            var type = ObjectTypes[o.Type];
+
+            if (!type.Blocking)
+                continue;
+
+            float distance = radius + type.Radius;
+
+            if (center.Sub(o.Position).LengthSquared() < distance * distance)
+                return true;
+        }
+
+        return false;
+    }
+}

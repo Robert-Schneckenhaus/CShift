@@ -1,0 +1,108 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+enum MapKind : uint8
+{
+    /// Own ambient light, light only from light sources, ceilings.
+    Indoor = 0,
+    /// Sky and a day/night cycle.
+    Outdoor = 1
+}
+
+/// A kind of tile in a map (one entry of the map's legend). Texture ids refer to GameData.Textures; -1 = none.
+struct TileType
+{
+    string Key;
+    /// A wall tile is a solid block with this texture on its sides.
+    int WallTexture;
+    int FloorTexture;
+    int CeilingTexture;
+    /// Blocks movement (walls always do).
+    bool Blocking;
+
+    bool IsWall() { return WallTexture >= 0; }
+}
+
+struct ObjectPlacement
+{
+    /// Index into GameData.ObjectTypes.
+    int Type;
+    Vec2 Position;
+    /// Height above the floor; negative = the object type's BaseHeight.
+    float BaseHeight;
+}
+
+struct LightPlacement
+{
+    LightData Light;
+    Vec2 Position;
+    float Height;
+}
+
+struct PlayerStart
+{
+    Vec2 Position;
+    /// Viewing direction in radians: 0 = north, PI/2 = east.
+    float Yaw;
+}
+
+/// A map as it is stored: a grid of tiles, objects, lights and events.
+struct MapData
+{
+    string Id;
+    string Name;
+    MapKind Kind;
+    int Width;
+    int Height;
+    float WallHeight;
+    /// Vertical repetitions of the wall textures over the full wall height.
+    float WallTextureRepeat;
+    /// Indoor ambient light (outdoor maps take it from the day/night cycle).
+    Color Ambient;
+    FogData Fog;
+    /// Outdoor maps only.
+    DayNightData DayNight;
+    PlayerStart Start;
+    List<TileType> TileTypes;
+    /// Index into TileTypes per tile (y * Width + x); -1 = void (solid and invisible).
+    int[] Tiles;
+    List<ObjectPlacement> Objects;
+    List<LightPlacement> Lights;
+    List<EventPlacement> Events;
+
+    bool IsOutdoor() { return Kind == MapKind.Outdoor; }
+
+    bool InBounds(int x, int y) { return x >= 0 && y >= 0 && x < Width && y < Height; }
+
+    /// The tile type of a tile; null outside of the map and for void tiles.
+    Optional<TileType> TileAt(int x, int y)
+    {
+        if (!InBounds(x, y))
+            return null;
+
+        int type = Tiles[y * Width + x];
+
+        if (type < 0)
+            return null;
+
+        return TileTypes[type];
+    }
+
+    bool IsWall(int x, int y)
+    {
+        if (TileAt(x, y) is TileType tile)
+            return tile.IsWall();
+
+        return false;
+    }
+
+    bool IsBlocking(int x, int y)
+    {
+        if (TileAt(x, y) is TileType tile)
+            return tile.Blocking;
+
+        return true;
+    }
+}

@@ -51,11 +51,13 @@
     "E": {
       "floor": "stone_floor",
       "ceiling": "stone_ceiling",
-      "teleport": {
-        "map": "courtyard",
-        "x": 10.5,
-        "y": 3.5,
-        "facing": "south"
+      "event": {
+        "teleport": {
+          "map": "courtyard",
+          "x": 10.5,
+          "y": 3.5,
+          "facing": "south"
+        }
       }
     }
   },

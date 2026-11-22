@@ -1,0 +1,82 @@
+namespace BlackTemple.Core;
+
+using BlackTemple.Common;
+
+/// The player: first person movement with collision. Movement slides along walls: each axis is tried on its own.
+struct Player
+{
+    Vec2 Position;
+    float Yaw;
+    float Pitch;
+    float Radius;
+    float EyeHeight;
+    /// Tiles per second.
+    float WalkSpeed;
+    float RunSpeed;
+    /// Radians per second.
+    float TurnSpeed;
+
+    static Player Create(Vec2 position, float yaw)
+    {
+        return Player
+        {
+            Position = position,
+            Yaw = yaw,
+            Radius = 0.22f,
+            EyeHeight = 0.55f,
+            WalkSpeed = 2.5f,
+            RunSpeed = 4.5f,
+            TurnSpeed = 2.2f
+        };
+    }
+
+    void Update(const ref InputState input, float deltaTime, const ref Map map)
+    {
+        Yaw += input.Axis(GameAction.TurnRight, GameAction.TurnLeft) * TurnSpeed * deltaTime + input.LookYaw;
+        Pitch = Math.Clamp(Pitch + input.LookPitch, -0.9f, 0.9f);
+
+        float forward = input.Axis(GameAction.MoveForward, GameAction.MoveBackward);
+        float strafe = input.Axis(GameAction.StrafeRight, GameAction.StrafeLeft);
+
+        if (forward == 0 && strafe == 0)
+            return;
+
+        float speed = (input.IsHeld(GameAction.Run) ? RunSpeed : WalkSpeed) * deltaTime;
+        var direction = Vec2.Create(MathUtil.Sin(Yaw), -MathUtil.Cos(Yaw));
+        var right = Vec2.Create(MathUtil.Cos(Yaw), MathUtil.Sin(Yaw));
+        var move = direction.Mul(forward).Add(right.Mul(strafe));
+        Move(move.Mul(speed / move.Length()), map);
+    }
+
+    void Move(Vec2 delta, const ref Map map)
+    {
+        // long moves are split up so the player never skips through a wall
+        int steps = 1 + (int)(delta.Length() / (Radius * 0.5f));
+        var step = delta.Mul(1.0f / steps);
+
+        for (var i = 0; i < steps; i += 1)
+        {
+            var x = Vec2.Create(Position.X + step.X, Position.Y);
+
+            if (!map.Collides(x, Radius))
+                Position = x;
+
+            var y = Vec2.Create(Position.X, Position.Y + step.Y);
+
+            if (!map.Collides(y, Radius))
+                Position = y;
+        }
+    }
+
+    /// The camera at the player's eyes.
+    Camera GetCamera()
+    {
+        return Camera
+        {
+            Position = Vec3.FromMap(Position, EyeHeight),
+            Yaw = Yaw,
+            Pitch = Pitch,
+            FieldOfView = MathUtil.DegreesToRadians(65)
+        };
+    }
+}

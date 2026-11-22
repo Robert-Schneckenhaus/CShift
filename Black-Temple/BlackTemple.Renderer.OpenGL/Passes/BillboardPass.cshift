@@ -1,0 +1,71 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+using BlackTemple.Core;
+
+/// Draws the map objects as billboards, rebuilt every frame (objects animate and may move). The vertex shader turns
+/// them towards the camera. Vertex: bottom center (3), corner offset (2), uv (2), sprite layer (1), fullbright (1).
+struct BillboardPass
+{
+    VertexBuffer Buffer;
+    ShaderProgram Program;
+
+    static Error<BillboardPass> Create()
+    {
+        return BillboardPass
+        {
+            Buffer = VertexBuffer.Create([3, 2, 2, 1, 1]),
+            Program = try ShaderProgram.Create("billboard", BillboardVertexShader, LightingFragmentShader)
+        };
+    }
+
+    void Draw(const ref RenderFrame frame, ref LightSet lights, const ref Mat4 viewProjection, ref TextureArray sprites)
+    {
+        var v = List<float>.Create();
+        var map = frame.Map;
+
+        foreach (var o in map.Objects)
+        {
+            var type = map.ObjectTypes[o.Type];
+            int layer = type.Sprites[o.Frame];
+            var info = sprites.Layer(layer);
+            float half = type.Width / 2;
+            float fullbright = type.Fullbright ? 1.0f : 0.0f;
+            var center = Vec3.FromMap(o.Position, o.BaseHeight);
+            _Vertex(v, center, -half, 0, 0, info.UvMaxV, layer, fullbright);
+            _Vertex(v, center, half, 0, info.UvMaxU, info.UvMaxV, layer, fullbright);
+            _Vertex(v, center, half, type.Height, info.UvMaxU, 0, layer, fullbright);
+            _Vertex(v, center, -half, 0, 0, info.UvMaxV, layer, fullbright);
+            _Vertex(v, center, half, type.Height, info.UvMaxU, 0, layer, fullbright);
+            _Vertex(v, center, -half, type.Height, 0, 0, layer, fullbright);
+        }
+
+        Buffer.Upload(v, true);
+
+        if (Buffer.VertexCount == 0)
+            return;
+
+        Program.Use();
+        lights.Apply(ref Program, frame);
+        Program.SetMatrix("uViewProj", viewProjection);
+        Program.SetVec3("uCameraRight", frame.Camera.Right());
+        Program.SetInt("uTexture", 0);
+        sprites.Bind(0);
+        Buffer.Draw();
+    }
+
+    static void _Vertex(List<float> v, Vec3 center, float x, float y, float u, float tv, int layer, float fullbright)
+    {
+        v.Add(center.X);
+        v.Add(center.Y);
+        v.Add(center.Z);
+        v.Add(x);
+        v.Add(y);
+        v.Add(u);
+        v.Add(tv);
+        v.Add(layer);
+        v.Add(fullbright);
+    }
+}

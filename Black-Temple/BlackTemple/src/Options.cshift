@@ -1,0 +1,101 @@
+namespace BlackTemple;
+
+using System;
+using BlackTemple.Common;
+
+/// The command line:
+///
+/// ```text
+/// --map <id>             start map (Assets/Maps/<id>.json), default: temple
+/// --pos <x>,<y>[,<deg>]  start position in tiles, and the viewing direction (0 = north, 90 = east)
+/// --hour <h>             time of day on outdoor maps
+/// --size <w>x<h>         window size, default 1280x720
+/// --assets <folder>      the Assets folder (default: found in the current folder or above)
+/// --screenshot <file>    render some frames, save the last one as PNG and quit (--frames <n>, default 10)
+/// ```
+struct Options
+{
+    string Map;
+    bool HasPosition;
+    Vec2 Position;
+    bool HasYaw;
+    float Yaw;
+    float Hour;
+    int Width;
+    int Height;
+    string Assets;
+    string Screenshot;
+    int Frames;
+
+    static Error<Options> Parse(string[] args)
+    {
+        var o = Options { Map = "temple", Hour = -1, Width = 1280, Height = 720, Assets = "", Screenshot = "", Frames = 10 };
+        var i = 0;
+
+        while (i < args.Length)
+        {
+            string option = args[i];
+
+            if (i + 1 >= args.Length)
+                return error($"'{option}' needs a value");
+
+            string value = args[i + 1];
+            i += 2;
+
+            if (option == "--map")
+            {
+                o.Map = value;
+            }
+            else if (option == "--pos")
+            {
+                var parts = value.Split(',');
+
+                if (parts.Length < 2)
+                    return error("--pos needs <x>,<y>[,<degrees>]");
+
+                o.HasPosition = true;
+                o.Position = Vec2.Create((float)try parts[0].ParseDouble(), (float)try parts[1].ParseDouble());
+
+                if (parts.Length > 2)
+                {
+                    o.HasYaw = true;
+                    o.Yaw = MathUtil.DegreesToRadians((float)try parts[2].ParseDouble());
+                }
+            }
+            else if (option == "--hour")
+            {
+                o.Hour = (float)try value.ParseDouble();
+            }
+            else if (option == "--size")
+            {
+                var parts = value.Split('x');
+
+                if (parts.Length != 2)
+                    return error("--size needs <width>x<height>");
+
+                o.Width = try parts[0].ParseInt();
+                o.Height = try parts[1].ParseInt();
+            }
+            else if (option == "--assets")
+            {
+                o.Assets = value;
+            }
+            else if (option == "--screenshot")
+            {
+                o.Screenshot = value;
+            }
+            else if (option == "--frames")
+            {
+                o.Frames = try value.ParseInt();
+            }
+            else
+            {
+                return error($"unknown option '{option}'");
+            }
+        }
+
+        return o;
+    }
+
+    bool IsScreenshot() { return Screenshot != ""; }
+}

@@ -1,0 +1,99 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using Gl from "glfuncs.h";
+
+/// The OpenGL functions (include/glfuncs.h), loaded by LoadGl once a context is current.
+Gl.GlFunctions gl;
+
+bool _glComplete = true;
+
+void _LoadGlFunction<T>(ref T slot, string name, Func<string, void*> getProcAddress)
+{
+    unsafe
+    {
+        void* address = getProcAddress(name);
+
+        if (address == null)
+        {
+            Console.WriteErrorLine("OpenGL function not found: " + name);
+            _glComplete = false;
+        }
+
+        slot = (T)address;
+    }
+}
+
+/// Loads the OpenGL 3.3 functions with the window system's lookup function (e.g. glfwGetProcAddress), which keeps
+/// the renderer independent of the window library. Returns false if a function is missing.
+bool LoadGl(Func<string, void*> getProcAddress)
+{
+    var p = getProcAddress;
+    _LoadGlFunction(ref gl.GetString, "glGetString", p);
+    _LoadGlFunction(ref gl.GetError, "glGetError", p);
+    _LoadGlFunction(ref gl.Viewport, "glViewport", p);
+    _LoadGlFunction(ref gl.ClearColor, "glClearColor", p);
+    _LoadGlFunction(ref gl.Clear, "glClear", p);
+    _LoadGlFunction(ref gl.Enable, "glEnable", p);
+    _LoadGlFunction(ref gl.Disable, "glDisable", p);
+    _LoadGlFunction(ref gl.DepthMask, "glDepthMask", p);
+    _LoadGlFunction(ref gl.CullFace, "glCullFace", p);
+    _LoadGlFunction(ref gl.DrawArrays, "glDrawArrays", p);
+    _LoadGlFunction(ref gl.ReadPixels, "glReadPixels", p);
+    _LoadGlFunction(ref gl.PixelStorei, "glPixelStorei", p);
+
+    _LoadGlFunction(ref gl.CreateShader, "glCreateShader", p);
+    _LoadGlFunction(ref gl.ShaderSource, "glShaderSource", p);
+    _LoadGlFunction(ref gl.CompileShader, "glCompileShader", p);
+    _LoadGlFunction(ref gl.GetShaderiv, "glGetShaderiv", p);
+    _LoadGlFunction(ref gl.GetShaderInfoLog, "glGetShaderInfoLog", p);
+    _LoadGlFunction(ref gl.DeleteShader, "glDeleteShader", p);
+    _LoadGlFunction(ref gl.CreateProgram, "glCreateProgram", p);
+    _LoadGlFunction(ref gl.AttachShader, "glAttachShader", p);
+    _LoadGlFunction(ref gl.LinkProgram, "glLinkProgram", p);
+    _LoadGlFunction(ref gl.GetProgramiv, "glGetProgramiv", p);
+    _LoadGlFunction(ref gl.GetProgramInfoLog, "glGetProgramInfoLog", p);
+    _LoadGlFunction(ref gl.UseProgram, "glUseProgram", p);
+    _LoadGlFunction(ref gl.DeleteProgram, "glDeleteProgram", p);
+    _LoadGlFunction(ref gl.GetUniformLocation, "glGetUniformLocation", p);
+    _LoadGlFunction(ref gl.Uniform1i, "glUniform1i", p);
+    _LoadGlFunction(ref gl.Uniform1f, "glUniform1f", p);
+    _LoadGlFunction(ref gl.Uniform3f, "glUniform3f", p);
+    _LoadGlFunction(ref gl.Uniform1fv, "glUniform1fv", p);
+    _LoadGlFunction(ref gl.Uniform3fv, "glUniform3fv", p);
+    _LoadGlFunction(ref gl.UniformMatrix4fv, "glUniformMatrix4fv", p);
+
+    _LoadGlFunction(ref gl.GenVertexArrays, "glGenVertexArrays", p);
+    _LoadGlFunction(ref gl.BindVertexArray, "glBindVertexArray", p);
+    _LoadGlFunction(ref gl.DeleteVertexArrays, "glDeleteVertexArrays", p);
+    _LoadGlFunction(ref gl.GenBuffers, "glGenBuffers", p);
+    _LoadGlFunction(ref gl.BindBuffer, "glBindBuffer", p);
+    _LoadGlFunction(ref gl.BufferData, "glBufferData", p);
+    _LoadGlFunction(ref gl.DeleteBuffers, "glDeleteBuffers", p);
+    _LoadGlFunction(ref gl.VertexAttribPointer, "glVertexAttribPointer", p);
+    _LoadGlFunction(ref gl.EnableVertexAttribArray, "glEnableVertexAttribArray", p);
+
+    _LoadGlFunction(ref gl.GenTextures, "glGenTextures", p);
+    _LoadGlFunction(ref gl.DeleteTextures, "glDeleteTextures", p);
+    _LoadGlFunction(ref gl.BindTexture, "glBindTexture", p);
+    _LoadGlFunction(ref gl.ActiveTexture, "glActiveTexture", p);
+    _LoadGlFunction(ref gl.TexImage3D, "glTexImage3D", p);
+    _LoadGlFunction(ref gl.TexSubImage3D, "glTexSubImage3D", p);
+    _LoadGlFunction(ref gl.TexParameteri, "glTexParameteri", p);
+    _LoadGlFunction(ref gl.GenerateMipmap, "glGenerateMipmap", p);
+
+    return _glComplete;
+}
+
+/// glGetString as a string.
+string GlString(uint32 name)
+{
+    unsafe
+    {
+        uint8* text = gl.GetString(name);
+
+        if (text == null)
+            return "?";
+
+        return string.FromCStr((char*)text);
+    }
+}

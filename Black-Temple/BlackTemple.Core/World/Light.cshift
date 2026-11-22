@@ -1,0 +1,92 @@
+namespace BlackTemple.Core;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+/// A point light in the world with its current animation state.
+///
+/// The animation runs on the game time plus a phase, in frames of FrameTime seconds. An object's light gets the
+/// object's phase and frame time, so light frame N is shown exactly while sprite frame N is.
+struct Light
+{
+    LightData Data;
+    Vec3 Position;
+    float FrameTime;
+    float Phase;
+    /// Color * intensity of the current frame.
+    Color Color;
+    float Radius;
+    float _flicker;
+    float _flickerTarget;
+
+    static Light Create(LightData data, Vec3 position, float defaultFrameTime, float phase)
+    {
+        float frameTime = data.FrameTime > 0 ? data.FrameTime : defaultFrameTime;
+
+        if (frameTime <= 0.001f)
+            frameTime = 0.15f;
+
+        var light = Light
+        {
+            Data = data,
+            Position = position,
+            FrameTime = frameTime,
+            Phase = phase,
+            _flicker = 1,
+            _flickerTarget = 1
+        };
+        light._Apply(data.Frames[0].Color, data.Frames[0].Intensity, data.Frames[0].Radius);
+
+        return light;
+    }
+
+    /// The animation frame at a game time.
+    int FrameAt(double time)
+    {
+        int count = Data.Frames.Length;
+        int frame = (int)(Math.Floor((time + Phase) / FrameTime) % count);
+
+        return frame < 0 ? frame + count : frame;
+    }
+
+    void Update(double time, float deltaTime, ref Random random)
+    {
+        var frames = Data.Frames;
+        int index = FrameAt(time);
+        var a = frames[index];
+
+        if (Data.Interpolate && frames.Length > 1)
+        {
+            var b = frames[(index + 1) % frames.Length];
+            double position = (time + Phase) / FrameTime;
+            float t = MathUtil.Smoothstep((float)(position - Math.Floor(position)));
+            _UpdateFlicker(deltaTime, ref random);
+            _Apply(Color.Lerp(a.Color, b.Color, t), MathUtil.Lerp(a.Intensity, b.Intensity, t), MathUtil.Lerp(a.Radius, b.Radius, t));
+        }
+        else
+        {
+            _UpdateFlicker(deltaTime, ref random);
+            _Apply(a.Color, a.Intensity, a.Radius);
+        }
+    }
+
+    void _UpdateFlicker(float deltaTime, ref Random random)
+    {
+        if (Data.Flicker <= 0)
+            return;
+
+        float difference = _flickerTarget - _flicker;
+
+        if (difference < 0.01f && difference > -0.01f)
+            _flickerTarget = 1.0f + ((float)random.NextDouble() * 2.0f - 1.0f) * Data.Flicker;
+
+        _flicker += (_flickerTarget - _flicker) * Math.Min(1.0f, deltaTime * 20.0f);
+    }
+
+    void _Apply(Color color, float intensity, float radius)
+    {
+        Color = color.Scale(intensity * _flicker);
+        Radius = radius;
+    }
+}

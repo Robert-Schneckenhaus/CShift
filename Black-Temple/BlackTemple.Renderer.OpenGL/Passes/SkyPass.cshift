@@ -1,0 +1,51 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using BlackTemple.Core;
+using Gl from "glfuncs.h";
+
+/// The sky of outdoor maps: a full screen triangle behind everything (gradient, sun, moon, stars).
+struct SkyPass
+{
+    ShaderProgram Program;
+    uint32 _vao;
+
+    static Error<SkyPass> Create()
+    {
+        var pass = SkyPass { Program = try ShaderProgram.Create("sky", SkyVertexShader, SkyFragmentShader) };
+        uint32 vao = 0;
+
+        // the triangle comes from gl_VertexID, but the core profile needs a bound vertex array
+        unsafe
+        {
+            gl.GenVertexArrays(1, &vao);
+        }
+
+        pass._vao = vao;
+
+        return pass;
+    }
+
+    void Draw(const ref RenderFrame frame, float aspect)
+    {
+        var camera = frame.Camera;
+        var lighting = frame.Lighting;
+        gl.Disable(Gl.GL_DEPTH_TEST);
+        gl.DepthMask((uint8)Gl.GL_FALSE);
+        Program.Use();
+        Program.SetVec3("uForward", camera.Forward());
+        Program.SetVec3("uRight", camera.Right());
+        Program.SetVec3("uUp", camera.Up());
+        Program.SetFloat("uTanHalfFov", (float)Math.Tan(camera.FieldOfView / 2));
+        Program.SetFloat("uAspect", aspect);
+        Program.SetColor("uZenith", lighting.Sky.Zenith);
+        Program.SetColor("uHorizon", lighting.Sky.Horizon);
+        Program.SetVec3("uSunDir", lighting.SunDirection);
+        Program.SetColor("uSunColor", lighting.SunColor);
+        Program.SetFloat("uNight", lighting.Sky.Night);
+        Program.SetFloat("uBrightness", lighting.Brightness);
+        gl.BindVertexArray(_vao);
+        gl.DrawArrays(Gl.GL_TRIANGLES, 0, 3);
+        gl.DepthMask((uint8)Gl.GL_TRUE);
+    }
+}

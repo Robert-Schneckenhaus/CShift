@@ -9,10 +9,10 @@
       ],
       "frameTime": 0.12,
       "width": 0.18,
-      "baseY": 0.45,
+      "baseHeight": 0.45,
       "fullbright": true,
       "light": {
-        "offsetY": 0.33,
+        "height": 0.33,
         "radius": 5.0,
         "interpolate": true,
         "flicker": 0.06,
@@ -23,7 +23,7 @@
           },
           {
             "color": "#ff9a40",
-            "intensity": 1.44
+            "intensity": 1.45
           },
           {
             "color": "#ffc060",
@@ -49,7 +49,7 @@
       "blocking": true,
       "radius": 0.28,
       "light": {
-        "offsetY": 0.55,
+        "height": 0.55,
         "radius": 7.0,
         "flicker": 0.08,
         "frames": [
@@ -81,12 +81,11 @@
       ],
       "frameTime": 0.35,
       "width": 0.3,
-      "baseY": 0.0,
       "fullbright": true,
       "blocking": true,
       "radius": 0.2,
       "light": {
-        "offsetY": 0.3,
+        "height": 0.3,
         "radius": 4.0,
         "frames": [
           {
@@ -137,11 +136,11 @@
       "color": "#8090c0",
       "intensity": 0.5,
       "radius": 5,
-      "offsetY": 1.4
+      "height": 1.4
     },
     "pulse_red": {
       "radius": 3.5,
-      "offsetY": 0.3,
+      "height": 0.3,
       "frameTime": 0.8,
       "frames": [
         {

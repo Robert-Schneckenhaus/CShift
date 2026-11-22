@@ -1,0 +1,9 @@
+{
+	"name": "BlackTemple.Tests",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["."],
+	"output": "bin/BlackTemple.Tests",
+	"optimize": 0,
+	"dependencies": ["../BlackTemple.Core"]
+}

@@ -1,0 +1,82 @@
+namespace BlackTemple;
+
+using Glfw from "GLFW/glfw3.h";
+
+void _OnGlfwError(int code, char* description)
+{
+    unsafe
+    {
+        Console.WriteErrorLine($"GLFW error {code}: {string.FromCStr(description)}");
+    }
+}
+
+unsafe void* _GetGlProcAddress(string name)
+{
+    return (void*)Glfw.glfwGetProcAddress(name);
+}
+
+/// The window with an OpenGL 3.3 core context (GLFW).
+struct GameWindow
+{
+    Glfw.GLFWwindow* Handle;
+
+    static Error<GameWindow> Open(int width, int height, string title, bool vsync)
+    {
+        Glfw.glfwSetErrorCallback(_OnGlfwError);
+
+        if (Glfw.glfwInit() == 0)
+            return error("cannot initialize GLFW");
+
+        Glfw.glfwWindowHint(Glfw.GLFW_CONTEXT_VERSION_MAJOR, 3);
+        Glfw.glfwWindowHint(Glfw.GLFW_CONTEXT_VERSION_MINOR, 3);
+        Glfw.glfwWindowHint(Glfw.GLFW_OPENGL_PROFILE, Glfw.GLFW_OPENGL_CORE_PROFILE);
+        Glfw.glfwWindowHint(Glfw.GLFW_OPENGL_FORWARD_COMPAT, 1);
+        var handle = Glfw.glfwCreateWindow(width, height, title, null, null);
+
+        if (handle == null)
+        {
+            Glfw.glfwTerminate();
+
+            return error("cannot create a window with OpenGL 3.3");
+        }
+
+        Glfw.glfwMakeContextCurrent(handle);
+        Glfw.glfwSwapInterval(vsync ? 1 : 0);
+
+        return GameWindow { Handle = handle };
+    }
+
+    /// The function the renderer loads OpenGL with.
+    Func<string, void*> GlLoader() { return _GetGlProcAddress; }
+
+    bool ShouldClose() { return Glfw.glfwWindowShouldClose(Handle) != 0; }
+    void Close() { Glfw.glfwSetWindowShouldClose(Handle, 1); }
+    void SetTitle(string title) { Glfw.glfwSetWindowTitle(Handle, title); }
+    double Time() { return Glfw.glfwGetTime(); }
+
+    void FramebufferSize(ref int width, ref int height)
+    {
+        Glfw.glfwGetFramebufferSize(Handle, ref width, ref height);
+    }
+
+    bool IsKeyDown(int key) { return Glfw.glfwGetKey(Handle, key) == Glfw.GLFW_PRESS; }
+    bool IsMouseButtonDown(int button) { return Glfw.glfwGetMouseButton(Handle, button) == Glfw.GLFW_PRESS; }
+
+    void CursorPosition(ref double x, ref double y)
+    {
+        Glfw.glfwGetCursorPos(Handle, ref x, ref y);
+    }
+
+    /// Shows the frame and handles the window system's events.
+    void Present()
+    {
+        Glfw.glfwSwapBuffers(Handle);
+        Glfw.glfwPollEvents();
+    }
+
+    void Destroy()
+    {
+        Glfw.glfwDestroyWindow(Handle);
+        Glfw.glfwTerminate();
+    }
+}

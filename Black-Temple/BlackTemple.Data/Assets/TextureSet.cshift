@@ -1,0 +1,56 @@
+namespace BlackTemple.Data;
+
+using System;
+using System.Image;
+
+/// The PNG images of a folder, addressed by id (their index, in file name order) or by name (the file name without
+/// ".png"). Textures and sprites are plain PNGs of any size; renderers decide how to store them.
+struct TextureSet
+{
+    List<string> Names;
+    List<Image> Images;
+    Dictionary<string, int> _ids;
+
+    static Error<TextureSet> LoadFolder(string folder)
+    {
+        var files = Directory.FindFiles(folder, ".png");
+
+        if (files.Count() == 0)
+            return error($"no PNG files in '{folder}'");
+
+        var set = TextureSet
+        {
+            Names = List<string>.Create(),
+            Images = List<Image>.Create(),
+            _ids = Dictionary<string, int>.Create()
+        };
+
+        foreach (var file in files)
+        {
+            var result = Image.Load(file);
+
+            if (result is error e)
+                return error($"cannot load '{file}': {e.Message}");
+
+            if (result is Image image)
+            {
+                string name = Path.GetStem(file);
+                set._ids[name] = set.Names.Count();
+                set.Names.Add(name);
+                set.Images.Add(image);
+            }
+        }
+
+        return set;
+    }
+
+    int Count() { return Names.Count(); }
+
+    /// The id of a texture by its name, or -1.
+    int Find(StringSlice name)
+    {
+        return _ids.GetOrDefault(name.ToString(), -1);
+    }
+
+    Image Get(int id) { return Images[id]; }
+}

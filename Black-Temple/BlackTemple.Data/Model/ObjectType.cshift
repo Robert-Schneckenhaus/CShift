@@ -1,0 +1,24 @@
+namespace BlackTemple.Data;
+
+/// A kind of object in maps. Objects are drawn as billboards: sprites that always face the camera.
+struct ObjectType
+{
+    string Name;
+    /// Sprite ids (see GameData.Sprites), one per animation frame.
+    int[] Sprites;
+    /// Seconds per animation frame.
+    float FrameTime;
+    /// Size in the world (1 = one tile).
+    float Width;
+    float Height;
+    /// Height of the billboard's bottom above the floor.
+    float BaseHeight;
+    /// Drawn at full brightness regardless of the lighting (flames, glowing crystals).
+    bool Fullbright;
+    /// The player cannot walk through it.
+    bool Blocking;
+    /// Collision radius when blocking.
+    float Radius;
+    bool HasLight;
+    LightData Light;
+}

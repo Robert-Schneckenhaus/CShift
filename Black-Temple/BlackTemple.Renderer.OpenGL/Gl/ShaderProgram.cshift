@@ -1,0 +1,140 @@
+namespace BlackTemple.Renderer.OpenGL;
+
+using System;
+using BlackTemple.Common;
+using Gl from "glfuncs.h";
+
+/// A linked GLSL program with cached uniform locations.
+struct ShaderProgram
+{
+    uint32 Handle;
+    Dictionary<string, int> _locations;
+
+    static Error<ShaderProgram> Create(string name, string vertexSource, string fragmentSource)
+    {
+        uint32 vertex = try _Compile(name + " (vertex)", Gl.GL_VERTEX_SHADER, vertexSource);
+        uint32 fragment = try _Compile(name + " (fragment)", Gl.GL_FRAGMENT_SHADER, fragmentSource);
+        uint32 program = gl.CreateProgram();
+        gl.AttachShader(program, vertex);
+        gl.AttachShader(program, fragment);
+        gl.LinkProgram(program);
+        gl.DeleteShader(vertex);
+        gl.DeleteShader(fragment);
+
+        unsafe
+        {
+            int ok = 0;
+            gl.GetProgramiv(program, Gl.GL_LINK_STATUS, &ok);
+
+            if (ok == 0)
+            {
+                string log = _Log(program, false);
+                gl.DeleteProgram(program);
+
+                return error($"cannot link the shader '{name}': {log}");
+            }
+        }
+
+        return ShaderProgram { Handle = program, _locations = Dictionary<string, int>.Create() };
+    }
+
+    static Error<uint32> _Compile(string name, uint32 kind, string source)
+    {
+        uint32 shader = gl.CreateShader(kind);
+
+        unsafe
+        {
+            char* text = source.CStr();
+            gl.ShaderSource(shader, 1, &text, null);
+            gl.CompileShader(shader);
+            int ok = 0;
+            gl.GetShaderiv(shader, Gl.GL_COMPILE_STATUS, &ok);
+
+            if (ok == 0)
+            {
+                string log = _Log(shader, true);
+                gl.DeleteShader(shader);
+
+                return error($"cannot compile the shader '{name}': {log}");
+            }
+        }
+
+        return shader;
+    }
+
+    static string _Log(uint32 handle, bool isShader)
+    {
+        unsafe
+        {
+            char* buffer = (char*)Memory.Allocate(4096);
+
+            if (isShader)
+                gl.GetShaderInfoLog(handle, 4096, null, buffer);
+            else
+                gl.GetProgramInfoLog(handle, 4096, null, buffer);
+
+            string log = string.FromCStr(buffer);
+            Memory.Free(buffer);
+
+            return log;
+        }
+    }
+
+    void Use() { gl.UseProgram(Handle); }
+
+    int Location(string name)
+    {
+        if (_locations.TryGet(name) is int cached)
+            return cached;
+
+        int location = 0;
+
+        unsafe
+        {
+            location = gl.GetUniformLocation(Handle, name.CStr());
+        }
+
+        _locations[name] = location;
+
+        return location;
+    }
+
+    void SetInt(string name, int value) { gl.Uniform1i(Location(name), value); }
+    void SetFloat(string name, float value) { gl.Uniform1f(Location(name), value); }
+    void SetBool(string name, bool value) { gl.Uniform1f(Location(name), value ? 1.0f : 0.0f); }
+    void SetVec3(string name, Vec3 v) { gl.Uniform3f(Location(name), v.X, v.Y, v.Z); }
+    void SetColor(string name, Color c) { gl.Uniform3f(Location(name), c.R, c.G, c.B); }
+
+    void SetMatrix(string name, const ref Mat4 m)
+    {
+        var copy = m;
+
+        unsafe
+        {
+            gl.UniformMatrix4fv(Location(name), 1, (uint8)Gl.GL_FALSE, &copy.M[0]);
+        }
+    }
+
+    /// `count` vec3 values from `values` (3 floats each).
+    void SetVec3Array(string name, float[] values, int count)
+    {
+        if (count <= 0)
+            return;
+
+        unsafe
+        {
+            gl.Uniform3fv(Location(name), count, &values[0]);
+        }
+    }
+
+    void SetFloatArray(string name, float[] values, int count)
+    {
+        if (count <= 0)
+            return;
+
+        unsafe
+        {
+            gl.Uniform1fv(Location(name), count, &values[0]);
+        }
+    }
+}

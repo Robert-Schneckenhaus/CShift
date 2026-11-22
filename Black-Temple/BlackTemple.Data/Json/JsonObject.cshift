@@ -1,0 +1,183 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// A JSON object of a data file, with typed accessors that fall back to defaults for missing keys and report wrong
+/// values with the place where they are (`maps/temple.json: legend.B.floor`).
+struct JsonObject
+{
+    JsonValue Value;
+    /// The file and the path inside of it, for error messages.
+    string File;
+    string Location;
+
+    static JsonObject Create(JsonValue value, string file, string location)
+    {
+        return JsonObject { Value = value, File = file, Location = location };
+    }
+
+    /// "temple.json: legend.B.floor"
+    string Context()
+    {
+        if (Location == "")
+            return File;
+
+        return $"{File}: {Location}";
+    }
+
+    static Error<JsonObject> LoadFile(string path)
+    {
+        var text = System.File.ReadAllText(path);
+
+        if (text is error e)
+            return error($"cannot read '{path}': {e.Message}");
+
+        var json = Json.Parse(try text);
+
+        if (json is error je)
+            return error($"'{path}': {je.Message}");
+
+        return Create(try json, Path.GetFileName(path), "");
+    }
+
+    bool Has(string key) { return Value.IsObject() && Value.Has(key) && !Value[key].IsNull(); }
+
+    JsonObject Child(string key) { return Create(Value[key], File, _Join(key)); }
+
+    /// The keys of the object (in file order); none if it is no object.
+    string[] Keys()
+    {
+        if (!Value.IsObject())
+            return [];
+
+        return Value.Keys();
+    }
+
+    /// The elements of an array as objects; none if the key is missing.
+    List<JsonObject> Items(string key)
+    {
+        var items = List<JsonObject>.Create();
+        var array = Value[key];
+
+        if (!array.IsArray())
+            return items;
+
+        for (var i = 0; i < array.Count(); i += 1)
+            items.Add(Create(array[i], File, $"{_Join(key)}[{i}]"));
+
+        return items;
+    }
+
+    /// The strings of an array (`"sprites": ["a", "b"]`).
+    Error<List<string>> Strings(string key)
+    {
+        var result = List<string>.Create();
+
+        foreach (var item in Items(key))
+        {
+            if (!item.Value.IsString())
+                return error($"{item.Context()}: a text is expected");
+
+            result.Add(item.Value.AsString());
+        }
+
+        return result;
+    }
+
+    Error<float> Float(string key, float fallback)
+    {
+        if (!Has(key))
+            return fallback;
+
+        var v = Value[key];
+
+        if (!v.IsNumber())
+            return error($"{_Where(key)}: a number is expected");
+
+        return (float)v.AsNumber();
+    }
+
+    Error<bool> Bool(string key, bool fallback)
+    {
+        if (!Has(key))
+            return fallback;
+
+        var v = Value[key];
+
+        if (!v.IsBool())
+            return error($"{_Where(key)}: true or false is expected");
+
+        return v.AsBool();
+    }
+
+    Error<string> String(string key, string fallback)
+    {
+        if (!Has(key))
+            return fallback;
+
+        return RequireString(key);
+    }
+
+    Error<string> RequireString(string key)
+    {
+        var v = Value[key];
+
+        if (!v.IsString())
+            return error($"{_Where(key)}: a text is expected");
+
+        return v.AsString();
+    }
+
+    /// A color "#rrggbb".
+    Error<BlackTemple.Common.Color> Color(string key, BlackTemple.Common.Color fallback)
+    {
+        if (!Has(key))
+            return fallback;
+
+        string text = try RequireString(key);
+
+        if (BlackTemple.Common.Color.Parse(text) is BlackTemple.Common.Color color)
+            return color;
+
+        return error($"{_Where(key)}: '{text}' is no color (expected #rrggbb)");
+    }
+
+    /// A viewing direction: "north", "east", "south", "west" or degrees (0 = north, 90 = east). In radians.
+    Error<float> Direction(string key, float fallback)
+    {
+        if (!Has(key))
+            return fallback;
+
+        var v = Value[key];
+
+        if (v.IsNumber())
+            return MathUtil.DegreesToRadians((float)v.AsNumber());
+
+        string text = try RequireString(key);
+
+        if (text == "north")
+            return 0;
+
+        if (text == "east")
+            return MathUtil.DegreesToRadians(90);
+
+        if (text == "south")
+            return MathUtil.DegreesToRadians(180);
+
+        if (text == "west")
+            return MathUtil.DegreesToRadians(270);
+
+        return error($"{_Where(key)}: '{text}' is no direction (north, east, south, west or degrees)");
+    }
+
+    string _Join(string key)
+    {
+        if (Location == "")
+            return key;
+
+        return $"{Location}.{key}";
+    }
+
+    string _Where(string key) { return $"{File}: {_Join(key)}"; }
+}

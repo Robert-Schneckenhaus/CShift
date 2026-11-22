@@ -1,0 +1,89 @@
+namespace BlackTemple.Core;
+
+using System;
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+/// The time of day of an outdoor map and the sky colors that belong to it.
+struct DayNightClock
+{
+    DayNightData Data;
+    /// 0..24
+    float Hour;
+    SkyColors Colors;
+
+    static DayNightClock Create(DayNightData data)
+    {
+        var clock = DayNightClock { Data = data };
+        clock.SetHour(data.StartHour);
+
+        return clock;
+    }
+
+    /// Advances the time; `speed` multiplies the map's minutes per second.
+    void Update(float deltaTime, float speed)
+    {
+        SetHour(Hour + deltaTime * Data.MinutesPerSecond * speed / 60.0f);
+    }
+
+    void SetHour(float hour)
+    {
+        while (hour >= 24)
+            hour -= 24;
+
+        while (hour < 0)
+            hour += 24;
+
+        Hour = hour;
+        _Evaluate();
+    }
+
+    /// The direction towards the sun: it rises in the east (+X) at 6:00, is highest at 12:00 and sets in the west at
+    /// 18:00; at night it is below the horizon.
+    Vec3 SunDirection()
+    {
+        float angle = (Hour - 6.0f) / 12.0f * MathUtil.Pi();
+
+        return Vec3.Create(MathUtil.Cos(angle), MathUtil.Sin(angle), 0.35f).Normalized();
+    }
+
+    /// "17:30"
+    string TimeText()
+    {
+        int hours = (int)Hour;
+        int minutes = (int)((Hour - hours) * 60);
+
+        return $"{hours:D2}:{minutes:D2}";
+    }
+
+    void _Evaluate()
+    {
+        var keys = Data.Keys;
+        int count = keys.Length;
+
+        if (count == 0)
+            return;
+
+        // the last key at or before the hour (the one before midnight if there is none) and the next one
+        int a = count - 1;
+
+        for (var i = 0; i < count; i += 1)
+        {
+            if (keys[i].Hour <= Hour)
+                a = i;
+        }
+
+        int b = (a + 1) % count;
+        float span = keys[b].Hour - keys[a].Hour;
+
+        if (span <= 0)
+            span += 24;
+
+        float offset = Hour - keys[a].Hour;
+
+        if (offset < 0)
+            offset += 24;
+
+        Colors = SkyColors.Lerp(keys[a].Colors, keys[b].Colors, MathUtil.Clamp01(offset / span));
+    }
+}

@@ -1,47 +1,69 @@
 # Black Temple
 
 A 3D engine for temple and castle dungeons, written in [CShift](https://github.com/Robert-Schneckenhaus/CShift) with
-OpenGL 3.3 and GLFW. The look follows the 3D view of Ambermoon (tile based maps, textured walls, floors and ceilings,
-billboard objects), the game is meant to become a mix of dungeon crawler and Zelda-style temples with puzzles.
+OpenGL 3.3 and GLFW. The look follows the 3D view of Ambermoon: tile based maps, textured walls, floors and ceilings,
+and billboard objects. The game is meant to become a mix of dungeon crawler and Zelda-style temples with puzzles.
 
 ![Screens](docs/screens.png)
 
 ## Features
 
-* **Tile maps** from JSON: walls, floors and ceilings with plain **PNG textures** (any size; all wall/floor textures
-  go into one texture array, sprites into another).
-* **Billboards** for all objects (pillars, statues, torches, braziers ...), optionally animated, optionally blocking.
-* **Point lights**, up to 32 per frame (the most relevant ones are picked), per pixel. Lights can be **animated**:
-  every animation frame is a light color + intensity (+ radius). An object's light runs in sync with its sprite
-  animation, so torch frame N = light frame N. Smooth interpolation between frames and random flicker are optional.
-* **Distance fog** with color, start and end distance per map (`F` toggles it, `+`/`-` scales the distance).
-* **Indoor** maps: own ambient light, light only from light sources (torches ...).
-* **Outdoor** maps: **day/night cycle** with sky gradient, sun, moon and stars; ambient light, sun light and fog color
+* **Tile maps** in JSON: walls, floors and ceilings with plain **PNG textures** of any size.
+* **Billboards** for all objects (pillars, statues, torches, braziers ...), animated or not, blocking or not.
+* **Point lights**, per pixel, up to 32 per frame (the ones that matter most for the camera). Lights can be
+  **animated**: every frame is a light color + intensity (+ radius). An object's light runs in sync with its sprite
+  animation, so torch frame N lights with light frame N. Interpolation between frames and random flicker are optional.
+* **Distance fog** per map: color, start and end distance.
+* **Indoor maps**: own ambient light, otherwise only light sources.
+* **Outdoor maps**: **day/night cycle** with sky gradient, sun, moon and stars; ambient light, sunlight and fog color
   follow the time of day (keyframes can be changed per map).
-* **Teleport tiles** to change maps (with a fade).
+* **Map events** on tiles; for now teleports (with a fade), the base for switches, doors and other puzzle elements.
+
+## Structure
+
+The projects are layered; each one only knows the ones below it:
+
+```
+BlackTemple                    frontend: GLFW window, key bindings, command line, main loop
+BlackTemple.Renderer.OpenGL    IRenderer with OpenGL 3.3: texture arrays, map geometry, billboards, sky, lighting
+BlackTemple.Core               the game without any I/O: world state, lights, day/night, player, input actions,
+                               map events, IRenderer and the description of a frame (RenderFrame)
+BlackTemple.Data               the data model (maps, tile types, object types, lights, events) and its JSON readers
+BlackTemple.Common             vectors, matrices, colors
+BlackTemple.Tests              tests of Data and Core (no window, no GPU)
+```
+
+* **Core does not know OpenGL or GLFW.** It describes each frame as a `RenderFrame` (map, camera, lighting) and hands it
+  to any `IRenderer`. Input arrives as `InputState` of `GameAction`s, so keys, gamepads or replays are frontend
+  matters.
+* **Data is separate from the running game.** `MapData` is the map as stored; `Core.Map` adds the state (animated
+  objects and lights, clock). `GameData` loads the Assets folder and maps on demand.
+* **Extending:** a new map event is a new member of `union MapEvent` (Data) plus its reader in `EventReader`; the
+  compiler then points at the `switch` in `Game._HandleEvent` that has to handle it. A new action is a `GameAction`
+  plus a key in `KeyBindings`.
 
 ## Building
 
-Requirements: `cshiftc` (CShift 0.41 or newer, see the CShift releases) and GLFW.
+Requirements: `cshiftc` (CShift 0.41 or newer) and GLFW.
 
 ```sh
 # Linux
 sudo apt install build-essential libglfw3-dev
-cshiftc run
+cshiftc run BlackTemple          # the game
+cshiftc run BlackTemple.Tests    # the tests
 
 # Windows (PowerShell)
-.\get-glfw.ps1          # downloads GLFW 3.4 -> lib\libglfw3.a
-cshiftc run
+.\BlackTemple\get-glfw.ps1       # GLFW 3.4 -> BlackTemple\lib\libglfw3.a
+cshiftc run BlackTemple
 ```
 
-`cshiftc build` writes `bin/black-temple`. The program looks for the `Assets` folder in the current folder or one
-above it (`--assets <folder>` otherwise).
+The program looks for `Assets` in the current folder and the folders above it (`--assets <folder>` otherwise).
 
 ## Controls
 
 | Key | Action |
 |---|---|
-| `W`/`S`, `Up`/`Down` | walk forward/back |
+| `W`/`S`, `Up`/`Down` | walk |
 | `A`/`D` | strafe |
 | `Q`/`E`, `Left`/`Right` | turn |
 | `Shift` | run |
@@ -52,7 +74,7 @@ above it (`--assets <folder>` otherwise).
 | `Esc` | quit |
 
 Command line: `--map <id>`, `--pos <x>,<y>[,<degrees>]`, `--hour <h>`, `--size <w>x<h>`, `--assets <folder>`,
-`--screenshot <file.png> [--frames <n>]` (renders, saves a PNG and quits; useful for tests).
+`--screenshot <file.png> [--frames <n>]` (renders, saves the image and quits).
 
 ## Data
 
@@ -61,88 +83,41 @@ Assets/
 ├── Textures/*.png    wall, floor and ceiling textures (name = file name without .png)
 ├── Sprites/*.png     billboard sprites
 ├── objects.json      object types and light presets
-└── Maps/*.json       maps (temple = start map, courtyard = outdoor test map)
+└── Maps/*.json       maps: temple (start, indoor) and courtyard (outdoor)
 ```
 
-The placeholder textures are generated by `tools/gen_textures.py` (Python + Pillow) and can simply be replaced by
-other PNGs with the same names.
-
-### objects.json
+The placeholder graphics are generated by `tools/gen_textures.py` (Python + Pillow); PNGs with the same names replace
+them. The formats are documented at their readers: maps in `BlackTemple.Data/Json/MapReader.cshift`, object types in
+`ObjectTypeReader.cshift`, lights in `LightReader.cshift`, events in `EventReader.cshift` and the day/night cycle in
+`DayNightReader.cshift`. In short:
 
 ```jsonc
-{
-  "objects": {
-    "torch": {
-      "sprites": ["torch_0", "torch_1", "torch_2", "torch_3"],  // animation frames
-      "frameTime": 0.12,       // seconds per frame
-      "width": 0.18,           // world size (1 = one tile); "height" defaults to the sprite's aspect ratio
-      "baseY": 0.45,           // height above the floor
-      "fullbright": true,      // not affected by light (flames)
-      "blocking": false, "radius": 0.25,
-      "light": {
-        "offsetY": 0.33, "radius": 5, "interpolate": true, "flicker": 0.06,
-        "frames": [            // one light color + intensity per frame (in sync with the sprites)
-          { "color": "#ffb050", "intensity": 1.7 },
-          { "color": "#ff9a40", "intensity": 1.45 }
-        ]
-      }
-    }
-  },
-  "lights": { "pulse_red": { "radius": 3.5, "frameTime": 0.8, "frames": [ ... ] } }  // presets for map lights
+// objects.json
+"torch": {
+  "sprites": ["torch_0", "torch_1", "torch_2", "torch_3"], "frameTime": 0.12,
+  "width": 0.18, "baseHeight": 0.45, "fullbright": true,
+  "light": { "height": 0.33, "radius": 5, "flicker": 0.06,
+             "frames": [ { "color": "#ffb050", "intensity": 1.7 }, { "color": "#ff9a40", "intensity": 1.45 } ] }
 }
-```
 
-### Maps
-
-```jsonc
+// Maps/<id>.json
 {
-  "name": "Black Temple - Hall of the Flame",
-  "type": "indoor",                 // or "outdoor"
-  "wallHeight": 1.6,
-  "wallTextureRepeat": 1,           // vertical repetitions of wall textures
-  "ambient": "#16121c",             // indoor ambient light
-  "fog": { "color": "#000000", "start": 3, "end": 13, "useSkyColor": true },  // useSkyColor: outdoor only
-  "dayNight": { "startHour": 17.5, "minutesPerSecond": 6, "keys": [ ... ] },  // outdoor only, keys optional
+  "name": "Hall of the Flame", "type": "indoor", "wallHeight": 1.6, "ambient": "#16121c",
+  "fog": { "color": "#000000", "start": 3, "end": 13 },
   "start": { "x": 11.5, "y": 12.5, "facing": "north" },
-  "legend": {                       // one character per tile
+  "legend": {
     "#": { "wall": "temple_wall" },
     ".": { "floor": "temple_floor", "ceiling": "stone_ceiling" },
-    "B": { "floor": "temple_floor", "ceiling": "stone_ceiling", "object": "brazier" },
-    "E": { "floor": "stone_floor", "teleport": { "map": "courtyard", "x": 10.5, "y": 3.5, "facing": "south" } }
+    "E": { "floor": "stone_floor", "event": { "teleport": { "map": "courtyard", "x": 10.5, "y": 3.5 } } }
   },
-  "rows": [ "#####", "#.B.#", "#.E.#", "#####" ],
-  "objects": [ { "type": "torch", "x": 8.12, "y": 11.5 } ],     // free positions (e.g. torches at walls)
-  "lights":  [ { "preset": "pulse_red", "x": 11.5, "y": 2.5, "height": 1.4 } ]
+  "rows": [ "#####", "#...#", "#.E.#", "#####" ],
+  "objects": [ { "type": "torch", "x": 1.12, "y": 1.5 } ],
+  "lights": [ { "preset": "pulse_red", "x": 2.5, "y": 1.5, "height": 1.4 } ]
 }
 ```
 
-Positions are in tiles: `x` grows to the east, `y` to the south, `0.5` is the middle of the first tile. A space in
-`rows` is solid and invisible. The day/night keyframes have `hour`, `zenith`, `horizon`, `ambient`, `fog`, `sun` and
-`night` (0..1, stars); the defaults are in `src/World/daynight_default.json`.
-
-## Source
-
-```
-src/
-├── main.cshift           options, window, main loop, Game (input, map changes, fade)
-├── Engine/
-│   ├── Gl.cshift         loads the OpenGL functions (include/glfuncs.h)
-│   ├── VectorMath.cshift Vec3, Mat4
-│   ├── Camera.cshift
-│   ├── Shader.cshift     GLSL programs and uniforms
-│   ├── Textures.cshift   PNG folders -> texture arrays
-│   └── Renderer.cshift   sky, map geometry, billboards, light selection
-├── World/
-│   ├── Map.cshift        map loading, tiles, objects, teleports
-│   ├── Objects.cshift    object types
-│   ├── Light.cshift      animated point lights
-│   ├── DayNight.cshift   time of day, sky colors
-│   └── JsonUtil.cshift
-├── Game/Player.cshift    movement and collision
-└── Shaders/              GLSL (embedded into the program)
-```
+Positions are in tiles: `x` grows to the east, `y` to the south, `0.5` is the middle of the first tile.
 
 ## Next steps
 
-Doors and levers, switches and pressure plates, push blocks and keys (the puzzle elements of the temples), an event
-system per tile, a HUD, monsters.
+Doors, levers, pressure plates, push blocks and keys as map events and objects with state; a HUD; monsters.

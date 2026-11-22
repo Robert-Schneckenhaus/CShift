@@ -1,0 +1,50 @@
+namespace BlackTemple.Data;
+
+using System;
+using BlackTemple.Common;
+
+/// Reads a light:
+///
+/// ```json
+/// { "radius": 5, "height": 0.33, "frameTime": 0.12, "interpolate": true, "flicker": 0.06,
+///   "frames": [ { "color": "#ffb050", "intensity": 1.7 }, { "color": "#ff9a40", "intensity": 1.45, "radius": 4.5 } ] }
+/// ```
+///
+/// Without "frames", "color" and "intensity" describe a constant light.
+struct LightReader
+{
+    static Error<LightData> Read(JsonObject json)
+    {
+        float radius = try json.Float("radius", 4);
+        var frames = List<LightFrame>.Create();
+
+        foreach (var frame in json.Items("frames"))
+        {
+            frames.Add(LightFrame
+            {
+                Color = try frame.Color("color", Color.White()),
+                Intensity = try frame.Float("intensity", 1),
+                Radius = try frame.Float("radius", radius)
+            });
+        }
+
+        if (frames.Count() == 0)
+        {
+            frames.Add(LightFrame
+            {
+                Color = try json.Color("color", Color.White()),
+                Intensity = try json.Float("intensity", 1),
+                Radius = radius
+            });
+        }
+
+        return LightData
+        {
+            Frames = frames.ToArray(),
+            FrameTime = try json.Float("frameTime", 0),
+            Interpolate = try json.Bool("interpolate", true),
+            Flicker = try json.Float("flicker", 0),
+            Height = try json.Float("height", 0.5f)
+        };
+    }
+}

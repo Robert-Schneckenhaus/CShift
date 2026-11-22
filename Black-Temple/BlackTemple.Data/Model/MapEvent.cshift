@@ -1,0 +1,28 @@
+namespace BlackTemple.Data;
+
+using BlackTemple.Common;
+
+/// Moves the player to a position, on this or another map.
+struct TeleportEvent
+{
+    /// The target map's id; empty = the same map.
+    string Map;
+    Vec2 Position;
+    bool KeepDirection;
+    float Yaw;
+}
+
+/// Something that happens when the player enters a tile. New kinds of events (switches, doors, traps, messages ...)
+/// are added as members here; the compiler then shows every switch that has to handle them.
+union MapEvent
+{
+    TeleportEvent
+}
+
+/// An event at a tile of a map.
+struct EventPlacement
+{
+    int X;
+    int Y;
+    MapEvent Event;
+}

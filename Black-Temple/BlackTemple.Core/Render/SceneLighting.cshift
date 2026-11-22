@@ -1,0 +1,51 @@
+namespace BlackTemple.Core;
+
+using BlackTemple.Common;
+using BlackTemple.Data;
+
+/// The global lighting of a frame: ambient light, sun, fog and sky. Point lights come from the map.
+struct SceneLighting
+{
+    Color Ambient;
+    /// Direction towards the sun; its color is black indoors and at night.
+    Vec3 SunDirection;
+    Color SunColor;
+    Color FogColor;
+    float FogStart;
+    float FogEnd;
+    /// Outdoor maps draw a sky with these colors.
+    bool HasSky;
+    SkyColors Sky;
+    /// 1 = normal, 0 = black (fading between maps).
+    float Brightness;
+
+    static SceneLighting Of(const ref Map map)
+    {
+        var data = map.Data;
+        var lighting = SceneLighting
+        {
+            Ambient = data.Ambient,
+            SunDirection = Vec3.UnitY(),
+            SunColor = Color.Black(),
+            FogColor = data.Fog.Color,
+            FogStart = data.Fog.Start,
+            FogEnd = data.Fog.End,
+            HasSky = data.IsOutdoor(),
+            Brightness = 1
+        };
+
+        if (data.IsOutdoor())
+        {
+            var sky = map.Clock.Colors;
+            lighting.Sky = sky;
+            lighting.Ambient = sky.Ambient;
+            lighting.SunDirection = map.Clock.SunDirection();
+            lighting.SunColor = lighting.SunDirection.Y > 0 ? sky.Sun : Color.Black();
+
+            if (data.Fog.UseSkyColor)
+                lighting.FogColor = sky.Fog;
+        }
+
+        return lighting;
+    }
+}

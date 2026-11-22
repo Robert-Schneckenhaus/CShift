@@ -1,0 +1,7 @@
+{
+	"name": "BlackTemple.Data",
+	"version": "0.1.0",
+	"type": "library",
+	"sources": ["."],
+	"dependencies": ["../BlackTemple.Common"]
+}

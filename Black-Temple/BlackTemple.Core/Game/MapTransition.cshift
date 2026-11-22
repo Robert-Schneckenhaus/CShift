@@ -1,0 +1,65 @@
+namespace BlackTemple.Core;
+
+using BlackTemple.Data;
+
+enum TransitionPhase : uint8
+{
+    None = 0,
+    FadingOut = 1,
+    FadingIn = 2
+}
+
+/// Fades to black, lets the game move the player (Update returns true once at full black), and fades back in.
+struct MapTransition
+{
+    TransitionPhase Phase;
+    /// 1 = normal, 0 = black.
+    float Brightness;
+    TeleportEvent Target;
+    /// Fades per second.
+    float Speed;
+
+    static MapTransition Create() { return MapTransition { Brightness = 1, Speed = 3 }; }
+
+    bool IsActive() { return Phase != TransitionPhase.None; }
+
+    void Start(TeleportEvent target)
+    {
+        Target = target;
+        Phase = TransitionPhase.FadingOut;
+    }
+
+    /// Returns true in the frame in which the screen is black: the moment to change the map.
+    bool Update(float deltaTime)
+    {
+        switch (Phase)
+        {
+            case TransitionPhase.FadingOut:
+                Brightness -= deltaTime * Speed;
+
+                if (Brightness <= 0)
+                {
+                    Brightness = 0;
+                    Phase = TransitionPhase.FadingIn;
+
+                    return true;
+                }
+
+                break;
+            case TransitionPhase.FadingIn:
+                Brightness += deltaTime * Speed;
+
+                if (Brightness >= 1)
+                {
+                    Brightness = 1;
+                    Phase = TransitionPhase.None;
+                }
+
+                break;
+            case TransitionPhase.None:
+                break;
+        }
+
+        return false;
+    }
+}
