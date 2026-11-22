@@ -140,7 +140,23 @@ struct List<T>
         _state[0].Count -= 1;
     }
 
-    /// Removes all elements.
+    /// Removes `count` elements from `index` on; the elements after them move down. The list keeps its storage, so
+    /// adding the same number of elements again allocates nothing (`RemoveRange(0, list.Count())` empties it so).
+    /// @panics when the range is not inside the list.
+    void RemoveRange(int index, int count)
+    {
+        int total = Count();
+        if (index < 0 || count < 0 || index > total - count)
+            Environment.Panic("List range out of range (index " + index.ToString() + ", count " + count.ToString() + ", list count " + total.ToString() + ")");
+        if (count == 0)
+            return;
+        Array.Copy(_state[0].Items, index + count, _state[0].Items, index, total - index - count);
+        for (var i = total - count; i < total; i += 1)
+            _state[0].Items[i] = default(T);
+        _state[0].Count = total - count;
+    }
+
+    /// Removes all elements (and lets go of the storage; [List<T>.RemoveRange] keeps it).
     void Clear()
     {
         if (_state == null)

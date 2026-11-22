@@ -32,7 +32,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | `Amiga` | `amiga/graphics.cshift` | `Screen`, `Bitmap`, `Sprite`, `CopperList`, `Blitter`, `SystemFont`: graphics with the blitter, sprites and the copper; only for `m68k-amigaos`, see [amiga.md](amiga.md#graphics-amigascreen-bitmap-the-blitter-and-sprites) |
 
 **`List<T>`** — a growable array. Create it with `List<int>.Create()` or a collection expression (`List<int> xs = [];`).
-`Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `Remove(v)`, `Clear()`, `Get(i)` / `list[i]`, `Set(i, v)` /
+`Add`, `AddRange(T[])`, `Insert(i, v)`, `RemoveAt(i)`, `RemoveRange(i, n)` (keeps the storage), `Remove(v)`, `Clear()`, `Get(i)` / `list[i]`, `Set(i, v)` /
 `list[i] = v`, `Count()`, `Capacity()`, `IndexOf(v)`, `Contains(v)` (T: `IEquatable<T>`), `Sort()` (T:
 `IComparable<T>`, stable), `Reverse()`, `ToArray()`; with functions: `ForEach(action)`, `Where(test)` (a new list),
 `Select<U>(convert)`, `Any(test)`, `All(test)`, `FindIndex(test)` (`list.Where(x => x > 0)`), `IsCreated()`.

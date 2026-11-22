@@ -1181,7 +1181,9 @@ struct _UiState
         {
             Frame = Image.Create(0, 0),
             Theme = Theme.Light(),
-            Font = Font.Fixed7x13(),
+            // only the sizes: the bitmaps are made when a frame is drawn into an image (Begin picks the font for its
+            // scale), not for a frame with commands (the font of the window: AmigaOS, where making them takes long)
+            Font = Font.Metrics(_Font7x13Width, _Font7x13Height, _Font7x13Ascent),
             Scale = 0.0,
             In = UiInput.Create(),
             Stack = new _UiLayout[8],
@@ -1238,8 +1240,8 @@ struct _UiState
             FixedFont = font;
             Metrics(s, font);
         }
-        Commands.Clear();
-        CommandsHash = 2166136261u;
+        Commands.RemoveRange(0, Commands.Count()); // keeps the storage: no growing and copying in every frame
+        CommandsHash = 5381u;
         Frame = Image.Create(0, 0);
         Canvas = Canvas.Create(Frame);
         Start(input, Math.Max(1, width), Math.Max(1, height));
@@ -1448,36 +1450,50 @@ struct _UiState
 
     // ---- drawing: into the image, or as commands ----
 
+    static uint32 _UiMix(uint32 h, uint32 value)
+    {
+        return unchecked(((h << 5) + h) ^ value);
+    }
+
     void Add(UiCommand command)
     {
         Commands.Add(command);
-        // what the command draws, into the hash of the frame (a window skips a frame with the hash of the one it shows)
+        // what the command draws, into the hash of the frame (a window skips a frame with the hash of the one it shows).
+        // Each step is h * 33 ^ value (_UiMix): shifts and adds, as a 68000 has no 32-bit multiplication. Times an odd
+        // number is a bijection, so a frame in which one value changed always gets another hash.
         uint32 h = CommandsHash;
-        h = unchecked((h ^ (uint32)command.Kind) * 16777619u);
-        h = unchecked((h ^ (uint32)command.Rect.X) * 16777619u);
-        h = unchecked((h ^ (uint32)command.Rect.Y) * 16777619u);
-        h = unchecked((h ^ (uint32)command.Rect.Width) * 16777619u);
-        h = unchecked((h ^ (uint32)command.Rect.Height) * 16777619u);
-        h = unchecked((h ^ (uint32)(command.Radius + command.Width * 4096)) * 16777619u);
-        h = unchecked((h ^ command.Color.ToArgb()) * 16777619u);
-        h = unchecked((h ^ (uint32)(command.X0 + command.X1 * 65599)) * 16777619u);
-        h = unchecked((h ^ (uint32)(command.Y0 + command.Y1 * 65599 + command.Size * 31)) * 16777619u);
+        h = _UiMix(h, (uint32)command.Kind);
+        h = _UiMix(h, (uint32)command.Rect.X);
+        h = _UiMix(h, (uint32)command.Rect.Y);
+        h = _UiMix(h, (uint32)command.Rect.Width);
+        h = _UiMix(h, (uint32)command.Rect.Height);
+        h = _UiMix(h, (uint32)command.Radius);
+        h = _UiMix(h, (uint32)command.Width);
+        h = _UiMix(h, command.Color.ToArgb());
+        h = _UiMix(h, (uint32)command.X0);
+        h = _UiMix(h, (uint32)command.Y0);
+        h = _UiMix(h, (uint32)command.X1);
+        h = _UiMix(h, (uint32)command.Y1);
+        h = _UiMix(h, (uint32)command.Size);
         var text = command.Text;
         for (var i = 0; i < text.Length; i += 1)
-            h = unchecked((h ^ (uint32)text[i]) * 16777619u);
+            h = _UiMix(h, (uint32)text[i]);
         if (command.Kind == UiCommandKind.Image || command.Kind == UiCommandKind.ImagePart)
         {
             // which image (its pixels), which part of it, and how often it changed (Image.Changed)
             var image = command.Image;
-            h = unchecked((h ^ (uint32)(command.Source.X + command.Source.Y * 65599)) * 16777619u);
-            h = unchecked((h ^ (uint32)(command.Source.Width + command.Source.Height * 65599)) * 16777619u);
-            h = unchecked((h ^ (uint32)(image.Width + image.Height * 65599)) * 16777619u);
-            h = unchecked((h ^ image.Changes) * 16777619u);
+            h = _UiMix(h, (uint32)command.Source.X);
+            h = _UiMix(h, (uint32)command.Source.Y);
+            h = _UiMix(h, (uint32)command.Source.Width);
+            h = _UiMix(h, (uint32)command.Source.Height);
+            h = _UiMix(h, (uint32)image.Width);
+            h = _UiMix(h, (uint32)image.Height);
+            h = _UiMix(h, image.Changes);
             if (image.Pixels.Length > 0)
             {
                 unsafe
                 {
-                    h = unchecked((h ^ (uint32)(nuint)&image.Pixels[0]) * 16777619u);
+                    h = _UiMix(h, (uint32)(nuint)&image.Pixels[0]);
                 }
             }
         }

@@ -21,8 +21,19 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   for `Pressed(Key.S, KeyModifiers.Ctrl)`). Alt with a cursor key is Home or End, which the keyboard of the Amiga does
   not have. Dashes, typographic quotes, `…`, `•`, `€`, arrows and triangles become the nearest character of Latin-1
   instead of `?` (`€` the currency sign `¤`).
+- AmigaOS: a frame takes about a fifth fewer instructions (540,000 -> 420,000 for demo-ui under vamos), the start of a
+  program with a Ui 430,000 fewer. The list of commands keeps its storage from frame to frame (no growing and copying
+  in every frame), `Ui.CommandsHash` mixes with shifts and adds instead of 32-bit multiplications (which a 68000 does
+  not have), and a Ui makes the bitmaps of its font only when it draws a frame into an image.
+
+### Standard library
+- `List<T>.RemoveRange(index, count)`: removes a range; the list keeps its storage (`RemoveRange(0, list.Count())`
+  empties it without letting go of it, unlike `Clear()`).
 
 ### Amiga
+- 64-bit shifts with the m68k backend take a few instructions instead of one round of a loop per bit (`a >> 63` took
+  about 290 instructions). The software floating point uses them everywhere: `__divdf3` takes 10,000 instructions
+  instead of 25,000.
 - Fields with the m68k backend: a field read again after it was read or written is not loaded again when nothing on
   the way can write it (no call but runtime functions that write no fields, no store but to a local variable, to an
   element of an array of integers or to another field). The array of `this.items[i]` is loaded

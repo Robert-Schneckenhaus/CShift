@@ -173,5 +173,20 @@ int Main()
         big.RemoveAt(0);
     f += Check("many strings", big.Count() == 1000 && big.Get(0) == "item1000" && big.Get(999) == "item1999");
 
+    // ---- RemoveRange: the elements after the range move down, the storage stays ----
+    var range = List<string>.Create();
+    for (var i = 0; i < 10; i += 1)
+        range.Add("r" + i);
+    int capacity = range.Capacity();
+    range.RemoveRange(2, 3);
+    f += Check("RemoveRange middle", range.Count() == 7 && range.Get(1) == "r1" && range.Get(2) == "r5" && range.Get(6) == "r9");
+    range.RemoveRange(5, 2);
+    range.RemoveRange(0, 0);
+    f += Check("RemoveRange end", range.Count() == 5 && range.Get(4) == "r7");
+    range.RemoveRange(0, range.Count());
+    f += Check("RemoveRange all", range.Count() == 0 && range.Capacity() == capacity);
+    range.Add("again");
+    f += Check("RemoveRange then Add", range.Count() == 1 && range.Get(0) == "again" && range.Capacity() == capacity);
+
     return f;
 }

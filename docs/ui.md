@@ -591,7 +591,10 @@ and 0.15 s the commands of the 60 tiles; the rest of such a frame takes about 0.
 measured on a real A1200 with AmigaOS 3.x, whose `WriteChunkyPixels` may well be faster than the one of AROS.
 
 **Speed.** A 68020 at 14 MHz (A1200) computes a frame of [demo-ui](../demo-ui/README.md) (about 30 widgets) in about a
-quarter of a second; drawing it takes another tenth. A frame that draws the same as the one in the window (same
+quarter of a second; drawing it takes another tenth. (Measured before the Ui kept its list of commands from frame to frame,
+hashed them without multiplications and the backend shifted 64-bit integers without a loop: under vamos a frame took
+540,000 instructions then and 420,000 now, the start of the program 500,000 and 70,000 - the bitmap fonts are made only
+for a frame drawn into an image.) A frame that draws the same as the one in the window (same
 `Ui.CommandsHash`) is not drawn again, and a quick click is one frame. Floating point is software without an FPU and
 costs milliseconds per operation: the Ui itself uses none in a frame, and a program for the Amiga should keep `double`
 out of the code that runs for every frame too (`$"{x:F0}"` of a double costs some 40 ms on an A1200).

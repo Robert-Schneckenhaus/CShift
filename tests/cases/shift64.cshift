@@ -1,0 +1,34 @@
+// Shifts of 64-bit integers by every count from 0 to 63 (the 68000 backend shifts a pair of registers: a count of 32 and
+// more moves one half into the other, a smaller one shifts both halves and carries the bits between them). The counts
+// come from a loop, so they are not constants. The sums were computed with Python.
+// expect-stdout: 15372380551079253450 12298579966376691223 6150415859043838751
+// expect-stdout: -3 -1 1 9223372036854775808 2147483648 4294967296 -1
+using System;
+
+int Main(string[] args)
+{
+    uint64[] values = [0ul, 1ul, 0x8000000000000000ul, 0xFFFFFFFFFFFFFFFFul, 0x0123456789ABCDEFul, 0xFEDCBA9876543210ul,
+                       0x00000000FFFFFFFFul, 0xFFFFFFFF00000000ul, 0x5555AAAA3333CCCCul];
+    uint64 sumL = 0ul;
+    uint64 sumR = 0ul;
+    uint64 sumA = 0ul;
+    int start = args.Length;
+    for (var v = 0; v < values.Length; v += 1)
+    {
+        for (var c = start; c < 64; c += 1)
+        {
+            uint64 x = values[v];
+            uint64 l = x << c;
+            uint64 r = x >> c;
+            int64 a = unchecked((int64)x) >> c;
+            sumL = unchecked(sumL + l * (uint64)(c + 1) + (uint64)v);
+            sumR = unchecked(sumR + r * (uint64)(c + 3));
+            sumA = unchecked(sumA + (uint64)a * (uint64)(c + 7));
+        }
+    }
+    Console.WriteLine($"{sumL} {sumR} {sumA}");
+    int64 m = -5;
+    uint64 k = 0x8000000000000001ul;
+    Console.WriteLine($"{m >> 1} {m >> 63} {k >> 63} {k << 63} {k >> 32} {k << 32} {m >> 33}");
+    return 0;
+}

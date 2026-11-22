@@ -1846,24 +1846,58 @@ void GenBinary64(Gen g, IrInst inst)
     }
     else
     {
-        // shifts: one bit per step
-        string loop = g.NewLabel();
+        // shifts by a count in d3 (0..63): 32 and more move one half into the other; below 32 each half is shifted
+        // by the count and gets the bits shifted out of the other one (shifted by 32 - count), in d2
+        string small = g.NewLabel();
         string done = g.NewLabel();
         g.Line("and.l\t#63,%d3");
         g.Line("beq\t" + done);
-        g.Label(loop);
+        g.Line("cmp.l\t#32,%d3");
+        g.Line("blt\t" + small);
+        g.Line("sub.l\t#32,%d3");
         if (op == "shl")
         {
-            g.Line("add.l\t%d1,%d1");
-            g.Line("addx.l\t%d0,%d0");
+            g.Line("move.l\t%d1,%d0");
+            g.Line("moveq\t#0,%d1");
+            g.Line("lsl.l\t%d3,%d0");
         }
         else
         {
-            g.Line((op == "lshr" ? "lsr" : "asr") + ".l\t#1,%d0");
-            g.Line("roxr.l\t#1,%d1");
+            g.Line("move.l\t%d0,%d1");
+            if (op == "lshr")
+            {
+                g.Line("moveq\t#0,%d0");
+                g.Line("lsr.l\t%d3,%d1");
+            }
+            else
+            {
+                g.Line("add.l\t%d0,%d0");     // the sign into X
+                g.Line("subx.l\t%d0,%d0");    // all ones or zeros
+                g.Line("asr.l\t%d3,%d1");
+            }
         }
-        g.Line("subq.l\t#1,%d3");
-        g.Line("bne\t" + loop);
+        g.Line("bra\t" + done);
+        g.Label(small);
+        if (op == "shl")
+        {
+            g.Line("move.l\t%d1,%d2");
+            g.Line("lsl.l\t%d3,%d0");
+            g.Line("lsl.l\t%d3,%d1");
+            g.Line("neg.l\t%d3");
+            g.Line("add.l\t#32,%d3");
+            g.Line("lsr.l\t%d3,%d2");
+            g.Line("or.l\t%d2,%d0");
+        }
+        else
+        {
+            g.Line("move.l\t%d0,%d2");
+            g.Line((op == "lshr" ? "lsr" : "asr") + ".l\t%d3,%d0");
+            g.Line("lsr.l\t%d3,%d1");
+            g.Line("neg.l\t%d3");
+            g.Line("add.l\t#32,%d3");
+            g.Line("lsl.l\t%d3,%d2");
+            g.Line("or.l\t%d2,%d1");
+        }
         g.Label(done);
     }
     StoreResult(g, inst);
