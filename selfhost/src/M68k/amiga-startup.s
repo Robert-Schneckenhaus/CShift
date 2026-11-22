@@ -1,6 +1,7 @@
 | The startup code of AmigaOS programs (see AmigaRuntime.cshift): it must be the first code of the program. When it is
 | used, the placeholder STACK (between @ signs) becomes the size of the program's own stack (the stack of a CLI program
-| is often only 4 KB, too small for CShift's stack frames) and STUBS the stubs that call the libraries (AmigaStubsAsm).
+| is often only 4 KB, too small for CShift's stack frames), STUBS the stubs that call the libraries (AmigaStubsAsm) and
+| CPUCHECK the test of the processor for a program built for a 68020 (AmigaCpuCheckAsm; nothing for a 68000).
 | Comments start with '|' (as in GNU as for m68k).
 
 	.text
@@ -23,7 +24,7 @@ __cs_start:
 	jsr	(-372,%a6)		| GetMsg
 	move.l	%d0,__cs_WBMessage
 .Lcs_cli:
-| the program's own stack
+@CPUCHECK@| the program's own stack
 	move.l	#@STACK@,%d0
 	moveq	#0,%d1
 	jsr	(-198,%a6)		| AllocMem(size, MEMF_ANY)

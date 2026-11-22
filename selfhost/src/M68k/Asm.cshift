@@ -914,6 +914,16 @@ void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
     {
         if (a.Mode == OpMode.An)
             EncError(enc, item, "an address register cannot be a factor or divisor");
+        if (size == 4)
+        {
+            // 68020: mulu.l/muls.l <ea>,Dl (the low 32 bits of the product, V if it does not fit) and divu.l/divs.l
+            // <ea>,Dq (32 / 32 bits: the quotient; Dr = Dq, so no remainder is kept)
+            bool mul = op.StartsWith("mul");
+            EmitWord(sec, (mul ? 19456 : 19520) | EaField(a));                       // 0x4C00, 0x4C40
+            EmitWord(sec, (b.Reg << 12) | (op.EndsWith("s") ? 2048 : 0) | (mul ? 0 : b.Reg));
+            EaExtension(enc, item, sec, a, 4);
+            return;
+        }
         int baseOp = op == "mulu" ? 49344 : (op == "muls" ? 49600 : (op == "divu" ? 32960 : 33216));
         EmitWord(sec, baseOp | (b.Reg << 9) | EaField(a));
         EaExtension(enc, item, sec, a, 2);

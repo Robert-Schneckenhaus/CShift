@@ -28,6 +28,7 @@ window, written against the NDK 3.2).
 |---|---|---|
 | `--backend llvm` | `"backend": "llvm"` | LLVM IR, compiled and linked by clang (the default for all targets but AmigaOS) |
 | `--backend m68k` | `"backend": "m68k"` | CShift's own 68000 code generator (the default for `m68k-amigaos`) |
+| `--cpu 68020` | `"cpu": "68020"` | code for a 68020 or later (also `68030`, `68040`, `68060`): 32-bit multiplication and division in one instruction (`muls.l`, `divu.l`, ...) instead of the helpers of the runtime; `68000` (the default, also `68010`) runs on every Amiga. See *Code for a 68020* |
 | `--ndk <dir>` | `"ndk": "<dir>"` | the AmigaOS NDK (also the environment variable `CSHIFT_NDK`); a path in cshift.json is relative to it |
 | `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable; a comment before every function names it (`\| function: Name(params)`) |
 | `-g` | `"debug": true` | write the names of the functions and globals into the executable (HUNK_SYMBOL), for debuggers and the profiler; the code stays the same |
@@ -39,6 +40,20 @@ The m68k backend accepts m68k targets only:
 * `m68k-linux-gnu`: a program for m68k Linux, linked statically by a cross `gcc` (`m68k-linux-gnu-gcc`, or `--cc`),
   or an ELF object (`-c`). It runs under `qemu-m68k`. This is how the backend is tested: the test suite runs with it
   (`CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k tests/run_tests.sh`, see *Testing Amiga programs*).
+
+## Code for a 68020
+
+`--cpu 68020` (or `"cpu": "68020"` in cshift.json) is for the A1200, A3000, A4000 and accelerator cards. The backend
+then multiplies and divides 32-bit integers with the instructions of the 68020: `muls.l`/`mulu.l` (also for the
+overflow check of a product: they set V) and `divs.l`/`divu.l` (a remainder is `a - (a / b) * b`), where the 68000
+needs `muls.w`/`divu.w` with a test of the size and a call of `__cs68k_mul32`, `__cs68k_udivmod` or
+`__cs68k_sdivmod` for the rest. Indexing an array of structs of an odd size multiplies too. Everything else is the same
+code; the 64-bit multiplication stays in software (the 68060 does not have `mulu.l` with a 64-bit product).
+
+An AmigaOS program built for a 68020 tests the processor first (`AttnFlags` of exec.library): on a 68000 or 68010 it
+ends with the return code 20, from the CLI with the message "This program needs a 68020 or better.", before it runs an
+instruction those processors do not have. The test suite runs with the 68020 too: `CSHIFT_CPU=68020` together with
+`CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k` (on the 68020 of `qemu-m68k`).
 
 ## What a program can use
 

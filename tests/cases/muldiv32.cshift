@@ -1,0 +1,48 @@
+// 32-bit multiplication, division and remainder of every sign, by constants and by variables, of int, uint, short
+// and byte (the 68000 backend: muls.w where both factors fit in 16 bits and helpers otherwise; with --cpu 68020
+// mulu.l/muls.l and divu.l/divs.l), and the checked product (where it fits).
+// expect-stdout: 1417340689
+using System;
+
+int[] values = [0, 1, -1, 2, -2, 7, -7, 100, -100, 32767, -32768, 32768, 65535, 65536, 70000, -70000, 123456789, -123456789,
+                2147483647, -2147483647];
+
+int Main(string[] args)
+{
+    uint32 sum = 0;
+    int n = values.Length + args.Length;
+    for (var i = 0; i < n; i += 1)
+    {
+        int a = values[i];
+        uint32 ua = unchecked((uint32)a);
+        sum = unchecked(sum * 31u + (uint32)(a * 3) + (uint32)(a * -7) + (uint32)(a * 1000) + (uint32)(a * 65537));
+        sum = unchecked(sum * 31u + (uint32)(a / 3) + (uint32)(a % 3) + (uint32)(a / -7) + (uint32)(a % -7) + (uint32)(a / 1000) + (uint32)(a % 1000));
+        sum = unchecked(sum * 31u + ua / 3u + ua % 3u + ua / 1000u + ua % 1000u + ua / 70000u + ua % 70000u);
+        for (var j = 0; j < n; j += 1)
+        {
+            int b = values[j];
+            uint32 ub = unchecked((uint32)b);
+            sum = unchecked(sum * 31u + (uint32)(a * b) + ua * ub);
+            if (b != 0)
+            {
+                sum = unchecked(sum * 31u + ua / ub + ua % ub);
+                if (!(a == -2147483647 - 1 && b == -1))
+                    sum = unchecked(sum * 31u + (uint32)(a / b) + (uint32)(a % b));
+            }
+            int16 sa = unchecked((int16)a);
+            int16 sb = unchecked((int16)b);
+            uint8 ba = unchecked((uint8)a);
+            uint8 bb = unchecked((uint8)b);
+            sum = unchecked(sum * 31u + (uint32)(int)unchecked((int16)(sa * sb)) + (uint32)unchecked((uint8)(ba * bb)));
+            if (sb != 0 && !(sa == -32768 && sb == -1))
+                sum = unchecked(sum * 31u + (uint32)(int)(int16)(sa / sb) + (uint32)(int)(int16)(sa % sb));
+            if (bb != 0)
+                sum = unchecked(sum * 31u + (uint32)(ba / bb) + (uint32)(ba % bb));
+            int64 wide = (int64)a * (int64)b;
+            if (wide >= -2147483648 && wide <= 2147483647)
+                sum = unchecked(sum * 31u + (uint32)(a * b)); // checked: the products that fit (no panic)
+        }
+    }
+    Console.WriteLine($"{sum}");
+    return 0;
+}

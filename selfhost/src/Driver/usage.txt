@@ -30,6 +30,8 @@ options:
   --target <triple> target triple (default: host; wasm32-wasi: WebAssembly; m68k-amigaos: AmigaOS on a 68000)
   --backend <name> code generator: llvm (the default), wasm (CShift's own, WebAssembly for WASI) or m68k
                    (CShift's own, the default for AmigaOS)
+  --cpu <68k>      m68k backend: the processor, 68000 (the default) or 68020 (also 68030, 68040, 68060: 32-bit
+                   multiplication and division in one instruction; the program does not start on a 68000)
   --ndk <dir>      the AmigaOS NDK, for libraries imported from SFD files (also CSHIFT_NDK)
   --emit-asm       m68k backend: write the assembly (.s) instead of an executable
   --cc <program>   C compiler used as linker driver (default: CSHIFT_CC, the bundled toolchain, clang)

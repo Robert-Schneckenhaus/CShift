@@ -13,7 +13,8 @@
 # CSHIFT_BACKEND=<backend> compiles with another backend (wasm: CShift's own WebAssembly backend, together with
 # CSHIFT_TARGET=wasm32-wasi; it needs neither clang nor wasi-libc. m68k: the 68000 backend, together with
 # CSHIFT_TARGET=m68k-linux-gnu: the programs are linked by m68k-linux-gnu-gcc and run under qemu-m68k; Debian/Ubuntu:
-# qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross).
+# qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross). CSHIFT_CPU=68020 with it: the code for a 68020 (--cpu), run on
+# the 68020 of qemu-m68k.
 #
 # What is tested:
 #   1. tests/test.cshift + tests/mathlib.cshift  -> stdout must match tests/test.expected, all
@@ -62,11 +63,12 @@ if [ -n "${CSHIFT_CC:-}" ]; then CC_ARGS=(--cc "$CSHIFT_CC"); fi
 C_TARGET=()
 if [ -n "${CSHIFT_TARGET:-}" ]; then CC_ARGS+=(--target "$CSHIFT_TARGET"); C_TARGET=(--target="$CSHIFT_TARGET"); fi
 if [ -n "${CSHIFT_BACKEND:-}" ]; then CC_ARGS+=(--backend "$CSHIFT_BACKEND"); fi
+if [ -n "${CSHIFT_CPU:-}" ]; then CC_ARGS+=(--cpu "$CSHIFT_CPU"); fi
 # How a compiled program runs: directly, or through node for WebAssembly
 RUNNER=()
 case "${CSHIFT_TARGET:-}" in
     wasm32-*) RUNNER=(node --no-warnings "$DIR/wasi-run.mjs") ;;
-    m68k-*linux*) RUNNER=(qemu-m68k) ;;
+    m68k-*linux*) if [ -n "${CSHIFT_CPU:-}" ]; then RUNNER=(qemu-m68k -cpu "m${CSHIFT_CPU}"); else RUNNER=(qemu-m68k); fi ;;
 esac
 POINTER_BITS=64
 case "${CSHIFT_TARGET:-}" in

@@ -29,7 +29,8 @@ struct Gen
     Dictionary<string, string> Symbols;
     Dictionary<string, string> Reverse;   // assembly name -> IR name
     List<string> Libraries;               // the AmigaOS libraries that are called (their bases: __cs_lib_<index>)
-    int[] Counters;                       // [0] labels, [1] symbols, [2] the optimization level (-O0..-O3)
+    int[] Counters;                       // [0] labels, [1] symbols, [2] the optimization level (-O0..-O3), [3] the
+                                          // processor: 68000 or 68020 (Is020: mulu.l, divu.l)
     List<string> Errors;
 
     // the function being written
@@ -56,7 +57,7 @@ struct Gen
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
                       Saved = List<string>.Create(), Splits = List<SplitHome>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
                       NoWrap = HashSet<string>.Create(), NegatedIndex = HashSet<string>.Create(),
-                      Counters = new int[3], Errors = List<string>.Create() };
+                      Counters = new int[4], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[3];
         return g;
@@ -93,10 +94,11 @@ struct Gen
 
 // The assembly of a whole module, or the errors. Only what is used is written: the functions and globals that main,
 // the prelude (the startup code of AmigaOS) and the runtime refer to, and so on.
-Error<string> GenerateModule(IrModule m, string prelude, int optimize)
+Error<string> GenerateModule(IrModule m, string prelude, int optimize, int cpu)
 {
     var g = Gen.Create(m);
     g.Counters[2] = optimize;
+    g.Counters[3] = cpu;
     var funcText = Dictionary<int, string>.Create();
     var globalText = Dictionary<int, string>.Create();
     var work = List<string>.Create();
@@ -1624,6 +1626,17 @@ void GenBinary32(Gen g, IrInst inst)
     {
         bool signedDiv = op == "sdiv" || op == "srem";
         bool rem = op == "srem" || op == "urem";
+        if (Is020(g))
+        {
+            Load32(g, inst.Args[0], "%d0");
+            Extend(g, "%d0", bits, signedDiv);
+            if (rem)
+                Rem020(g, signedDiv, "#" + divisor.Int.ToString());
+            else
+                g.Line((signedDiv ? "divs.l" : "divu.l") + "\t#" + divisor.Int.ToString() + ",%d0");
+            StoreResult(g, inst);
+            return;
+        }
         string slow = g.NewLabel();
         string done = g.NewLabel();
         Load32(g, inst.Args[0], "%d0");
@@ -1685,6 +1698,12 @@ void GenBinary32(Gen g, IrInst inst)
             int64 cl = c & 65535;
             int64 ch = (c >> 16) & 65535;
             Load32(g, inst.Args[1 - side], "%d0");
+            if (Is020(g))
+            {
+                g.Line("muls.l\t#" + ((int)c).ToString() + ",%d0");
+                StoreResult(g, inst);
+                return;
+            }
             g.Line("move.l\t%d0,%d1");
             g.Line("swap\t%d1");
             g.Line("mulu.w\t#" + cl.ToString() + ",%d1");
@@ -1704,6 +1723,12 @@ void GenBinary32(Gen g, IrInst inst)
         // both factors in 16 bits: muls.w gives the exact product, else the helper
         Load32(g, inst.Args[0], "%d0");
         Load32(g, inst.Args[1], "%d1");
+        if (Is020(g))
+        {
+            g.Line("muls.l\t%d1,%d0");
+            StoreResult(g, inst);
+            return;
+        }
         string slowMul = g.NewLabel();
         string doneMul = g.NewLabel();
         g.Line("move.w\t%d0,%d2");
@@ -1747,7 +1772,17 @@ void GenBinary32(Gen g, IrInst inst)
         g.Line("asr.l\t%d1,%d0");
     }
     else if (op == "mul")
-        g.Line("jsr\t__cs68k_mul32");
+        g.Line(Is020(g) ? "muls.l\t%d1,%d0" : "jsr\t__cs68k_mul32");
+    else if (Is020(g))
+    {
+        bool signed = op == "sdiv" || op == "srem";
+        Extend(g, "%d0", bits, signed);
+        Extend(g, "%d1", bits, signed);
+        if (op == "srem" || op == "urem")
+            Rem020(g, signed, "%d1");
+        else
+            g.Line((signed ? "divs.l" : "divu.l") + "\t%d1,%d0");
+    }
     else
     {
         bool signed = op == "sdiv" || op == "srem";
@@ -1758,6 +1793,23 @@ void GenBinary32(Gen g, IrInst inst)
             g.Line("move.l\t%d1,%d0");
     }
     StoreResult(g, inst);
+}
+
+// whether the code is for a 68020 or later (--cpu 68020): mulu.l/muls.l and divu.l/divs.l in one instruction
+bool Is020(Gen g)
+{
+    return g.Counters[3] >= 68020;
+}
+
+// the remainder after a 68020 division: d0 = the dividend, the divisor in 'by' (d1 or an immediate); d2 is used
+void Rem020(Gen g, bool signed, string by)
+{
+    // a - (a / b) * b; INT_MIN % -1: divs.l overflows and leaves d0 = INT_MIN, INT_MIN * -1 = INT_MIN, the remainder 0
+    g.Line("move.l\t%d0,%d2");
+    g.Line((signed ? "divs.l\t" : "divu.l\t") + by + ",%d0");
+    g.Line("muls.l\t" + by + ",%d0");
+    g.Line("sub.l\t%d0,%d2");
+    g.Line("move.l\t%d2,%d0");
 }
 
 // n if v is 2^n (n >= 1), else -1
@@ -2041,6 +2093,15 @@ void GenOverflowBranch(Gen g, IrInst[] insts, int k)
         string ok = g.NewLabel();
         Load32(g, call.Args[0], "%d0");
         Load32(g, call.Args[1], "%d1");
+        if (Is020(g))
+        {
+            // muls.l sets V when the product does not fit in 32 bits
+            g.Line("muls.l\t%d1,%d0");
+            g.Line("bvs\t" + g.BlockLabel.Get(br.Labels[0]));
+            g.Line("move.l\t%d0," + SlotOperand(g, value.Res));
+            g.Line("bra\t" + g.BlockLabel.Get(br.Labels[1]));
+            return;
+        }
         g.Line("move.w\t%d0,%d2");
         g.Line("ext.l\t%d2");
         g.Line("cmp.l\t%d0,%d2");
@@ -2362,6 +2423,11 @@ void ScaleD1(Gen g, int n)
             g.Line("lsl.l\t#" + shift.ToString() + ",%d1");
         return;
     }
+    if (Is020(g))
+    {
+        g.Line("muls.l\t#" + n.ToString() + ",%d1");
+        return;
+    }
     g.Line("move.l\t%d0,-(%sp)");
     g.Line("move.l\t%d1,%d0");
     g.Line("move.l\t#" + n.ToString() + ",%d1");
@@ -2657,7 +2723,15 @@ void GenOverflow(Gen g, IrInst inst, string name)
     int size = g.L.Size(t);
     if (kind == "mul")
     {
-        if (bits == 32 && signed)
+        if (bits == 32 && Is020(g))
+        {
+            // muls.l/mulu.l set V when the product does not fit in 32 bits
+            Load32(g, inst.Args[0], "%d0");
+            Load32(g, inst.Args[1], "%d1");
+            g.Line((signed ? "muls.l" : "mulu.l") + "\t%d1,%d0");
+            g.Line("svs\t%d1");
+        }
+        else if (bits == 32 && signed)
         {
             PushArg(g, inst.Args[1], t);
             PushArg(g, inst.Args[0], t);
@@ -2683,7 +2757,7 @@ void GenOverflow(Gen g, IrInst inst, string name)
             {
                 Extend(g, "%d0", bits, signed);
                 Extend(g, "%d1", bits, signed);
-                g.Line("jsr\t__cs68k_mul32");
+                g.Line(Is020(g) ? "muls.l\t%d1,%d0" : "jsr\t__cs68k_mul32");
                 g.Line("move.l\t%d0,%d1");
                 Extend(g, "%d1", bits, signed);
                 g.Line("cmp.l\t%d0,%d1");

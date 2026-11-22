@@ -64,6 +64,10 @@
 			"enum": ["llvm", "m68k"],
 			"description": "Code generator: \"llvm\" (LLVM IR, compiled and linked by clang) or \"m68k\" (CShift's own 68000 code generator, assembler and linker, like --backend). Default: m68k for AmigaOS targets (m68k-amigaos), llvm for all others."
 		},
+		"cpu": {
+			"enum": ["68000", "68010", "68020", "68030", "68040", "68060"],
+			"description": "The processor of the m68k backend (like --cpu): \"68000\" (the default; also 68010) runs on every Amiga; \"68020\" (also 68030, 68040, 68060) multiplies and divides 32-bit integers in one instruction, and the program does not start on a 68000."
+		},
 		"ndk": {
 			"type": "string",
 			"description": "The AmigaOS NDK folder (e.g. NDK3.2), relative to this file (like --ndk; the environment variable CSHIFT_NDK is used if this is not set). \"using X from \"lib.sfd\";\" finds the SFD files in <ndk>/SFD, and <ndk>/Include_H is searched for C headers on amigaos targets."

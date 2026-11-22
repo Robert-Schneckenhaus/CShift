@@ -123,9 +123,71 @@ string StubAsm(string name, string libBase, int offset, string regs)
 // stackSize: the size of the program's own stack; ir: the program (only the stubs it calls are added).
 const string AmigaStartupText = embed("amiga-startup.s");
 
-string AmigaStartupAsm(int stackSize, string ir)
+string AmigaStartupAsm(int stackSize, string ir, int cpu)
 {
-    return AmigaStartupText.Replace("@STACK@", stackSize.ToString()).Replace("@STUBS@", AmigaStubsAsm(ir));
+    return AmigaStartupText.Replace("@STACK@", stackSize.ToString()).Replace("@STUBS@", AmigaStubsAsm(ir))
+                           .Replace("@CPUCHECK@", cpu >= 68020 ? AmigaCpuCheckAsm() : "");
+}
+
+// A program built for a 68020 (--cpu 68020) ends at once on a 68000 or 68010, before it runs an instruction they do not
+// have: ExecBase.AttnFlags has no AFB_68020. From the CLI it says why; the message of the Workbench is replied to.
+// (a6 is SysBase, a2 the process, and the registers of the caller are on the stack, as at .Lcs_cli.)
+string AmigaCpuCheckAsm()
+{
+    string message = "This program needs a 68020 or better.\n";
+    var sb = StringBuilder.Create();
+    sb.Append("\tbtst\t#1,(297,%a6)\t\t| ExecBase.AttnFlags (a word at 296): AFB_68020\n");
+    sb.Append("\tbne\t.Lcs_cpu_ok\n");
+    sb.Append("\ttst.l\t(172,%a2)\t\t| pr_CLI: only the CLI has an output for the message\n");
+    sb.Append("\tbeq\t.Lcs_cpu_quit\n");
+    sb.Append("\tlea\t.Lcs_cpu_dos,%a1\n");
+    sb.Append("\tmoveq\t#0,%d0\n");
+    sb.Append("\tjsr\t(-552,%a6)\t\t| OpenLibrary(\"dos.library\", 0)\n");
+    sb.Append("\ttst.l\t%d0\n");
+    sb.Append("\tbeq\t.Lcs_cpu_quit\n");
+    sb.Append("\tmove.l\t%d0,%a6\n");
+    sb.Append("\tjsr\t(-60,%a6)\t\t| Output()\n");
+    sb.Append("\tmove.l\t%d0,%d1\n");
+    sb.Append("\tbeq\t.Lcs_cpu_close\n");
+    sb.Append("\tmove.l\t#.Lcs_cpu_message,%d2\n");
+    sb.Append("\tmoveq\t#" + message.Length.ToString() + ",%d3\n");
+    sb.Append("\tjsr\t(-48,%a6)\t\t| Write\n");
+    sb.Append(".Lcs_cpu_close:\n");
+    sb.Append("\tmove.l\t%a6,%a1\n");
+    sb.Append("\tmove.l\t__cs_SysBase,%a6\n");
+    sb.Append("\tjsr\t(-414,%a6)\t\t| CloseLibrary\n");
+    sb.Append(".Lcs_cpu_quit:\n");
+    sb.Append("\tmove.l\t__cs_WBMessage,%d0\n");
+    sb.Append("\tbeq\t.Lcs_cpu_return\n");
+    sb.Append("\tjsr\t(-132,%a6)\t\t| Forbid\n");
+    sb.Append("\tmove.l\t__cs_WBMessage,%a1\n");
+    sb.Append("\tjsr\t(-378,%a6)\t\t| ReplyMsg\n");
+    sb.Append(".Lcs_cpu_return:\n");
+    sb.Append("\tmoveq\t#20,%d0\n");
+    sb.Append("\tmovem.l\t(%sp)+,%d2-%d7/%a2-%a6\n");
+    sb.Append("\trts\n");
+    sb.Append(".Lcs_cpu_dos:\n");
+    sb.Append(AsmBytes("dos.library\0"));
+    sb.Append(".Lcs_cpu_message:\n");
+    sb.Append(AsmBytes(message));
+    sb.Append("\t.even\n");
+    sb.Append(".Lcs_cpu_ok:\n");
+    return sb.ToString();
+}
+
+// The characters of a text (ASCII) as a .byte line.
+string AsmBytes(string text)
+{
+    var sb = StringBuilder.Create();
+    sb.Append("\t.byte\t");
+    for (var i = 0; i < text.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(",");
+        sb.Append(((int)text[i]).ToString());
+    }
+    sb.Append("\n");
+    return sb.ToString();
 }
 
 // The stubs of the library functions that the program calls (it declares them: "@name(" is in its IR).

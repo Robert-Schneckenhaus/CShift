@@ -31,6 +31,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   empties it without letting go of it, unlike `Clear()`).
 
 ### Amiga
+- `--cpu 68020` (`"cpu": "68020"` in cshift.json; also 68030, 68040, 68060): the m68k backend multiplies and divides
+  32-bit integers with `muls.l`/`mulu.l` and `divs.l`/`divu.l` instead of `muls.w`/`divu.w` with a test and the
+  helpers of the runtime, also for the overflow check of a product and the index of an array of structs. Such a
+  program tests the processor at the start and ends on a 68000 ("This program needs a 68020 or better.", return
+  code 20). `CSHIFT_CPU=68020` runs the test suite with it (on the 68020 of qemu-m68k; the CI does so too). A frame of
+  demo-ui takes about 9 % fewer instructions, and the ones it saves were slow ones (calls of the helpers).
 - 64-bit shifts with the m68k backend take a few instructions instead of one round of a loop per bit (`a >> 63` took
   about 290 instructions). The software floating point uses them everywhere: `__divdf3` takes 10,000 instructions
   instead of 25,000.

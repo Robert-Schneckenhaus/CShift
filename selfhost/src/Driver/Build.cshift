@@ -37,6 +37,7 @@ struct BuildOptions
     bool EmitLlvm;
     bool EmitAsm;               // --emit-asm: the assembly of the m68k backend
     string Backend;             // --backend: "llvm", "m68k" or "wasm" ("" = the project's, else the target's default)
+    string Cpu;                 // --cpu: the 68k processor of the m68k backend ("68000", "68020", ...; "" = the project's, else 68000)
     string Ndk;                 // --ndk: the AmigaOS NDK (SFD files for "using X from "lib.sfd";")
     bool Run;
     List<string> RunArgs;       // after "--": the arguments of the program that run / --run starts
@@ -69,7 +70,7 @@ struct BuildOptions
 
     static BuildOptions Create()
     {
-        var o = BuildOptions { Output = "", Target = "", Backend = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
+        var o = BuildOptions { Output = "", Target = "", Backend = "", Cpu = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
                                AtFile = "", OutlineFile = "", ServeHost = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
@@ -182,6 +183,16 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.EmitLlvm = true;
         else if (a == "--emit-asm")
             o.EmitAsm = true;
+        else if (a == "--cpu" && i + 1 < args.Length)
+        {
+            i += 1;
+            o.Cpu = args[i];
+            if (CpuLevel(o.Cpu) == 0)
+            {
+                Console.WriteErrorLine("error: unknown processor '" + o.Cpu + "' (68000, 68010, 68020, 68030, 68040 or 68060)");
+                return false;
+            }
+        }
         else if (a == "--backend" && i + 1 < args.Length)
         {
             i += 1;
@@ -304,6 +315,8 @@ int Cshc(string[] args)
                     o.Target = p.Target;
                 if (o.Backend.Length == 0)
                     o.Backend = p.Backend;
+                if (o.Cpu.Length == 0)
+                    o.Cpu = p.Cpu;
             }
             else
             {
@@ -340,6 +353,8 @@ int Cshc(string[] args)
                     o.Target = p.Target;
                 if (o.Backend.Length == 0)
                     o.Backend = p.Backend;
+                if (o.Cpu.Length == 0)
+                    o.Cpu = p.Cpu;
                 if (o.Ndk.Length == 0)
                     o.Ndk = p.Ndk;
                 foreach (var l in p.IncludePaths)
@@ -425,6 +440,8 @@ void ApplyProject(ref BuildOptions o, Project project)
         o.Target = project.Target;
     if (o.Backend.Length == 0)
         o.Backend = project.Backend;
+    if (o.Cpu.Length == 0)
+        o.Cpu = project.Cpu;
     if (o.Ndk.Length == 0)
         o.Ndk = project.Ndk;
     foreach (var l in project.Links)
@@ -1208,7 +1225,8 @@ string CompilerName()
 int BuildM68k(BuildOptions o, string ir, string baseName)
 {
     bool amiga = o.Target.Contains("amigaos");
-    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144, ir) : "", o.Optimize); // the startup code comes first
+    int cpu = o.Cpu.Length > 0 ? CpuLevel(o.Cpu) : 68000;
+    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144, ir, cpu) : "", o.Optimize, cpu); // the startup code comes first
     if (text is error failed)
     {
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
@@ -1347,8 +1365,22 @@ int WriteBytesOutput(string path, uint8[] bytes)
     return 0;
 }
 
-Error<string> M68kAssembly(string ir, string prelude, int optimize)
+Error<string> M68kAssembly(string ir, string prelude, int optimize, int cpu)
 {
     var module = try ReadModule(ir);
-    return try GenerateModule(module, prelude, optimize);
+    return try GenerateModule(module, prelude, optimize, cpu);
+}
+
+// The code that a processor of the 68k family gets (--cpu, "cpu" of cshift.json): 68000 (also for a 68010) or 68020
+// (32-bit multiplication and division in one instruction; also for a 68030, 68040 and 68060); 0 for an unknown name.
+int CpuLevel(string name)
+{
+    string n = name.ToLower();
+    if (n.StartsWith("mc"))
+        n = n.Substring(2).ToString();
+    if (n == "68000" || n == "68010")
+        return 68000;
+    if (n == "68020" || n == "68030" || n == "68040" || n == "68060")
+        return 68020;
+    return 0;
 }
