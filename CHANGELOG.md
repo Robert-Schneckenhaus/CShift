@@ -38,6 +38,12 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   program tests the processor at the start and ends on a 68000 ("This program needs a 68020 or better.", return
   code 20). `CSHIFT_CPU=68020` runs the test suite with it (on the 68020 of qemu-m68k; the CI does so too). A frame of
   demo-ui takes about 9 % fewer instructions, and the ones it saves were slow ones (calls of the helpers).
+- `--fpu` (`"fpu": true`): the m68k backend computes `double` and `float` with the FPU (68881, 68882, or the FPU of a
+  68040 or 68060): `+`, `-`, `*`, `/`, the compares, float <-> double, the conversions to and from integers of up to 32
+  bits and `Math.Sqrt`. `main` sets the FPU to round to double, so the results are the bits of IEEE 754 (and of the
+  software), but for the bits of a NaN and the last bit of a denormal result. A round of a loop with a division, two
+  multiplications and a square root takes about 170 instructions instead of 28,600 (an instruction of the FPU takes
+  more cycles, though). The program tests for the FPU at the start. `CSHIFT_FPU=1` runs the test suite with it (the CI too).
 - 64-bit shifts with the m68k backend take a few instructions instead of one round of a loop per bit (`a >> 63` took
   about 290 instructions). The software floating point uses them everywhere: `__divdf3` takes 10,000 instructions
   instead of 25,000.

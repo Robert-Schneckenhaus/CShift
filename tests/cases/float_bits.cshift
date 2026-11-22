@@ -1,0 +1,79 @@
+// Floating point, exactly to the bit: +, -, *, / and the compares of double and float with zeros, infinities, NaN and
+// numbers near the limits of int, conversions to and from integers (saturating), float <-> double, Math.Sqrt and
+// Math.Abs. The results must be the same with the m68k backend in software and with the FPU (--fpu: the FPU rounds to
+// double, as IEEE 754). The expected output comes from x86-64.
+// expect-stdout: CB5A19D84F0B36C3 -737603152
+// expect-stdout: 3FD5555555555555 3FF6A09E667F3BCD 3EAAAAAB 2 -2 2147483647 -2147483648 0
+using System;
+
+// the bits of a double, exactly
+uint64 Bits(double d)
+{
+    unsafe
+    {
+        return *(uint64*)&d;
+    }
+}
+uint32 FBits(float f)
+{
+    unsafe
+    {
+        return *(uint32*)&f;
+    }
+}
+
+double[] ds = [0.0, -0.0, 1.0, -1.5, 3.141592653589793, 1e30, -1e-30, 2.5, 0.1, 1e10, 4294967295.0, 2147483647.6, -2147483648.9, 1e20, -1e20];
+
+int Main(string[] args)
+{
+    unchecked
+    {
+        double nan = 0.0 / (args.Length + 0.0);
+        double inf = 1.0 / (args.Length + 0.0);
+        var list = List<double>.Create();
+        foreach (var d in ds)
+            list.Add(d);
+        list.Add(nan);
+        list.Add(inf);
+        list.Add(-inf);
+        double acc = 0.0;
+        int bits = 0;
+        for (var i = 0; i < list.Count(); i += 1)
+        {
+            double a = list.Get(i);
+            for (var j = 0; j < list.Count(); j += 1)
+            {
+                double b = list.Get(j);
+                double s = a + b;
+                double d = a - b;
+                double m = a * b;
+                double q = a / b;
+                if (s == s && d == d && m == m && q == q && s - s == 0.0 && m - m == 0.0 && q - q == 0.0 && d - d == 0.0)
+                    acc = acc + s * 0.5 + d * 0.25 + m * 1e-10 + q * 1e-5;
+                bits = bits * 3 + (a < b ? 1 : 0) + (a <= b ? 2 : 0) + (a > b ? 4 : 0) + (a >= b ? 8 : 0) + (a == b ? 16 : 0) + (a != b ? 32 : 0);
+                float fa = (float)a;
+                float fb = (float)b;
+                float fs = fa + fb;
+                float fm = fa * fb;
+                if (fs == fs && fm == fm && fs - fs == 0.0f && fm - fm == 0.0f)
+                    acc = acc + (double)fs + (double)(fm / 7.0f);
+                bits = bits * 5 + (fa < fb ? 1 : 0) + (fa == fb ? 2 : 0);
+            }
+            bits = bits * 7 + (int)a + (int)(a * 3.0) + (int)(float)a;
+            bits = bits * 7 + (int)(uint8)a + (int)(int16)a;
+            if (a == a && a >= 0.0 && a - a == 0.0)
+                acc = acc + Math.Sqrt(a);
+            if (a == a && a - a == 0.0)
+                acc = acc + Math.Abs(a - 2.0) * 0.001;
+        }
+        for (var k = -40; k < 40; k += 1)
+        {
+            acc = acc + (double)k / 3.0 + (double)(uint32)(k * 100000000) + (double)(k * 7) * 0.5;
+            float f = (float)k / 3.0f;
+            acc = acc + (double)f;
+        }
+        Console.WriteLine($"{Bits(acc):X16} {bits}");
+        Console.WriteLine($"{Bits(1.0 / 3.0):X16} {Bits(Math.Sqrt(2.0)):X16} {FBits((float)(1.0 / 3.0)):X8} {(int)2.9} {(int)-2.9} {(int)1e12} {(int)-1e12} {(int)nan}");
+    }
+    return 0;
+}

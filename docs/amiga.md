@@ -29,6 +29,7 @@ window, written against the NDK 3.2).
 | `--backend llvm` | `"backend": "llvm"` | LLVM IR, compiled and linked by clang (the default for all targets but AmigaOS) |
 | `--backend m68k` | `"backend": "m68k"` | CShift's own 68000 code generator (the default for `m68k-amigaos`) |
 | `--cpu 68020` | `"cpu": "68020"` | code for a 68020 or later (also `68030`, `68040`, `68060`): 32-bit multiplication and division in one instruction (`muls.l`, `divu.l`, ...) instead of the helpers of the runtime; `68000` (the default, also `68010`) runs on every Amiga. See *Code for a 68020* |
+| `--fpu` | `"fpu": true` | floating point with the FPU (a 68881 or 68882, or the FPU of a 68040 or 68060) instead of in software; needs a 68020 or later (the default `--cpu` then). See *Floating point with the FPU* |
 | `--ndk <dir>` | `"ndk": "<dir>"` | the AmigaOS NDK (also the environment variable `CSHIFT_NDK`); a path in cshift.json is relative to it |
 | `--emit-asm` | – | write the assembly (`.s`, GNU syntax) instead of an executable; a comment before every function names it (`\| function: Name(params)`) |
 | `-g` | `"debug": true` | write the names of the functions and globals into the executable (HUNK_SYMBOL), for debuggers and the profiler; the code stays the same |
@@ -57,6 +58,29 @@ ends with the return code 20, from the CLI with the message "This program needs 
 instruction those processors do not have. The test suite runs with the 68020 too: `CSHIFT_CPU=68020` together with
 `CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k` (on the 68020 of `qemu-m68k`).
 
+## Floating point with the FPU
+
+`--fpu` (or `"fpu": true`) computes `double` and `float` with the FPU instead of `stdlib/m68k/softfloat.cshift`:
+`+`, `-`, `*`, `/` (`fadd`, `fsub`, `fmul`, `fdiv`), the compares (`fcmp` and `fScc`, with the predicates that are
+false for a NaN where IEEE 754 says so and do not trap), float <-> double, the conversions from integers of up to 32
+bits and to them (`fintrz`, toward zero; a cast saturates and gives 0 for a NaN, as without the FPU) and `Math.Sqrt`
+(`fsqrt`). The remainder (`%`), 64-bit integers and the functions of `Math` other than `Sqrt` stay in software, so
+they give the same results everywhere (the 68040 and 68060 do not have `fsin`, `fetox`, ... in hardware anyway).
+
+The 68881 and 68882 compute with 64 bits of mantissa. `main` sets the rounding precision of the FPU to double
+(`fmove.l #128,%fpcr`), so every result is rounded to double once, as IEEE 754 and the software do: the test suite
+gets the same bits with and without the FPU. (A float result is rounded to double and then to float, which gives
+the same as rounding once.) Two differences remain: a NaN that the FPU makes has the bits `7FFFFFFF FFFFFFFF` instead
+of `7FF80000 00000000` (it is a NaN all the same), and a result in the range of the denormal numbers can differ in its
+last bit, because the FPU rounds it to 53 bits first.
+
+Such a program tests the processor and the FPU at the start (`AttnFlags`: AFB_68020 and AFB_68881, which the FPU of a
+68040 or 68060 sets too) and ends without them ("This program needs a 68020 or better with an FPU.", return code 20).
+How fast: a round of a loop with a division, two multiplications, two additions, a square root and a conversion takes
+about 170 instructions under vamos (68040) instead of about 28,600 in software. An instruction of the FPU takes longer
+than one of the CPU (a division some 100 cycles on a 68881), so the program gets less than these 170 times faster. The test suite runs with it with
+`CSHIFT_FPU=1` (and `CSHIFT_CPU=68020`, `CSHIFT_TARGET=m68k-linux-gnu`, `CSHIFT_BACKEND=m68k`).
+
 ## What a program can use
 
 The whole language and the standard library work, with these differences:
@@ -66,7 +90,8 @@ The whole language and the standard library work, with these differences:
 * **Floating point in software.** `double` and `float` are computed by `stdlib/m68k/softfloat.cshift` (IEEE 754, exact
   rounding); `Math` (`Sqrt`, `Sin`, `Exp`, `Pow`, ...) by `stdlib/m68k/math.cshift` and `mathtrans.cshift` (within 2 ULP of
   glibc). This works but is slow on a 68000: for graphics use integers, fixed point and
-  [`FastTrig`](stdlib.md) (sine and cosine from tables).
+  [`FastTrig`](stdlib.md) (sine and cosine from tables). With an FPU, `--fpu` computes them in hardware (see
+  *Floating point with the FPU*).
 * **The C library** (`stdlib/amiga/libc.cshift`) is written on exec.library and dos.library: memory, `printf`, files,
   directories, `Process.GetEnv`, time, `Process.Run`. Functions that need a newer dos.library (environment
   variables, the current directory, the exit code of a command) check its version.

@@ -150,6 +150,10 @@ jobs:
       - name: Run tests with the m68k backend for a 68020
         run: CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_CPU=68020 CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
 
+      # and with the FPU (--fpu: a 68881/68882, or the FPU of a 68040/68060)
+      - name: Run tests with the m68k backend for a 68020 with an FPU
+        run: CSHIFT_TARGET=m68k-linux-gnu CSHIFT_BACKEND=m68k CSHIFT_CPU=68020 CSHIFT_FPU=1 CSHIFT_SKIP_SELFHOST=1 bash tests/run_tests.sh build/stage2/cshiftc
+
   vscode:
     name: VS Code extension (package)
     runs-on: ubuntu-latest

@@ -146,6 +146,7 @@ can ask about text that is not saved yet. The [VS Code extension](../vscode-exte
 | `-I<dir>`, `-D<name>[=value]` | an include path, a macro for C headers (`using X from "header.h"`, [C interop](ffi.md)) |
 | `--ffi-api=<text>` | headers whose path contains `<text>` belong to the imported API |
 | `--cpu <68k>` | the m68k backend: `68000` (the default, also `68010`) or `68020` (also `68030`, `68040`, `68060`): 32-bit multiplication and division in one instruction; such a program does not start on a 68000 ([amiga.md](amiga.md#code-for-a-68020)) |
+| `--fpu` | the m68k backend: floating point with the FPU (68881, 68882, 68040, 68060) instead of in software; needs a 68020 or later ([amiga.md](amiga.md#floating-point-with-the-fpu)) |
 | `--ndk <dir>` | the AmigaOS NDK, for libraries from SFD files |
 | `--cc <program>` | the C compiler that links (default: `CSHIFT_CC`, the bundled toolchain, then `clang`) |
 | `--stdlib <dir>` | use this standard library instead of the one built into `cshiftc` |

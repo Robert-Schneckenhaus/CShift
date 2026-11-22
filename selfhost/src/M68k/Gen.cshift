@@ -30,7 +30,8 @@ struct Gen
     Dictionary<string, string> Reverse;   // assembly name -> IR name
     List<string> Libraries;               // the AmigaOS libraries that are called (their bases: __cs_lib_<index>)
     int[] Counters;                       // [0] labels, [1] symbols, [2] the optimization level (-O0..-O3), [3] the
-                                          // processor: 68000 or 68020 (Is020: mulu.l, divu.l)
+                                          // processor: 68000 or 68020 (Is020: mulu.l, divu.l), [4] 1 with the FPU
+                                          // (HasFpu)
     List<string> Errors;
 
     // the function being written
@@ -57,7 +58,7 @@ struct Gen
                       Symbols = Dictionary<string, string>.Create(), Reverse = Dictionary<string, string>.Create(), Libraries = List<string>.Create(), Home = Dictionary<string, string>.Create(),
                       Saved = List<string>.Create(), Splits = List<SplitHome>.Create(), Folds = Dictionary<string, AddrFold>.Create(), Skip = HashSet<string>.Create(),
                       NoWrap = HashSet<string>.Create(), NegatedIndex = HashSet<string>.Create(),
-                      Counters = new int[4], Errors = List<string>.Create() };
+                      Counters = new int[5], Errors = List<string>.Create() };
         g.Fn = new string[3];
         g.Frame = new int[3];
         return g;
@@ -94,11 +95,12 @@ struct Gen
 
 // The assembly of a whole module, or the errors. Only what is used is written: the functions and globals that main,
 // the prelude (the startup code of AmigaOS) and the runtime refer to, and so on.
-Error<string> GenerateModule(IrModule m, string prelude, int optimize, int cpu)
+Error<string> GenerateModule(IrModule m, string prelude, int optimize, int cpu, bool fpu)
 {
     var g = Gen.Create(m);
     g.Counters[2] = optimize;
     g.Counters[3] = cpu;
+    g.Counters[4] = fpu ? 1 : 0;
     var funcText = Dictionary<int, string>.Create();
     var globalText = Dictionary<int, string>.Create();
     var work = List<string>.Create();
@@ -584,6 +586,8 @@ void GenFunction(Gen g, IrFunc f)
     g.Label(name);
     g.Line("link.w\t%a6,#-" + frame.ToString());
     g.Line("movem.l\t@SAVE@,-(%sp)"); // the registers the function uses (FinishSaves)
+    if (HasFpu(g) && f.Name == "main")
+        g.Line("fmove.l\t#128,%fpcr"); // the FPU rounds every result to double (as IEEE 754), to the nearest
     // the parameters that live in registers
     foreach (var p in f.Params)
     {
@@ -1801,6 +1805,12 @@ bool Is020(Gen g)
     return g.Counters[3] >= 68020;
 }
 
+// whether floating point is computed by the FPU (--fpu: a 68881, 68882, or the FPU of a 68040 or 68060)
+bool HasFpu(Gen g)
+{
+    return g.Counters[4] != 0;
+}
+
 // the remainder after a 68020 division: d0 = the dividend, the divisor in 'by' (d1 or an immediate); d2 is used
 void Rem020(Gen g, bool signed, string by)
 {
@@ -2488,6 +2498,20 @@ void GenCall(Gen g, IrInst inst)
         GenLibraryCall(g, inst, callee.Name);
         return;
     }
+    if (HasFpu(g) && callee.Kind == ValKind.Global && inst.Args.Length == 1 && inst.Res.Length > 0 &&
+        (callee.Name == "sqrt" || callee.Name == "sqrtf" || callee.Name == "System.M68k._SqrtDouble(float64)"))
+    {
+        // the square root by the FPU, correctly rounded as IEEE 754 asks (Math.Sqrt calls sqrt, which the inlining
+        // of the backend may have replaced with the _SqrtDouble of stdlib/m68k/math.cshift)
+        bool dbl = callee.Name != "sqrtf";
+        int at = g.M.Vals.Get(inst.Args[0]).Type;
+        int size = PushArg(g, inst.Args[0], at);
+        g.Line("fsqrt" + (dbl ? ".d" : ".s") + "\t(%sp),%fp0");
+        g.Line("lea\t(" + size.ToString() + ",%sp),%sp");
+        FpuResult(g, dbl);
+        StoreResult(g, inst);
+        return;
+    }
     if (callee.Kind == ValKind.Global && callee.Name == "__cs_len" && inst.Args.Length == 1 && g.M.FuncIndex.ContainsKey("__cs_len"))
     {
         // the length of a string or array (0 for null), inline: it is needed for every bounds check. The pointer goes
@@ -2663,9 +2687,14 @@ void GenIntrinsic(Gen g, IrInst inst, string name)
             fn = fromDouble ? "__cs68k_dtou_sat" : "__cs68k_ftou_sat";
         else
             fn = fromDouble ? "__cs68k_dtoi_sat" : "__cs68k_ftoi_sat"; // narrower unsigned types: clamped below
-        PushArg(g, inst.Args[0], from);
-        g.Line("jsr\t" + fn);
-        g.Line("lea\t(" + ArgSize(g, from).ToString() + ",%sp),%sp");
+        if (HasFpu(g) && bits <= 32 && (signed || bits < 32))
+            GenFpuToIntSat(g, inst.Args[0], from, fromDouble);
+        else
+        {
+            PushArg(g, inst.Args[0], from);
+            g.Line("jsr\t" + fn);
+            g.Line("lea\t(" + ArgSize(g, from).ToString() + ",%sp),%sp");
+        }
         if (bits < 32)
         {
             // clamp to the result's range
@@ -2791,13 +2820,149 @@ void GenOverflow(Gen g, IrInst inst, string name)
 }
 
 // ---------------------------------------------------------------------------
-// Floating point: calls of the soft-float helpers (the names of libgcc)
+// Floating point: calls of the soft-float helpers (the names of libgcc), or the FPU (--fpu)
 // ---------------------------------------------------------------------------
+
+// A conversion with the FPU; false for the ones that stay with the helpers (64-bit integers, fptoui of 32 bits).
+bool GenFpuCast(Gen g, IrInst inst, bool fromDouble, bool toDouble)
+{
+    string op = inst.Op;
+    int from = inst.OpType;
+    int to = inst.Type;
+    if (op == "fptrunc" || op == "fpext")
+    {
+        int bytes = PushArg(g, inst.Args[0], from);
+        g.Line("fmove" + (fromDouble ? ".d" : ".s") + "\t(%sp),%fp0");
+        g.Line("lea\t(" + bytes.ToString() + ",%sp),%sp");
+        FpuResult(g, toDouble);
+        StoreResult(g, inst);
+        return true;
+    }
+    if (op == "sitofp" || op == "uitofp")
+    {
+        int bits = g.T.Bits(from);
+        if (bits > 32)
+            return false;
+        bool unsigned = op == "uitofp";
+        Load32(g, inst.Args[0], "%d0");
+        if (bits < 32)
+            Extend(g, "%d0", bits, !unsigned);
+        g.Line("fmove.l\t%d0,%fp0");
+        if (unsigned && bits == 32)
+        {
+            // above 2^31 - 1 the long was taken as negative: + 2^32 (a float of the bits 0x4F800000)
+            string positive = g.NewLabel();
+            g.Line("tst.l\t%d0");
+            g.Line("bpl\t" + positive);
+            g.Line("fadd.s\t#1333788672,%fp0");
+            g.Label(positive);
+        }
+        FpuResult(g, toDouble);
+        StoreResult(g, inst);
+        return true;
+    }
+    // fptosi (and fptoui to fewer than 32 bits): toward zero; a value out of range is undefined in LLVM IR
+    int tb = g.T.Bits(to);
+    if (tb > 32 || (op == "fptoui" && tb == 32))
+        return false;
+    int size = PushArg(g, inst.Args[0], from);
+    g.Line("fintrz" + (fromDouble ? ".d" : ".s") + "\t(%sp),%fp0");
+    g.Line("lea\t(" + size.ToString() + ",%sp),%sp");
+    g.Line("fmove.l\t%fp0,%d0");
+    StoreResult(g, inst);
+    return true;
+}
+
+// fptosi.sat to 32 bits with the FPU, into d0: toward zero, clamped to the range of int, a NaN 0
+void GenFpuToIntSat(Gen g, int value, int from, bool fromDouble)
+{
+    string max = g.NewLabel();
+    string min = g.NewLabel();
+    string zero = g.NewLabel();
+    string done = g.NewLabel();
+    int size = PushArg(g, value, from);
+    g.Line("fintrz" + (fromDouble ? ".d" : ".s") + "\t(%sp),%fp0");
+    g.Line("lea\t(" + size.ToString() + ",%sp),%sp");
+    g.Line("fcmp.l\t#2147483647,%fp0");
+    g.Line("fsogt\t%d0");
+    g.Line("tst.b\t%d0");
+    g.Line("bne\t" + max);
+    g.Line("fcmp.l\t#-2147483648,%fp0");
+    g.Line("fsolt\t%d0");
+    g.Line("tst.b\t%d0");
+    g.Line("bne\t" + min);
+    g.Line("fsun\t%d0"); // (a NaN: unordered in the last compare)
+    g.Line("tst.b\t%d0");
+    g.Line("bne\t" + zero);
+    g.Line("fmove.l\t%fp0,%d0");
+    g.Line("bra\t" + done);
+    g.Label(max);
+    g.Line("move.l\t#2147483647,%d0");
+    g.Line("bra\t" + done);
+    g.Label(min);
+    g.Line("move.l\t#-2147483648,%d0");
+    g.Line("bra\t" + done);
+    g.Label(zero);
+    g.Line("moveq\t#0,%d0");
+    g.Label(done);
+}
+
+// ---- with the FPU (--fpu): the operands are pushed and read from the stack, the result comes back in d0 (d0:d1) ----
+
+// fp0 as the result: a double in d0:d1 (through the stack), a float in d0
+void FpuResult(Gen g, bool dbl)
+{
+    if (dbl)
+    {
+        g.Line("fmove.d\t%fp0,-(%sp)");
+        g.Line("move.l\t(%sp)+,%d0");
+        g.Line("move.l\t(%sp)+,%d1");
+    }
+    else
+        g.Line("fmove.s\t%fp0,%d0");
+}
+
+// The predicate of fScc for one of fcmp (none of them traps on a NaN).
+string FpuPredicate(string pred)
+{
+    switch (pred)
+    {
+    case "oeq": return "eq";
+    case "ogt": return "ogt";
+    case "oge": return "oge";
+    case "olt": return "olt";
+    case "ole": return "ole";
+    case "one": return "ogl";
+    case "ord": return "or";
+    case "uno": return "un";
+    case "ueq": return "ueq";
+    case "ugt": return "ugt";
+    case "uge": return "uge";
+    case "ult": return "ult";
+    case "ule": return "ule";
+    case "une": return "ne";
+    case "true": return "t";
+    default: return "f";
+    }
+}
 
 void GenFloatBinary(Gen g, IrInst inst)
 {
     bool dbl = g.T.Kind(inst.OpType) == IrKind.Double;
     string op = inst.Op.Substring(1); // add, sub, mul, div, rem
+    if (HasFpu(g) && op != "rem")
+    {
+        string f = dbl ? ".d" : ".s";
+        int bytes = dbl ? 8 : 4;
+        PushArg(g, inst.Args[1], inst.OpType);
+        PushArg(g, inst.Args[0], inst.OpType);
+        g.Line("fmove" + f + "\t(%sp),%fp0");
+        g.Line("f" + op + f + "\t(" + bytes.ToString() + ",%sp),%fp0");
+        g.Line("lea\t(" + (2 * bytes).ToString() + ",%sp),%sp");
+        FpuResult(g, dbl);
+        StoreResult(g, inst);
+        return;
+    }
     string fn = op == "rem" ? (dbl ? "fmod" : "fmodf") : "__" + op + (dbl ? "df3" : "sf3");
     PushArg(g, inst.Args[1], inst.OpType);
     PushArg(g, inst.Args[0], inst.OpType);
@@ -2810,6 +2975,21 @@ void GenFcmp(Gen g, IrInst inst)
 {
     // __cs68k_fcmp_d / _f: -1, 0, 1 (a < b, a == b, a > b), 2 if unordered (NaN)
     bool dbl = g.T.Kind(inst.OpType) == IrKind.Double;
+    if (HasFpu(g))
+    {
+        // fcmp b,fp0 compares fp0 (a) with b; fScc sets a byte for the predicate
+        string f = dbl ? ".d" : ".s";
+        int bytes = dbl ? 8 : 4;
+        PushArg(g, inst.Args[1], inst.OpType);
+        PushArg(g, inst.Args[0], inst.OpType);
+        g.Line("fmove" + f + "\t(%sp),%fp0");
+        g.Line("fcmp" + f + "\t(" + bytes.ToString() + ",%sp),%fp0");
+        g.Line("lea\t(" + (2 * bytes).ToString() + ",%sp),%sp");
+        g.Line("fs" + FpuPredicate(inst.Pred) + "\t%d0");
+        g.Line("and.l\t#1,%d0");
+        StoreResult(g, inst);
+        return;
+    }
     PushArg(g, inst.Args[1], inst.OpType);
     PushArg(g, inst.Args[0], inst.OpType);
     g.Line("jsr\t" + (dbl ? "__cs68k_fcmp_d" : "__cs68k_fcmp_f"));
@@ -2847,6 +3027,8 @@ void GenFloatCast(Gen g, IrInst inst)
     int to = inst.Type;
     bool fromDouble = g.T.Kind(from) == IrKind.Double;
     bool toDouble = g.T.Kind(to) == IrKind.Double;
+    if (HasFpu(g) && GenFpuCast(g, inst, fromDouble, toDouble))
+        return;
     string fn;
     if (op == "fptrunc")
         fn = "__truncdfsf2";

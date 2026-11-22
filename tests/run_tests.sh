@@ -14,7 +14,7 @@
 # CSHIFT_TARGET=wasm32-wasi; it needs neither clang nor wasi-libc. m68k: the 68000 backend, together with
 # CSHIFT_TARGET=m68k-linux-gnu: the programs are linked by m68k-linux-gnu-gcc and run under qemu-m68k; Debian/Ubuntu:
 # qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross). CSHIFT_CPU=68020 with it: the code for a 68020 (--cpu), run on
-# the 68020 of qemu-m68k.
+# the 68020 of qemu-m68k; CSHIFT_FPU=1: floating point with the FPU (--fpu; qemu's 68020 has one, as with a 68881).
 #
 # What is tested:
 #   1. tests/test.cshift + tests/mathlib.cshift  -> stdout must match tests/test.expected, all
@@ -64,6 +64,7 @@ C_TARGET=()
 if [ -n "${CSHIFT_TARGET:-}" ]; then CC_ARGS+=(--target "$CSHIFT_TARGET"); C_TARGET=(--target="$CSHIFT_TARGET"); fi
 if [ -n "${CSHIFT_BACKEND:-}" ]; then CC_ARGS+=(--backend "$CSHIFT_BACKEND"); fi
 if [ -n "${CSHIFT_CPU:-}" ]; then CC_ARGS+=(--cpu "$CSHIFT_CPU"); fi
+if [ -n "${CSHIFT_FPU:-}" ]; then CC_ARGS+=(--fpu); fi
 # How a compiled program runs: directly, or through node for WebAssembly
 RUNNER=()
 case "${CSHIFT_TARGET:-}" in

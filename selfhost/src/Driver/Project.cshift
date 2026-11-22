@@ -32,6 +32,7 @@ struct Project
     bool Unchecked;              // integer overflow wraps instead of a panic
     bool Debug;                  // debug information (-g)
     string Backend;              // "llvm", "m68k", "wasm" or "" (the target's default)
+    bool Fpu;                    // the m68k backend uses the FPU ("fpu": true)
     string Cpu;                  // the processor of the m68k backend: "68000", "68020", ... or "" (68000)
     string Ndk;                  // the AmigaOS NDK (a path relative to the project)
     List<string> Assets;         // files and folders that "cshiftc publish" puts into the page (relative to the project)
@@ -244,7 +245,7 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
     p.DependencyDirs = List<string>.Create();
 
     string[] known = new string[] { "$schema", "name", "version", "type", "sources", "output", "optimize", "links", "target",
-                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "cpu", "ndk", "debug",
+                                    "includePaths", "libraryPaths", "defines", "ffiApi", "platforms", "unchecked", "backend", "cpu", "fpu", "ndk", "debug",
                                     "dependencies", "assets" };
     var keys = json.Nodes.Get(root).Keys;
     for (var i = 0; i < keys.Count(); i += 1)
@@ -294,6 +295,14 @@ Error<Project> LoadProjectIn(string location, string target, List<string> chain,
         if (json.KindOf(uncheckedNode) != JsonKind.Bool)
             return error(file + ": 'unchecked' must be true or false");
         p.Unchecked = json.Nodes.Get(uncheckedNode).Flag;
+    }
+
+    int fpuNode = json.Get(root, "fpu");
+    if (fpuNode >= 0)
+    {
+        if (json.KindOf(fpuNode) != JsonKind.Bool)
+            return error(file + ": 'fpu' must be true or false");
+        p.Fpu = json.Nodes.Get(fpuNode).Flag;
     }
 
     int debugNode = json.Get(root, "debug");

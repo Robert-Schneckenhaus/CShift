@@ -123,21 +123,29 @@ string StubAsm(string name, string libBase, int offset, string regs)
 // stackSize: the size of the program's own stack; ir: the program (only the stubs it calls are added).
 const string AmigaStartupText = embed("amiga-startup.s");
 
-string AmigaStartupAsm(int stackSize, string ir, int cpu)
+string AmigaStartupAsm(int stackSize, string ir, int cpu, bool fpu)
 {
     return AmigaStartupText.Replace("@STACK@", stackSize.ToString()).Replace("@STUBS@", AmigaStubsAsm(ir))
-                           .Replace("@CPUCHECK@", cpu >= 68020 ? AmigaCpuCheckAsm() : "");
+                           .Replace("@CPUCHECK@", cpu >= 68020 ? AmigaCpuCheckAsm(fpu) : "");
 }
 
 // A program built for a 68020 (--cpu 68020) ends at once on a 68000 or 68010, before it runs an instruction they do not
-// have: ExecBase.AttnFlags has no AFB_68020. From the CLI it says why; the message of the Workbench is replied to.
-// (a6 is SysBase, a2 the process, and the registers of the caller are on the stack, as at .Lcs_cli.)
-string AmigaCpuCheckAsm()
+// have: ExecBase.AttnFlags has no AFB_68020 (with --fpu: or no AFB_68881, which the FPU of a 68040 or 68060 sets too).
+// From the CLI it says why; the message of the Workbench is replied to. (a6 is SysBase, a2 the process, and the
+// registers of the caller are on the stack, as at .Lcs_cli.)
+string AmigaCpuCheckAsm(bool fpu)
 {
-    string message = "This program needs a 68020 or better.\n";
+    string message = fpu ? "This program needs a 68020 or better with an FPU.\n" : "This program needs a 68020 or better.\n";
     var sb = StringBuilder.Create();
     sb.Append("\tbtst\t#1,(297,%a6)\t\t| ExecBase.AttnFlags (a word at 296): AFB_68020\n");
-    sb.Append("\tbne\t.Lcs_cpu_ok\n");
+    sb.Append("\tbeq\t.Lcs_cpu_no\n");
+    if (fpu)
+    {
+        sb.Append("\tbtst\t#4,(297,%a6)\t\t| AFB_68881\n");
+        sb.Append("\tbeq\t.Lcs_cpu_no\n");
+    }
+    sb.Append("\tbra\t.Lcs_cpu_ok\n");
+    sb.Append(".Lcs_cpu_no:\n");
     sb.Append("\ttst.l\t(172,%a2)\t\t| pr_CLI: only the CLI has an output for the message\n");
     sb.Append("\tbeq\t.Lcs_cpu_quit\n");
     sb.Append("\tlea\t.Lcs_cpu_dos,%a1\n");

@@ -22,6 +22,8 @@ enum OpMode : uint8
     Abs,      // an address: a symbol or a number
     Imm,      // #value or #symbol
     RegList,  // movem
+    FPn,      // %fp0-%fp7 (the FPU: 68881, 68882, 68040, 68060)
+    FPcr,     // %fpcr, the control register of the FPU
 }
 
 struct AsmOperand
@@ -177,7 +179,16 @@ void ParseAsmLine(AsmParser p, string raw, int line)
     var instr = NewItem(p, ItemKind.Instr, line);
     int dot = op.IndexOf('.');
     string mnemonic = op;
-    if (dot > 0)
+    if (dot > 0 && op.StartsWith("f"))
+    {
+        // an instruction of the FPU: the suffix is the format of the operand (Size = 100 + its code in the instruction)
+        mnemonic = op.Substring(0, dot).ToString();
+        int format = FpFormat(op.Substring(dot + 1).ToString());
+        if (format < 0)
+            AsmError(p, line, "unknown format '" + op.Substring(dot).ToString() + "'");
+        instr.Size = 100 + format;
+    }
+    else if (dot > 0)
     {
         mnemonic = op.Substring(0, dot).ToString();
         string suffix = op.Substring(dot + 1).ToString();
@@ -316,8 +327,27 @@ AsmOperand PlainOperand(OpMode mode, int reg)
     return AsmOperand { Mode = mode, Reg = reg, IndexReg = 0, IndexLong = false, Scale = 0, Value = 0, Sym = "" };
 }
 
+// The code of a format of the FPU in its instructions: .l 0, .s 1, .x 2, .w 4, .d 5, .b 6; -1 for another suffix.
+int FpFormat(string suffix)
+{
+    switch (suffix)
+    {
+    case "l": return 0;
+    case "s": return 1;
+    case "x": return 2;
+    case "w": return 4;
+    case "d": return 5;
+    case "b": return 6;
+    default: return -1;
+    }
+}
+
 Optional<AsmOperand> ParseOperand(string s)
 {
+    if (s.Length == 4 && s.StartsWith("%fp") && s[3] >= '0' && s[3] <= '7')
+        return PlainOperand(OpMode.FPn, (int)s[3] - 48);
+    if (s == "%fpcr")
+        return PlainOperand(OpMode.FPcr, 0);
     int r = ParseRegister(s);
     if (r >= 0)
         return PlainOperand(r < 8 ? OpMode.Dn : OpMode.An, r & 7);
@@ -801,6 +831,124 @@ void EncodeItem(Encoder enc, ref AsmItem item)
     EncodeInstruction(enc, ref item, sec);
 }
 
+// The bytes of an operand of the FPU in a format (an immediate of a byte takes a word).
+int FpBytes(int format)
+{
+    return format == 0 || format == 1 ? 4 : format == 4 || format == 6 ? 2 : format == 5 ? 8 : 12;
+}
+
+// The operation codes of the FPU's general instructions (the low 7 bits of the command word).
+int FpOpmode(string op)
+{
+    switch (op)
+    {
+    case "fmove": return 0;
+    case "fintrz": return 3;
+    case "fsqrt": return 4;
+    case "fabs": return 24;
+    case "fneg": return 26;
+    case "fdiv": return 32;
+    case "fadd": return 34;
+    case "fmul": return 35;
+    case "fsub": return 40;
+    case "fcmp": return 56;
+    case "ftst": return 58;
+    default: return -1;
+    }
+}
+
+// The conditions of fScc that do not trap on a NaN (the IEEE-aware ones); -1 for another name.
+int FpCondition(string name)
+{
+    switch (name)
+    {
+    case "f": return 0;
+    case "eq": return 1;
+    case "ogt": return 2;
+    case "oge": return 3;
+    case "olt": return 4;
+    case "ole": return 5;
+    case "ogl": return 6;
+    case "or": return 7;
+    case "un": return 8;
+    case "ueq": return 9;
+    case "ugt": return 10;
+    case "uge": return 11;
+    case "ult": return 12;
+    case "ule": return 13;
+    case "ne": return 14;
+    case "t": return 15;
+    default: return -1;
+    }
+}
+
+// An instruction of the FPU (coprocessor 1): fmove (to and from FPn, to %fpcr), fadd/fsub/fmul/fdiv/fcmp/fsqrt/
+// fintrz/fabs/fneg/ftst with a source of the given format, and fScc.
+void EncodeFpu(Encoder enc, AsmItem item, AsmSection sec, string op, int format, AsmOperand a, AsmOperand b, int n)
+{
+    if (op.StartsWith("fs") && FpOpmode(op) < 0)
+    {
+        int cond = FpCondition(op.Substring(2).ToString());
+        if (cond < 0 || n != 1 || a.Mode == OpMode.An || a.Mode == OpMode.FPn)
+        {
+            EncError(enc, item, "unknown instruction of the FPU");
+            return;
+        }
+        EmitWord(sec, 62016 | EaField(a));      // 0xF240
+        EmitWord(sec, cond);
+        EaExtension(enc, item, sec, a, 1);
+        return;
+    }
+    int mode = FpOpmode(op);
+    if (mode < 0 || n < 1 || n > 2)
+    {
+        EncError(enc, item, "unknown instruction of the FPU");
+        return;
+    }
+    if (op == "fmove" && b.Mode == OpMode.FPcr)
+    {
+        EmitWord(sec, 61952 | EaField(a));      // 0xF200
+        EmitWord(sec, 36864);                    // 0x9000: <ea> to FPCR
+        EaExtension(enc, item, sec, a, 4);
+        return;
+    }
+    if (op == "fmove" && a.Mode == OpMode.FPn && n == 2 && b.Mode != OpMode.FPn)
+    {
+        // FPn to memory or a data register, in the format (rounded by the mode of FPCR)
+        EmitWord(sec, 61952 | EaField(b));
+        EmitWord(sec, 24576 | (format << 10) | (a.Reg << 7));
+        EaExtension(enc, item, sec, b, FpBytes(format));
+        return;
+    }
+    // to FPn: from FPn, memory, a data register or an immediate; a single operand (fsqrt.x %fp0) is source and target;
+    // ftst has no target
+    int dst = n == 2 ? b.Reg : (a.Mode == OpMode.FPn ? a.Reg : 0);
+    if ((n == 2 && b.Mode != OpMode.FPn) || a.Mode == OpMode.An || a.Mode == OpMode.FPcr)
+    {
+        EncError(enc, item, "the operands do not suit the FPU");
+        return;
+    }
+    if (a.Mode == OpMode.FPn)
+    {
+        EmitWord(sec, 61952);
+        EmitWord(sec, (a.Reg << 10) | (dst << 7) | mode);
+        return;
+    }
+    if (a.Mode == OpMode.Imm && FpBytes(format) > 4)
+    {
+        EncError(enc, item, "an immediate of the FPU must be .l, .s, .w or .b");
+        return;
+    }
+    if (a.Mode == OpMode.Dn && FpBytes(format) > 4)
+    {
+        EncError(enc, item, "a data register holds .l, .s, .w or .b");
+        return;
+    }
+    EmitWord(sec, 61952 | EaField(a));
+    EmitWord(sec, 16384 | (format << 10) | (dst << 7) | mode);
+    EaExtension(enc, item, sec, a, FpBytes(format) == 2 ? 2 : 4);
+}
+
 void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
 {
     string op = item.Op;
@@ -809,6 +957,11 @@ void EncodeInstruction(Encoder enc, ref AsmItem item, AsmSection sec)
     int n = ops.Length;
     AsmOperand a = n > 0 ? ops[0] : PlainOperand(OpMode.None, 0);
     AsmOperand b = n > 1 ? ops[1] : PlainOperand(OpMode.None, 0);
+    if (op.StartsWith("f"))
+    {
+        EncodeFpu(enc, item, sec, op, item.Size >= 100 ? item.Size - 100 : 2, a, b, n);
+        return;
+    }
 
     switch (op)
     {

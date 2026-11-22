@@ -37,6 +37,7 @@ struct BuildOptions
     bool EmitLlvm;
     bool EmitAsm;               // --emit-asm: the assembly of the m68k backend
     string Backend;             // --backend: "llvm", "m68k" or "wasm" ("" = the project's, else the target's default)
+    bool Fpu;                   // --fpu: the m68k backend computes floating point with the FPU (68881/68882, 68040, 68060)
     string Cpu;                 // --cpu: the 68k processor of the m68k backend ("68000", "68020", ...; "" = the project's, else 68000)
     string Ndk;                 // --ndk: the AmigaOS NDK (SFD files for "using X from "lib.sfd";")
     bool Run;
@@ -183,6 +184,8 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
             o.EmitLlvm = true;
         else if (a == "--emit-asm")
             o.EmitAsm = true;
+        else if (a == "--fpu")
+            o.Fpu = true;
         else if (a == "--cpu" && i + 1 < args.Length)
         {
             i += 1;
@@ -317,6 +320,7 @@ int Cshc(string[] args)
                     o.Backend = p.Backend;
                 if (o.Cpu.Length == 0)
                     o.Cpu = p.Cpu;
+                o.Fpu = o.Fpu || p.Fpu;
             }
             else
             {
@@ -355,6 +359,7 @@ int Cshc(string[] args)
                     o.Backend = p.Backend;
                 if (o.Cpu.Length == 0)
                     o.Cpu = p.Cpu;
+                o.Fpu = o.Fpu || p.Fpu;
                 if (o.Ndk.Length == 0)
                     o.Ndk = p.Ndk;
                 foreach (var l in p.IncludePaths)
@@ -442,6 +447,7 @@ void ApplyProject(ref BuildOptions o, Project project)
         o.Backend = project.Backend;
     if (o.Cpu.Length == 0)
         o.Cpu = project.Cpu;
+    o.Fpu = o.Fpu || project.Fpu;
     if (o.Ndk.Length == 0)
         o.Ndk = project.Ndk;
     foreach (var l in project.Links)
@@ -1226,7 +1232,14 @@ int BuildM68k(BuildOptions o, string ir, string baseName)
 {
     bool amiga = o.Target.Contains("amigaos");
     int cpu = o.Cpu.Length > 0 ? CpuLevel(o.Cpu) : 68000;
-    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144, ir, cpu) : "", o.Optimize, cpu); // the startup code comes first
+    if (o.Fpu && o.Cpu.Length == 0)
+        cpu = 68020; // the FPU is a coprocessor of the 68020 and later
+    if (o.Fpu && cpu < 68020)
+    {
+        Console.WriteErrorLine("error: --fpu needs a 68020 or later (--cpu 68020): a 68000 has no FPU");
+        return 1;
+    }
+    var text = M68kAssembly(ir, amiga ? AmigaStartupAsm(262144, ir, cpu, o.Fpu) : "", o.Optimize, cpu, o.Fpu); // the startup code comes first
     if (text is error failed)
     {
         Console.WriteErrorLine("error: m68k backend: " + failed.Message);
@@ -1365,10 +1378,10 @@ int WriteBytesOutput(string path, uint8[] bytes)
     return 0;
 }
 
-Error<string> M68kAssembly(string ir, string prelude, int optimize, int cpu)
+Error<string> M68kAssembly(string ir, string prelude, int optimize, int cpu, bool fpu)
 {
     var module = try ReadModule(ir);
-    return try GenerateModule(module, prelude, optimize, cpu);
+    return try GenerateModule(module, prelude, optimize, cpu, fpu);
 }
 
 // The code that a processor of the 68k family gets (--cpu, "cpu" of cshift.json): 68000 (also for a 68010) or 68020
