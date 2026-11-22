@@ -1,0 +1,143 @@
+// Time of day for outdoor maps: sky, ambient light, fog and sun color are interpolated between keyframes (hours
+// 0..24). A map can define its own keyframes ("dayNight": { "keys": [...] }); otherwise the defaults below are used.
+
+using System;
+
+struct SkyState
+{
+    Vec3 Zenith;
+    Vec3 Horizon;
+    Vec3 Ambient;
+    Vec3 Fog;
+    Vec3 Sun;
+    /// 0 = day, 1 = night (stars, moon).
+    float Night;
+
+    static SkyState Lerp(const ref SkyState a, const ref SkyState b, float t)
+    {
+        return SkyState {
+            Zenith = Vec3.Lerp(a.Zenith, b.Zenith, t),
+            Horizon = Vec3.Lerp(a.Horizon, b.Horizon, t),
+            Ambient = Vec3.Lerp(a.Ambient, b.Ambient, t),
+            Fog = Vec3.Lerp(a.Fog, b.Fog, t),
+            Sun = Vec3.Lerp(a.Sun, b.Sun, t),
+            Night = a.Night + (b.Night - a.Night) * t
+        };
+    }
+}
+
+struct DayNightKey
+{
+    float Hour;
+    SkyState State;
+}
+
+/// The default keyframes (src/World/daynight_default.json).
+const string DefaultDayNightKeys = embed("daynight_default.json");
+
+struct DayNightCycle
+{
+    DayNightKey[] Keys;
+    /// Current hour, 0..24.
+    float Hour;
+    /// In-game minutes per real second.
+    float MinutesPerSecond;
+    SkyState Current;
+
+    static DayNightCycle Create(JsonValue def)
+    {
+        var keyList = def["keys"];
+        if (!keyList.IsArray())
+        {
+            if (Json.Parse(DefaultDayNightKeys) is JsonValue defaults)
+                keyList = defaults;
+        }
+        var keys = List<DayNightKey>.Create();
+        foreach (var k in keyList.Items())
+        {
+            keys.Add(DayNightKey {
+                Hour = JsonFloat(k, "hour", 0),
+                State = SkyState {
+                    Zenith = JsonColor(k, "zenith", Vec3.Zero()),
+                    Horizon = JsonColor(k, "horizon", Vec3.Zero()),
+                    Ambient = JsonColor(k, "ambient", Vec3.Zero()),
+                    Fog = JsonColor(k, "fog", Vec3.Zero()),
+                    Sun = JsonColor(k, "sun", Vec3.Zero()),
+                    Night = JsonFloat(k, "night", 0)
+                }
+            });
+        }
+        // sort by hour (few keys: insertion sort)
+        for (var i = 1; i < keys.Count(); i += 1)
+        {
+            var key = keys[i];
+            var j = i - 1;
+            while (j >= 0 && keys[j].Hour > key.Hour)
+            {
+                keys[j + 1] = keys[j];
+                j -= 1;
+            }
+            keys[j + 1] = key;
+        }
+        var cycle = DayNightCycle {
+            Keys = keys.ToArray(),
+            Hour = JsonFloat(def, "startHour", 10),
+            MinutesPerSecond = JsonFloat(def, "minutesPerSecond", 2)
+        };
+        cycle._Evaluate();
+        return cycle;
+    }
+
+    void Update(float deltaTime, float speedFactor)
+    {
+        Hour += deltaTime * MinutesPerSecond * speedFactor / 60.0f;
+        while (Hour >= 24)
+            Hour -= 24;
+        while (Hour < 0)
+            Hour += 24;
+        _Evaluate();
+    }
+
+    void SetHour(float hour)
+    {
+        Hour = hour;
+        Update(0, 0);
+    }
+
+    /// The direction towards the sun (below the horizon at night): rises in the east (+X) at 6:00, sets in the
+    /// west at 18:00.
+    Vec3 SunDirection()
+    {
+        double angle = (Hour - 6.0) / 12.0 * Math.PI;
+        return Vec3.Create((float)Math.Cos(angle), (float)Math.Sin(angle), 0.35f).Normalized();
+    }
+
+    string TimeText()
+    {
+        int h = (int)Hour;
+        int m = (int)((Hour - h) * 60);
+        return $"{h:D2}:{m:D2}";
+    }
+
+    void _Evaluate()
+    {
+        int n = Keys.Length;
+        if (n == 0)
+            return;
+        // the last key at or before the hour (wrapping around midnight) and the one after it
+        int a = n - 1;
+        for (var i = 0; i < n; i += 1)
+        {
+            if (Keys[i].Hour <= Hour)
+                a = i;
+        }
+        int b = (a + 1) % n;
+        float span = Keys[b].Hour - Keys[a].Hour;
+        if (span <= 0)
+            span += 24;
+        float offset = Hour - Keys[a].Hour;
+        if (offset < 0)
+            offset += 24;
+        Current = SkyState.Lerp(Keys[a].State, Keys[b].State, Clamp01(offset / span));
+    }
+}

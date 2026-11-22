@@ -1,0 +1,246 @@
+// Maps (Assets/Maps/<id>.json): a grid of tiles described by a legend of characters, objects and lights.
+//
+// A tile is either a wall (a block with a texture on its four sides) or open (with a floor and, indoors, a ceiling
+// texture). Objects are billboards; lights are animated point lights. Indoor maps have a fixed ambient light, outdoor
+// maps a day/night cycle with a sky. Every map has distance fog (color and distances).
+
+using System;
+
+struct Teleport
+{
+    string Map;
+    float X;
+    float Y;
+    bool HasFacing;
+    float Yaw;
+}
+
+struct MapObject
+{
+    int Type;
+    /// Position on the ground: X = east, Z = south (tile units, 0.5 = middle of the first tile).
+    float X;
+    float Z;
+    float BaseY;
+    float Phase;
+    int Frame;
+    /// Index into Map.Lights, or -1.
+    int LightIndex;
+}
+
+struct Map
+{
+    string Id;
+    string Name;
+    bool Outdoor;
+    int Width;
+    int Height;
+    float WallHeight;
+    float WallTextureRepeat;
+    Vec3 Ambient;
+    Vec3 FogColor;
+    float FogStart;
+    float FogEnd;
+    bool FogUsesSky;
+    DayNightCycle DayNight;
+    float StartX;
+    float StartY;
+    float StartYaw;
+
+    /// Per tile (index y * Width + x): texture layers (-1 = none), blocking, index into Teleports (-1 = none).
+    int[] WallLayer;
+    int[] FloorLayer;
+    int[] CeilingLayer;
+    bool[] Blocking;
+    int[] TeleportIndex;
+
+    List<Teleport> Teleports;
+    List<MapObject> Objects;
+    List<Light> Lights;
+
+    bool InBounds(int x, int y) { return x >= 0 && y >= 0 && x < Width && y < Height; }
+
+    bool IsWall(int x, int y)
+    {
+        if (!InBounds(x, y))
+            return true;
+        return WallLayer[y * Width + x] >= 0;
+    }
+
+    bool IsBlocking(int x, int y)
+    {
+        if (!InBounds(x, y))
+            return true;
+        return Blocking[y * Width + x];
+    }
+
+    /// The teleport of a tile, or -1.
+    int TeleportAt(int x, int y)
+    {
+        if (!InBounds(x, y))
+            return -1;
+        return TeleportIndex[y * Width + x];
+    }
+
+    static Error<Map> Load(string id, string path, const ref ObjectDatabase db, const ref TextureArray textures)
+    {
+        var doc = try LoadJsonFile(path);
+        var rows = doc["rows"];
+        if (!rows.IsArray() || rows.Count() == 0)
+            return error($"map '{id}' has no rows");
+        int height = rows.Count();
+        int width = 0;
+        foreach (var row in rows.Items())
+            width = Math.Max(width, row.AsString().Length);
+
+        var fog = doc["fog"];
+        var start = doc["start"];
+        var map = Map {
+            Id = id,
+            Name = JsonString(doc, "name", id),
+            Outdoor = JsonString(doc, "type", "indoor") == "outdoor",
+            Width = width,
+            Height = height,
+            WallHeight = JsonFloat(doc, "wallHeight", 1.25f),
+            WallTextureRepeat = JsonFloat(doc, "wallTextureRepeat", 1),
+            Ambient = JsonColor(doc, "ambient", Vec3.Create(0.12f, 0.12f, 0.14f)),
+            FogColor = JsonColor(fog, "color", Vec3.Zero()),
+            FogStart = JsonFloat(fog, "start", 3),
+            FogEnd = JsonFloat(fog, "end", 10),
+            FogUsesSky = JsonBool(fog, "useSkyColor", true),
+            StartX = JsonFloat(start, "x", 1.5f),
+            StartY = JsonFloat(start, "y", 1.5f),
+            StartYaw = FacingToYaw(JsonString(start, "facing", "north")),
+            WallLayer = new int[width * height],
+            FloorLayer = new int[width * height],
+            CeilingLayer = new int[width * height],
+            Blocking = new bool[width * height],
+            TeleportIndex = new int[width * height],
+            Teleports = List<Teleport>.Create(),
+            Objects = List<MapObject>.Create(),
+            Lights = List<Light>.Create()
+        };
+        if (map.Outdoor)
+            map.DayNight = DayNightCycle.Create(doc["dayNight"]);
+
+        var random = Random.Create(id.GetHashCode());
+        var legend = doc["legend"];
+        for (var y = 0; y < height; y += 1)
+        {
+            string row = rows[y].AsString();
+            for (var x = 0; x < width; x += 1)
+            {
+                int index = y * width + x;
+                map.WallLayer[index] = -1;
+                map.FloorLayer[index] = -1;
+                map.CeilingLayer[index] = -1;
+                map.TeleportIndex[index] = -1;
+                string key = x < row.Length ? row[x..x + 1].ToString() : " ";
+                if (!legend.Has(key))
+                {
+                    if (key == " ")
+                    {
+                        map.Blocking[index] = true;   // nothing: solid, invisible
+                        continue;
+                    }
+                    return error($"map '{id}': the legend has no entry for '{key}' (row {y}, column {x})");
+                }
+                var tile = legend[key];
+                map.WallLayer[index] = try _Texture(id, textures, tile, "wall");
+                map.FloorLayer[index] = try _Texture(id, textures, tile, "floor");
+                map.CeilingLayer[index] = try _Texture(id, textures, tile, "ceiling");
+                map.Blocking[index] = map.WallLayer[index] >= 0 || JsonBool(tile, "blocking", false);
+                var teleport = tile["teleport"];
+                if (teleport.IsObject())
+                {
+                    map.TeleportIndex[index] = map.Teleports.Count();
+                    map.Teleports.Add(Teleport {
+                        Map = JsonString(teleport, "map", ""),
+                        X = JsonFloat(teleport, "x", 1.5f),
+                        Y = JsonFloat(teleport, "y", 1.5f),
+                        HasFacing = teleport["facing"].IsString(),
+                        Yaw = FacingToYaw(JsonString(teleport, "facing", "north"))
+                    });
+                }
+                var objectName = tile["object"];
+                if (objectName.IsString())
+                    try map._AddObject(db, objectName.AsString(), x + 0.5f, y + 0.5f, -1, ref random);
+            }
+        }
+
+        foreach (var o in doc["objects"].Items())
+        {
+            float baseY = o["baseY"].IsNumber() ? JsonFloat(o, "baseY", 0) : -1;
+            try map._AddObject(db, JsonString(o, "type", ""), JsonFloat(o, "x", 0.5f), JsonFloat(o, "y", 0.5f), baseY, ref random);
+        }
+
+        foreach (var l in doc["lights"].Items())
+        {
+            LightDef def;
+            if (l["preset"].IsString())
+            {
+                string preset = l["preset"].AsString();
+                if (db.LightPresets.TryGet(preset) is LightDef p)
+                    def = p;
+                else
+                    return error($"map '{id}': unknown light preset '{preset}'");
+            }
+            else
+            {
+                def = LightDef.Parse(l);
+            }
+            float offsetY = l["height"].IsNumber() ? JsonFloat(l, "height", 0.5f) : def.OffsetY;
+            var position = Vec3.Create(JsonFloat(l, "x", 0.5f), offsetY, JsonFloat(l, "y", 0.5f));
+            map.Lights.Add(Light.Create(def, position, 0.15f, (float)random.NextDouble() * 10));
+        }
+        return map;
+    }
+
+    static Error<int> _Texture(string id, const ref TextureArray textures, JsonValue tile, string key)
+    {
+        var name = tile[key];
+        if (!name.IsString())
+            return -1;
+        int layer = textures.Find(name.AsString());
+        if (layer < 0)
+            return error($"map '{id}': no texture 'Assets/Textures/{name.AsString()}.png' ({key})");
+        return layer;
+    }
+
+    Error<void> _AddObject(const ref ObjectDatabase db, string typeName, float x, float z, float baseY, ref Random random)
+    {
+        int type = db.Find(typeName);
+        if (type < 0)
+            return error($"map '{Id}': unknown object type '{typeName}'");
+        var def = db.Objects[type];
+        float by = baseY >= 0 ? baseY : def.BaseY;
+        float phase = (float)random.NextDouble() * 10;
+        int lightIndex = -1;
+        if (def.HasLight)
+        {
+            lightIndex = Lights.Count();
+            Lights.Add(Light.Create(def.Light, Vec3.Create(x, by + def.Light.OffsetY, z), def.FrameTime, phase));
+        }
+        Objects.Add(MapObject { Type = type, X = x, Z = z, BaseY = by, Phase = phase, LightIndex = lightIndex });
+    }
+
+    void Update(const ref ObjectDatabase db, double time, float deltaTime, float timeSpeed, ref Random random)
+    {
+        for (var i = 0; i < Objects.Count(); i += 1)
+        {
+            var o = Objects[i];
+            var def = db.Objects[o.Type];
+            int frames = def.SpriteLayers.Length;
+            o.Frame = frames <= 1 ? 0 : (int)((time + o.Phase) / def.FrameTime) % frames;
+            Objects[i] = o;
+        }
+        for (var i = 0; i < Lights.Count(); i += 1)
+        {
+            var light = Lights[i];
+            light.Update(time, deltaTime, ref random);
+            Lights[i] = light;
+        }
+        if (Outdoor)
+            DayNight.Update(deltaTime, timeSpeed);
+    }
+}

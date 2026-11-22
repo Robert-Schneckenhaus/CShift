@@ -1,0 +1,158 @@
+{
+  "objects": {
+    "torch": {
+      "sprites": [
+        "torch_0",
+        "torch_1",
+        "torch_2",
+        "torch_3"
+      ],
+      "frameTime": 0.12,
+      "width": 0.18,
+      "baseY": 0.45,
+      "fullbright": true,
+      "light": {
+        "offsetY": 0.33,
+        "radius": 5.0,
+        "interpolate": true,
+        "flicker": 0.06,
+        "frames": [
+          {
+            "color": "#ffb050",
+            "intensity": 1.7
+          },
+          {
+            "color": "#ff9a40",
+            "intensity": 1.44
+          },
+          {
+            "color": "#ffc060",
+            "intensity": 1.87
+          },
+          {
+            "color": "#ffa848",
+            "intensity": 1.56
+          }
+        ]
+      }
+    },
+    "brazier": {
+      "sprites": [
+        "brazier_0",
+        "brazier_1",
+        "brazier_2",
+        "brazier_3"
+      ],
+      "frameTime": 0.1,
+      "width": 0.6,
+      "fullbright": true,
+      "blocking": true,
+      "radius": 0.28,
+      "light": {
+        "offsetY": 0.55,
+        "radius": 7.0,
+        "flicker": 0.08,
+        "frames": [
+          {
+            "color": "#ff9040",
+            "intensity": 2.16
+          },
+          {
+            "color": "#ff7a30",
+            "intensity": 1.8
+          },
+          {
+            "color": "#ffa850",
+            "intensity": 2.34
+          },
+          {
+            "color": "#ff8838",
+            "intensity": 1.89
+          }
+        ]
+      }
+    },
+    "crystal": {
+      "sprites": [
+        "crystal_0",
+        "crystal_1",
+        "crystal_2",
+        "crystal_3"
+      ],
+      "frameTime": 0.35,
+      "width": 0.3,
+      "baseY": 0.0,
+      "fullbright": true,
+      "blocking": true,
+      "radius": 0.2,
+      "light": {
+        "offsetY": 0.3,
+        "radius": 4.0,
+        "frames": [
+          {
+            "color": "#4080ff",
+            "intensity": 0.91
+          },
+          {
+            "color": "#5090ff",
+            "intensity": 1.17
+          },
+          {
+            "color": "#70b0ff",
+            "intensity": 1.43
+          },
+          {
+            "color": "#5090ff",
+            "intensity": 1.17
+          }
+        ]
+      }
+    },
+    "pillar": {
+      "sprites": [
+        "pillar"
+      ],
+      "width": 0.4,
+      "height": 1.6,
+      "blocking": true,
+      "radius": 0.18
+    },
+    "statue": {
+      "sprites": [
+        "statue"
+      ],
+      "width": 0.7,
+      "blocking": true,
+      "radius": 0.3
+    },
+    "bush": {
+      "sprites": [
+        "bush"
+      ],
+      "width": 0.8
+    }
+  },
+  "lights": {
+    "ceiling_glow": {
+      "color": "#8090c0",
+      "intensity": 0.5,
+      "radius": 5,
+      "offsetY": 1.4
+    },
+    "pulse_red": {
+      "radius": 3.5,
+      "offsetY": 0.3,
+      "frameTime": 0.8,
+      "frames": [
+        {
+          "color": "#ff2010",
+          "intensity": 0.2
+        },
+        {
+          "color": "#ff3020",
+          "intensity": 1.0
+        }
+      ]
+    }
+  }
+}

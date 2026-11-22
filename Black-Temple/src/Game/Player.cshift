@@ -1,0 +1,81 @@
+// The player: first person movement with collision against walls, blocking tiles and blocking objects.
+
+using System;
+
+struct Player
+{
+    /// Position on the ground (X = east, Z = south) in tiles.
+    float X;
+    float Z;
+    float Yaw;
+    float Pitch;
+    float Radius;
+    float EyeHeight;
+
+    static Player Create(float x, float z, float yaw)
+    {
+        return Player { X = x, Z = z, Yaw = yaw, Radius = 0.22f, EyeHeight = 0.55f };
+    }
+
+    /// Moves by (dx, dz), sliding along walls: each axis is tried on its own.
+    void Move(float dx, float dz, const ref Map map, const ref ObjectDatabase db)
+    {
+        // big steps are split so the player never skips through a wall
+        float length = (float)Math.Sqrt(dx * dx + dz * dz);
+        int steps = 1 + (int)(length / (Radius * 0.5f));
+        float sx = dx / steps;
+        float sz = dz / steps;
+        for (var i = 0; i < steps; i += 1)
+        {
+            if (!Collides(X + sx, Z, map, db))
+                X += sx;
+            if (!Collides(X, Z + sz, map, db))
+                Z += sz;
+        }
+    }
+
+    bool Collides(float px, float pz, const ref Map map, const ref ObjectDatabase db)
+    {
+        int x0 = (int)Math.Floor(px - Radius);
+        int x1 = (int)Math.Floor(px + Radius);
+        int z0 = (int)Math.Floor(pz - Radius);
+        int z1 = (int)Math.Floor(pz + Radius);
+        for (var tz = z0; tz <= z1; tz += 1)
+        {
+            for (var tx = x0; tx <= x1; tx += 1)
+            {
+                if (!map.IsBlocking(tx, tz))
+                    continue;
+                // circle against the tile's square
+                float nx = Math.Clamp(px, (float)tx, (float)(tx + 1));
+                float nz = Math.Clamp(pz, (float)tz, (float)(tz + 1));
+                float ddx = px - nx;
+                float ddz = pz - nz;
+                if (ddx * ddx + ddz * ddz < Radius * Radius)
+                    return true;
+            }
+        }
+        foreach (var o in map.Objects)
+        {
+            var def = db.Objects[o.Type];
+            if (!def.Blocking)
+                continue;
+            float ddx = px - o.X;
+            float ddz = pz - o.Z;
+            float r = Radius + def.Radius;
+            if (ddx * ddx + ddz * ddz < r * r)
+                return true;
+        }
+        return false;
+    }
+
+    Camera ToCamera()
+    {
+        return Camera {
+            Position = Vec3.Create(X, EyeHeight, Z),
+            Yaw = Yaw,
+            Pitch = Pitch,
+            Fov = (float)(Math.PI * 65.0 / 180.0)
+        };
+    }
+}

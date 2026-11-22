@@ -1,0 +1,125 @@
+// Small vector and matrix types for the renderer.
+//
+// World coordinates: X = east, Y = up, Z = south. One map tile is 1 x 1 units; tile (x, y) of a map covers
+// X = x..x+1 and Z = y..y+1.
+
+struct Vec3
+{
+    float X;
+    float Y;
+    float Z;
+
+    static Vec3 Create(float x, float y, float z) { return Vec3 { X = x, Y = y, Z = z }; }
+    static Vec3 Zero() { return Vec3 { X = 0, Y = 0, Z = 0 }; }
+    static Vec3 One() { return Vec3 { X = 1, Y = 1, Z = 1 }; }
+
+    Vec3 Add(Vec3 o) { return Vec3 { X = X + o.X, Y = Y + o.Y, Z = Z + o.Z }; }
+    Vec3 Sub(Vec3 o) { return Vec3 { X = X - o.X, Y = Y - o.Y, Z = Z - o.Z }; }
+    Vec3 Mul(float f) { return Vec3 { X = X * f, Y = Y * f, Z = Z * f }; }
+    Vec3 MulComponents(Vec3 o) { return Vec3 { X = X * o.X, Y = Y * o.Y, Z = Z * o.Z }; }
+    float Dot(Vec3 o) { return X * o.X + Y * o.Y + Z * o.Z; }
+    float Length() { return (float)Math.Sqrt(X * X + Y * Y + Z * Z); }
+
+    Vec3 Cross(Vec3 o)
+    {
+        return Vec3 { X = Y * o.Z - Z * o.Y, Y = Z * o.X - X * o.Z, Z = X * o.Y - Y * o.X };
+    }
+
+    Vec3 Normalized()
+    {
+        float l = Length();
+        if (l < 0.000001f)
+            return Vec3.Zero();
+        return Mul(1.0f / l);
+    }
+
+    static Vec3 Lerp(Vec3 a, Vec3 b, float t)
+    {
+        return Vec3 { X = a.X + (b.X - a.X) * t, Y = a.Y + (b.Y - a.Y) * t, Z = a.Z + (b.Z - a.Z) * t };
+    }
+
+    string ToString() { return $"({X}, {Y}, {Z})"; }
+}
+
+/// A 4x4 matrix stored the way OpenGL expects it: column-major, element (row, column) at M[column * 4 + row].
+struct Mat4
+{
+    Fixed<float, 16> M;
+
+    static Mat4 Identity()
+    {
+        var m = new Mat4();
+        m.M[0] = 1;
+        m.M[5] = 1;
+        m.M[10] = 1;
+        m.M[15] = 1;
+        return m;
+    }
+
+    /// this * other: applies `other` first, then `this`.
+    Mat4 Multiply(const ref Mat4 other)
+    {
+        var r = new Mat4();
+        for (var col = 0; col < 4; col += 1)
+        {
+            for (var row = 0; row < 4; row += 1)
+            {
+                float sum = 0;
+                for (var k = 0; k < 4; k += 1)
+                    sum += M[k * 4 + row] * other.M[col * 4 + k];
+                r.M[col * 4 + row] = sum;
+            }
+        }
+        return r;
+    }
+
+    /// Like gluPerspective: vertical field of view in radians, looking down -Z.
+    static Mat4 Perspective(float fovY, float aspect, float near, float far)
+    {
+        var m = new Mat4();
+        float f = (float)(1.0 / Math.Tan(fovY / 2.0));
+        m.M[0] = f / aspect;
+        m.M[5] = f;
+        m.M[10] = (far + near) / (near - far);
+        m.M[11] = -1;
+        m.M[14] = 2 * far * near / (near - far);
+        return m;
+    }
+
+    /// A view matrix for a camera at `eye` looking along `forward` (normalized), with `up` roughly up.
+    static Mat4 LookDirection(Vec3 eye, Vec3 forward, Vec3 up)
+    {
+        Vec3 f = forward.Normalized();
+        Vec3 s = f.Cross(up).Normalized();
+        Vec3 u = s.Cross(f);
+        var m = Identity();
+        m.M[0] = s.X;
+        m.M[4] = s.Y;
+        m.M[8] = s.Z;
+        m.M[1] = u.X;
+        m.M[5] = u.Y;
+        m.M[9] = u.Z;
+        m.M[2] = -f.X;
+        m.M[6] = -f.Y;
+        m.M[10] = -f.Z;
+        m.M[12] = -s.Dot(eye);
+        m.M[13] = -u.Dot(eye);
+        m.M[14] = f.Dot(eye);
+        return m;
+    }
+}
+
+float Clamp01(float v)
+{
+    if (v < 0)
+        return 0;
+    if (v > 1)
+        return 1;
+    return v;
+}
+
+float Smoothstep01(float t)
+{
+    t = Clamp01(t);
+    return t * t * (3.0f - 2.0f * t);
+}

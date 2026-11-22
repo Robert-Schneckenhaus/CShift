@@ -1,0 +1,141 @@
+// Texture arrays built from plain PNG files.
+//
+// All wall/floor/ceiling textures (Assets/Textures/*.png) go into one GL_TEXTURE_2D_ARRAY, each file one layer; files
+// of another size than the first one are scaled (nearest neighbor). Sprites (Assets/Sprites/*.png) go into a second
+// array whose layers are as large as the largest sprite; each sprite sits in the top left corner of its layer and
+// remembers which part of the layer it covers (UvMaxU/UvMaxV), so sprites are never distorted.
+
+using System;
+using System.Image;
+using Gl from "glfuncs.h";
+
+struct TextureLayer
+{
+    string Name;
+    int Layer;
+    int Width;
+    int Height;
+    float UvMaxU;
+    float UvMaxV;
+}
+
+struct TextureArray
+{
+    uint32 Handle;
+    int Width;
+    int Height;
+    List<TextureLayer> Layers;
+    Dictionary<string, int> _byName;
+
+    /// The layer of a texture by its name (the file name without ".png"), or -1.
+    int Find(StringSlice name)
+    {
+        if (_byName.TryGet(name.ToString()) is int index)
+            return index;
+        return -1;
+    }
+
+    TextureLayer Get(int layer) { return Layers[layer]; }
+
+    void Bind(int unit)
+    {
+        gl.ActiveTexture(Gl.GL_TEXTURE0 + (uint32)unit);
+        gl.BindTexture(Gl.GL_TEXTURE_2D_ARRAY, Handle);
+    }
+
+    /// Loads every PNG of a folder. `padSprites`: keep each image's size (sprites) instead of scaling to one size.
+    static Error<TextureArray> LoadFolder(string folder, bool padSprites)
+    {
+        var files = Directory.FindFiles(folder, ".png");
+        if (files.Count() == 0)
+            return error($"no PNG files in '{folder}'");
+
+        var images = List<Image>.Create();
+        var names = List<string>.Create();
+        int width = 0;
+        int height = 0;
+        foreach (var file in files)
+        {
+            var result = Image.Load(file);
+            if (result is error e)
+                return error($"cannot load '{file}': {e.Message}");
+            if (result is Image image)
+            {
+                images.Add(image);
+                names.Add(Path.GetStem(file));
+                if (padSprites)
+                {
+                    width = Math.Max(width, image.Width);
+                    height = Math.Max(height, image.Height);
+                }
+                else if (width == 0)
+                {
+                    width = image.Width;
+                    height = image.Height;
+                }
+            }
+        }
+
+        var array = TextureArray {
+            Width = width, Height = height,
+            Layers = List<TextureLayer>.Create(),
+            _byName = Dictionary<string, int>.Create()
+        };
+
+        uint32 handle = 0;
+        unsafe
+        {
+            gl.GenTextures(1, &handle);
+        }
+        array.Handle = handle;
+        gl.BindTexture(Gl.GL_TEXTURE_2D_ARRAY, handle);
+        gl.PixelStorei(Gl.GL_UNPACK_ALIGNMENT, 4);
+
+        // Allocate with transparent pixels (sprites only fill part of their layer).
+        int count = images.Count();
+        var empty = new uint32[width * height * count];
+        unsafe
+        {
+            gl.TexImage3D(Gl.GL_TEXTURE_2D_ARRAY, 0, (int)Gl.GL_RGBA8, width, height, count, 0,
+                Gl.GL_BGRA, Gl.GL_UNSIGNED_BYTE, &empty[0]);
+        }
+
+        for (var i = 0; i < count; i += 1)
+        {
+            Image image = images[i];
+            if (!padSprites && (image.Width != width || image.Height != height))
+                image = _Scale(image, width, height);
+            // Image.Pixels are 0xAARRGGBB: in memory (little endian) B, G, R, A = GL_BGRA.
+            unsafe
+            {
+                gl.TexSubImage3D(Gl.GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, image.Width, image.Height, 1,
+                    Gl.GL_BGRA, Gl.GL_UNSIGNED_BYTE, &image.Pixels[0]);
+            }
+            array.Layers.Add(TextureLayer {
+                Name = names[i], Layer = i, Width = image.Width, Height = image.Height,
+                UvMaxU = (float)image.Width / width, UvMaxV = (float)image.Height / height
+            });
+            array._byName[names[i]] = i;
+        }
+
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_MAG_FILTER, (int)Gl.GL_NEAREST);
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_MIN_FILTER, (int)Gl.GL_NEAREST_MIPMAP_LINEAR);
+        int wrap = padSprites ? (int)Gl.GL_CLAMP_TO_EDGE : (int)Gl.GL_REPEAT;
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_WRAP_S, wrap);
+        gl.TexParameteri(Gl.GL_TEXTURE_2D_ARRAY, Gl.GL_TEXTURE_WRAP_T, wrap);
+        gl.GenerateMipmap(Gl.GL_TEXTURE_2D_ARRAY);
+        return array;
+    }
+
+    static Image _Scale(Image source, int width, int height)
+    {
+        var target = Image.Create(width, height);
+        for (var y = 0; y < height; y += 1)
+        {
+            int sy = y * source.Height / height;
+            for (var x = 0; x < width; x += 1)
+                target.Pixels[y * width + x] = source.Pixels[sy * source.Width + x * source.Width / width];
+        }
+        return target;
+    }
+}

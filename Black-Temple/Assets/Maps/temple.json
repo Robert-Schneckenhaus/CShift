@@ -1,0 +1,130 @@
+{
+  "name": "Black Temple - Hall of the Flame",
+  "type": "indoor",
+  "wallHeight": 1.6,
+  "ambient": "#16121c",
+  "fog": {
+    "color": "#000000",
+    "start": 3.0,
+    "end": 13.0
+  },
+  "start": {
+    "x": 11.5,
+    "y": 12.5,
+    "facing": "north"
+  },
+  "legend": {
+    "#": {
+      "wall": "temple_wall"
+    },
+    "d": {
+      "wall": "dark_wall"
+    },
+    ".": {
+      "floor": "temple_floor",
+      "ceiling": "stone_ceiling"
+    },
+    ",": {
+      "floor": "stone_floor",
+      "ceiling": "stone_ceiling"
+    },
+    "P": {
+      "floor": "temple_floor",
+      "ceiling": "stone_ceiling",
+      "object": "pillar"
+    },
+    "S": {
+      "floor": "temple_floor",
+      "ceiling": "stone_ceiling",
+      "object": "statue"
+    },
+    "C": {
+      "floor": "temple_floor",
+      "ceiling": "stone_ceiling",
+      "object": "crystal"
+    },
+    "B": {
+      "floor": "temple_floor",
+      "ceiling": "stone_ceiling",
+      "object": "brazier"
+    },
+    "E": {
+      "floor": "stone_floor",
+      "ceiling": "stone_ceiling",
+      "teleport": {
+        "map": "courtyard",
+        "x": 10.5,
+        "y": 3.5,
+        "facing": "south"
+      }
+    }
+  },
+  "rows": [
+    "#######################",
+    "#######.........#######",
+    "#######..S.C.S..#######",
+    "#######.........#######",
+    "#######.P.....P.#######",
+    "#.....#.........#.....#",
+    "#.P.P.#.P.....P.#.P.P.#",
+    "#..........B..........#",
+    "#.P.P.#.P.....P.#.P.P.#",
+    "#.....#.........#.....#",
+    "#######ddd,,,ddd#######",
+    "#######d,,,,,,,d#######",
+    "#######d,,,,,,,d#######",
+    "#######dddd,dddd#######",
+    "###########E###########",
+    "#######################"
+  ],
+  "objects": [
+    {
+      "type": "torch",
+      "x": 8.12,
+      "y": 11.5
+    },
+    {
+      "type": "torch",
+      "x": 14.88,
+      "y": 11.5
+    },
+    {
+      "type": "torch",
+      "x": 3.5,
+      "y": 5.12
+    },
+    {
+      "type": "torch",
+      "x": 19.5,
+      "y": 5.12
+    },
+    {
+      "type": "torch",
+      "x": 3.5,
+      "y": 9.88
+    },
+    {
+      "type": "torch",
+      "x": 19.5,
+      "y": 9.88
+    },
+    {
+      "type": "torch",
+      "x": 8.5,
+      "y": 1.12
+    },
+    {
+      "type": "torch",
+      "x": 14.5,
+      "y": 1.12
+    }
+  ],
+  "lights": [
+    {
+      "preset": "pulse_red",
+      "x": 11.5,
+      "y": 2.5,
+      "height": 1.4
+    }
+  ]
+}

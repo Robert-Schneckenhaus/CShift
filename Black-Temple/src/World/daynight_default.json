@@ -1,0 +1,11 @@
+[
+  { "hour": 0,    "zenith": "#02030a", "horizon": "#0a0e20", "ambient": "#1c2238", "fog": "#06080f", "sun": "#000000", "night": 1 },
+  { "hour": 4.5,  "zenith": "#05081a", "horizon": "#141a33", "ambient": "#20263c", "fog": "#0c1020", "sun": "#000000", "night": 1 },
+  { "hour": 6,    "zenith": "#2a3a6a", "horizon": "#e08850", "ambient": "#7a6a68", "fog": "#9a7868", "sun": "#ffa060", "night": 0.2 },
+  { "hour": 8,    "zenith": "#3a6ac0", "horizon": "#a8c8e8", "ambient": "#d8d8d0", "fog": "#a8c0d8", "sun": "#fff0d0", "night": 0 },
+  { "hour": 12,   "zenith": "#2c64c8", "horizon": "#b0d0f0", "ambient": "#ffffff", "fog": "#b0c8e0", "sun": "#ffffff", "night": 0 },
+  { "hour": 17,   "zenith": "#3a62b0", "horizon": "#c0c8d8", "ambient": "#e8e0d0", "fog": "#b0b8c8", "sun": "#fff0d0", "night": 0 },
+  { "hour": 19,   "zenith": "#2a2a60", "horizon": "#f07040", "ambient": "#9a7060", "fog": "#a06050", "sun": "#ff7040", "night": 0.1 },
+  { "hour": 20.5, "zenith": "#0a0c24", "horizon": "#30284a", "ambient": "#3a3450", "fog": "#1a1828", "sun": "#000000", "night": 0.7 },
+  { "hour": 22,   "zenith": "#02030a", "horizon": "#0a0e20", "ambient": "#1c2238", "fog": "#06080f", "sun": "#000000", "night": 1 }
+]

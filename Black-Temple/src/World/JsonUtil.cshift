@@ -1,0 +1,85 @@
+// Helpers for reading the JSON data files with defaults for missing keys.
+
+using System;
+
+float JsonFloat(JsonValue obj, string key, float fallback)
+{
+    var v = obj[key];
+    if (v.IsNumber())
+        return (float)v.AsNumber();
+    return fallback;
+}
+
+bool JsonBool(JsonValue obj, string key, bool fallback)
+{
+    var v = obj[key];
+    if (v.IsBool())
+        return v.AsBool();
+    return fallback;
+}
+
+string JsonString(JsonValue obj, string key, string fallback)
+{
+    var v = obj[key];
+    if (v.IsString())
+        return v.AsString();
+    return fallback;
+}
+
+Vec3 JsonColor(JsonValue obj, string key, Vec3 fallback)
+{
+    var v = obj[key];
+    if (!v.IsString())
+        return fallback;
+    if (ParseColor(v.AsString()) is Vec3 color)
+        return color;
+    Console.WriteErrorLine($"warning: invalid color '{v.AsString()}' for '{key}' (expected #rrggbb)");
+    return fallback;
+}
+
+/// "#rrggbb" -> 0..1 RGB.
+Optional<Vec3> ParseColor(StringSlice text)
+{
+    var t = text.Trim();
+    if (t.StartsWith("#"))
+        t = t[1..];
+    if (t.Length != 6)
+        return null;
+    int value = 0;
+    for (var i = 0; i < 6; i += 1)
+    {
+        char c = t[i];
+        if (!Char.IsHexDigit(c))
+            return null;
+        value = value * 16 + Char.HexValue(c);
+    }
+    return Vec3.Create(((value >> 16) & 255) / 255.0f, ((value >> 8) & 255) / 255.0f, (value & 255) / 255.0f);
+}
+
+/// "north", "east", "south", "west" -> yaw in radians (0 = north = -Z, clockwise when seen from above).
+float FacingToYaw(StringSlice facing)
+{
+    if (facing == "east")
+        return (float)(Math.PI * 0.5);
+    if (facing == "south")
+        return (float)Math.PI;
+    if (facing == "west")
+        return (float)(Math.PI * 1.5);
+    return 0;
+}
+
+Error<JsonValue> LoadJsonFile(string path)
+{
+    var text = File.ReadAllText(path);
+    if (text is error e)
+        return error($"cannot read '{path}': {e.Message}");
+    if (text is string content)
+    {
+        var doc = Json.Parse(content);
+        if (doc is error je)
+            return error($"'{path}': {je.Message}");
+        if (doc is JsonValue value)
+            return value;
+    }
+    return error($"cannot read '{path}'");
+}

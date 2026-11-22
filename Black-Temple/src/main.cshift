@@ -1,0 +1,477 @@
+// Black Temple - a 3D engine for temple and castle dungeons in the spirit of Ambermoon's 3D view: textured walls,
+// floors and ceilings on a tile grid, billboard objects, animated point lights (torches), distance fog, indoor maps
+// with their own light and outdoor maps with a day/night cycle.
+//
+//   W/S, Up/Down       walk            A/D        strafe
+//   Q/E, Left/Right    turn            Shift      run
+//   right mouse button look around     T          let time run fast (outdoors)
+//   F                  fog on/off      +/-        fog distance
+//   Esc                quit
+//
+// Command line:
+//   --map <id>            start map (Assets/Maps/<id>.json), default: temple
+//   --pos <x>,<y>[,<deg>] start position in tiles and facing (0 = north, 90 = east)
+//   --hour <h>            time of day for outdoor maps
+//   --size <w>x<h>        window size, default 1280x720
+//   --assets <folder>     the Assets folder (default: ./Assets or ../Assets)
+//   --screenshot <file>   render a few frames, save a PNG and quit (with --frames <n>)
+
+using System;
+using System.Image;
+using Glfw from "GLFW/glfw3.h";
+using Gl from "glfuncs.h";
+
+struct Options
+{
+    string Map;
+    bool HasPos;
+    float PosX;
+    float PosY;
+    float PosYaw;
+    bool HasYaw;
+    float Hour;
+    int Width;
+    int Height;
+    string Assets;
+    string Screenshot;
+    int Frames;
+}
+
+Error<Options> ParseOptions(string[] args)
+{
+    var o = Options { Map = "temple", Hour = -1, Width = 1280, Height = 720, Assets = "", Screenshot = "", Frames = 10 };
+    var i = 0;
+    while (i < args.Length)
+    {
+        string a = args[i];
+        string next = i + 1 < args.Length ? args[i + 1] : "";
+        if (a == "--map")
+        {
+            o.Map = next;
+            i += 1;
+        }
+        else if (a == "--pos")
+        {
+            var parts = next.Split(',');
+            if (parts.Length < 2)
+                return error("--pos needs <x>,<y>[,<degrees>]");
+            o.HasPos = true;
+            o.PosX = (float)try parts[0].ParseDouble();
+            o.PosY = (float)try parts[1].ParseDouble();
+            if (parts.Length > 2)
+            {
+                o.HasYaw = true;
+                o.PosYaw = (float)(try parts[2].ParseDouble() * Math.PI / 180.0);
+            }
+            i += 1;
+        }
+        else if (a == "--hour")
+        {
+            o.Hour = (float)try next.ParseDouble();
+            i += 1;
+        }
+        else if (a == "--size")
+        {
+            var parts = next.Split('x');
+            if (parts.Length != 2)
+                return error("--size needs <width>x<height>");
+            o.Width = try parts[0].ParseInt();
+            o.Height = try parts[1].ParseInt();
+            i += 1;
+        }
+        else if (a == "--assets")
+        {
+            o.Assets = next;
+            i += 1;
+        }
+        else if (a == "--screenshot")
+        {
+            o.Screenshot = next;
+            i += 1;
+        }
+        else if (a == "--frames")
+        {
+            o.Frames = try next.ParseInt();
+            i += 1;
+        }
+        else
+        {
+            return error($"unknown option '{a}'");
+        }
+        i += 1;
+    }
+    if (o.Assets == "")
+    {
+        if (Directory.Exists("Assets"))
+            o.Assets = "Assets";
+        else if (Directory.Exists("../Assets"))
+            o.Assets = "../Assets";
+        else
+            return error("cannot find the Assets folder (use --assets <folder>)");
+    }
+    return o;
+}
+
+void OnGlfwError(int code, char* description)
+{
+    unsafe
+    {
+        Console.WriteErrorLine("GLFW error " + code.ToString() + ": " + string.FromCStr(description));
+    }
+}
+
+/// Key state with edge detection (pressed this frame).
+struct Keys
+{
+    Dictionary<int, bool> _down;
+
+    static Keys Create() { return Keys { _down = Dictionary<int, bool>.Create() }; }
+
+    bool Down(Glfw.GLFWwindow* window, int key)
+    {
+        return Glfw.glfwGetKey(window, key) == Glfw.GLFW_PRESS;
+    }
+
+    bool Pressed(Glfw.GLFWwindow* window, int key)
+    {
+        bool down = Down(window, key);
+        bool was = _down.GetOrDefault(key, false);
+        _down[key] = down;
+        return down && !was;
+    }
+}
+
+struct Game
+{
+    string Assets;
+    ObjectDatabase Db;
+    Renderer Renderer;
+    Map Map;
+    Player Player;
+    Random Random;
+    double Time;
+    bool FogEnabled;
+    float FogScale;
+    float TimeSpeed;
+
+    // map change: fade out, load, fade in
+    float Brightness;
+    int _fadeDirection;      // -1 out, +1 in, 0 none
+    Teleport _pendingTeleport;
+    int _lastTileX;
+    int _lastTileZ;
+
+    Error<void> LoadMap(string id)
+    {
+        string path = Path.Combine(Path.Combine(Assets, "Maps"), id + ".json");
+        Map = try Map.Load(id, path, Db, Renderer.Textures);
+        Renderer.BuildMap(Map);
+        Console.WriteLine($"map '{id}': {Map.Name} ({Map.Width}x{Map.Height}, {(Map.Outdoor ? "outdoor" : "indoor")}, " +
+            $"{Map.Objects.Count()} objects, {Map.Lights.Count()} lights)");
+        return;
+    }
+
+    void PlaceAtStart()
+    {
+        Player = Player.Create(Map.StartX, Map.StartY, Map.StartYaw);
+        _lastTileX = (int)Math.Floor(Player.X);
+        _lastTileZ = (int)Math.Floor(Player.Z);
+    }
+
+    void Update(Glfw.GLFWwindow* window, ref Keys keys, float dt, float mouseDx, float mouseDy)
+    {
+        Time += dt;
+
+        // toggles
+        if (keys.Pressed(window, Glfw.GLFW_KEY_F))
+            FogEnabled = !FogEnabled;
+        if (keys.Down(window, Glfw.GLFW_KEY_KP_ADD) || keys.Down(window, Glfw.GLFW_KEY_EQUAL))
+            FogScale = Math.Min(4.0f, FogScale + dt);
+        if (keys.Down(window, Glfw.GLFW_KEY_KP_SUBTRACT) || keys.Down(window, Glfw.GLFW_KEY_MINUS))
+            FogScale = Math.Max(0.25f, FogScale - dt);
+        TimeSpeed = keys.Down(window, Glfw.GLFW_KEY_T) ? 60.0f : 1.0f;
+
+        if (_fadeDirection == 0)
+            _UpdateMovement(window, ref keys, dt, mouseDx, mouseDy);
+        _UpdateFade(dt);
+        Map.Update(Db, Time, dt, TimeSpeed, ref Random);
+    }
+
+    void _UpdateMovement(Glfw.GLFWwindow* window, ref Keys keys, float dt, float mouseDx, float mouseDy)
+    {
+        bool run = keys.Down(window, Glfw.GLFW_KEY_LEFT_SHIFT) || keys.Down(window, Glfw.GLFW_KEY_RIGHT_SHIFT);
+        float speed = (run ? 4.5f : 2.5f) * dt;
+        float turn = 2.2f * dt;
+
+        if (keys.Down(window, Glfw.GLFW_KEY_LEFT) || keys.Down(window, Glfw.GLFW_KEY_Q))
+            Player.Yaw -= turn;
+        if (keys.Down(window, Glfw.GLFW_KEY_RIGHT) || keys.Down(window, Glfw.GLFW_KEY_E))
+            Player.Yaw += turn;
+        Player.Yaw += mouseDx * 0.0035f;
+        Player.Pitch = Math.Clamp(Player.Pitch - mouseDy * 0.0035f, -0.9f, 0.9f);
+
+        float forward = 0;
+        float strafe = 0;
+        if (keys.Down(window, Glfw.GLFW_KEY_W) || keys.Down(window, Glfw.GLFW_KEY_UP))
+            forward += 1;
+        if (keys.Down(window, Glfw.GLFW_KEY_S) || keys.Down(window, Glfw.GLFW_KEY_DOWN))
+            forward -= 1;
+        if (keys.Down(window, Glfw.GLFW_KEY_D))
+            strafe += 1;
+        if (keys.Down(window, Glfw.GLFW_KEY_A))
+            strafe -= 1;
+        if (forward != 0 || strafe != 0)
+        {
+            float len = (float)Math.Sqrt(forward * forward + strafe * strafe);
+            forward = forward / len * speed;
+            strafe = strafe / len * speed;
+            float sin = (float)Math.Sin(Player.Yaw);
+            float cos = (float)Math.Cos(Player.Yaw);
+            float dx = sin * forward + cos * strafe;
+            float dz = -cos * forward + sin * strafe;
+            Player.Move(dx, dz, Map, Db);
+        }
+
+        // stepping onto a teleport tile
+        int tx = (int)Math.Floor(Player.X);
+        int tz = (int)Math.Floor(Player.Z);
+        if (tx != _lastTileX || tz != _lastTileZ)
+        {
+            _lastTileX = tx;
+            _lastTileZ = tz;
+            int teleport = Map.TeleportAt(tx, tz);
+            if (teleport >= 0)
+            {
+                _pendingTeleport = Map.Teleports[teleport];
+                _fadeDirection = -1;
+            }
+        }
+    }
+
+    void _UpdateFade(float dt)
+    {
+        if (_fadeDirection < 0)
+        {
+            Brightness -= dt * 3.0f;
+            if (Brightness <= 0)
+            {
+                Brightness = 0;
+                var t = _pendingTeleport;
+                if (t.Map != "" && t.Map != Map.Id)
+                {
+                    if (LoadMap(t.Map) is error e)
+                    {
+                        Console.WriteErrorLine(e.Message);
+                        _fadeDirection = 1;
+                        return;
+                    }
+                }
+                float yaw = t.HasFacing ? t.Yaw : Player.Yaw;
+                Player = Player.Create(t.X, t.Y, yaw);
+                _lastTileX = (int)Math.Floor(Player.X);
+                _lastTileZ = (int)Math.Floor(Player.Z);
+                _fadeDirection = 1;
+            }
+        }
+        else if (_fadeDirection > 0)
+        {
+            Brightness += dt * 3.0f;
+            if (Brightness >= 1)
+            {
+                Brightness = 1;
+                _fadeDirection = 0;
+            }
+        }
+    }
+
+    Environment CurrentEnvironment()
+    {
+        var env = Environment {
+            Ambient = Map.Ambient,
+            FogColor = Map.FogColor,
+            FogStart = Map.FogStart * FogScale,
+            FogEnd = Map.FogEnd * FogScale,
+            SunDir = Vec3.Create(0, 1, 0),
+            SunColor = Vec3.Zero(),
+            Outdoor = Map.Outdoor,
+            Brightness = Brightness,
+            FogEnabled = FogEnabled
+        };
+        if (Map.Outdoor)
+        {
+            var sky = Map.DayNight.Current;
+            env.Sky = sky;
+            env.Ambient = sky.Ambient;
+            if (Map.FogUsesSky)
+                env.FogColor = sky.Fog;
+            env.SunDir = Map.DayNight.SunDirection();
+            env.SunColor = env.SunDir.Y > 0 ? sky.Sun : Vec3.Zero();
+        }
+        return env;
+    }
+
+    void Render(int width, int height)
+    {
+        var camera = Player.ToCamera();
+        var env = CurrentEnvironment();
+        Renderer.Render(Map, Db, camera, env, width, height);
+    }
+
+    string Title(int fps)
+    {
+        string time = Map.Outdoor ? " - " + Map.DayNight.TimeText() : "";
+        return $"Black Temple - {Map.Name}{time} - {fps} FPS";
+    }
+}
+
+/// Reads the back buffer and saves it as a PNG.
+Error<void> SaveScreenshot(string path, int width, int height)
+{
+    var pixels = new uint32[width * height];
+    gl.PixelStorei(Gl.GL_PACK_ALIGNMENT, 4);
+    unsafe
+    {
+        gl.ReadPixels(0, 0, width, height, Gl.GL_BGRA, Gl.GL_UNSIGNED_BYTE, &pixels[0]);
+    }
+    var image = Image.Create(width, height);
+    for (var y = 0; y < height; y += 1)
+    {
+        int source = (height - 1 - y) * width;   // OpenGL's rows start at the bottom
+        for (var x = 0; x < width; x += 1)
+            image.Pixels[y * width + x] = pixels[source + x] | 0xFF000000;
+    }
+    if (image.Save(path) is error e)
+        return error($"cannot save '{path}': {e.Message}");
+    Console.WriteLine($"screenshot saved: {path}");
+    return;
+}
+
+Error<int> Run(string[] args)
+{
+    var options = try ParseOptions(args);
+
+    Glfw.glfwSetErrorCallback(OnGlfwError);
+    if (Glfw.glfwInit() == 0)
+        return error("cannot initialize GLFW");
+
+    Glfw.glfwWindowHint(Glfw.GLFW_CONTEXT_VERSION_MAJOR, 3);
+    Glfw.glfwWindowHint(Glfw.GLFW_CONTEXT_VERSION_MINOR, 3);
+    Glfw.glfwWindowHint(Glfw.GLFW_OPENGL_PROFILE, Glfw.GLFW_OPENGL_CORE_PROFILE);
+    Glfw.glfwWindowHint(Glfw.GLFW_OPENGL_FORWARD_COMPAT, 1);
+    Glfw.GLFWwindow* window = Glfw.glfwCreateWindow(options.Width, options.Height, "Black Temple", null, null);
+    if (window == null)
+    {
+        Glfw.glfwTerminate();
+        return error("cannot create a window with OpenGL 3.3");
+    }
+    Glfw.glfwMakeContextCurrent(window);
+    Glfw.glfwSwapInterval(options.Screenshot == "" ? 1 : 0);
+    if (!LoadGl())
+    {
+        Glfw.glfwTerminate();
+        return error("OpenGL 3.3 functions are missing");
+    }
+    Console.WriteLine("OpenGL " + GlString(Gl.GL_VERSION) + " (" + GlString(Gl.GL_RENDERER) + ")");
+
+    var textures = try TextureArray.LoadFolder(Path.Combine(options.Assets, "Textures"), false);
+    var sprites = try TextureArray.LoadFolder(Path.Combine(options.Assets, "Sprites"), true);
+    var game = Game {
+        Assets = options.Assets,
+        Db = try ObjectDatabase.Load(Path.Combine(options.Assets, "objects.json"), sprites),
+        Renderer = try Renderer.Create(textures, sprites),
+        Random = Random.Create(12345),
+        FogEnabled = true,
+        FogScale = 1,
+        TimeSpeed = 1,
+        Brightness = 1
+    };
+    try game.LoadMap(options.Map);
+    game.PlaceAtStart();
+    if (options.HasPos)
+    {
+        game.Player.X = options.PosX;
+        game.Player.Z = options.PosY;
+    }
+    if (options.HasYaw)
+        game.Player.Yaw = options.PosYaw;
+    if (options.Hour >= 0 && game.Map.Outdoor)
+        game.Map.DayNight.SetHour(options.Hour);
+
+    var keys = Keys.Create();
+    double lastTime = Glfw.glfwGetTime();
+    double titleTime = lastTime;
+    int framesSinceTitle = 0;
+    int frame = 0;
+    double lastMouseX = 0;
+    double lastMouseY = 0;
+    bool looking = false;
+
+    while (Glfw.glfwWindowShouldClose(window) == 0)
+    {
+        double now = Glfw.glfwGetTime();
+        float dt = (float)Math.Min(now - lastTime, 0.1);
+        if (options.Screenshot != "")
+            dt = 1.0f / 30.0f;
+        lastTime = now;
+
+        if (Glfw.glfwGetKey(window, Glfw.GLFW_KEY_ESCAPE) == Glfw.GLFW_PRESS)
+            Glfw.glfwSetWindowShouldClose(window, 1);
+
+        // mouse look while the right button is held
+        float mouseDx = 0;
+        float mouseDy = 0;
+        double mx = 0;
+        double my = 0;
+        Glfw.glfwGetCursorPos(window, ref mx, ref my);
+        bool look = Glfw.glfwGetMouseButton(window, Glfw.GLFW_MOUSE_BUTTON_RIGHT) == Glfw.GLFW_PRESS;
+        if (look && looking)
+        {
+            mouseDx = (float)(mx - lastMouseX);
+            mouseDy = (float)(my - lastMouseY);
+        }
+        looking = look;
+        lastMouseX = mx;
+        lastMouseY = my;
+
+        game.Update(window, ref keys, dt, mouseDx, mouseDy);
+
+        int width = 0;
+        int height = 0;
+        Glfw.glfwGetFramebufferSize(window, ref width, ref height);
+        if (width > 0 && height > 0)
+            game.Render(width, height);
+
+        frame += 1;
+        if (options.Screenshot != "" && frame >= options.Frames)
+        {
+            try SaveScreenshot(options.Screenshot, width, height);
+            Glfw.glfwSetWindowShouldClose(window, 1);
+        }
+
+        Glfw.glfwSwapBuffers(window);
+        Glfw.glfwPollEvents();
+
+        framesSinceTitle += 1;
+        if (now - titleTime >= 0.5)
+        {
+            int fps = (int)Math.Round(framesSinceTitle / (now - titleTime));
+            Glfw.glfwSetWindowTitle(window, game.Title(fps));
+            titleTime = now;
+            framesSinceTitle = 0;
+        }
+    }
+
+    Glfw.glfwDestroyWindow(window);
+    Glfw.glfwTerminate();
+    return 0;
+}
+
+int Main(string[] args)
+{
+    if (Run(args) is error e)
+    {
+        Console.WriteErrorLine("error: " + e.Message);
+        return 1;
+    }
+    return 0;
+}

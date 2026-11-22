@@ -1,0 +1,82 @@
+{
+  "name": "Temple Courtyard",
+  "type": "outdoor",
+  "wallHeight": 2.0,
+  "fog": {
+    "color": "#a0b0c0",
+    "start": 6.0,
+    "end": 24.0,
+    "useSkyColor": true
+  },
+  "dayNight": {
+    "startHour": 17.5,
+    "minutesPerSecond": 6
+  },
+  "start": {
+    "x": 10.5,
+    "y": 15.5,
+    "facing": "north"
+  },
+  "legend": {
+    "W": {
+      "wall": "temple_wall"
+    },
+    "D": {
+      "wall": "door"
+    },
+    "o": {
+      "wall": "outer_wall"
+    },
+    "g": {
+      "floor": "grass"
+    },
+    "c": {
+      "floor": "cobble"
+    },
+    "b": {
+      "floor": "grass",
+      "object": "bush"
+    },
+    "S": {
+      "floor": "grass",
+      "object": "statue"
+    },
+    "B": {
+      "floor": "cobble",
+      "object": "brazier"
+    },
+    "P": {
+      "floor": "cobble",
+      "object": "pillar"
+    },
+    "E": {
+      "floor": "cobble",
+      "teleport": {
+        "map": "temple",
+        "x": 11.5,
+        "y": 12.5,
+        "facing": "north"
+      }
+    }
+  },
+  "rows": [
+    "oWWWWWWWWWWWWWWWWWWWo",
+    "oWWWWWWWWWDWWWWWWWWWo",
+    "oggggggggcEcggggggggo",
+    "ogggggggBcccBgggggggo",
+    "oggbgggggcccgggggbggo",
+    "oggggggggcccggggggggo",
+    "ogggggSggcccggSgggggo",
+    "oggggggggcccggggggggo",
+    "ogggggggPcccPgggggggo",
+    "oggggggggcccggggggggo",
+    "ogggbggggcccggggggggo",
+    "oggggggggcccggggbgggo",
+    "ogggggggPcccPgggggggo",
+    "oggggggggcccggggggggo",
+    "ogbggggggcccgggbggggo",
+    "oggggbgggcccggggggbgo",
+    "oggggggggcccggggggggo",
+    "ooooooooooooooooooooo"
+  ]
+}
