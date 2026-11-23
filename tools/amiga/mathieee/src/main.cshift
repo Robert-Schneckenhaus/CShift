@@ -1,0 +1,261 @@
+// mathieee: does CShift's floating point in software give the same results as the math libraries of AmigaOS
+// (mathieeedoubbas.library, mathieeedoubtrans.library), and which is faster? The libraries use the FPU when the Amiga
+// has one, else their own software; a program that calls them would run on every Amiga and use an FPU where there is
+// one. Run it on the Amiga (or in FS-UAE with a Kickstart ROM):
+//
+//     mathieee              compare the results bit by bit (random numbers of many magnitudes)
+//     mathieee special      also zeros, infinities, NaN, denormal numbers and the limits
+//     mathieee bench        the time of 20000 operations each (bench <count> for another count)
+//
+// Build: cshiftc build tools/amiga/mathieee -o mathieee (the SFD files of the two libraries are next to this file).
+// Under vamos the comparison only tests the calls: vamos has the two libraries written in Python, computing with the
+// floating point of the PC (so they match CShift exactly, "special" stops at the first infinity, and "bench" shows them
+// taking no time). What the libraries of AmigaOS do takes a real Kickstart.
+
+using System;
+using MathBas from "mathieeedoubbas_lib.sfd";
+using MathTrans from "mathieeedoubtrans_lib.sfd";
+
+uint64 Bits(double d)
+{
+    unsafe
+    {
+        return *(uint64*)&d;
+    }
+}
+
+double FromBits(uint64 b)
+{
+    unsafe
+    {
+        return *(double*)&b;
+    }
+}
+
+uint64 _seed = 88172645463325252ul;
+
+// xorshift64
+uint64 Next()
+{
+    _seed = _seed ^ (_seed << 13);
+    _seed = _seed ^ (_seed >> 7);
+    _seed = _seed ^ (_seed << 17);
+    return _seed;
+}
+
+// a random double: any sign, an exponent of 2^-60 to 2^60 (now and then up to the limits), any mantissa
+double RandomDouble()
+{
+    uint64 r = Next();
+    uint64 sign = r >> 63;
+    int spread = (r & 15ul) == 0ul ? 2000 : 121;
+    int exp = (int)((r >> 8) % (uint64)spread);
+    exp = spread == 121 ? 1023 + exp - 60 : 24 + exp;
+    uint64 mant = Next() & 4503599627370495ul;
+    return FromBits((sign << 63) | ((uint64)exp << 52) | mant);
+}
+
+double[] Specials()
+{
+    return [0.0, -0.0, FromBits(0x7FF0000000000000ul), FromBits(0xFFF0000000000000ul), FromBits(0x7FF8000000000000ul),
+            FromBits(1ul), FromBits(0x000FFFFFFFFFFFFFul), FromBits(0x0010000000000000ul), FromBits(0x7FEFFFFFFFFFFFFFul),
+            1.0, -1.0, 0.5, 3.0, 1e308, -1e-308, 2147483647.0, -2147483648.0];
+}
+
+bool IsNaN(double d)
+{
+    return d != d;
+}
+
+// The distance of two results in units of the last place (0: the same bits; two NaN count as the same).
+int64 Ulps(double a, double b)
+{
+    if (IsNaN(a) && IsNaN(b))
+        return 0;
+    uint64 x = Bits(a);
+    uint64 y = Bits(b);
+    if (x == y)
+        return 0;
+    if ((x >> 63) != (y >> 63))
+        return 9999999;   // different signs (also +0 and -0)
+    int64 d = unchecked((int64)(x - y));
+    return d < 0 ? -d : d;
+}
+
+struct Tally
+{
+    string Name;
+    int Count;
+    int Different;
+    int64 MostUlps;
+    int Shown;
+}
+
+void Record(ref Tally t, double a, double b, double soft, double lib)
+{
+    t.Count += 1;
+    int64 u = Ulps(soft, lib);
+    if (u == 0)
+        return;
+    t.Different += 1;
+    if (u > t.MostUlps)
+        t.MostUlps = u;
+    if (t.Shown < 3)
+    {
+        t.Shown += 1;
+        Console.WriteLine($"  {t.Name}({Bits(a):X16}, {Bits(b):X16}): CShift {Bits(soft):X16}, library {Bits(lib):X16} ({u} ulp)");
+    }
+}
+
+void Report(Tally t)
+{
+    string most = t.MostUlps >= 9999999 ? "sign or NaN" : $"{t.MostUlps} ulp";
+    Console.WriteLine($"{t.Name}: {t.Count} compared, {t.Different} different" + (t.Different > 0 ? $" (at most {most})" : ""));
+}
+
+int Check(bool special)
+{
+    var values = List<double>.Create();
+    for (var i = 0; i < 400; i += 1)
+        values.Add(RandomDouble());
+    if (special)
+    {
+        foreach (var s in Specials())
+            values.Add(s);
+    }
+    var add = Tally { Name = "add" };
+    var sub = Tally { Name = "sub" };
+    var mul = Tally { Name = "mul" };
+    var div = Tally { Name = "div" };
+    var sqrt = Tally { Name = "sqrt" };
+    var floor = Tally { Name = "floor" };
+    var flt = Tally { Name = "int->double" };
+    var fix = Tally { Name = "double->int" };
+    var cmp = Tally { Name = "compare" };
+    var sin = Tally { Name = "sin" };
+    var exp = Tally { Name = "exp" };
+    var log = Tally { Name = "log" };
+    int n = values.Count();
+    for (var i = 0; i < n; i += 1)
+    {
+        double a = values.Get(i);
+        for (var k = 0; k < 8; k += 1)
+        {
+            double b = values.Get((i * 7 + k * 31 + 1) % n);
+            Record(ref add, a, b, a + b, MathBas.IEEEDPAdd(a, b));
+            Record(ref sub, a, b, a - b, MathBas.IEEEDPSub(a, b));
+            Record(ref mul, a, b, a * b, MathBas.IEEEDPMul(a, b));
+            if (special || b != 0.0)
+                Record(ref div, a, b, a / b, MathBas.IEEEDPDiv(a, b));
+            int c = a < b ? -1 : a > b ? 1 : 0;
+            if (!IsNaN(a) && !IsNaN(b))
+                Record(ref cmp, a, b, (double)c, (double)MathBas.IEEEDPCmp(a, b));
+        }
+        double pos = a < 0.0 ? -a : a;
+        if (special || pos == pos)
+            Record(ref sqrt, pos, 0.0, Math.Sqrt(pos), MathTrans.IEEEDPSqrt(pos));
+        Record(ref floor, a, 0.0, Math.Floor(a), MathBas.IEEEDPFloor(a));
+        int whole = unchecked((int)(uint32)Next());
+        Record(ref flt, (double)whole, 0.0, (double)whole, MathBas.IEEEDPFlt(whole));
+        double small = a - Math.Floor(a / 4.0e9) * 4.0e9 - 2.0e9;   // in the range of int
+        if (small == small && small > -2.0e9 && small < 2.0e9)
+            Record(ref fix, small, 0.0, (double)(int)small, (double)MathBas.IEEEDPFix(small));
+        if (pos < 1e6)
+        {
+            Record(ref sin, a, 0.0, Math.Sin(a), MathTrans.IEEEDPSin(a));
+            Record(ref exp, a, 0.0, Math.Exp(a / 1e4), MathTrans.IEEEDPExp(a / 1e4));
+        }
+        if (pos > 0.0 && pos == pos && pos - pos == 0.0)
+            Record(ref log, pos, 0.0, Math.Log(pos), MathTrans.IEEEDPLog(pos));
+    }
+    Console.WriteLine("");
+    Report(add);
+    Report(sub);
+    Report(mul);
+    Report(div);
+    Report(sqrt);
+    Report(floor);
+    Report(flt);
+    Report(fix);
+    Report(cmp);
+    Console.WriteLine("(sin, exp and log are approximations in both: a few ulp are to be expected)");
+    Report(sin);
+    Report(exp);
+    Report(log);
+    return 0;
+}
+
+// The time of 'count' operations, in milliseconds.
+int Bench(int count)
+{
+    var a = new double[64];
+    var b = new double[64];
+    var r = new double[64];
+    for (var i = 0; i < 64; i += 1)
+    {
+        a[i] = RandomDouble();
+        b[i] = RandomDouble();
+        if (b[i] == 0.0)
+            b[i] = 1.5;
+    }
+    var pos = new double[64];
+    for (var i = 0; i < 64; i += 1)
+        pos[i] = (a[i] < 0.0 ? -a[i] : a[i]) - Math.Floor((a[i] < 0.0 ? -a[i] : a[i]) / 100.0) * 100.0 + 0.5; // 0.5 .. 100.5
+    Console.WriteLine($"{count} operations each (ms; the clock of AmigaOS counts in 20 ms):");
+    Console.WriteLine("            CShift   library");
+    for (var op = 0; op < 6; op += 1)
+    {
+        string name = op == 0 ? "add " : op == 1 ? "mul " : op == 2 ? "div " : op == 3 ? "sqrt" : op == 4 ? "sin " : "loop";
+        var sw = Stopwatch.StartNew();
+        for (var i = 0; i < count; i += 1)
+        {
+            int j = i & 63;
+            if (op == 0)
+                r[j] = a[j] + b[j];
+            else if (op == 1)
+                r[j] = a[j] * b[j];
+            else if (op == 2)
+                r[j] = a[j] / b[j];
+            else if (op == 3)
+                r[j] = Math.Sqrt(pos[j]);
+            else if (op == 4)
+                r[j] = Math.Sin(pos[j]);
+            else
+                r[j] = a[j];
+        }
+        int64 soft = sw.ElapsedMilliseconds();
+        sw.Restart();
+        for (var i = 0; i < count; i += 1)
+        {
+            int j = i & 63;
+            if (op == 0)
+                r[j] = MathBas.IEEEDPAdd(a[j], b[j]);
+            else if (op == 1)
+                r[j] = MathBas.IEEEDPMul(a[j], b[j]);
+            else if (op == 2)
+                r[j] = MathBas.IEEEDPDiv(a[j], b[j]);
+            else if (op == 3)
+                r[j] = MathTrans.IEEEDPSqrt(pos[j]);
+            else if (op == 4)
+                r[j] = MathTrans.IEEEDPSin(pos[j]);
+            else
+                r[j] = a[j];
+        }
+        int64 lib = sw.ElapsedMilliseconds();
+        Console.WriteLine($"{name}      {soft,8}  {lib,8}");
+    }
+    Console.WriteLine("(\"loop\" is the loop alone, without an operation)");
+    return 0;
+}
+
+int Main(string[] args)
+{
+    if (args.Length >= 1 && args[0] == "bench")
+    {
+        int count = 20000;
+        if (args.Length >= 2 && args[1].ParseInt() is int n)
+            count = n;
+        return Bench(count);
+    }
+    return Check(args.Length >= 1 && args[0] == "special");
+}

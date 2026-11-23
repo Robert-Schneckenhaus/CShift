@@ -1,0 +1,9 @@
+{
+	"name": "mathieee",
+	"version": "0.1.0",
+	"type": "executable",
+	"sources": ["src"],
+	"output": "bin/mathieee",
+	"target": "m68k-amigaos",
+	"optimize": 2
+}

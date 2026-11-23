@@ -340,6 +340,13 @@ for pointers; `d2`-`d7` and `a2`-`a6` are kept.
   `qemu-m68k` (Debian/Ubuntu: `qemu-user gcc-m68k-linux-gnu libc6-dev-m68k-cross`); the CI does that too. The cases
   with threads are left out (`// skip-target: m68k`): the backend has no atomic operations, AmigaOS has no threads.
 
+### The math libraries of AmigaOS: tools/amiga/mathieee
+
+[tools/amiga/mathieee](../tools/amiga/mathieee/src/main.cshift) compares CShift's floating point in software with
+`mathieeedoubbas.library` and `mathieeedoubtrans.library` (which use the FPU where there is one): bit by bit
+(`mathieee`, `mathieee special` with zeros, infinities, NaN and denormal numbers) and in time (`mathieee bench`). It is
+for an Amiga or FS-UAE with a Kickstart ROM: vamos has the libraries in Python, so there it only tests the calls.
+
 ### Where the time goes: tools/amiga/profile.py
 
 [tools/amiga/profile.py](../tools/amiga/profile.py) runs a program under vamos with the instruction trace and counts
