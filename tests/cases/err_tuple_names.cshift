@@ -1,0 +1,12 @@
+// The values of a tuple have no names: (int Count, string Name) is not a type.
+// expect-error: the values of a tuple have no names
+
+(int Count, string Name) Stats()
+{
+    return (1, "a");
+}
+
+int Main()
+{
+    return 0;
+}

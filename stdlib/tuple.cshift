@@ -1,0 +1,233 @@
+//! Tuples: `(int, string)` is the type `Tuple2<int, string>`, `(1, "a")` a value of it. The language writes and
+//! reads them with its own syntax (docs/language/tuples.md); these are the structs behind it.
+
+/// A tuple of 2 values: the type `(T1, T2)`, made by `(a1, a2)`.
+///
+/// The values are the fields `Item1` and `Item2`; `var (a, b) = t;` takes them apart.
+struct Tuple2<T1, T2> : IEquatable<Tuple2<T1, T2>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple2<T1, T2> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2})";
+    }
+}
+
+/// A tuple of 3 values: the type `(T1, T2, T3)`, made by `(a1, a2, a3)`.
+///
+/// The values are the fields `Item1` to `Item3`; `var (a, b, c) = t;` takes them apart.
+struct Tuple3<T1, T2, T3> : IEquatable<Tuple3<T1, T2, T3>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+    /// The third value.
+    T3 Item3;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple3<T1, T2, T3> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2) && Item3.Equals(other.Item3);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        hash = unchecked(hash * 31 + Item3.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2}, {Item3})";
+    }
+}
+
+/// A tuple of 4 values: the type `(T1, T2, T3, T4)`, made by `(a1, a2, a3, a4)`.
+///
+/// The values are the fields `Item1` to `Item4`; `var (a, b, c, d) = t;` takes them apart.
+struct Tuple4<T1, T2, T3, T4> : IEquatable<Tuple4<T1, T2, T3, T4>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+    /// The third value.
+    T3 Item3;
+    /// The fourth value.
+    T4 Item4;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple4<T1, T2, T3, T4> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2) && Item3.Equals(other.Item3) && Item4.Equals(other.Item4);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        hash = unchecked(hash * 31 + Item3.GetHashCode());
+        hash = unchecked(hash * 31 + Item4.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2}, {Item3}, {Item4})";
+    }
+}
+
+/// A tuple of 5 values: the type `(T1, T2, T3, T4, T5)`, made by `(a1, a2, a3, a4, a5)`.
+///
+/// The values are the fields `Item1` to `Item5`; `var (a, b, c, d, e) = t;` takes them apart.
+struct Tuple5<T1, T2, T3, T4, T5> : IEquatable<Tuple5<T1, T2, T3, T4, T5>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+    /// The third value.
+    T3 Item3;
+    /// The fourth value.
+    T4 Item4;
+    /// The fifth value.
+    T5 Item5;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple5<T1, T2, T3, T4, T5> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2) && Item3.Equals(other.Item3) && Item4.Equals(other.Item4) && Item5.Equals(other.Item5);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        hash = unchecked(hash * 31 + Item3.GetHashCode());
+        hash = unchecked(hash * 31 + Item4.GetHashCode());
+        hash = unchecked(hash * 31 + Item5.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2}, {Item3}, {Item4}, {Item5})";
+    }
+}
+
+/// A tuple of 6 values: the type `(T1, T2, T3, T4, T5, T6)`, made by `(a1, a2, a3, a4, a5, a6)`.
+///
+/// The values are the fields `Item1` to `Item6`; `var (a, b, c, d, e, f) = t;` takes them apart.
+struct Tuple6<T1, T2, T3, T4, T5, T6> : IEquatable<Tuple6<T1, T2, T3, T4, T5, T6>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+    /// The third value.
+    T3 Item3;
+    /// The fourth value.
+    T4 Item4;
+    /// The fifth value.
+    T5 Item5;
+    /// The sixth value.
+    T6 Item6;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple6<T1, T2, T3, T4, T5, T6> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2) && Item3.Equals(other.Item3) && Item4.Equals(other.Item4) && Item5.Equals(other.Item5) && Item6.Equals(other.Item6);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        hash = unchecked(hash * 31 + Item3.GetHashCode());
+        hash = unchecked(hash * 31 + Item4.GetHashCode());
+        hash = unchecked(hash * 31 + Item5.GetHashCode());
+        hash = unchecked(hash * 31 + Item6.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2}, {Item3}, {Item4}, {Item5}, {Item6})";
+    }
+}
+
+/// A tuple of 7 values: the type `(T1, T2, T3, T4, T5, T6, T7)`, made by `(a1, a2, a3, a4, a5, a6, a7)`.
+///
+/// The values are the fields `Item1` to `Item7`; `var (a, b, c, d, e, f, g) = t;` takes them apart.
+struct Tuple7<T1, T2, T3, T4, T5, T6, T7> : IEquatable<Tuple7<T1, T2, T3, T4, T5, T6, T7>>, IHashable
+{
+    /// The first value.
+    T1 Item1;
+    /// The second value.
+    T2 Item2;
+    /// The third value.
+    T3 Item3;
+    /// The fourth value.
+    T4 Item4;
+    /// The fifth value.
+    T5 Item5;
+    /// The sixth value.
+    T6 Item6;
+    /// The seventh value.
+    T7 Item7;
+
+    /// Whether every value equals the one at the same position in `other`.
+    bool Equals(Tuple7<T1, T2, T3, T4, T5, T6, T7> other)
+    {
+        return Item1.Equals(other.Item1) && Item2.Equals(other.Item2) && Item3.Equals(other.Item3) && Item4.Equals(other.Item4) && Item5.Equals(other.Item5) && Item6.Equals(other.Item6) && Item7.Equals(other.Item7);
+    }
+
+    /// A hash code made of the hash codes of the values (tuples can be keys of a [Dictionary]).
+    int GetHashCode()
+    {
+        int hash = Item1.GetHashCode();
+        hash = unchecked(hash * 31 + Item2.GetHashCode());
+        hash = unchecked(hash * 31 + Item3.GetHashCode());
+        hash = unchecked(hash * 31 + Item4.GetHashCode());
+        hash = unchecked(hash * 31 + Item5.GetHashCode());
+        hash = unchecked(hash * 31 + Item6.GetHashCode());
+        hash = unchecked(hash * 31 + Item7.GetHashCode());
+        return hash;
+    }
+
+    /// The values as text: `(1, abc)`.
+    string ToString()
+    {
+        return $"({Item1}, {Item2}, {Item3}, {Item4}, {Item5}, {Item6}, {Item7})";
+    }
+}

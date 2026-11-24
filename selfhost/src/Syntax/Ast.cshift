@@ -235,6 +235,7 @@ struct StructInitExpr
 {
     TypeRef Type;
     FieldInit[] Fields;
+    bool IsTuple;      // (a, b): the fields are Item1, Item2, ...; the type is a TupleN (docs/language/tuples.md)
 }
 
 struct IsExpr
@@ -312,6 +313,7 @@ struct VarDeclStmt
     Expr Init;    // optional (never for constants)
     bool IsUsing;
     bool IsConst; // const int X = 5;  (a read-only variable with a constant initializer)
+    int Deconstruct; // var (a, b) = t;: the hidden variable that holds t, which must be a tuple of this many values
 }
 
 struct ExprStmt

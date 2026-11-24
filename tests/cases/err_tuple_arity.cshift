@@ -1,0 +1,8 @@
+// A deconstruction needs a tuple of as many values as it has parts.
+// expect-error: cannot take apart a value of type '(int32, int32, int32)' into 2 values: it is a tuple of 3
+
+int Main()
+{
+    var (a, b) = (1, 2, 3);
+    return 0;
+}

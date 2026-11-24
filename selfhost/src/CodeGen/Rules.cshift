@@ -442,6 +442,91 @@ int TypelessNewType(const ref Compiler cg, int target)
     return target != 0 && types.IsStruct(target) ? target : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Tuples (docs/language/tuples.md): (T1, T2) is the struct Tuple2<T1, T2> of the standard library (stdlib/tuple.cshift),
+// (a, b) a struct initializer of its fields Item1, Item2 (StructInitExpr.IsTuple).
+// ---------------------------------------------------------------------------
+
+bool IsTupleExpr(const ref Compiler cg, Expr e)
+{
+    return e.Kind == ExprKind.StructInit && cg.Tree.GetStructInit(e).IsTuple;
+}
+
+// How many values the tuple type t has, 0 if t is not a tuple.
+int TupleArity(const ref Compiler cg, int t)
+{
+    var types = cg.Types;
+    if (t == 0 || !types.IsStruct(t))
+        return 0;
+    var se = cg.Structs.Get(GetStructInfo(cg, t).Entry);
+    string name = se.Decl.Name;
+    if (name.Length != 6 || !name.StartsWith("Tuple") || !cg.Files.Get(se.File).IsPrelude)
+        return 0;
+    int n = name[5] - '0';
+    return n >= 2 && n == se.Decl.TypeParams.Length ? n : 0;
+}
+
+// The tuple type of these value types, (T1, T2, ...).
+int TupleType(const ref Compiler cg, int[] items, SourceLoc loc)
+{
+    var entry = TypeDeclEntry { };
+    string name = "Tuple" + items.Length.ToString();
+    if (!LookupTypeDecl(cg, cg.Fn[0].File, name, ref entry) || entry.Kind != DeclKind.Struct)
+        return RecoverType(cg, loc, "the tuple type '" + name + "' of the standard library is missing");
+    return GetStructType(cg, entry.Index, items, loc);
+}
+
+// The tuple type that (a, b, ...) takes from its target type: the target itself (or the T of an Optional<T> /
+// Error<T>) if it is a tuple of as many values, 0 otherwise (then the tuple has the types of its values).
+int TupleTargetType(const ref Compiler cg, Expr e, int target)
+{
+    var types = cg.Types;
+    if (target == 0 || types.IsUnknown(target))
+        return 0;
+    if (types.IsResultLike(target))
+        target = types.Elem(target);
+    return TupleArity(cg, target) == cg.Tree.GetStructInit(e).Fields.Length ? target : 0;
+}
+
+// The type that the value 'v' gives the 'index'-th value of a tuple without a target type (the rules of 'var'), 0 if
+// it has none (why says why).
+int TupleItemType(const ref Compiler cg, Value v, int index, ref string why)
+{
+    string inner = "";
+    int t = VarTypeFromInit(cg, v, "x", ref inner);
+    if (t == 0)
+        why = "the " + Ordinal(index + 1) + " value of the tuple has no type of its own ('" + cg.Types.Name(v.Type) +
+              "'): give the tuple a type, e.g. (int, string) t = (1, null);";
+    return t;
+}
+
+string Ordinal(int n)
+{
+    switch (n)
+    {
+    case 1: return "first";
+    case 2: return "second";
+    case 3: return "third";
+    case 4: return "fourth";
+    case 5: return "fifth";
+    case 6: return "sixth";
+    case 7: return "seventh";
+    default: return n.ToString() + "th";
+    }
+}
+
+// The error for 'var (a, b) = value;' when value is not a tuple of as many values ("" if it is).
+string DeconstructError(const ref Compiler cg, int t, int count)
+{
+    int n = TupleArity(cg, t);
+    if (n == count)
+        return "";
+    string what = "a value of type '" + cg.Types.Name(t) + "'";
+    if (n == 0)
+        return "cannot take apart " + what + " into " + count.ToString() + " values: it is not a tuple";
+    return "cannot take apart " + what + " into " + count.ToString() + " values: it is a tuple of " + n.ToString();
+}
+
 string TypelessNewError()
 {
     return "'new' without a type needs a struct type to take: a declaration with a type, an assignment, a return value " +

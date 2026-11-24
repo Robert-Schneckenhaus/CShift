@@ -63,7 +63,8 @@ See [types](types.md).
 
 ```ebnf
 Type      = NamedType { '*' | '[' ']' } ;
-NamedType = QualifiedName [ '<' TypeArg { ',' TypeArg } '>' ] ;
+NamedType = QualifiedName [ '<' TypeArg { ',' TypeArg } '>' ]
+          | '(' Type ',' Type { ',' Type } ')' ;   (* a tuple type: 2 to 7 types *)
 TypeArg   = Type | IntegerLiteral ;       (* a number only for the size of Fixed<T, N> *)
 ```
 
@@ -106,13 +107,17 @@ ConstantExpression = Expression ;   (* computed when the program is compiled *)
 See [statements](statements.md).
 
 ```ebnf
-Statement = Block | ';' | LocalDecl | ConstDecl | ExpressionStatement
+Statement = Block | ';' | LocalDecl | ConstDecl | Deconstruction | ExpressionStatement
           | IfStatement | WhileStatement | DoStatement | ForStatement | ForeachStatement | SwitchStatement
           | 'break' ';' | 'continue' ';' | 'return' [ Expression ] ';'
           | UsingStatement | UsingLocal | UnsafeStatement | UncheckedBlock ;
 
 Block               = '{' { Statement } '}' ;
 LocalDecl           = ( Type | 'var' ) Identifier [ '=' Expression ] ';' ;
+Deconstruction      = DeconstructParts '=' Expression ';' ;
+DeconstructParts    = 'var' '(' Identifier ',' Identifier { ',' Identifier } ')'
+                    | '(' DeconstructPart ',' DeconstructPart { ',' DeconstructPart } ')' ;
+DeconstructPart     = ( Type | 'var' ) Identifier | '_' | Expression ;   (* '_': the value is not used *)
 ExpressionStatement = Expression ';' ;
 Body                = Statement ;   (* not an if, while, do, for, foreach, switch or using (...) *)
 
@@ -121,7 +126,8 @@ WhileStatement   = 'while' '(' Expression ')' Body ;
 DoStatement      = 'do' Body 'while' '(' Expression ')' ';' ;
 ForStatement     = 'for' '(' [ ForInit ] ';' [ Expression ] ';' [ Expression { ',' Expression } ] ')' Body ;
 ForInit          = ( Type | 'var' ) Identifier [ '=' Expression ] | Expression ;
-ForeachStatement = 'foreach' '(' ( Type | 'var' ) Identifier 'in' Expression ')' Body ;
+ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression ')' Body ;
+                   (* the parts of a foreach are new variables or '_', not expressions *)
 
 SwitchStatement = 'switch' '(' Expression ')' '{' { SwitchSection } '}' ;
 SwitchSection   = CaseLabel { CaseLabel } { Statement } ;
@@ -173,6 +179,7 @@ Primary = Literal
         | QualifiedName [ TypeArgs ]
         | 'this'
         | '(' Expression ')'
+        | Tuple
         | Collection
         | Lambda
         | New
@@ -190,6 +197,8 @@ New = 'new' Type ( '(' ')' | Initializer | '[' Expression ']' { '[' ']' } | '[' 
     | 'new' '(' ')'
     | 'new' Initializer ;
 ArrayInit = '{' [ Expression { ',' Expression } [ ',' ] ] '}' ;
+
+Tuple      = '(' Expression ',' Expression { ',' Expression } ')' ;   (* 2 to 7 values *)
 
 Collection = '[' [ Element { ',' Element } [ ',' ] ] ']' ;
 Element    = Expression | '..' Expression ;
@@ -212,4 +221,8 @@ LambdaParams = Identifier | '(' [ Identifier { ',' Identifier } | Param { ',' Pa
 * A statement that starts with `Type Identifier` followed by `=` or `;` is a declaration; otherwise it is an
   expression.
 * `(` starts a lambda when the parentheses are followed by `=>`; `Identifier =>` is a lambda with one parameter.
+* A statement that starts with `var (` or with parentheses that contain a `,` at their top level and are followed by
+  `=` is a deconstruction (`(a, b) = (b, a);`). In `foreach`, parentheses followed by `in` are a deconstruction,
+  parentheses followed by a name a tuple type (`foreach ((int, int) p in pairs)`).
+* `(a, b)` in an expression is a tuple; `(a)` is a parenthesized expression.
 * `error(` in an expression is an error value; `error` is otherwise an ordinary name.

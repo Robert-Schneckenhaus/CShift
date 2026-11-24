@@ -24,6 +24,21 @@ struct AssignOpInfo
     int Count;
 }
 
+// The most values a tuple can have: the largest TupleN of the standard library (stdlib/tuple.cshift).
+const int MaxTupleLength = 7;
+
+// One part of a deconstruction (var (a, b) = t;), see ParseDeconstructPart.
+struct DeconstructPart
+{
+    SourceLoc Loc;
+    bool Discard;     // '_'
+    bool IsDecl;      // a new variable: Type (none for 'var') and Name
+    TypeRef Type;
+    string Name;
+    SourceLoc NameLoc;
+    Expr Target;      // otherwise: what the value is assigned to
+}
+
 struct TypeArgsResult
 {
     bool Ok;
@@ -40,6 +55,7 @@ struct Parser
     int FileId;
     int PanicCalls;      // calls of Environment.Panic in the function body that is being parsed
     bool DeclarationsOnly; // the declarations of the built-in types (stdlib/builtin, only for documentation): static fields
+    int TupleTemps;      // the hidden variables of deconstructions made so far (var (a, b) = t;)
 
     static Parser Create(List<Token> tokens, Diagnostics diag, Ast tree)
     {
@@ -297,9 +313,10 @@ struct Parser
             f.Doc = doc;
             Unit.Funcs.Add(f);
         }
-        else if (Check(TokenKind.Ident))
+        else if (Check(TokenKind.Ident) || Check(TokenKind.LParen))
         {
-            // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function.
+            // "Type Name;" or "Type Name = value;" is a global variable, "Type Name(" a function. The type may be a
+            // tuple type: "(int, string) Name(".
             int start = Pos;
             bool isGlobal = false;
             var probe = ParseType();
@@ -630,6 +647,8 @@ struct Parser
 
     Error<TypeRef> ParseNamedType()
     {
+        if (Check(TokenKind.LParen))
+            return ParseTupleType();
         SourceLoc loc = Cur().Loc;
         var path = List<string>.Create();
         path.Add(try ExpectIdent("type name"));
@@ -719,6 +738,201 @@ struct Parser
         } while (Match(TokenKind.Comma));
         try Expect(TokenKind.Gt, "'>'");
         return list.ToArray();
+    }
+
+    // ---- tuples (docs/language/tuples.md) ----
+
+    // (T1, T2, ...): the type TupleN<T1, T2, ...> of the standard library.
+    Error<TypeRef> ParseTupleType()
+    {
+        SourceLoc loc = Cur().Loc;
+        try Expect(TokenKind.LParen, "'('");
+        var args = List<TypeRef>.Create();
+        do
+        {
+            args.Add(try ParseType());
+            if (Check(TokenKind.Ident))
+                return error("the values of a tuple have no names: write '(int, string)' and use Item1, Item2, ... or " +
+                             "take the tuple apart with 'var (a, b) = t;'", Cur().Loc.Pack());
+        } while (Match(TokenKind.Comma));
+        try Expect(TokenKind.RParen, "')' after the types of a tuple");
+        string why = TupleLengthError(args.Count());
+        if (why.Length > 0)
+            return error(why, loc.Pack());
+        return NewType(TypeRefKind.Named, loc, new string[] { TupleTypeName(args.Count()) }, args.ToArray(), TypeRef { });
+    }
+
+    static string TupleTypeName(int count)
+    {
+        return "Tuple" + count.ToString();
+    }
+
+    static string TupleLengthError(int count)
+    {
+        if (count < 2)
+            return "a tuple needs at least 2 values";
+        if (count > MaxTupleLength)
+            return "a tuple can have at most " + MaxTupleLength.ToString() + " values, not " + count.ToString() +
+                   " (use a struct)";
+        return "";
+    }
+
+    // (a, b, ...) after the first value and the ',' have been read: a tuple value, a struct initializer of
+    // Item1, Item2, ... whose type is a TupleN (EmitTuple). The ')' is read too.
+    Error<Expr> ParseTupleRest(SourceLoc loc, Expr first)
+    {
+        var fields = List<FieldInit>.Create();
+        fields.Add(FieldInit { Loc = Tree.StartOf(first), Name = "Item1", Value = first });
+        do
+        {
+            SourceLoc at = Cur().Loc;
+            Expr item = try ParseExpr();
+            fields.Add(FieldInit { Loc = at, Name = "Item" + (fields.Count() + 1).ToString(), Value = item });
+        } while (Match(TokenKind.Comma));
+        try Expect(TokenKind.RParen, "')' after the values of a tuple");
+        string why = TupleLengthError(fields.Count());
+        if (why.Length > 0)
+            return error(why, loc.Pack());
+        return Tree.AddStructInit(loc, StructInitExpr { Fields = fields.ToArray(), IsTuple = true });
+    }
+
+    // Whether a '(' starts a deconstruction: '(...)' with a ',' at its top level, followed by '=' (and not '=='):
+    // (a, b) = t;  (int x, var y) = t;
+    bool IsDeconstructionParen()
+    {
+        int depth = 0;
+        bool comma = false;
+        for (var i = Pos; i < Tokens.Length; i += 1)
+        {
+            var k = Tokens[i].Kind;
+            if (k == TokenKind.LParen || k == TokenKind.LBracket)
+                depth += 1;
+            else if (k == TokenKind.RParen || k == TokenKind.RBracket)
+            {
+                depth -= 1;
+                if (depth == 0)
+                    return comma && i + 1 < Tokens.Length && Tokens[i + 1].Kind == TokenKind.Assign;
+            }
+            else if (k == TokenKind.Comma && depth == 1)
+                comma = true;
+            else if (k == TokenKind.Eof || k == TokenKind.Semi || k == TokenKind.LBrace || k == TokenKind.RBrace)
+                return false;
+        }
+        return false;
+    }
+
+    // Whether the '(' here is closed by a ')' that the token 'kind' follows: foreach ((int a, int b) in pairs), unlike
+    // foreach ((int, int) pair in pairs).
+    bool ParenFollowedBy(TokenKind kind)
+    {
+        int depth = 0;
+        for (var i = Pos; i < Tokens.Length; i += 1)
+        {
+            var k = Tokens[i].Kind;
+            if (k == TokenKind.LParen)
+                depth += 1;
+            else if (k == TokenKind.RParen)
+            {
+                depth -= 1;
+                if (depth == 0)
+                    return i + 1 < Tokens.Length && Tokens[i + 1].Kind == kind;
+            }
+            else if (k == TokenKind.Eof || k == TokenKind.Semi || k == TokenKind.LBrace || k == TokenKind.RBrace)
+                return false;
+        }
+        return false;
+    }
+
+    // One part of a deconstruction: a new variable (Type name, var name), '_' (the value is not used), or - where
+    // targets are allowed - an existing variable, field or element the value is assigned to.
+    Error<DeconstructPart> ParseDeconstructPart(bool targets)
+    {
+        SourceLoc loc = Cur().Loc;
+        if (CheckIdent("_") && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+        {
+            Advance();
+            return DeconstructPart { Loc = loc, Discard = true };
+        }
+        int save = Pos;
+        TypeRef t = TryParseType();
+        if (!t.IsNull() && Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+        {
+            var part = DeconstructPart { Loc = loc, IsDecl = true, NameLoc = Cur().Loc, Name = Advance().Text };
+            if (!IsVarType(t))
+                part.Type = t;
+            part.Discard = part.Name == "_";
+            return part;
+        }
+        Pos = save;
+        if (!targets)
+            return error("expected a variable ('var name' or 'Type name') or '_' in the deconstruction", loc.Pack());
+        Expr target = try ParseExpr();
+        return DeconstructPart { Loc = loc, Target = target };
+    }
+
+    // var (a, b): the names after 'var' (or '_'), each a new variable whose type comes from the tuple.
+    Error<DeconstructPart[]> ParseVarDeconstructParts()
+    {
+        Advance(); // var
+        try Expect(TokenKind.LParen, "'('");
+        var parts = List<DeconstructPart>.Create();
+        do
+        {
+            SourceLoc loc = Cur().Loc;
+            string name = try ExpectIdent("variable name");
+            parts.Add(DeconstructPart { Loc = loc, IsDecl = true, NameLoc = loc, Name = name, Discard = name == "_" });
+        } while (Match(TokenKind.Comma));
+        try Expect(TokenKind.RParen, "')'");
+        return parts.ToArray();
+    }
+
+    // (a, int b, _): the parts of a deconstruction in parentheses.
+    Error<DeconstructPart[]> ParseParenDeconstructParts(bool targets)
+    {
+        try Expect(TokenKind.LParen, "'('");
+        var parts = List<DeconstructPart>.Create();
+        do
+        {
+            parts.Add(try ParseDeconstructPart(targets));
+        } while (Match(TokenKind.Comma));
+        try Expect(TokenKind.RParen, "')'");
+        return parts.ToArray();
+    }
+
+    // The statements of a deconstruction: 'var tuple$N = value;' (which checks that value is a tuple of as many values
+    // as there are parts), then one declaration or assignment per part from tuple$N.Item1, Item2, ... They form a
+    // block without a scope of its own, so that the new variables stay visible after it.
+    Error<Stmt> MakeDeconstruction(SourceLoc loc, DeconstructPart[] parts, Expr value)
+    {
+        string why = TupleLengthError(parts.Length);
+        if (why.Length > 0)
+            return error(why, loc.Pack());
+        TupleTemps += 1;
+        string temp = "tuple$" + TupleTemps.ToString();
+        var stmts = List<Stmt>.Create();
+        stmts.Add(Tree.AddVarDecl(loc, VarDeclStmt { Name = temp, NameLoc = loc, Init = value, Deconstruct = parts.Length }));
+        bool anyDecl = false;
+        for (var i = 0; i < parts.Length; i += 1)
+        {
+            var part = parts[i];
+            if (part.Discard)
+                continue;
+            var tempName = Tree.AddName(part.Loc, NameExpr { Name = temp, TypeArgs = new TypeRef[0] });
+            var item = Tree.AddMember(part.Loc, MemberExpr { Object = tempName, Name = "Item" + (i + 1).ToString(),
+                                                             NameLoc = part.Loc, TypeArgs = new TypeRef[0] });
+            if (part.IsDecl)
+            {
+                anyDecl = true;
+                stmts.Add(Tree.AddVarDecl(part.Loc, VarDeclStmt { Type = part.Type, Name = part.Name, NameLoc = part.NameLoc, Init = item }));
+            }
+            else
+            {
+                var assign = Tree.AddAssign(part.Loc, AssignExpr { Target = part.Target, Value = item });
+                stmts.Add(Tree.AddExprStmt(part.Loc, ExprStmt { Expr = assign }));
+            }
+        }
+        // Only assignments: a block with its own scope, so that tuple$N ends with it.
+        return Tree.AddBlock(loc, BlockStmt { Stmts = stmts.ToArray(), NoScope = anyDecl });
     }
 
     bool IsVarType(TypeRef t)
@@ -875,7 +1089,7 @@ struct Parser
     // 'Type name = expr;' or 'Type name;'. Yields no statement (and restores the position) if this is not a declaration.
     Stmt TryParseVarDecl()
     {
-        if (!Check(TokenKind.Ident))
+        if (!Check(TokenKind.Ident) && !Check(TokenKind.LParen))
             return Stmt { };
         int save = Pos;
         SourceLoc loc = Cur().Loc;
@@ -917,6 +1131,16 @@ struct Parser
     Error<Stmt> ParseSimpleStatement(bool expectSemi)
     {
         SourceLoc loc = Cur().Loc;
+        if ((CheckIdent("var") && PeekKind(1) == TokenKind.LParen) || (Check(TokenKind.LParen) && IsDeconstructionParen()))
+        {
+            // var (a, b) = t;  (int a, string b) = t;  (x, y) = (y, x);
+            DeconstructPart[] parts = CheckIdent("var") ? try ParseVarDeconstructParts() : try ParseParenDeconstructParts(true);
+            try Expect(TokenKind.Assign, "'=' after the parts of a deconstruction");
+            Expr value = try ParseExpr();
+            if (expectSemi)
+                try Expect(TokenKind.Semi, "';' after deconstruction");
+            return MakeDeconstruction(loc, parts, value);
+        }
         HasPendingError = false;
         Stmt decl = TryParseVarDecl();
         if (HasPendingError)
@@ -1029,6 +1253,26 @@ struct Parser
         SourceLoc loc = Advance().Loc;
         var s = ForeachStmt { };
         try Expect(TokenKind.LParen, "'(' after 'foreach'");
+        if ((CheckIdent("var") && PeekKind(1) == TokenKind.LParen) || (Check(TokenKind.LParen) && ParenFollowedBy(TokenKind.KwIn)))
+        {
+            // foreach (var (a, b) in pairs): the loop variable is a hidden tuple$N that the body takes apart first
+            SourceLoc partsLoc = Cur().Loc;
+            DeconstructPart[] parts = CheckIdent("var") ? try ParseVarDeconstructParts() : try ParseParenDeconstructParts(false);
+            TupleTemps += 1;
+            s.Name = "tuple$" + TupleTemps.ToString();
+            s.NameLoc = partsLoc;
+            try Expect(TokenKind.KwIn, "'in'");
+            s.Iterable = try ParseExpr();
+            try Expect(TokenKind.RParen, "')'");
+            Stmt body = try ParseBody("foreach");
+            var loopVar = Tree.AddName(partsLoc, NameExpr { Name = s.Name, TypeArgs = new TypeRef[0] });
+            Stmt take = try MakeDeconstruction(partsLoc, parts, loopVar);
+            var inner = new Stmt[2];
+            inner[0] = take;
+            inner[1] = body;
+            s.Body = Tree.AddBlock(body.Loc, BlockStmt { Stmts = inner });
+            return Tree.AddForeach(loc, s);
+        }
         TypeRef t = try ParseType();
         if (!IsVarType(t))
             s.Type = t;
@@ -1770,6 +2014,8 @@ struct Parser
         }
         Pos = save + 1;
         Expr e = try ParseExpr();
+        if (Match(TokenKind.Comma))
+            return ParseTupleRest(loc, e); // (a, b): a tuple
         try Expect(TokenKind.RParen, "')'");
         return e;
     }

@@ -5,7 +5,7 @@ WebAssembly in the page) · [Documentation](https://robert-schneckenhaus.github.
 [Releases](https://github.com/Robert-Schneckenhaus/CShift/releases)
 
 CShift is a native, C#-like systems language: structs instead of classes, no GC (ARC), no headers, generics via
-monomorphization, errors as values, lambdas, sum types, interfaces without boxing, real OS threads, and direct C interop (C headers are
+monomorphization, errors as values, lambdas, sum types, tuples, interfaces without boxing, real OS threads, and direct C interop (C headers are
 imported as they are).
 
 The compiler, `cshiftc`, is **written in CShift itself** ([selfhost/](selfhost/README.md)). For native programs it

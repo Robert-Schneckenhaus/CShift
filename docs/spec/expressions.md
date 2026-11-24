@@ -196,6 +196,7 @@ cannot be called any other way. The arguments are copied for the new thread (see
 | `new T { F = a }` | the same |
 | `new T()` | a struct with all fields at their default (there are no constructors) |
 | `new { F = a }`, `new()` | the same, with `T` taken from the target type (a declaration with a type, an assignment, a `return`, an argument, a field) |
+| `(a, b, ...)` | a [tuple](types.md#tuples): with a target type that is a tuple of as many values, of that type (the values converted to its types); otherwise of the types of the values, by the rules of `var` (a value without a type of its own, like `null`, is an error) |
 | `new T[n]` | an array of `n` default elements; `new T[n][]` an array of `n` null arrays |
 | `new T[] { a, b }` | an array of the listed elements |
 

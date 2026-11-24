@@ -79,7 +79,7 @@ int GetStructType(const ref Compiler cg, int entry, int[] args, SourceLoc loc)
         if (IsInterfaceType(cg, a))
             return RecoverType(cg, loc, "an interface cannot be a type argument ('" + cg.Types.Name(a) + "'); an interface is only a 'ref'/'const ref' parameter");
     }
-    string key = Qualified(cg, se.File, decl.Name) + TypeArgsSuffix(cg, args);
+    string key = StructKey(cg, entry, args);
     var existing = cg.StructTypes.TryGet(key);
     if (existing is int found)
         return found;
@@ -109,11 +109,33 @@ int GetCheckingStructType(const ref Compiler cg, int entry)
     var args = new int[se.Decl.TypeParams.Length];
     for (var i = 0; i < args.Length; i += 1)
         args[i] = cg.Types.Unknown;
-    string key = Qualified(cg, se.File, se.Decl.Name) + TypeArgsSuffix(cg, args);
+    string key = StructKey(cg, entry, args);
     var existing = cg.StructTypes.TryGet(key);
     if (existing is int found)
         return found;
     return CreateStructType(cg, entry, args, key);
+}
+
+// The name of a struct type with these type arguments: List<int32>, App.Point. A tuple of the standard library
+// (Tuple2<int32, string>, stdlib/tuple.cshift) is named as it is written: (int32, string).
+string StructKey(const ref Compiler cg, int entry, int[] args)
+{
+    var se = cg.Structs.Get(entry);
+    string name = se.Decl.Name;
+    if (args.Length >= 2 && name == "Tuple" + args.Length.ToString() && cg.Files.Get(se.File).IsPrelude)
+    {
+        var sb = StringBuilder.Create();
+        sb.Append("(");
+        for (var i = 0; i < args.Length; i += 1)
+        {
+            if (i > 0)
+                sb.Append(", ");
+            sb.Append(cg.Types.Name(args[i]));
+        }
+        sb.Append(")");
+        return sb.ToString();
+    }
+    return Qualified(cg, se.File, name) + TypeArgsSuffix(cg, args);
 }
 
 // A new struct type for the arguments: its information and layout.
@@ -407,6 +429,8 @@ Value EmitStructInit(const ref Compiler cg, Expr e)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetStructInit(e);
+    if (n.IsTuple)
+        return EmitTuple(cg, e, 0);
     if (n.Type.IsNull())
         Fail(cg, e.Loc, TypelessNewError());
     int t = DeclTypeOf(cg, n.Type);
@@ -415,9 +439,43 @@ Value EmitStructInit(const ref Compiler cg, Expr e)
     return EmitStructInitOf(cg, e, t);
 }
 
+// (a, b, ...): a tuple. With a target type that is a tuple of as many values (a declaration with a type, a parameter,
+// a return value), its values are converted to the target's types (TupleTargetType); otherwise the tuple has the types
+// of its values, by the rules of 'var'.
+Value EmitTuple(const ref Compiler cg, Expr e, int target)
+{
+    int tt = TupleTargetType(cg, e, target);
+    if (tt != 0)
+        return EmitStructInitOf(cg, e, tt);
+    var ir = cg.Ir;
+    var fields = cg.Tree.GetStructInit(e).Fields;
+    var values = new Value[fields.Length];
+    var items = new int[fields.Length];
+    for (var i = 0; i < fields.Length; i += 1)
+    {
+        values[i] = ToRValue(cg, SettleCollection(cg, EmitExpr(cg, fields[i].Value)));
+        string why = "";
+        items[i] = TupleItemType(cg, values[i], i, ref why);
+        if (items[i] == 0)
+            Fail(cg, fields[i].Loc, why);
+    }
+    int t = TupleType(cg, items, e.Loc);
+    string ty = LlvmType(cg, t);
+    string agg = "zeroinitializer";
+    for (var i = 0; i < fields.Length; i += 1)
+    {
+        var p = FindField(cg, t, fields[i].Name);
+        Value v = ConvertValue(cg, values[i], p.Type, fields[i].Value.Loc);
+        agg = ir.InsertValue(ty, agg, LlvmType(cg, p.Type), Consume(cg, v), IndexList(p.Indices));
+    }
+    return Rvalue(t, agg, NeedsArc(cg, t));
+}
+
 // new { ... } / new() as the struct of a target type (see IsTypelessNew).
 Value EmitTypelessNew(const ref Compiler cg, Expr e, int target)
 {
+    if (IsTupleExpr(cg, e))
+        return EmitTuple(cg, e, target);
     int t = TypelessNewType(cg, target);
     if (t == 0)
         Fail(cg, e.Loc, TypelessNewError());

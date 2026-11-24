@@ -1,0 +1,8 @@
+// A tuple does not convert to another type.
+// expect-error: cannot implicitly convert '(int32, int32)' to 'int32'
+
+int Main()
+{
+    int x = (1, 2);
+    return 0;
+}

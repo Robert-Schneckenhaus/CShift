@@ -119,6 +119,14 @@ A struct is a value made of fields (see [declarations](declarations.md#structs))
 with the alignment of C, so a struct can be passed to C. A struct cannot contain itself, directly or through other
 structs (an array or a `List` of it is fine). Generic structs (`List<T>`) are separate types for every type argument.
 
+## Tuples
+
+`(T1, T2, ...)` (2 to 7 types) is the struct `TupleN<T1, T2, ...>` of the standard library (`stdlib/tuple.cshift`)
+with the fields `Item1` to `ItemN`, and is named `(T1, T2, ...)` in messages. It is an ordinary struct: copied by
+value, with the fields' ARC, and the methods `Equals`, `GetHashCode` and `ToString`, which can be called when the
+types of its values have them. A tuple value is written `(a, b, ...)` (see
+[expressions](expressions.md#creating-values)); there is no conversion between different tuple types.
+
 ## Interfaces
 
 An interface (see [declarations](declarations.md#interfaces)) is **not a value type**: there are no variables,
@@ -241,6 +249,7 @@ initializer, an operand) in these cases:
 | `T*` | `void*` |
 | a function or `static` method name, a lambda | a matching function type |
 | a [collection expression](expressions.md#collection-expressions) | an array, a slice, `Fixed<T, N>`, or a struct with `static Create()` and `Add(T)` |
+| a tuple value `(a, b, ...)` | a tuple type of as many values whose types the values convert to (`(int64, uint8) t = (1, 2);`) |
 
 Everything else needs a cast or a method (`ToString()`, `ToArray()`). In particular there is no implicit conversion
 from a larger to a smaller number, between signed and unsigned types of the same size, from a floating-point type

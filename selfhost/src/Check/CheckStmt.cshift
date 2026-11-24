@@ -273,9 +273,20 @@ void CheckVarDecl(const ref Compiler cg, Stmt s)
     }
     else if (!d.Init.IsNull())
         CheckConversion(cg, init, t, cg.Tree.StartOf(d.Init));
+    if (d.Deconstruct > 0 && !types.IsUnknown(t))
+    {
+        // the hidden variable of 'var (a, b) = value;': value must be a tuple of as many values
+        string wrong = DeconstructError(cg, t, d.Deconstruct);
+        if (wrong.Length > 0)
+        {
+            CheckError(cg, cg.Tree.StartOf(d.Init), wrong);
+            t = types.Unknown;
+        }
+    }
     CheckNotDeclared(cg, nameLoc, d.Name);
     DeclareVar(cg, d.Name, t, "%v");
-    NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
+    if (d.Deconstruct == 0)
+        NoteDeclared(cg, d.NameLoc, s.Loc, false, d.Type, RefKind.None);
     NoteTypeParamVar(cg, d.Name, d.Type);
     if (d.IsUsing && !types.IsUnknown(t) && !ImplementsDisposable(cg, t))
         CheckError(cg, s.Loc, "'using' requires a struct that implements IDisposable, but '" + types.Name(t) + "' does not");
