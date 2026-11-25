@@ -55,6 +55,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Entry point: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
+| Tests: `test "name" { ... }` (an `Error<void>` body, left out of builds), `Assert.True/False/Equal/NotEqual/Near/Fail`, `cshiftc test` (every test in a process of its own, `--filter`, exit code) | ✔ (self-hosted, [tests](testing.md)) |
 | Standard library: `List<T>`, `Dictionary<K,V>`, `File`, `Directory`, `Path`, `Encoding`, `Math`, `Random`, string helpers | ✔ (see [../stdlib.md](../stdlib.md)) |
 | Real OS threads: `thread` functions (only callable via `start`), `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>`; strings copied into threads, `Mutex<T>` | ✔ (extension, see [threading.md](threading.md); strings and `Mutex<T>` self-hosted) |
 
@@ -87,7 +88,7 @@ The design document leaves a number of things open; these are the decisions that
 * **`Error<Optional<T>>`** is the only allowed nesting. Like the others it is not a condition: write `r is error e`,
   `r is T v` (succeeded with a value) or `r is Optional<T> o` (succeeded).
 * **Contextual keywords:** `thread` and `where` are only keywords where they start a thread function or a
-  constraint; elsewhere they are ordinary names.
+  constraint, `test` only before a string at the top level (a test); elsewhere they are ordinary names.
 * **"Color Color":** a variable or field may have the name of its own type; `Color.Green` then means the type unless
   `Green` is a member of the value (C#'s rule).
 * **Floats as text** are the shortest text that reads back as the same value (`0.1`, `0.30000000000000004`), at run

@@ -20,6 +20,7 @@ cshiftc publish hello        the program for the browser: hello/bin/hello.html
 | [`cshiftc run [project] [-- args]`](#build-and-run) | builds the project and runs it; the arguments after `--` go to the program |
 | [`cshiftc publish [project \| files]`](#publish) | the program for the browser: one HTML file with everything in it |
 | [`cshiftc serve [project \| files]`](#serve) | `publish` on a local web server, built again when a file changes |
+| [`cshiftc test [project \| files] [--filter <text>]`](#test) | builds the tests (`test "name" { ... }`) and runs each in a process of its own |
 | [`cshiftc check [project \| files]`](#check-query-and-doc) | reports the errors and generates nothing |
 | [`cshiftc query ...`](#check-query-and-doc) | answers questions about the code as JSON (for editors) |
 | [`cshiftc doc [project \| files]`](#check-query-and-doc) | the doc comments as JSON |
@@ -107,6 +108,21 @@ server.
 | `--port <n>` | the port; by default the first free one from 8080 on |
 | `--host <address>` | where the server listens: `127.0.0.1` (this computer only, the default) or `0.0.0.0` (every network) |
 | `--open` | opens the page in the browser |
+
+## test
+
+```text
+cshiftc test                       the tests of the project in the current directory (or above)
+cshiftc test path/to/project
+cshiftc test a.cshift b.cshift     the tests of single files
+cshiftc test --filter MinMax       only the tests whose name contains the text
+```
+
+Builds the program's [tests](language/testing.md) (`test "name" { ... }`, without the program's `Main`) into
+`obj/<name>-tests` and runs every test in a process of its own: a panic ends only its test. Prints `ok` or `FAIL` per
+test; for a failed one its place, the panic or error, and what it wrote. Exit code 0 when all passed, 1 otherwise. The
+build options (`-O`, `-g`, `--unchecked`, ...) apply; tests run on this computer, so `--target` and the wasm/m68k
+backends are not possible here.
 
 ## check, query and doc
 

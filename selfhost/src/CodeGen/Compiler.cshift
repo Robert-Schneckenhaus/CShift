@@ -221,6 +221,8 @@ struct CgState
 {
     bool Recovering;      // declarations and the checker: some errors are reported and the compiler goes on (Recover)
     bool FrontEndOnly;    // 'cshiftc check'/'query': stop after the checker (report its errors, generate nothing)
+    int Tests;            // test "..." blocks: 0 left out (a build), 1 kept (check, query, doc), 2 'cshiftc test': kept
+                          // and collected in Compiler.Tests, the program's Main left out (TestEntrySource replaces it)
     bool Indexing;        // ... and record the names it resolves (Compiler.Index)
     int SyntaxErrors;     // errors of the lexer and the parser (the compiler stops after parsing then)
     bool Muted;           // the checker reports nothing (the body of a lambda whose result type is inferred)
@@ -251,6 +253,14 @@ struct CgState
 // The compiler
 // ---------------------------------------------------------------------------
 
+// A test "name" { ... } of the program (cshiftc test): its function, qualified with its namespace, and where it is.
+struct TestCase
+{
+    string Name;
+    string Function;
+    SourceLoc Loc;
+}
+
 struct Compiler
 {
     Ast Tree;
@@ -261,6 +271,7 @@ struct Compiler
     FnState[] Fn;
 
     List<FileContext> Files;
+    List<TestCase> Tests;          // the tests of the program, in the order of the files (only with St.Tests == 2)
     List<FuncEntry> Funcs;
     List<StructEntry> Structs;
     List<InterfaceEntry> Interfaces;
@@ -339,6 +350,7 @@ struct Compiler
         cg.ConstDecls = Dictionary<string, int>.Create();
         cg.Namespaces = HashSet<string>.Create();
         cg.Imported = Dictionary<string, ImportedNamespace>.Create();
+        cg.Tests = List<TestCase>.Create();
         cg.Symbols = HashSet<string>.Create();
         cg.Namespaces.Add("System");
         cg.Links = List<string>.Create();
@@ -391,8 +403,35 @@ string Qualified(const ref Compiler cg, int file, string name)
     return ns.Length == 0 ? name : ns + "." + name;
 }
 
+// The tests of a file of the program (test "name" { ... }, see St.Tests): left out of a build; for 'cshiftc test'
+// collected, and Main left out instead.
+void SelectTests(const ref Compiler cg, ref CompilationUnit unit)
+{
+    int mode = cg.St[0].Tests;
+    if (mode == 1)
+        return;
+    var kept = List<FuncDecl>.Create();
+    foreach (var f in unit.Funcs)
+    {
+        bool isTest = f.TestName != null;
+        if (isTest && mode == 0)
+            continue;
+        if (mode == 2 && !isTest && f.Name == "Main")
+            continue;
+        if (isTest)
+        {
+            string qualified = unit.File.Ns.Length > 0 ? unit.File.Ns + "." + f.Name : f.Name;
+            cg.Tests.Add(TestCase { Name = f.TestName, Function = qualified, Loc = f.Loc });
+        }
+        kept.Add(f);
+    }
+    unit.Funcs = kept;
+}
+
 void AddUnit(const ref Compiler cg, CompilationUnit unit)
 {
+    if (!unit.File.IsPrelude)
+        SelectTests(cg, ref unit);
     cg.Files.Add(unit.File);
     int file = cg.Files.Count() - 1;
 

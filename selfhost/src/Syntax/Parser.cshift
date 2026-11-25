@@ -87,6 +87,7 @@ struct Parser
     int PanicCalls;      // calls of Environment.Panic in the function body that is being parsed
     bool DeclarationsOnly; // the declarations of the built-in types (stdlib/builtin, only for documentation): static fields
     int TupleTemps;      // the hidden variables of deconstructions made so far (var (a, b) = t;)
+    int TestCount;       // the tests of the file so far (test "name" { ... })
 
     static Parser Create(List<Token> tokens, Diagnostics diag, Ast tree)
     {
@@ -319,6 +320,12 @@ struct Parser
             UnionDecl u = try ParseUnion();
             u.Doc = doc;
             Unit.Unions.Add(u);
+        }
+        else if (CheckIdent("test") && PeekKind(1) == TokenKind.StringLit)
+        {
+            // test "name" { ... } ('test' is a contextual keyword, docs/language/testing.md)
+            FuncDecl t = try ParseTest();
+            Unit.Funcs.Add(t);
         }
         else if (IsThreadModifier())
         {
@@ -608,6 +615,28 @@ struct Parser
         fn.NameLoc = fn.Loc;
         fn.Name = try ExpectIdent("function name");
         try ParseFunctionRest(ref fn);
+        return fn;
+    }
+
+    // test "name" { ... }: a function 'Error<void> CShiftTest_<file>_<n>()' with the name of the test. The body may use
+    // 'try' (an error fails the test) and Assert (a panic fails it). Only 'cshiftc test' calls it (TestEntrySource).
+    Error<FuncDecl> ParseTest()
+    {
+        SourceLoc loc = Cur().Loc;
+        Advance(); // test
+        Token name = Advance();
+        if (name.Text.Length == 0)
+            return error("a test needs a name: test \"what it checks\" { ... }", name.Loc.Pack());
+        TestCount += 1;
+        var voidType = NewType(TypeRefKind.Named, loc, new string[] { "void" }, new TypeRef[0], TypeRef { });
+        var ret = NewType(TypeRefKind.Named, loc, new string[] { "Error" }, new TypeRef[] { voidType }, TypeRef { });
+        var fn = FuncDecl { Loc = loc, NameLoc = loc, Name = "CShiftTest_" + FileId.ToString() + "_" + TestCount.ToString(),
+                            TypeParams = new string[0], Params = new Param[0], Ret = ret, Constraints = new Constraint[0],
+                            Owner = -1, Doc = "", TestName = name.Text };
+        if (!Check(TokenKind.LBrace))
+            return error("expected '{' after the name of the test", Cur().Loc.Pack());
+        PanicCalls = 0;
+        fn.Body = try ParseBlock();
         return fn;
     }
 

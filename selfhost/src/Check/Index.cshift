@@ -817,7 +817,11 @@ string OutlineJson(const ref Compiler cg, int file)
     {
         var fe = cg.Funcs.Get(i);
         if (fe.File == file && fe.OwnerStruct == -1 && fe.Decl.Loc.Line > 0)
-            items.Add(OutlineSymbol(fe.Decl.Name, "function", fe.Decl.NameLoc.Line > 0 ? fe.Decl.NameLoc : fe.Decl.Loc, ""));
+        {
+            // a test "name" { ... } is shown by its name (its function's name is made up)
+            string shown = fe.Decl.TestName != null ? "test \"" + fe.Decl.TestName + "\"" : fe.Decl.Name;
+            items.Add(OutlineSymbol(shown, "function", fe.Decl.NameLoc.Line > 0 ? fe.Decl.NameLoc : fe.Decl.Loc, ""));
+        }
     }
     for (var i = 0; i < cg.Consts.Count(); i += 1)
     {

@@ -9,6 +9,8 @@ usage: cshiftc [options] file.cshift [...]            compile single files
                                                       the page on http://localhost:8080/: built again when a file
                                                       changes, and the page reloads itself
        cshiftc new   <directory>                      create a new project
+       cshiftc test  [project | files] [--filter <text>] [options]
+                                                      build the tests (test "name" { ... }) and run each of them
        cshiftc check [project | files] [options]      report the errors, generate nothing
        cshiftc query --at <file> <line> <col> [--references] [--members] [project | files] [--overlay <file> <text file>]
                                                       the name at a position (hover, definition; the places where it
