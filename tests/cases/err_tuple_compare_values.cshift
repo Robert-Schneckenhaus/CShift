@@ -1,0 +1,8 @@
+// == compares the values pair by pair, so they must be comparable.
+// expect-error: cannot compare '(int32, string)' with '(int32, int32)': the second values: cannot compare 'string' with 'int32'
+
+int Main()
+{
+    var t = (1, "a");
+    return t == (1, 2) ? 0 : 1;
+}

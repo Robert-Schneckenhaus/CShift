@@ -362,6 +362,13 @@ void EmitVarDecl(const ref Compiler cg, Stmt s)
         if (t == 0)
             Fail(cg, s.Loc, why);
     }
+    if (d.Deconstruct > 0)
+    {
+        // the hidden variable of 'var (a, b) = value;': value must be a tuple of as many values
+        string wrong = DeconstructError(cg, t, d.Deconstruct);
+        if (wrong.Length > 0)
+            Fail(cg, cg.Tree.StartOf(d.Init), wrong);
+    }
 
     if (types.IsStruct(t) && GetStructInfo(cg, t).Opaque)
         Fail(cg, s.Loc, "'" + types.Name(t) + "' is an incomplete C type and can only be used through a pointer ('" + types.Name(t) + "*')");

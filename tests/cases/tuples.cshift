@@ -1,0 +1,101 @@
+// Tuples: (int, string) is a type, (1, "a") a value of it; t.Item1, t.Item2 are its values. A tuple takes the types
+// of a declaration, parameter or return value it is used as, otherwise the types of its values (like 'var').
+// Tuples are values (structs): copied on assignment, with ARC for the strings in them. Equals, GetHashCode (keys of a
+// Dictionary) and ToString ($"{t}") compare, hash and print the values.
+// expect-exit: 0
+// expect-stdout: (1, 7) 1 7
+// expect-stdout: (x, 2.5, true)
+// expect-stdout: (1, 2) 3
+// expect-stdout: p 3
+// expect-stdout: one-two 1
+// expect-stdout: found one
+// expect-stdout: true false
+// expect-stdout: (4, four) (0, )
+// expect-stdout: (2, 1) 7 x
+// expect-stdout: b (5, e) z
+// expect-stdout: a (1, (2, nested))
+// expect-stdout: copy 1
+
+using System;
+
+(int, int) MinMax(int[] a)
+{
+    int lo = a[0];
+    int hi = a[0];
+    foreach (var x in a)
+    {
+        if (x < lo)
+            lo = x;
+        if (x > hi)
+            hi = x;
+    }
+    return (lo, hi);
+}
+
+struct Holder
+{
+    (string, int) Pair;
+}
+
+Optional<(int, string)> Find(bool ok)
+{
+    if (ok)
+        return (1, "one");
+    return null;
+}
+
+T Id<T>(T v)
+{
+    return v;
+}
+
+(int, int) Swap((int, int) p)
+{
+    return (p.Item2, p.Item1);
+}
+
+(string, int) Global = ("g", 1);
+
+int Main()
+{
+    var t = MinMax(new int[] { 3, 1, 7, 2 });
+    Console.WriteLine($"{t} {t.Item1} {t.Item2}");
+    Console.WriteLine(("x", 2.5, true));
+
+    // the target type converts the values
+    (int64, uint8) wide = (1, 2);
+    Console.WriteLine($"{wide} {wide.Item1 + wide.Item2}");
+
+    var h = Holder { Pair = ("p", 3) };
+    Console.WriteLine($"{h.Pair.Item1} {h.Pair.Item2}");
+
+    var d = Dictionary<(int, int), string>.Create();
+    d.Set((1, 2), "one-two");
+    Console.WriteLine($"{d.Get((1, 2))} {d.Count()}");
+
+    if (Find(true) is (int, string) found)
+        Console.WriteLine($"found {found.Item2}");
+    Console.WriteLine($"{(1, "a").Equals((1, "a"))} {(1, "a").Equals((1, "b"))}");
+
+    (int, string)[] arr = new (int, string)[2];
+    arr[0] = (4, "four");
+    Console.WriteLine($"{arr[0]} {arr[1]}");
+
+    Func<(int, int), int> sum = p => p.Item1 + p.Item2;
+    Console.WriteLine($"{Swap((1, 2))} {sum((3, 4))} {Id((1, "x")).Item2}");
+
+    var list = [(1, "a"), (2, "b")];
+    List<(int, string)> more = [(5, "e")];
+    var pairs = List<(string, int)>.Create();
+    pairs.Add(("z", 1));
+    Console.WriteLine($"{list[1].Item2} {more.Get(0)} {pairs.Get(0).Item1}");
+
+    var nested = ((1, (2, "nested")), "a");
+    Console.WriteLine($"{nested.Item2} {nested.Item1}");
+
+    // a copy is independent
+    var copy = Global;
+    copy.Item1 = "changed";
+    Console.WriteLine($"copy {Global.Item2}");
+    return Global.Item1 == "g" ? 0 : 1;
+}

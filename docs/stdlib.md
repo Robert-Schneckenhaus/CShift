@@ -8,6 +8,7 @@ actually uses gets compiled (generics are instantiated per type). Examples are i
 | Namespace | File | Contents |
 |---|---|---|
 | global | `core.cshift` | `IDisposable`, `IComparable<T>`, `IEquatable<T>`, `IHashable`, `sqrt` |
+| global | `tuple.cshift` | `Tuple2<T1, T2>` to `Tuple7<...>`: the structs behind tuple types, `(int, string)` ([tuples](language/tuples.md)) |
 | `System` | `list.cshift`, `dictionary.cshift`, `hashset.cshift`, `stack.cshift`, `queue.cshift`, `stringbuilder.cshift`, `process.cshift`, `file.cshift`, `directory.cshift`, `encoding.cshift` | `List<T>`, `Dictionary<K,V>`, `HashSet<T>`, `Stack<T>`, `Queue<T>`, `StringBuilder`, `Process`, `KeyValuePair<K,V>`, `File`, `Directory`, `Path`, `Encoding` (`using System;`) |
 | `Char` | `char.cshift` | `Char.IsDigit/IsLetter/IsLetterOrDigit/IsHexDigit/IsWhiteSpace/IsUpper/IsLower/ToUpper/ToLower/HexValue` |
 | `ConsoleInput` | `console.cshift` | `ReadLine`, which the compiler calls for `Console.ReadLine()` |

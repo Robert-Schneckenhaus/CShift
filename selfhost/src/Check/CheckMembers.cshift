@@ -866,6 +866,8 @@ Value CheckStructInit(const ref Compiler cg, Expr e)
 {
     var types = cg.Types;
     var n = cg.Tree.GetStructInit(e);
+    if (n.IsTuple)
+        return CheckTuple(cg, e, 0);
     if (n.Type.IsNull())
     {
         CheckError(cg, e.Loc, TypelessNewError());
@@ -887,6 +889,8 @@ Value CheckStructInit(const ref Compiler cg, Expr e)
 // new { ... } / new() as the struct of a target type (see EmitTypelessNew).
 Value CheckTypelessNew(const ref Compiler cg, Expr e, int target)
 {
+    if (IsTupleExpr(cg, e))
+        return CheckTuple(cg, e, target);
     int t = TypelessNewType(cg, target);
     if (t == 0)
     {
@@ -902,6 +906,36 @@ Value CheckTypelessNew(const ref Compiler cg, Expr e, int target)
     if (e.Kind == ExprKind.NewObject)
         return Rvalue(t, "", false);
     return CheckStructInitOf(cg, e, t);
+}
+
+// (a, b, ...): a tuple (see EmitTuple).
+Value CheckTuple(const ref Compiler cg, Expr e, int target)
+{
+    int tt = TupleTargetType(cg, e, target);
+    if (tt != 0)
+        return CheckStructInitOf(cg, e, tt);
+    var fields = cg.Tree.GetStructInit(e).Fields;
+    var items = new int[fields.Length];
+    bool known = true;
+    for (var i = 0; i < fields.Length; i += 1)
+    {
+        Value v = SettleChecked(cg, CheckRValue(cg, fields[i].Value));
+        if (IsUnknown(cg, v))
+        {
+            known = false;
+            continue;
+        }
+        string why = "";
+        items[i] = TupleItemType(cg, v, i, ref why);
+        if (items[i] == 0)
+        {
+            CheckError(cg, fields[i].Loc, why);
+            known = false;
+        }
+    }
+    if (!known)
+        return UnknownValue(cg);
+    return Rvalue(LiteralTupleType(cg, e, items), "", false);
 }
 
 Value CheckStructInitOf(const ref Compiler cg, Expr e, int t)

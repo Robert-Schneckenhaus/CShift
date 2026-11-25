@@ -34,6 +34,21 @@ A local variable has a type, or `var` and an initializer whose type it takes (`v
 error). A variable without an initializer starts with its [default value](types.md#default-values). One declaration
 declares one variable (`int a, b;` is not allowed).
 
+A **deconstruction** takes a [tuple](types.md#tuples) apart:
+
+```ebnf
+Deconstruction   = DeconstructParts '=' Expression ';' ;
+DeconstructParts = 'var' '(' Identifier ',' Identifier { ',' Identifier } ')'
+                 | '(' DeconstructPart ',' DeconstructPart { ',' DeconstructPart } ')' ;
+DeconstructPart  = ( Type | 'var' ) Identifier | '_' | Expression ;
+```
+
+The expression is evaluated once and must be a tuple of exactly as many values as there are parts (a compile error
+otherwise). Then, in order, the n-th value initializes the n-th part's new variable (`var (a, b)`, `(int a, var b)`; the
+variables are visible after the statement like other locals), is assigned to the n-th part's variable, field or element
+(`(x, p.Y) = t;`), or is not used (`_`). Because the tuple is complete before anything is assigned, `(a, b) = (b, a);`
+swaps.
+
 A local constant (`const int N = 4;`) is described in [declarations](declarations.md#constants). There are no `ref`
 locals: a reference to another variable is only a [`ref` parameter](memory.md#ref-and-const-ref).
 
@@ -74,7 +89,7 @@ foreach (var item in items)
 WhileStatement   = 'while' '(' Expression ')' Body ;
 DoStatement      = 'do' Body 'while' '(' Expression ')' ';' ;
 ForStatement     = 'for' '(' [ LocalDecl-or-Expression ] ';' [ Expression ] ';' [ Expression { ',' Expression } ] ')' Body ;
-ForeachStatement = 'foreach' '(' ( Type | 'var' ) Identifier 'in' Expression ')' Body ;
+ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression ')' Body ;
 ```
 
 `while` tests the condition before every iteration, `do` after it (the body runs at least once). The conditions are
@@ -94,7 +109,8 @@ commas, run after every iteration and after `continue`. There is no `++`; write 
 
 The collection expression is evaluated once, before the first iteration. The loop variable gets a **copy** of each
 element: assigning to it (or to its fields) does not change the collection. With an explicit type, the element must
-convert implicitly to it. A struct collection is read with `Get(0)` to `Get(Count() - 1)`, calling `Count()` before
+convert implicitly to it. With deconstruction parts (`foreach (var (name, age) in people)`), each element is taken apart
+like in a [deconstruction](#local-declarations) (the parts are new variables or `_`). A struct collection is read with `Get(0)` to `Get(Count() - 1)`, calling `Count()` before
 every iteration.
 
 ## `break` and `continue`

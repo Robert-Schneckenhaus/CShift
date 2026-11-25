@@ -10,19 +10,20 @@ precise list of what's implemented, and the decisions the design leaves open). T
 
 1. [Basics](basics.md) — program structure, namespaces, variables, control flow, operators
 2. [Structs](structs.md) — fields, visibility, initializers, methods, inheritance
-3. [Interfaces and generics](interfaces-and-generics.md) — interfaces (constraints, parameters), sum types, generic structs/functions
-4. [Enums](enums.md) — enums with an explicit base type
-5. [Memory model](memory-model.md) — value vs. reference semantics, ARC, `ref`/`const ref`, `unsafe`
-6. [Error handling](error-handling.md) — `Error<T>`, `Optional<T>`, `try`, `is`/`switch` patterns
-7. [Threads](threading.md) — `thread`, `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>`
-8. [Resources and `using`](resources.md) — `IDisposable`, deterministic cleanup
-9. [Functions and function pointers](functions-and-delegates.md) — overloading, parameters, `Action`/`Func`, lambdas
-10. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings and interpolation, slices, `List`, `Dictionary`, indexers
-11. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
-12. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
-13. [Projects](projects.md) — `cshift.json`, building programs with more than one file
-14. [Doc comments](doc-comments.md) — `///` and `//!`, tags, links, `cshiftc doc`
-15. [Language status](status.md) — the complete list of what's implemented
+3. [Tuples](tuples.md) — `(int, string)`, `return (a, b);`, names, `var (x, y) = t;`, swapping, `==`, tuples as keys
+4. [Interfaces and generics](interfaces-and-generics.md) — interfaces (constraints, parameters), sum types, generic structs/functions
+5. [Enums](enums.md) — enums with an explicit base type
+6. [Memory model](memory-model.md) — value vs. reference semantics, ARC, `ref`/`const ref`, `unsafe`
+7. [Error handling](error-handling.md) — `Error<T>`, `Optional<T>`, `try`, `is`/`switch` patterns
+8. [Threads](threading.md) — `thread`, `Thread`/`Thread<T>`, `SharedPtr<T>`, `Mutex<T>`
+9. [Resources and `using`](resources.md) — `IDisposable`, deterministic cleanup
+10. [Functions and function pointers](functions-and-delegates.md) — overloading, parameters, `Action`/`Func`, lambdas
+11. [Arrays, strings and collections](arrays-strings-collections.md) — arrays, strings and interpolation, slices, `List`, `Dictionary`, indexers
+12. [Constants and global variables](constants-and-globals.md) — `const`, globals, the compile-time evaluator
+13. [C interop (FFI)](ffi-and-interop.md) — `extern "C"`, importing C headers
+14. [Projects](projects.md) — `cshift.json`, building programs with more than one file
+15. [Doc comments](doc-comments.md) — `///` and `//!`, tags, links, `cshiftc doc`
+16. [Language status](status.md) — the complete list of what's implemented
 
 ## A first program
 

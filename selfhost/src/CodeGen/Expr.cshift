@@ -670,6 +670,8 @@ Value EmitCompare(const ref Compiler cg, BinOp op, Value l0, Value r0, SourceLoc
     string why = "";
     if (CompareType(cg, op, l, r, ref why) == 0)
         Fail(cg, loc, why);
+    if (TupleArity(cg, l.Type) > 0 && TupleArity(cg, r.Type) > 0)
+        return EmitTupleCompare(cg, op, TupleParts(cg, l), TupleParts(cg, r), loc);
 
     // A function name compared with a function value takes the function's type.
     if (types.Kind(l.Type) == TypeKind.MethodGroup && types.IsFunction(r.Type))
@@ -868,6 +870,8 @@ Value EmitBinary(const ref Compiler cg, Expr e)
         return EmitLogical(cg, e);
     if (b.Op == BinOp.Coalesce)
         return EmitCoalesce(cg, e);
+    if ((b.Op == BinOp.Eq || b.Op == BinOp.Ne) && (IsTupleExpr(cg, b.Lhs) || IsTupleExpr(cg, b.Rhs)))
+        return EmitTupleEquality(cg, e);
     var chain = List<Expr>.Create(); // e and the binary expressions on its left side, outermost first
     Expr leftmost = e;
     while (leftmost.Kind == ExprKind.Binary)
@@ -891,6 +895,73 @@ Value EmitBinary(const ref Compiler cg, Expr e)
     }
     SetLoc(cg, outer);
     return l;
+}
+
+// a == b with a tuple written out on one side ('t == (1, null)'): its values are compared one by one with the other
+// side's, as they are (a literal adapts, null compares with a string), without making a tuple of them.
+Value EmitTupleEquality(const ref Compiler cg, Expr e)
+{
+    var b = cg.Tree.GetBinary(e);
+    Value lv = Value { };
+    Value rv = Value { };
+    Value[] l = TupleOperandParts(cg, b.Lhs, ref lv);
+    Value[] r = TupleOperandParts(cg, b.Rhs, ref rv);
+    string why = "";
+    string lName = TupleOperandName(cg, l, IsTupleExpr(cg, b.Lhs), lv.Type);
+    string rName = TupleOperandName(cg, r, IsTupleExpr(cg, b.Rhs), rv.Type);
+    if (l.Length == 0 || r.Length == 0)
+        Fail(cg, e.Loc, "cannot compare '" + lName + "' with '" + rName + "'");
+    if (TupleCompareType(cg, b.Op, l, r, lName, rName, ref why) == 0)
+        Fail(cg, e.Loc, why);
+    return EmitTupleCompare(cg, b.Op, l, r, e.Loc);
+}
+
+// The values of an operand of == for EmitTupleEquality: those of a tuple written out, or those of a tuple value
+// (empty if it is no tuple; v is the value then).
+Value[] TupleOperandParts(const ref Compiler cg, Expr x, ref Value v)
+{
+    if (IsTupleExpr(cg, x))
+    {
+        var fields = cg.Tree.GetStructInit(x).Fields;
+        var parts = new Value[fields.Length];
+        for (var i = 0; i < fields.Length; i += 1)
+            parts[i] = EmitRValue(cg, fields[i].Value);
+        return parts;
+    }
+    v = EmitRValue(cg, x);
+    if (TupleArity(cg, v.Type) == 0)
+        return new Value[0];
+    return TupleParts(cg, v);
+}
+
+// The values of a tuple value, borrowed from it.
+Value[] TupleParts(const ref Compiler cg, Value v)
+{
+    var ir = cg.Ir;
+    Value t = ToRValue(cg, v);
+    HoldTemp(cg, t);
+    int n = TupleArity(cg, t.Type);
+    string ty = LlvmType(cg, t.Type);
+    var parts = new Value[n];
+    for (var i = 0; i < n; i += 1)
+    {
+        var p = FindField(cg, t.Type, "Item" + (i + 1).ToString());
+        parts[i] = Rvalue(p.Type, ir.ExtractValue(ty, t.V, IndexList(p.Indices)), false);
+    }
+    return parts;
+}
+
+// (a1, a2) == (b1, b2): a1 == b1 & a2 == b2 (all values are computed already, so no short circuit is needed).
+Value EmitTupleCompare(const ref Compiler cg, BinOp op, Value[] l, Value[] r, SourceLoc loc)
+{
+    var ir = cg.Ir;
+    string all = "true";
+    for (var i = 0; i < l.Length; i += 1)
+    {
+        Value eq = EmitCompare(cg, BinOp.Eq, l[i], r[i], loc);
+        all = i == 0 ? eq.V : ir.Bin("and", "i1", all, eq.V);
+    }
+    return MakeBool(cg, op == BinOp.Eq ? all : ir.Bin("xor", "i1", all, "true"));
 }
 
 Value EmitBinaryStep(const ref Compiler cg, BinOp op, Value l, Value r, SourceLoc loc)

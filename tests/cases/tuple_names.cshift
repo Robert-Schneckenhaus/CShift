@@ -1,0 +1,76 @@
+// Tuple values can have names: (int Count, string Name) is a tuple type whose values are also t.Count and t.Name
+// (besides Item1, Item2); (Count: 3, Name: "a") a tuple value with names. A tuple converts to every tuple type with the
+// same value types, whatever the names (also nested), so names never get in the way.
+// expect-exit: 0
+// expect-stdout: 3 abc 3 (3, abc)
+// expect-stdout: 11 2
+// expect-stdout: 20
+// expect-stdout: abc abc
+// expect-stdout: 1..9 10
+// expect-stdout: 3abc true true true
+// expect-stdout: 1,2 3,4
+// expect-stdout: ann 31 ann
+// expect-stdout: 2 2
+
+using System;
+
+(int Count, string Name) Stats()
+{
+    return (3, "abc");
+}
+
+struct Item
+{
+    (int X, int Y) Pos;
+}
+
+(int Min, int Max) MinMax(int[] a)
+{
+    return (Min: a[0], Max: a[a.Length - 1]);
+}
+
+int Sum((int, int) p)
+{
+    return p.Item1 + p.Item2;
+}
+
+int Main()
+{
+    var s = Stats();
+    Console.WriteLine($"{s.Count} {s.Name} {s.Item1} {s}");
+
+    var it = Item { Pos = (1, 2) };
+    it.Pos.X += 10;
+    Console.WriteLine($"{it.Pos.X} {it.Pos.Y}");
+
+    var p = (Width: 4, Height: 5);
+    Console.WriteLine(p.Width * p.Height);
+
+    (int, string) plain = s;            // the names are dropped
+    (int Size, string Label) other = s; // other names
+    Console.WriteLine($"{plain.Item2} {other.Label}");
+
+    var r = MinMax([1, 5, 9]);
+    Console.WriteLine($"{r.Min}..{r.Max} {Sum(r)}");
+
+    var (c, n) = s;
+    Console.WriteLine($"{c}{n} {s == (3, "abc")} {s == plain} {s.Equals(other)}");
+
+    var d = Dictionary<(int X, int Y), string>.Create();
+    d[(1, 2)] = "a";
+    d[(X: 3, Y: 4)] = "b";
+    var keys = "";
+    foreach (var key in d.Keys())
+        keys += (keys.Length > 0 ? " " : "") + $"{key.X},{key.Y}";
+    Console.WriteLine(keys);
+
+    var list = List<(string Name, int Age)>.Create();
+    list.Add(("ann", 31));
+    foreach (var e in list)
+        Console.WriteLine($"{list.Get(0).Name} {list.Get(0).Age} {e.Name}");
+
+    var nested = (Outer: (A: 1, B: 2), C: 3);
+    ((int, int), int) flat = nested;
+    Console.WriteLine($"{nested.Outer.B} {flat.Item1.Item2}");
+    return 0;
+}

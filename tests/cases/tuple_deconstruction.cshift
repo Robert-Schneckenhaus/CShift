@@ -1,0 +1,93 @@
+// Deconstruction takes a tuple apart: 'var (a, b) = t;' declares a and b, '(int a, string b) = t;' gives them types,
+// '(x, y) = t;' assigns to existing variables, fields or elements, and '_' skips a value. The tuple is evaluated once,
+// before anything is assigned, so '(a, b) = (b, a);' swaps. foreach (var (a, b) in pairs) takes every element apart.
+// expect-exit: 0
+// expect-stdout: 1 9 10
+// expect-stdout: 2 1
+// expect-stdout: n5 5
+// expect-stdout: s02s01 s12s11
+// expect-stdout: a=1 b=2
+// expect-stdout: x=3 y=4
+// expect-stdout: 7 8 [8, 7]
+// expect-stdout: last 3
+
+using System;
+
+(int, int) MinMax(int[] a)
+{
+    int lo = a[0];
+    int hi = a[0];
+    foreach (var x in a)
+    {
+        lo = x < lo ? x : lo;
+        hi = x > hi ? x : hi;
+    }
+    return (lo, hi);
+}
+
+(string, int64) Named()
+{
+    return ("n", 5);
+}
+
+(string, string) Pair(string a)
+{
+    return (a + "1", a + "2");
+}
+
+struct Point
+{
+    int X;
+    int Y;
+}
+
+int Main()
+{
+    var (lo, hi) = MinMax(new int[] { 5, 1, 9 });
+    Console.WriteLine($"{lo} {hi} {lo + hi}");
+
+    int a = 1;
+    int b = 2;
+    (a, b) = (b, a);
+    Console.WriteLine($"{a} {b}");
+
+    (string s, int64 n) = Named();
+    var (_, second) = Named();
+    Console.WriteLine($"{s}{n} {second}");
+
+    var text = "";
+    for (var i = 0; i < 2; i += 1)
+    {
+        var (p, q) = Pair("s" + i.ToString());
+        (p, q) = (q, p);
+        text += (i > 0 ? " " : "") + p + q;
+    }
+    Console.WriteLine(text);
+
+    var pairs = List<(string, int)>.Create();
+    pairs.Add(("a", 1));
+    pairs.Add(("b", 2));
+    var line = "";
+    foreach (var (name, value) in pairs)
+        line += (line.Length > 0 ? " " : "") + $"{name}={value}";
+    Console.WriteLine(line);
+
+    var points = List<(int, int)>.Create();
+    points.Add((3, 4));
+    foreach ((int x, int y) in points)
+        Console.WriteLine($"x={x} y={y}");
+    foreach ((int, int) whole in points)
+        lo = whole.Item1;
+
+    // targets: fields and elements
+    var pt = Point { };
+    var arr = new int[2];
+    (pt.X, pt.Y) = (7, 8);
+    (arr[0], arr[1]) = (pt.Y, pt.X);
+    Console.WriteLine($"{pt.X} {pt.Y} [{arr[0]}, {arr[1]}]");
+
+    // the deconstructed variables stay visible after the statement
+    var (first, _, last) = (1, 2, 3);
+    Console.WriteLine($"last {last}");
+    return first == 1 && lo == 3 ? 0 : 1;
+}

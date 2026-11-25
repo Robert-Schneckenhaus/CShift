@@ -1,0 +1,8 @@
+// Only a tuple can be taken apart.
+// expect-error: cannot take apart a value of type 'int32' into 2 values: it is not a tuple
+
+int Main()
+{
+    var (a, b) = 5;
+    return 0;
+}

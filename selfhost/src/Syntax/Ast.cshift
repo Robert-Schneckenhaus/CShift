@@ -98,6 +98,7 @@ struct TypeRefNode
     string[] Path;   // Named: a.b.C
     TypeRef[] Args;  // Named: type arguments
     TypeRef Elem;    // Pointer, Array
+    string[] Names;  // a tuple type with names, (int Count, string Name): one per value, "" for a value without one
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +236,8 @@ struct StructInitExpr
 {
     TypeRef Type;
     FieldInit[] Fields;
+    bool IsTuple;      // (a, b): the fields are Item1, Item2, ...; the type is a TupleN (docs/language/tuples.md)
+    string[] TupleNames; // (Count: 1, Name: "a"): the names of the values ("" for one without), null if there are none
 }
 
 struct IsExpr
@@ -312,6 +315,7 @@ struct VarDeclStmt
     Expr Init;    // optional (never for constants)
     bool IsUsing;
     bool IsConst; // const int X = 5;  (a read-only variable with a constant initializer)
+    int Deconstruct; // var (a, b) = t;: the hidden variable that holds t, which must be a tuple of this many values
 }
 
 struct ExprStmt

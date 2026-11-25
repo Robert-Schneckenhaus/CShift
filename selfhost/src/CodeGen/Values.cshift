@@ -297,6 +297,29 @@ Value LiftView(const ref Compiler cg, Value v, int to, SourceLoc loc)
     return Rvalue(to, agg, true);
 }
 
+// A tuple as a tuple type with the same value types and other names (TupleSameShape): the same values, so the result
+// owns a reference exactly when v does.
+Value RetypeTuple(const ref Compiler cg, Value v, int to)
+{
+    var ir = cg.Ir;
+    Value r = ToRValue(cg, v);
+    int from = r.Type;
+    string fromTy = LlvmType(cg, from);
+    string toTy = LlvmType(cg, to);
+    string agg = "zeroinitializer";
+    int n = TupleArity(cg, from);
+    for (var i = 0; i < n; i += 1)
+    {
+        var pf = FindField(cg, from, "Item" + (i + 1).ToString());
+        var pt = FindField(cg, to, "Item" + (i + 1).ToString());
+        string item = ir.ExtractValue(fromTy, r.V, IndexList(pf.Indices));
+        if (pf.Type != pt.Type)
+            item = RetypeTuple(cg, Rvalue(pf.Type, item, false), pt.Type).V;
+        agg = ir.InsertValue(toTy, agg, LlvmType(cg, pt.Type), item, IndexList(pt.Indices));
+    }
+    return Rvalue(to, agg, r.Owned);
+}
+
 // The cost of converting the value to 'to' (0 = same type, -1 = not possible).
 int ConversionCost(const ref Compiler cg, Value v, int to)
 {
@@ -384,6 +407,8 @@ int ConversionCost(const ref Compiler cg, Value v, int to)
         var path = new int[0];
         if (StructIsAncestor(cg, to, from, ref path))
             return 2;
+        if (TupleSameShape(cg, from, to))
+            return 1; // (int Count, string Name) <-> (int, string)
     }
     if (types.IsResultLike(to) && (!types.IsResultLike(from) || (types.IsError(to) && types.IsOptional(from))))
     {
@@ -517,6 +542,8 @@ Value ConvertValue(const ref Compiler cg, Value v, int to, SourceLoc loc)
         return Rvalue(to, NumericConvert(cg, ToRValue(cg, v).V, types.I32, to), false);
     if (IsLiftedView(cg, from, to))
         return LiftView(cg, v, to, loc);
+    if (TupleSameShape(cg, from, to))
+        return RetypeTuple(cg, v, to);
     if (types.IsError(from) && types.IsError(to))
     {
         // Error<T, E> -> Error<T>

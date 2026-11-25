@@ -1,0 +1,8 @@
+// Without a target type, every value of a tuple needs a type of its own (null has none).
+// expect-error: the second value of the tuple has no type of its own ('null')
+
+int Main()
+{
+    var t = (1, null);
+    return 0;
+}

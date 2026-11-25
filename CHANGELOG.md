@@ -6,6 +6,23 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Language
+- Tuples ([docs/language/tuples.md](docs/language/tuples.md)): `(int, string)` is a type, `(1, "a")` a value of it,
+  `t.Item1`, `t.Item2` its values. A function can return several values (`return (lo, hi);`), a `List<(string, int)>`
+  holds pairs, a `Dictionary<(int, int), T>` uses two numbers as its key. A tuple value takes the types of the
+  declaration, parameter or return value it is used as (`(int64, uint8) t = (1, 2);`), otherwise the types of its
+  values. Tuples are structs of the standard library (`Tuple2` to `Tuple7`, stdlib/tuple.cshift): copied by value, no
+  allocation, with `Equals`, `GetHashCode` and `ToString` (`$"{t}"` prints `(1, a)`); messages name them
+  `(int32, string)`.
+- Tuple names: `(int Count, string Name) Stats()` makes `s.Count` and `s.Name` (besides `Item1`, `Item2`);
+  `(Width: 4, Height: 5)` is a value with names. Tuples with the same value types convert to each other whatever their
+  names.
+- `==` and `!=` compare tuples value by value (`if (Stats() == (3, "abc"))`; a tuple written out compares its values as
+  written, so `entry == ("ann", null)` works).
+- Deconstruction: `var (lo, hi) = MinMax(values);`, `(string name, int age) = entry;`, `(a, b) = (b, a);` (the tuple is
+  complete before anything is assigned, so this swaps), `(p.X, p.Y) = t;`, `_` for a value that is not needed, and
+  `foreach (var (name, age) in people)`.
+
 ### System.Ui
 - Trees: `ui.TreeNode(label, selected)` (an arrow that opens and closes the node, Right and Left with the focus; the Ui
   keeps whether it is open, `ui.SetTreeOpen(label, open)` sets it), `ui.TreeLeaf(label, selected)` and `ui.Indent()`

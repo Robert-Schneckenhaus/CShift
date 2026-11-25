@@ -1,0 +1,8 @@
+// Tuples are only compared with == and !=.
+// expect-error: tuples can only be compared with '==' and '!='
+
+int Main()
+{
+    var t = (1, 2);
+    return t < (1, 3) ? 0 : 1;
+}
