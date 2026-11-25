@@ -140,6 +140,12 @@ int CompareType(const ref Compiler cg, BinOp op, Value l, Value r, ref string wh
     if (AnyUnknown(cg, l, r) || types.Kind(l.Type) == TypeKind.MethodGroup || types.Kind(r.Type) == TypeKind.MethodGroup)
         return types.Unknown;
     bool isEq = op == BinOp.Eq || op == BinOp.Ne;
+    if (TupleArity(cg, l.Type) > 0 && TupleArity(cg, r.Type) > 0)
+    {
+        // two tuples: their values one by one (see TupleCompareType)
+        return TupleCompareType(cg, op, TupleItemValues(cg, l.Type), TupleItemValues(cg, r.Type), types.Name(l.Type),
+                                types.Name(r.Type), ref why);
+    }
     if (types.Kind(l.Type) == TypeKind.Null || types.Kind(r.Type) == TypeKind.Null)
     {
         if (!isEq)
@@ -466,6 +472,34 @@ int TupleArity(const ref Compiler cg, int t)
     return n >= 2 && n == se.Decl.TypeParams.Length ? n : 0;
 }
 
+// The type of a tuple value without a target type, given the types of its values: with the names it was written with
+// ((Count: 1, Name: "a")), if any.
+int LiteralTupleType(const ref Compiler cg, Expr e, int[] items)
+{
+    var n = cg.Tree.GetStructInit(e);
+    if (n.TupleNames == null)
+        return TupleType(cg, items, e.Loc);
+    return NamedTupleType(cg, items, n.TupleNames, e.Loc);
+}
+
+// Whether a value of tuple type a can be used as one of tuple type b: the same number of values of the same types,
+// whatever their names are ((int Count, string Name) and (int, string)). Such a value keeps its bits.
+bool TupleSameShape(const ref Compiler cg, int a, int b)
+{
+    int n = TupleArity(cg, a);
+    if (n == 0 || n != TupleArity(cg, b))
+        return false;
+    for (var i = 0; i < n; i += 1)
+    {
+        string item = "Item" + (i + 1).ToString();
+        int ta = FindField(cg, a, item).Type;
+        int tb = FindField(cg, b, item).Type;
+        if (ta != tb && !TupleSameShape(cg, ta, tb))
+            return false;
+    }
+    return true;
+}
+
 // The tuple type of these value types, (T1, T2, ...).
 int TupleType(const ref Compiler cg, int[] items, SourceLoc loc)
 {
@@ -513,6 +547,64 @@ string Ordinal(int n)
     case 7: return "seventh";
     default: return n.ToString() + "th";
     }
+}
+
+// The values of the tuple type t, as values without code (for TupleCompareType).
+Value[] TupleItemValues(const ref Compiler cg, int t)
+{
+    int n = TupleArity(cg, t);
+    var items = new Value[n];
+    for (var i = 0; i < n; i += 1)
+        items[i] = Rvalue(FindField(cg, t, "Item" + (i + 1).ToString()).Type, "", false);
+    return items;
+}
+
+// The type of a == b for two tuples (bool), given their values (l, r) and how they are named in messages: the same
+// number of values, and every value comparable with '==' to the one at its position. Only == and != are defined.
+int TupleCompareType(const ref Compiler cg, BinOp op, Value[] l, Value[] r, string lName, string rName, ref string why)
+{
+    var types = cg.Types;
+    if (op != BinOp.Eq && op != BinOp.Ne)
+    {
+        why = "tuples can only be compared with '==' and '!='";
+        return 0;
+    }
+    if (l.Length != r.Length)
+    {
+        why = "cannot compare '" + lName + "' with '" + rName + "': a tuple of " + l.Length.ToString() +
+              " values with one of " + r.Length.ToString();
+        return 0;
+    }
+    bool unknown = false;
+    for (var i = 0; i < l.Length; i += 1)
+    {
+        string inner = "";
+        int t = CompareType(cg, BinOp.Eq, l[i], r[i], ref inner);
+        if (t == 0)
+        {
+            why = "cannot compare '" + lName + "' with '" + rName + "': the " + Ordinal(i + 1) + " values: " + inner;
+            return 0;
+        }
+        unknown = unknown || types.IsUnknown(t);
+    }
+    return unknown ? types.Unknown : types.Bool;
+}
+
+// How a tuple operand of == is named in messages: its type, or (a, b) for a tuple value written out.
+string TupleOperandName(const ref Compiler cg, Value[] parts, bool written, int type)
+{
+    if (!written)
+        return cg.Types.Name(type);
+    var sb = StringBuilder.Create();
+    sb.Append("(");
+    for (var i = 0; i < parts.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(cg.Types.Name(parts[i].Type));
+    }
+    sb.Append(")");
+    return sb.ToString();
 }
 
 // The error for 'var (a, b) = value;' when value is not a tuple of as many values ("" if it is).

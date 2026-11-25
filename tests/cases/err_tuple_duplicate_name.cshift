@@ -1,0 +1,8 @@
+// The values of a tuple need different names.
+// expect-error: the tuple has two values named 'A'
+
+int Main()
+{
+    (int A, string A) t = (1, "a");
+    return 0;
+}

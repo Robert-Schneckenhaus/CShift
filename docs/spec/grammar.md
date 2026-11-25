@@ -64,7 +64,8 @@ See [types](types.md).
 ```ebnf
 Type      = NamedType { '*' | '[' ']' } ;
 NamedType = QualifiedName [ '<' TypeArg { ',' TypeArg } '>' ]
-          | '(' Type ',' Type { ',' Type } ')' ;   (* a tuple type: 2 to 7 types *)
+          | '(' TupleItem ',' TupleItem { ',' TupleItem } ')' ;   (* a tuple type: 2 to 7 types *)
+TupleItem = Type [ Identifier ] ;   (* the value's name: (int Count, string Name) *)
 TypeArg   = Type | IntegerLiteral ;       (* a number only for the size of Fixed<T, N> *)
 ```
 
@@ -198,7 +199,8 @@ New = 'new' Type ( '(' ')' | Initializer | '[' Expression ']' { '[' ']' } | '[' 
     | 'new' Initializer ;
 ArrayInit = '{' [ Expression { ',' Expression } [ ',' ] ] '}' ;
 
-Tuple      = '(' Expression ',' Expression { ',' Expression } ')' ;   (* 2 to 7 values *)
+Tuple      = '(' TupleValue ',' TupleValue { ',' TupleValue } ')' ;   (* 2 to 7 values *)
+TupleValue = [ Identifier ':' ] Expression ;                          (* (Count: 3, Name: "a") *)
 
 Collection = '[' [ Element { ',' Element } [ ',' ] ] ']' ;
 Element    = Expression | '..' Expression ;

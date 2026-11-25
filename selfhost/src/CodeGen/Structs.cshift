@@ -29,6 +29,7 @@ struct StructInfo
     bool Opaque;                      // an incomplete C type: only usable through pointers
     string IrName;                    // %"Name"
     bool UnknownBase;                 // the base struct is the unknown type (the checker's instance of a generic struct)
+    string[] ItemNames;               // a tuple with names, (int Count, string Name): the names ("" for none), else null
 }
 
 // A function that a call may refer to: the function and, for methods, the struct it belongs to.
@@ -116,6 +117,43 @@ int GetCheckingStructType(const ref Compiler cg, int entry)
     return CreateStructType(cg, entry, args, key);
 }
 
+// The tuple type of these value types with these names (one per value, "" for a value without a name):
+// (int32 Count, string Name). Without any name it is the plain tuple type (TupleType). It is a struct type of its
+// own, made from the same TupleN; a value converts to every tuple type with the same value types (TupleSameShape).
+int NamedTupleType(const ref Compiler cg, int[] items, string[] names, SourceLoc loc)
+{
+    var types = cg.Types;
+    int plain = TupleType(cg, items, loc);
+    bool anyName = false;
+    foreach (var n in names)
+        anyName = anyName || n.Length > 0;
+    if (!anyName || types.IsUnknown(plain))
+        return plain;
+    var sb = StringBuilder.Create();
+    sb.Append("(");
+    for (var i = 0; i < items.Length; i += 1)
+    {
+        if (i > 0)
+            sb.Append(", ");
+        sb.Append(types.Name(items[i]));
+        if (names[i].Length > 0)
+        {
+            sb.Append(" ");
+            sb.Append(names[i]);
+        }
+    }
+    sb.Append(")");
+    string key = sb.ToString();
+    var existing = cg.StructTypes.TryGet(key);
+    if (existing is int found)
+        return found;
+    int entry = GetStructInfo(cg, plain).Entry;
+    int t = CreateStructTypeNamed(cg, entry, items, key, names);
+    cg.PendingVerify.Add(t);
+    InstantiateStructMethods(cg);
+    return t;
+}
+
 // The name of a struct type with these type arguments: List<int32>, App.Point. A tuple of the standard library
 // (Tuple2<int32, string>, stdlib/tuple.cshift) is named as it is written: (int32, string).
 string StructKey(const ref Compiler cg, int entry, int[] args)
@@ -141,14 +179,23 @@ string StructKey(const ref Compiler cg, int entry, int[] args)
 // A new struct type for the arguments: its information and layout.
 int CreateStructType(const ref Compiler cg, int entry, int[] args, string key)
 {
+    return CreateStructTypeNamed(cg, entry, args, key, null);
+}
+
+// CreateStructType for a tuple with names (itemNames, see NamedTupleType; null for every other struct). In its
+// methods its own name (Tuple2<T1, T2>) means the tuple with the names, so that Equals takes one of them.
+int CreateStructTypeNamed(const ref Compiler cg, int entry, int[] args, string key, string[] itemNames)
+{
     var types = cg.Types;
     var decl = cg.Structs.Get(entry).Decl;
     int t = types.Add(TypeKind.Struct, key, 0, false);
-    var info = StructInfo { Entry = entry, Name = key, Type = t, IrName = "%\"" + key + "\"" };
+    var info = StructInfo { Entry = entry, Name = key, Type = t, IrName = "%\"" + key + "\"", ItemNames = itemNames };
     info.Env = Dictionary<string, int>.Create();
     info.Interfaces = new int[0];
     for (var i = 0; i < args.Length; i += 1)
         info.Env.Set(decl.TypeParams[i], args[i]);
+    if (itemNames != null)
+        info.Env.Set(decl.Name, t);
     cg.StructInfos.Add(info);
     int index = cg.StructInfos.Count() - 1;
     var ti = types.Info(t);
@@ -307,6 +354,15 @@ bool StructNeedsArc(const ref Compiler cg, int t)
 FieldPath FindField(const ref Compiler cg, int structType, string name)
 {
     var si = GetStructInfo(cg, structType);
+    if (si.ItemNames != null)
+    {
+        // a tuple with names: Count is the field Item1 of (int Count, string Name)
+        for (var i = 0; i < si.ItemNames.Length; i += 1)
+        {
+            if (si.ItemNames[i] == name && name.Length > 0)
+                name = "Item" + (i + 1).ToString();
+        }
+    }
     foreach (var f in si.Fields)
     {
         if (f.Name == name)
@@ -459,7 +515,7 @@ Value EmitTuple(const ref Compiler cg, Expr e, int target)
         if (items[i] == 0)
             Fail(cg, fields[i].Loc, why);
     }
-    int t = TupleType(cg, items, e.Loc);
+    int t = LiteralTupleType(cg, e, items);
     string ty = LlvmType(cg, t);
     string agg = "zeroinitializer";
     for (var i = 0; i < fields.Length; i += 1)

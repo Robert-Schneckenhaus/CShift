@@ -27,6 +27,37 @@ struct AssignOpInfo
 // The most values a tuple can have: the largest TupleN of the standard library (stdlib/tuple.cshift).
 const int MaxTupleLength = 7;
 
+// The position of a wrong name of a tuple value (why says what is wrong), -1 if all are fine: a name appears only
+// once, and ItemN only as the name of the N-th value.
+int TupleNameError(string[] names, ref string why)
+{
+    for (var i = 0; i < names.Length; i += 1)
+    {
+        string name = names[i];
+        if (name.Length == 0)
+            continue;
+        if (name == "_")
+        {
+            why = "'_' cannot be the name of a value of a tuple";
+            return i;
+        }
+        if (name.StartsWith("Item") && name != "Item" + (i + 1).ToString())
+        {
+            why = "'" + name + "' cannot be the name of the value at position " + (i + 1).ToString() + " of a tuple";
+            return i;
+        }
+        for (var j = 0; j < i; j += 1)
+        {
+            if (names[j] == name)
+            {
+                why = "the tuple has two values named '" + name + "'";
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
 // One part of a deconstruction (var (a, b) = t;), see ParseDeconstructPart.
 struct DeconstructPart
 {
@@ -748,18 +779,38 @@ struct Parser
         SourceLoc loc = Cur().Loc;
         try Expect(TokenKind.LParen, "'('");
         var args = List<TypeRef>.Create();
+        var names = List<string>.Create();
+        bool anyName = false;
         do
         {
             args.Add(try ParseType());
-            if (Check(TokenKind.Ident))
-                return error("the values of a tuple have no names: write '(int, string)' and use Item1, Item2, ... or " +
-                             "take the tuple apart with 'var (a, b) = t;'", Cur().Loc.Pack());
+            if (Check(TokenKind.Ident) && (PeekKind(1) == TokenKind.Comma || PeekKind(1) == TokenKind.RParen))
+            {
+                names.Add(Advance().Text); // (int Count, string Name)
+                anyName = true;
+            }
+            else
+                names.Add("");
         } while (Match(TokenKind.Comma));
         try Expect(TokenKind.RParen, "')' after the types of a tuple");
         string why = TupleLengthError(args.Count());
         if (why.Length > 0)
             return error(why, loc.Pack());
-        return NewType(TypeRefKind.Named, loc, new string[] { TupleTypeName(args.Count()) }, args.ToArray(), TypeRef { });
+        var nameArray = names.ToArray(); // checked by ResolveType (TupleNameError): this may be a guess at a type
+        return Tree.AddType(TypeRefNode { Kind = TypeRefKind.Named, Loc = loc, Path = new string[] { TupleTypeName(args.Count()) },
+                                          Args = args.ToArray(), Elem = TypeRef { }, Names = anyName ? nameArray : null });
+    }
+
+    // Name: before a value of a tuple: (Count: 1, Name: "a"). "" if there is none.
+    string ParseTupleValueName()
+    {
+        if (Check(TokenKind.Ident) && PeekKind(1) == TokenKind.Colon)
+        {
+            string name = Advance().Text;
+            Advance(); // :
+            return name;
+        }
+        return "";
     }
 
     static string TupleTypeName(int count)
@@ -777,23 +828,40 @@ struct Parser
         return "";
     }
 
-    // (a, b, ...) after the first value and the ',' have been read: a tuple value, a struct initializer of
-    // Item1, Item2, ... whose type is a TupleN (EmitTuple). The ')' is read too.
-    Error<Expr> ParseTupleRest(SourceLoc loc, Expr first)
+    // (a, b, ...) after the first value (named firstName, or "") and the ',' have been read: a tuple value, a struct
+    // initializer of Item1, Item2, ... whose type is a TupleN (EmitTuple). The ')' is read too.
+    Error<Expr> ParseTupleRest(SourceLoc loc, Expr first, string firstName, SourceLoc firstLoc)
     {
         var fields = List<FieldInit>.Create();
-        fields.Add(FieldInit { Loc = Tree.StartOf(first), Name = "Item1", Value = first });
+        var names = List<string>.Create();
+        var nameLocs = List<SourceLoc>.Create();
+        fields.Add(FieldInit { Loc = firstLoc, Name = "Item1", Value = first });
+        names.Add(firstName);
+        nameLocs.Add(firstLoc);
+        bool anyName = firstName.Length > 0;
         do
         {
             SourceLoc at = Cur().Loc;
+            string name = ParseTupleValueName();
+            anyName = anyName || name.Length > 0;
             Expr item = try ParseExpr();
             fields.Add(FieldInit { Loc = at, Name = "Item" + (fields.Count() + 1).ToString(), Value = item });
+            names.Add(name);
+            nameLocs.Add(at);
         } while (Match(TokenKind.Comma));
         try Expect(TokenKind.RParen, "')' after the values of a tuple");
         string why = TupleLengthError(fields.Count());
         if (why.Length > 0)
             return error(why, loc.Pack());
-        return Tree.AddStructInit(loc, StructInitExpr { Fields = fields.ToArray(), IsTuple = true });
+        var tuple = StructInitExpr { Fields = fields.ToArray(), IsTuple = true };
+        if (anyName)
+        {
+            tuple.TupleNames = names.ToArray();
+            int bad = TupleNameError(tuple.TupleNames, ref why);
+            if (bad >= 0)
+                return error(why, nameLocs.Get(bad).Pack());
+        }
+        return Tree.AddStructInit(loc, tuple);
     }
 
     // Whether a '(' starts a deconstruction: '(...)' with a ',' at its top level, followed by '=' (and not '=='):
@@ -2001,6 +2069,16 @@ struct Parser
         int save = Pos;
         Advance(); // (
 
+        if (Check(TokenKind.Ident) && PeekKind(1) == TokenKind.Colon)
+        {
+            // (Count: 1, Name: "a"): a tuple with names
+            SourceLoc firstLoc = Cur().Loc;
+            string firstName = ParseTupleValueName();
+            Expr firstValue = try ParseExpr();
+            try Expect(TokenKind.Comma, "',' (a tuple needs at least 2 values)");
+            return ParseTupleRest(loc, firstValue, firstName, firstLoc);
+        }
+
         TypeRef t = TryParseType();
         if (!t.IsNull() && Check(TokenKind.RParen))
         {
@@ -2015,7 +2093,7 @@ struct Parser
         Pos = save + 1;
         Expr e = try ParseExpr();
         if (Match(TokenKind.Comma))
-            return ParseTupleRest(loc, e); // (a, b): a tuple
+            return ParseTupleRest(loc, e, "", Tree.StartOf(e)); // (a, b): a tuple
         try Expect(TokenKind.RParen, "')'");
         return e;
     }

@@ -935,7 +935,7 @@ Value CheckTuple(const ref Compiler cg, Expr e, int target)
     }
     if (!known)
         return UnknownValue(cg);
-    return Rvalue(TupleType(cg, items, e.Loc), "", false);
+    return Rvalue(LiteralTupleType(cg, e, items), "", false);
 }
 
 Value CheckStructInitOf(const ref Compiler cg, Expr e, int t)

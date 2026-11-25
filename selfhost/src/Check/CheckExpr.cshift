@@ -385,6 +385,8 @@ Value CheckBinary(const ref Compiler cg, Expr e)
     var b = cg.Tree.GetBinary(e);
     if (b.Op == BinOp.Coalesce)
         return CheckCoalesce(cg, e);
+    if ((b.Op == BinOp.Eq || b.Op == BinOp.Ne) && (IsTupleExpr(cg, b.Lhs) || IsTupleExpr(cg, b.Rhs)))
+        return CheckTupleEquality(cg, e);
     if (b.Op == BinOp.LogAnd || b.Op == BinOp.LogOr)
     {
         Expr leftmost = e;
@@ -426,6 +428,52 @@ Value CheckBinary(const ref Compiler cg, Expr e)
         l = Rvalue(t, "", false);
     }
     return l;
+}
+
+// a == b with a tuple written out on one side (see EmitTupleEquality).
+Value CheckTupleEquality(const ref Compiler cg, Expr e)
+{
+    var types = cg.Types;
+    var b = cg.Tree.GetBinary(e);
+    int lt = 0;
+    int rt = 0;
+    bool known = true;
+    Value[] l = CheckTupleOperandParts(cg, b.Lhs, ref lt, ref known);
+    Value[] r = CheckTupleOperandParts(cg, b.Rhs, ref rt, ref known);
+    if (!known)
+        return Rvalue(types.Unknown, "", false);
+    string lName = TupleOperandName(cg, l, IsTupleExpr(cg, b.Lhs), lt);
+    string rName = TupleOperandName(cg, r, IsTupleExpr(cg, b.Rhs), rt);
+    string why = "";
+    if (l.Length == 0 || r.Length == 0)
+        why = "cannot compare '" + lName + "' with '" + rName + "'";
+    else if (TupleCompareType(cg, b.Op, l, r, lName, rName, ref why) != 0)
+        return Rvalue(types.Bool, "", false);
+    CheckError(cg, e.Loc, why);
+    return Rvalue(types.Unknown, "", false);
+}
+
+Value[] CheckTupleOperandParts(const ref Compiler cg, Expr x, ref int type, ref bool known)
+{
+    if (IsTupleExpr(cg, x))
+    {
+        var fields = cg.Tree.GetStructInit(x).Fields;
+        var parts = new Value[fields.Length];
+        for (var i = 0; i < fields.Length; i += 1)
+        {
+            parts[i] = CheckRValue(cg, fields[i].Value);
+            known = known && !IsUnknown(cg, parts[i]);
+        }
+        return parts;
+    }
+    Value v = CheckRValue(cg, x);
+    type = v.Type;
+    if (IsUnknown(cg, v))
+    {
+        known = false;
+        return new Value[0];
+    }
+    return TupleItemValues(cg, v.Type);
 }
 
 // a ?? b (see EmitCoalesce): b is used as a value of the T of the Optional<T> a.

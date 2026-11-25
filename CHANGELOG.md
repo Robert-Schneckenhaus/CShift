@@ -14,6 +14,11 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   values. Tuples are structs of the standard library (`Tuple2` to `Tuple7`, stdlib/tuple.cshift): copied by value, no
   allocation, with `Equals`, `GetHashCode` and `ToString` (`$"{t}"` prints `(1, a)`); messages name them
   `(int32, string)`.
+- Tuple names: `(int Count, string Name) Stats()` makes `s.Count` and `s.Name` (besides `Item1`, `Item2`);
+  `(Width: 4, Height: 5)` is a value with names. Tuples with the same value types convert to each other whatever their
+  names.
+- `==` and `!=` compare tuples value by value (`if (Stats() == (3, "abc"))`; a tuple written out compares its values as
+  written, so `entry == ("ann", null)` works).
 - Deconstruction: `var (lo, hi) = MinMax(values);`, `(string name, int age) = entry;`, `(a, b) = (b, a);` (the tuple is
   complete before anything is assigned, so this swaps), `(p.X, p.Y) = t;`, `_` for a value that is not needed, and
   `foreach (var (name, age) in people)`.

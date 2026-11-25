@@ -10,7 +10,7 @@ precise list of what's implemented, and the decisions the design leaves open). T
 
 1. [Basics](basics.md) — program structure, namespaces, variables, control flow, operators
 2. [Structs](structs.md) — fields, visibility, initializers, methods, inheritance
-3. [Tuples](tuples.md) — `(int, string)`, `return (a, b);`, `var (x, y) = t;`, swapping, tuples as keys
+3. [Tuples](tuples.md) — `(int, string)`, `return (a, b);`, names, `var (x, y) = t;`, swapping, `==`, tuples as keys
 4. [Interfaces and generics](interfaces-and-generics.md) — interfaces (constraints, parameters), sum types, generic structs/functions
 5. [Enums](enums.md) — enums with an explicit base type
 6. [Memory model](memory-model.md) — value vs. reference semantics, ARC, `ref`/`const ref`, `unsafe`

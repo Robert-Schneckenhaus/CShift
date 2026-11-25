@@ -706,6 +706,20 @@ int ResolveType(const ref Compiler cg, int refType, int file, Dictionary<string,
         return types.ArrayOf(elem);
     }
 
+    if (node.Names != null)
+    {
+        // (int Count, string Name): a tuple type with names (the parser made the path TupleN)
+        var items = new int[node.Args.Length];
+        for (var i = 0; i < items.Length; i += 1)
+            items[i] = ResolveValueType(cg, node.Args[i].Id, file, env);
+        if (HasUnknownType(cg, items))
+            return types.Unknown;
+        string why = "";
+        if (TupleNameError(node.Names, ref why) >= 0)
+            return RecoverType(cg, node.Loc, why);
+        return NamedTupleType(cg, items, node.Names, node.Loc);
+    }
+
     string dotted = "";
     for (var i = 0; i < node.Path.Length; i += 1)
         dotted += (i > 0 ? "." : "") + node.Path[i];
