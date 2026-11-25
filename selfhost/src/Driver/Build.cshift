@@ -66,11 +66,13 @@ struct BuildOptions
     int ServePort;              // serve: --port (0: the first free one from 8080 on)
     string ServeHost;           // serve: --host (default 127.0.0.1)
     bool ServeOpen;             // serve: --open, the page in the browser
+    bool Test;                  // test: build the tests (test "name" { ... }) and run each of them
+    string TestFilter;          // test: --filter, only the tests whose name contains it
 
     static BuildOptions Create()
     {
         var o = BuildOptions { Output = "", Target = "", Backend = "", Ndk = "", Cc = "", Stdlib = "", ProjectDir = "", Optimize = 2, ProjectName = "", Mode = "",
-                               AtFile = "", OutlineFile = "", ServeHost = "" };
+                               AtFile = "", OutlineFile = "", ServeHost = "", TestFilter = "" };
         o.Overlays = Dictionary<string, string>.Create();
         o.Imports = List<FfiImport>.Create();
         o.Inputs = List<string>.Create();
@@ -199,6 +201,16 @@ bool ParseOptions(string[] args, int first, ref BuildOptions o)
         }
         else if (a == "--arc-stats")
             o.ArcStats = true;
+        else if (a == "--filter")
+        {
+            i += 1;
+            if (i >= args.Length)
+            {
+                Console.WriteErrorLine("error: --filter needs a text (the tests whose name contains it)");
+                return false;
+            }
+            o.TestFilter = args[i];
+        }
         else if (a == "-g")
             o.Debug = true;
         else if (a == "--unchecked")
@@ -262,7 +274,7 @@ int Cshc(string[] args)
     string command = "compile";
     int first = 0;
     if (args[0] == "build" || args[0] == "run" || args[0] == "new" || args[0] == "check" || args[0] == "query" ||
-        args[0] == "doc" || args[0] == "publish" || args[0] == "serve")
+        args[0] == "doc" || args[0] == "publish" || args[0] == "serve" || args[0] == "test")
     {
         command = args[0];
         first = 1;
@@ -360,6 +372,8 @@ int Cshc(string[] args)
         return Build(o);
     }
 
+    if (command == "test")
+        return TestCommand(o);
     if (command == "publish")
         return Publish(o);
     if (command == "serve")
@@ -677,6 +691,7 @@ int Build(BuildOptions o)
     bool ownBackend = o.Backend == "m68k" || o.Backend == "wasm";
     var cg = Compiler.Create(tree, diag, windows, o.Target, o.Backend);
     cg.St[0].ArcStats = o.ArcStats;
+    cg.St[0].Tests = o.Test ? 2 : (o.Mode.Length > 0 ? 1 : 0);
     cg.Ir.Debug = o.Debug && !ownBackend;
     if (o.Debug && o.Backend == "wasm")
         Console.WriteErrorLine("warning: -g has no effect with the wasm backend");
@@ -764,6 +779,18 @@ int Build(BuildOptions o)
         }
         if (!AddSource(cg, diag, tree, path, false, o.Imports))
             return 1;
+    }
+    if (o.Test && cg.St[0].SyntaxErrors == 0)
+    {
+        if (cg.Tests.Count() == 0)
+        {
+            Console.WriteLine("no tests (write them as test \"name\" { ... })");
+            return 0;
+        }
+        // the entry point that runs one test (with Tests = 1, so that its Main is kept)
+        cg.St[0].Tests = 1;
+        AddSourceText(cg, diag, tree, "<tests>", TestEntrySource(cg.Tests), false, o.Imports);
+        cg.St[0].Tests = 2;
     }
     cg.St[0].FrontEndOnly = o.Mode.Length > 0;
     cg.St[0].Indexing = o.Mode == "query";
@@ -972,10 +999,12 @@ int Build(BuildOptions o)
         return 1;
     }
 
-    if (o.FromProject && !o.Run)
+    if (o.FromProject && !o.Run && !o.Test)
         Console.WriteLine("Built " + outPath);
     if (o.ObjectOnly)
         return 0;
+    if (o.Test)
+        return RunTests(cg, diag, exePath, o, windows);
     if (o.Run)
     {
         string runPath = NativePath(exePath, windows);

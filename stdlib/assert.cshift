@@ -1,0 +1,77 @@
+//! Checks for tests (`test "name" { ... }`, run by `cshiftc test`, see docs/language/testing.md): a check that fails
+//! panics, which ends the test as failed and shows the reason and the line of the test that made the check.
+//!
+//! ```
+//! test "MinMax finds both ends"
+//! {
+//!     var (lo, hi) = MinMax([3, 1, 7]);
+//!     Assert.Equal(1, lo);
+//!     Assert.Equal(7, hi);
+//!     Assert.True(lo < hi);
+//! }
+//! ```
+//!
+//! The checks work outside of tests as well: in a program, a failed check is a panic like any other.
+
+namespace Assert;
+
+using System;
+
+/// Checks that `condition` is true.
+void True(bool condition)
+{
+    if (!condition)
+        Environment.Panic("Assert.True failed");
+}
+
+/// Checks that `condition` is true; `message` says what was expected.
+void True(bool condition, string message)
+{
+    if (!condition)
+        Environment.Panic("Assert.True failed: " + message);
+}
+
+/// Checks that `condition` is false.
+void False(bool condition)
+{
+    if (condition)
+        Environment.Panic("Assert.False failed");
+}
+
+/// Checks that `condition` is false; `message` says what was expected.
+void False(bool condition, string message)
+{
+    if (condition)
+        Environment.Panic("Assert.False failed: " + message);
+}
+
+/// Checks that `actual` equals `expected` (with `==`: numbers, strings, enums, tuples, ...). The message shows both
+/// values (as `$"{value}"` writes them).
+void Equal<T>(T expected, T actual)
+{
+    if (!(expected == actual))
+        Environment.Panic($"Assert.Equal failed: expected {expected}, got {actual}");
+}
+
+/// Checks that `actual` differs from `notExpected` (with `!=`).
+void NotEqual<T>(T notExpected, T actual)
+{
+    if (!(notExpected != actual))
+        Environment.Panic($"Assert.NotEqual failed: both are {actual}");
+}
+
+/// Checks that the floating-point numbers differ by at most `tolerance`.
+void Near(double expected, double actual, double tolerance)
+{
+    double difference = expected - actual;
+    if (difference < 0.0)
+        difference = -difference;
+    if (!(difference <= tolerance))
+        Environment.Panic($"Assert.Near failed: expected {expected} (within {tolerance}), got {actual}");
+}
+
+/// Fails the test: for a branch that must not be reached.
+void Fail(string message)
+{
+    Environment.Panic("Assert.Fail: " + message);
+}

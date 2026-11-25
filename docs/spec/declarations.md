@@ -129,6 +129,21 @@ Thread<int> t = start Square(6);
 generic or variadic, cannot use global variables (also not through the functions it calls), and its parameters must
 be transferable to another thread (see [memory](memory.md#threads)).
 
+### Tests
+
+```csharp
+test "MinMax finds both ends"
+{
+    Assert.Equal((1, 7), MinMax([3, 1, 7]));
+}
+```
+
+`test "name" { ... }` declares a test: a function without parameters and without a name of its own whose result is
+`Error<void>` (so `try` can be used in it). It belongs to the namespace of its file and resolves names like a function
+there. Only `cshiftc test` compiles and calls tests (without the program's `Main`); a build leaves them out. A test
+passes when it returns without an error; it fails when it returns an error or the process panics. See
+[testing](../language/testing.md).
+
 ### Unsafe functions
 
 `unsafe` before a function or method makes its whole body an [`unsafe`](memory.md#unsafe) context.

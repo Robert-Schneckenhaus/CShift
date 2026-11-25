@@ -1,0 +1,23 @@
+// A build leaves test "name" { ... } out: Main runs as always, and code that only the tests use is not compiled. 'test'
+// is a keyword only before a string at the top level; elsewhere it is an ordinary name.
+// expect-exit: 0
+// expect-stdout: test=3
+
+using System;
+
+int Twice(int test)
+{
+    return test * 2;
+}
+
+int Main()
+{
+    int test = 3;
+    Console.WriteLine($"test={test}");
+    return Twice(test) == 6 ? 0 : 1;
+}
+
+test "Twice doubles"
+{
+    Assert.Equal(6, Twice(3));
+}

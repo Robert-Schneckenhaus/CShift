@@ -278,6 +278,33 @@ else
         report_ok "cshiftc run -- arguments"
     fi
 
+    # cshiftc test: every test "name" { ... } of tests/projects/testing runs in a process of its own; the failing ones
+    # (a returned error, a failed Assert, a panic) are reported with their place and output, the others pass
+    cp -r "$DIR/projects/testing" "$TMP/testing_run"
+    "$COMPILER" test "$TMP/testing_run" $OPT "${CC_ARGS[@]}" > "$TMP/test.out" 2> "$TMP/test.err"
+    test_code=$?
+    tr -d '\r' < "$TMP/test.out" > "$TMP/test.out.n"
+    problem=""
+    [ "$test_code" = "1" ] || problem="exit code $test_code instead of 1"
+    for want in "ok    strings" "ok    MinMax finds both ends" "ok    Positive accepts 5" \
+                "FAIL  a failed check fails the test  (src/main.cshift:19)" "panic: Assert.Equal failed: expected 3, got 2" \
+                "called from src/main.cshift:22:17 in test \"a failed check fails the test\"" "        written before the check" \
+                "FAIL  a panic fails only its test  (src/main.cshift:25)" "at src/main.cshift:28:22 in test \"a panic fails only its test\"" \
+                "FAIL  an error fails the test  (src/stats.cshift:36)" "      error: not positive: -1" "3 passed, 3 failed"; do
+        [ -z "$problem" ] && ! grep -qF -- "$want" "$TMP/test.out.n" && problem="missing '$want' in: $(tr '\n' '|' < "$TMP/test.out.n") $(head -n 3 "$TMP/test.err" | tr '\n' ' ')"
+    done
+    if [ -z "$problem" ]; then
+        "$COMPILER" test "$TMP/testing_run" --filter Positive $OPT "${CC_ARGS[@]}" > "$TMP/test.out" 2> "$TMP/test.err" ||
+            problem="--filter Positive failed: $(tr '\n' '|' < "$TMP/test.out")"
+        [ -z "$problem" ] && ! tr -d '\r' < "$TMP/test.out" | grep -qF "1 passed, 0 failed, 5 not run (--filter)" &&
+            problem="--filter: $(tr '\n' '|' < "$TMP/test.out")"
+    fi
+    # a build leaves the tests out (Main runs, no test function is compiled)
+    if [ -z "$problem" ] && [ "$("$COMPILER" run "$TMP/testing_run" $OPT "${CC_ARGS[@]}" 2> /dev/null | tr -d '\r')" != "2 9" ]; then
+        problem="cshiftc run of the project with tests did not print '2 9'"
+    fi
+    if [ -n "$problem" ]; then report_fail "cshiftc test" "$problem"; else report_ok "cshiftc test"; fi
+
     # --checked overrides "unchecked": true of a project
     if "$COMPILER" run --checked "$DIR/projects/unchecked" $OPT "${CC_ARGS[@]}" -o "$TMP/checked_override" > /dev/null 2> "$TMP/proj.err"; then
         report_fail "cshiftc --checked" "the overflow did not panic"
