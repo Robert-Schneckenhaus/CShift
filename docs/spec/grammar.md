@@ -48,7 +48,9 @@ See [programs and names](programs.md).
 CompilationUnit = { TopLevel } ;
 TopLevel        = NamespaceDecl | UsingDecl | ImportDecl | LinkDecl
                 | StructDecl | InterfaceDecl | UnionDecl | EnumDecl | ErrorEnumDecl
-                | FunctionDecl | ConstDecl | GlobalDecl ;
+                | FunctionDecl | ConstDecl | GlobalDecl | TestDecl ;
+
+TestDecl = 'test' StringLiteral Block ;   (* 'test' is contextual: only before a string at the top level *)
 
 NamespaceDecl = 'namespace' QualifiedName ';' ;
 QualifiedName = Identifier { '.' Identifier } ;

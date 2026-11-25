@@ -460,6 +460,7 @@ struct FuncDecl
     bool RetOut;
     int Owner;            // struct methods: index of the struct in CompilationUnit.Structs, otherwise -1
     string Doc;           // the doc comment (///), "" for none
+    string TestName;      // test "name" { ... }: an Error<void> function that only 'cshiftc test' compiles and runs
 }
 
 struct FieldDecl

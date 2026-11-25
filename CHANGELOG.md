@@ -14,6 +14,15 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
   is still not named (an enum value without a name) panics. The arms take the target type, or have a common type like
   `?:`. `a + b switch { ... }` switches over `b`.
 
+### Tests
+- `test "name" { ... }` beside the code it checks, and `cshiftc test` ([docs/language/testing.md](docs/language/testing.md)):
+  every test runs in a process of its own, so a panic ends only its test; failed tests are reported with their place,
+  the panic or error and their output; `--filter <text>`; exit code 1 when a test failed. The body is an `Error<void>`
+  function (`try` works, an error fails the test). Builds leave the tests out; `cshiftc check` and the editor check
+  them. `test` is a contextual keyword.
+- `Assert.Equal`, `NotEqual`, `True`, `False`, `Near`, `Fail` (stdlib/assert.cshift): a failed check panics with both
+  values and the line of the test.
+
 ### Language
 - Tuples ([docs/language/tuples.md](docs/language/tuples.md)): `(int, string)` is a type, `(1, "a")` a value of it,
   `t.Item1`, `t.Item2` its values. A function can return several values (`return (lo, hi);`), a `List<(string, int)>`

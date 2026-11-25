@@ -211,6 +211,11 @@
 					"match": "\\b(struct|interface|enum|namespace)\\b"
 				},
 				{
+					"comment": "test \"name\" { ... }: 'test' is a contextual keyword, only before a string at the start of a line",
+					"match": "^\\s*(test)(?=\\s+\")",
+					"captures": { "1": { "name": "storage.type.cshift" } }
+				},
+				{
 					"comment": "new Vec2(), x is Error<int> r, where T : ...  -- the type after the keyword is a type name",
 					"match": "\\b(new|is|where)\\b(?:\\s+(?!(?:null|true|false|error|not)\\b)([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*))?",
 					"captures": {

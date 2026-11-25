@@ -282,7 +282,14 @@ string PanicWhere(const ref Compiler cg)
     }
     int fn = cg.Fn.Length > 0 ? cg.Fn[0].Func : -1;
     if (fn >= 0 && fn < cg.Instances.Count())
-        where += (where.Length > 0 ? " in " : "in ") + cg.Instances.Get(fn).Name;
+    {
+        var fi = cg.Instances.Get(fn);
+        string name = fi.Name;
+        string testName = fi.Entry >= 0 ? cg.Funcs.Get(fi.Entry).Decl.TestName : null;
+        if (testName != null)
+            name = "test \"" + testName + "\""; // a test "name" { ... } (its function's name is made up)
+        where += (where.Length > 0 ? " in " : "in ") + name;
+    }
     return cg.Ir.CString(where.Length > 0 ? where : "unknown location");
 }
 

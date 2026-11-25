@@ -1,0 +1,161 @@
+// cshiftc test: builds the tests of a project or of files (test "name" { ... }, docs/language/testing.md) into one
+// program and runs every test in a process of its own, so that a panic (a failed Assert, an index out of range, ...)
+// ends only its test.
+
+namespace CShift.Driver;
+
+using System;
+using CShift.Syntax;
+using CShift.CodeGen;
+
+// The line the test program writes after a test that passed (TestEntrySource); without it the test failed.
+const string TestPassedMarker = "<cshift-test-passed>";
+
+int TestCommand(BuildOptions o)
+{
+    o.Test = true;
+    bool files = o.Inputs.Count() > 0 && IsSourceFile(o.Inputs.Get(0));
+    string outDir = "";
+    string name = "";
+    if (files)
+    {
+        string first = o.Inputs.Get(0);
+        string dir = Path.GetDirectory(first);
+        outDir = Path.Combine(dir.Length > 0 ? dir : ".", "obj");
+        name = StemOf(Path.GetFileName(first));
+    }
+    else
+    {
+        string location = o.Inputs.Count() > 0 ? o.Inputs.Get(0) : "";
+        var loaded = LoadProject(location, o.Target);
+        if (loaded is not Project project)
+        {
+            Console.WriteErrorLine("error: " + loaded.Message);
+            return 1;
+        }
+        ApplyProject(ref o, project);
+        outDir = Path.Combine(project.Dir.Length > 0 ? project.Dir : ".", "obj");
+        name = project.Name;
+    }
+    if (o.Backend == "wasm" || o.Backend == "m68k" || o.Target.Length > 0)
+    {
+        string what = o.Target.Length > 0 ? o.Target : o.Backend;
+        Console.WriteErrorLine("error: 'cshiftc test' runs the tests on this computer, not for '" + what + "'");
+        return 1;
+    }
+    o.ObjectOnly = false;
+    o.Run = false;
+    o.Output = Path.Combine(outDir, name + "-tests");
+    EnsureParentDirectory(o.Output);
+    return Build(o);
+}
+
+// The source of the test program's entry point: 'Main(args)' runs the test whose number args gives
+// (--cshift-test <n>) and writes TestPassedMarker when it passed. The tests are functions of their files
+// (test "name" { ... } becomes 'Error<void> CShiftTest_<file>_<n>()', see Parser.ParseTest).
+string TestEntrySource(List<TestCase> tests)
+{
+    var sb = StringBuilder.Create();
+    sb.Append("// the entry point of 'cshiftc test'\nusing System;\n\n");
+    sb.Append("int Main(string[] args)\n{\n");
+    sb.Append("    if (args.Length != 2 || args[0] != \"--cshift-test\")\n    {\n");
+    sb.Append("        Console.WriteErrorLine(\"this program runs one test of 'cshiftc test': --cshift-test <number>\");\n");
+    sb.Append("        return 2;\n    }\n");
+    sb.Append("    switch (args[1])\n    {\n");
+    for (var i = 0; i < tests.Count(); i += 1)
+    {
+        sb.Append("    case \"" + i.ToString() + "\":\n");
+        sb.Append("        return CShiftTestResult(" + tests.Get(i).Function + "());\n");
+    }
+    sb.Append("    default:\n        return 2;\n    }\n}\n\n");
+    sb.Append("int CShiftTestResult(Error<void> result)\n{\n");
+    sb.Append("    if (result is error e)\n    {\n");
+    sb.Append("        Console.WriteLine(\"error: \" + e.Message);\n        return 1;\n    }\n");
+    sb.Append("    Console.WriteLine(\"\");\n    Console.WriteLine(\"" + TestPassedMarker + "\");\n    return 0;\n}\n");
+    return sb.ToString();
+}
+
+// Runs every test (those whose name contains --filter) as 'program --cshift-test <n>' and reports the result: the
+// output of a failed test (its panic or error, and what it wrote), and a summary. 0 if all passed.
+int RunTests(const ref Compiler cg, Diagnostics diag, string exePath, BuildOptions o, bool windows)
+{
+    string runPath = NativePath(exePath, windows);
+    if (!windows && runPath.IndexOf('/') < 0)
+        runPath = "./" + runPath;
+    int passed = 0;
+    int failed = 0;
+    int skipped = 0;
+    for (var i = 0; i < cg.Tests.Count(); i += 1)
+    {
+        var test = cg.Tests.Get(i);
+        if (o.TestFilter.Length > 0 && !test.Name.Contains(o.TestFilter))
+        {
+            skipped += 1;
+            continue;
+        }
+        // stdout is captured, stderr (a panic) goes to a file: shown first, then what the test wrote
+        string errPath = exePath + ".stderr";
+        string command = "\"" + runPath + "\" --cshift-test " + i.ToString() + " 2>\"" + NativePath(errPath, windows) + "\"";
+        string output = "";
+        if (Process.RunCapture(command) is string captured)
+            output = captured;
+        string errors = "";
+        if (File.ReadAllText(errPath) is string errText)
+            errors = errText.TrimEnd().ToString();
+        File.Delete(errPath);
+        string trimmed = output.TrimEnd().ToString();
+        if (trimmed.EndsWith(TestPassedMarker))
+        {
+            passed += 1;
+            Console.WriteLine("ok    " + test.Name);
+            continue;
+        }
+        failed += 1;
+        Console.WriteLine("FAIL  " + test.Name + "  (" + TestPlace(diag, test.Loc, o) + ")");
+        // an error returned by the test is the last line of its output (CShiftTestResult)
+        string written = trimmed;
+        int last = trimmed.LastIndexOf('\n');
+        string lastLine = last >= 0 ? trimmed.Substring(last + 1).ToString() : trimmed;
+        if (errors.Length == 0 && lastLine.StartsWith("error: "))
+        {
+            errors = lastLine;
+            written = last >= 0 ? trimmed.Substring(0, last).TrimEnd().ToString() : "";
+        }
+        if (errors.Length == 0)
+            errors = "(the test ended without passing: it crashed or exited)";
+        PrintIndented(errors, "      ");
+        if (written.Length > 0)
+        {
+            Console.WriteLine("      output:");
+            PrintIndented(written, "        ");
+        }
+    }
+    var summary = StringBuilder.Create();
+    summary.Append("\n" + passed.ToString() + " passed, " + failed.ToString() + " failed");
+    if (skipped > 0)
+        summary.Append(", " + skipped.ToString() + " not run (--filter)");
+    Console.WriteLine(summary.ToString());
+    return failed > 0 ? 1 : 0;
+}
+
+void PrintIndented(string text, string indent)
+{
+    foreach (var line in text.Split('\n'))
+        Console.WriteLine(indent + line.TrimEnd().ToString());
+}
+
+// Where a test is written: file:line, the file relative to the project folder like the places of panics.
+string TestPlace(Diagnostics diag, SourceLoc loc, BuildOptions o)
+{
+    string file = diag.Files.Get(loc.File);
+    if (o.ProjectDir.Length > 0)
+    {
+        string prefix = Path.Normalize(o.ProjectDir);
+        string normalized = Path.Normalize(file);
+        if (!prefix.EndsWith("/"))
+            prefix += "/";
+        if (normalized.StartsWith(prefix))
+            file = normalized.Substring(prefix.Length).ToString();
+    }
+    return file + ":" + loc.Line.ToString();
+}

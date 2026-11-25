@@ -1,0 +1,39 @@
+namespace Stats;
+
+(int Min, int Max) MinMax(int[] values)
+{
+    int lo = values[0];
+    int hi = values[0];
+    foreach (var v in values)
+    {
+        lo = v < lo ? v : lo;
+        hi = v > hi ? v : hi;
+    }
+    return (lo, hi);
+}
+
+Error<int> Positive(int value)
+{
+    if (value <= 0)
+        return error("not positive: " + value.ToString());
+    return value;
+}
+
+test "MinMax finds both ends"
+{
+    var (lo, hi) = MinMax([3, 1, 7]);
+    Assert.Equal(1, lo);
+    Assert.Equal(7, hi);
+    Assert.Equal((1, 7), MinMax([7, 1]));
+}
+
+test "Positive accepts 5"
+{
+    int v = try Positive(5);
+    Assert.Equal(5, v);
+}
+
+test "an error fails the test"
+{
+    try Positive(-1);
+}

@@ -1,0 +1,29 @@
+using System;
+using Stats;
+
+int Main()
+{
+    var (lo, hi) = MinMax([2, 9, 4]);
+    Console.WriteLine($"{lo} {hi}");
+    return 0;
+}
+
+test "strings"
+{
+    Assert.Equal("ab", "a" + "b");
+    Assert.True("abc".Contains("b"), "contains b");
+    Assert.False("abc".Contains("x"));
+    Assert.Near(0.3, 0.1 + 0.2, 1e-9);
+}
+
+test "a failed check fails the test"
+{
+    Console.WriteLine("written before the check");
+    Assert.Equal(3, 1 + 1);
+}
+
+test "a panic fails only its test"
+{
+    var a = new int[2];
+    Assert.Equal(0, a[5]);
+}
