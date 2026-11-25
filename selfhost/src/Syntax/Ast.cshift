@@ -40,7 +40,8 @@ enum ExprKind : int32
     Collection, // [a, b, ..c]
     Embed,          // embed("file") / embed("*.txt"): the text of files, read when the program is compiled
     EmbedFilenames, // embed_filenames("*.txt"): the names of the files that match
-    EmbedLines      // embed_lines("file"): the lines of a file
+    EmbedLines,     // embed_lines("file"): the lines of a file
+    Switch          // subject switch { pattern => value, ... }
 }
 
 struct Expr
@@ -204,6 +205,21 @@ struct CondExpr
     Expr Cond;
     Expr Then;
     Expr Else;
+}
+
+// subject switch { Circle c => ..., 0 => ..., _ => ... }: the first arm whose pattern matches gives the value.
+struct SwitchExpr
+{
+    Expr Subject;
+    SwitchArm[] Arms;
+}
+
+// pattern => value; the pattern is a CaseLabel ('_' is IsDefault).
+struct SwitchArm
+{
+    SourceLoc Loc;
+    CaseLabel Label;
+    Expr Value;
 }
 
 struct CastExpr
@@ -595,6 +611,7 @@ struct Ast
     List<BinaryExpr> Binaries;
     List<AssignExpr> Assigns;
     List<CondExpr> Conds;
+    List<SwitchExpr> SwitchExprs;
     List<CastExpr> Casts;
     List<NewArrayExpr> NewArrays;
     List<NewObjectExpr> NewObjects;
@@ -640,6 +657,7 @@ struct Ast
         a.Binaries = List<BinaryExpr>.Create();
         a.Assigns = List<AssignExpr>.Create();
         a.Conds = List<CondExpr>.Create();
+        a.SwitchExprs = List<SwitchExpr>.Create();
         a.Casts = List<CastExpr>.Create();
         a.NewArrays = List<NewArrayExpr>.Create();
         a.NewObjects = List<NewObjectExpr>.Create();
@@ -811,6 +829,12 @@ struct Ast
         return Expr { Kind = ExprKind.Assign, Index = Assigns.Count() - 1, Loc = loc };
     }
 
+    Expr AddSwitchExpr(SourceLoc loc, SwitchExpr n)
+    {
+        SwitchExprs.Add(n);
+        return Expr { Kind = ExprKind.Switch, Index = SwitchExprs.Count() - 1, Loc = loc };
+    }
+
     Expr AddCond(SourceLoc loc, CondExpr n)
     {
         Conds.Add(n);
@@ -917,6 +941,7 @@ struct Ast
     BinaryExpr GetBinary(Expr e) { return Binaries.Get(e.Index); }
     AssignExpr GetAssign(Expr e) { return Assigns.Get(e.Index); }
     CondExpr GetCond(Expr e) { return Conds.Get(e.Index); }
+    SwitchExpr GetSwitchExpr(Expr e) { return SwitchExprs.Get(e.Index); }
     CastExpr GetCast(Expr e) { return Casts.Get(e.Index); }
     NewArrayExpr GetNewArray(Expr e) { return NewArrays.Get(e.Index); }
     NewObjectExpr GetNewObject(Expr e) { return NewObjects.Get(e.Index); }

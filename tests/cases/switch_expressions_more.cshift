@@ -1,0 +1,25 @@
+// Switch expressions in generic functions, lambdas and loops, nested, and over results whose arms bind strings (the
+// pattern variables borrow from the subject; nothing leaks).
+// expect-exit: 0
+// expect-stdout: E: missing 0
+// expect-stdout: FILE1
+// expect-stdout: y1
+// expect-stdout: zero odd even
+// expect-stdout: a!
+
+using System;
+T Pick<T>(int n, T a, T b) { return n switch { 0 => a, _ => b }; }
+Error<string> Load(int i) { if (i > 0) return "file" + i.ToString(); return error("missing " + i.ToString()); }
+int Main()
+{
+    for (var i = 0; i < 2; i += 1)
+        Console.WriteLine(Load(i) switch { string text => text.ToUpper(), error e => "E: " + e.Message });
+    Console.WriteLine(Pick(1, "x", "y") + Pick(0, 1, 2).ToString());
+    Func<int, string> f = n => n switch { 0 => "zero", _ => (n % 2) switch { 0 => "even", _ => "odd" } };
+    Console.WriteLine(f(0) + " " + f(3) + " " + f(4));
+    var parts = List<string>.Create();
+    parts.Add("a"); parts.Add("bb");
+    foreach (var p in parts)
+        Console.WriteLine(p.Length switch { 1 => p + "!", _ => p });
+    return 0;
+}

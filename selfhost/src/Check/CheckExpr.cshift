@@ -54,6 +54,7 @@ Value CheckExpr(const ref Compiler cg, Expr e)
     case ExprKind.Binary: return CheckBinary(cg, e);
     case ExprKind.Assign: return CheckAssign(cg, e);
     case ExprKind.Conditional: return CheckConditionalIn(cg, e, 0);
+    case ExprKind.Switch: return CheckSwitchExpr(cg, e, 0);
     case ExprKind.Cast: return CheckCast(cg, e);
     case ExprKind.Try: return CheckTry(cg, e);
     case ExprKind.ErrorLit: return CheckErrorLit(cg, e);
@@ -514,6 +515,8 @@ Value CheckExprAs(const ref Compiler cg, Expr e, int target)
 {
     if (IsTypelessNew(cg, e))
         return CheckTypelessNew(cg, e, target);
+    if (e.Kind == ExprKind.Switch && target != 0 && !cg.Types.IsUnknown(target))
+        return CheckSwitchExpr(cg, e, target);
     if (e.Kind == ExprKind.Lambda && cg.Types.IsFunction(target))
     {
         // a lambda converted to an Action/Func: its parameters must fit, its body gets their types
@@ -549,6 +552,95 @@ Value CheckConditionalIn(const ref Compiler cg, Expr e, int frame)
     {
         CheckError(cg, e.Loc, why);
         return UnknownValue(cg);
+    }
+    return Rvalue(t, "", false);
+}
+
+// subject switch { pattern => value, ... } (see EmitSwitchExpr): the patterns like the labels of a switch statement,
+// '_' last, every case named without '_', and the values of the arms: of the target type if there is one, otherwise of a
+// common type (the rules of ?:).
+Value CheckSwitchExpr(const ref Compiler cg, Expr e, int target)
+{
+    var types = cg.Types;
+    var n = cg.Tree.GetSwitchExpr(e);
+    PushScope(cg);
+    Value subj = CheckRValue(cg, n.Subject);
+    int st = subj.Type;
+    bool known = !types.IsUnknown(st);
+    var coveredMembers = List<int>.Create();
+    var coveredValues = List<string>.Create();
+    bool failureCovered = false;
+    bool allKnown = known;
+    bool hasDefault = false;
+    for (var i = 0; i < n.Arms.Length; i += 1)
+    {
+        var label = n.Arms[i].Label;
+        if (label.IsDefault)
+        {
+            if (i != n.Arms.Length - 1)
+                CheckError(cg, label.Loc, "'_' matches everything: it must be the last arm of the switch");
+            hasDefault = true;
+            continue;
+        }
+        CheckSwitchLabel(cg, st, known, label, coveredMembers, coveredValues, ref failureCovered, ref allKnown);
+    }
+    if (!hasDefault && allKnown)
+        ReportIf(cg, e.Loc, SwitchExprExhaustiveError(cg, st, coveredMembers, coveredValues, failureCovered));
+
+    var values = new Value[n.Arms.Length];
+    bool anyUnknown = false;
+    for (var i = 0; i < n.Arms.Length; i += 1)
+    {
+        var arm = n.Arms[i];
+        PushScope(cg);
+        var label = arm.Label;
+        if (!label.PatType.IsNull() && label.PatName.Length > 0)
+        {
+            int bound = types.Unknown;
+            if (known)
+            {
+                bool isError = false;
+                string why = "";
+                int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref why);
+                if (pt != 0)
+                    bound = pt;
+            }
+            CheckNotDeclared(cg, label.Loc, label.PatName);
+            cg.Fn[0].Vars.Add(ScopeVar { Name = label.PatName, Type = bound, Slot = "%v", IsConst = true });
+            NoteVar(cg, label.Loc, false);
+        }
+        values[i] = target != 0 ? CheckExprAs(cg, arm.Value, target) : CheckRValue(cg, arm.Value);
+        if (target != 0 && !IsUnknown(cg, values[i]))
+            CheckConversion(cg, values[i], target, cg.Tree.StartOf(arm.Value));
+        anyUnknown = anyUnknown || IsUnknown(cg, values[i]);
+        PopScope(cg, false);
+    }
+    PopScope(cg, false);
+    if (target != 0)
+        return Rvalue(target, "", false);
+    if (anyUnknown)
+        return UnknownValue(cg);
+    values[0] = SettleChecked(cg, values[0]);
+    int t = values[0].Type;
+    for (var i = 1; i < values.Length; i += 1)
+    {
+        string why = "";
+        t = ConditionalType(cg, Rvalue(t, "", false), values[i], ref why);
+        if (t == 0)
+        {
+            CheckError(cg, cg.Tree.StartOf(n.Arms[i].Value), SwitchArmsTypeError(cg, values, i));
+            return UnknownValue(cg);
+        }
+    }
+    if (values.Length == 1)
+    {
+        string why = "";
+        t = ConditionalType(cg, values[0], values[0], ref why);
+        if (t == 0)
+        {
+            CheckError(cg, e.Loc, why.Replace("conditional branches", "the arms of a switch").Replace("a conditional expression", "a switch expression"));
+            return UnknownValue(cg);
+        }
     }
     return Rvalue(t, "", false);
 }

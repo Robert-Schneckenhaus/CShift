@@ -1,0 +1,11 @@
+// Without a target type the arms need a common type.
+// expect-error: the arms of the switch expression have incompatible types 'string', 'int32'
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+int Main()
+{
+    int n = 3;
+    var s = n switch { 1 => "a", _ => 2 };
+    return 0;
+}

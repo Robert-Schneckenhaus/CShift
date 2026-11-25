@@ -159,7 +159,9 @@ Equality       = Relational { ( '==' | '!=' ) Relational } ;
 Relational     = Shift { ( '<' | '>' | '<=' | '>=' ) Shift | 'is' Pattern } ;
 Shift          = Additive { ( '<<' | '>>' ) Additive } ;
 Additive       = Multiplicative { ( '+' | '-' ) Multiplicative } ;
-Multiplicative = Unary { ( '*' | '/' | '%' ) Unary } ;
+Multiplicative = SwitchExpr { ( '*' | '/' | '%' ) SwitchExpr } ;
+SwitchExpr     = Unary { 'switch' '{' SwitchArm { ',' SwitchArm } [ ',' ] '}' } ;
+SwitchArm      = ( '_' | Type Identifier | Expression ) '=>' Expression ;   (* the patterns of 'case' labels; '_': the rest *)
 
 Unary = ( '-' | '+' | '!' | '~' | '*' | '&' ) Unary
       | '(' Type ')' Unary                        (* a cast *)

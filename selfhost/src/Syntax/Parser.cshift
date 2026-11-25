@@ -1633,7 +1633,7 @@ struct Parser
 
     Error<Expr> ParseBinary(int minPrec)
     {
-        Expr lhs = try ParseUnary();
+        Expr lhs = try ParseSwitchOperand();
         while (true)
         {
             var info = BinaryOpAt();
@@ -1684,6 +1684,67 @@ struct Parser
         var u = UnaryExpr { Op = op };
         u.Operand = try ParseUnary();
         return Tree.AddUnary(loc, u);
+    }
+
+    // An operand of a binary operator: a unary expression, possibly followed by 'switch { ... }' (which binds tighter than
+    // the binary operators, as in C#: a + b switch { ... } switches over b).
+    Error<Expr> ParseSwitchOperand()
+    {
+        Expr e = try ParseUnary();
+        while (Check(TokenKind.KwSwitch) && PeekKind(1) == TokenKind.LBrace)
+            e = try ParseSwitchExpr(e);
+        return e;
+    }
+
+    // subject switch { pattern => value, ... }: the arms are separated by ',' (one may end the list). A pattern is '_'
+    // (anything else), 'Type name' (a member of a union, the value of an Optional/Error, 'error e', an error code) or a
+    // value compared with '==', like the labels of a switch statement.
+    Error<Expr> ParseSwitchExpr(Expr subject)
+    {
+        SourceLoc loc = Cur().Loc;
+        Advance(); // switch
+        try Expect(TokenKind.LBrace, "'{'");
+        var arms = List<SwitchArm>.Create();
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            var label = CaseLabel { Loc = Cur().Loc };
+            if (CheckIdent("_") && PeekKind(1) == TokenKind.FatArrow)
+            {
+                Advance();
+                label.IsDefault = true;
+            }
+            else
+            {
+                int save = Pos;
+                TypeRef t = TryParseType();
+                if (!t.IsNull() && Check(TokenKind.Ident) && PeekKind(1) == TokenKind.FatArrow)
+                {
+                    label.PatType = t;
+                    label.PatName = Advance().Text;
+                }
+                else if (Check(TokenKind.Ident) && PeekKind(1) == TokenKind.FatArrow)
+                {
+                    // a constant by its name ('Limit => ...'), not a lambda
+                    Pos = save;
+                    SourceLoc nameLoc = Cur().Loc;
+                    label.Value = Tree.AddName(nameLoc, NameExpr { Name = Advance().Text, TypeArgs = new TypeRef[0] });
+                }
+                else
+                {
+                    Pos = save;
+                    label.Value = try ParseExpr();
+                }
+            }
+            try Expect(TokenKind.FatArrow, "'=>' after the pattern of a switch arm");
+            Expr value = try ParseExpr();
+            arms.Add(SwitchArm { Loc = label.Loc, Label = label, Value = value });
+            if (!Match(TokenKind.Comma))
+                break;
+        }
+        try Expect(TokenKind.RBrace, "'}' (or ',' before the next arm) at the end of the switch expression");
+        if (arms.Count() == 0)
+            return error("a switch expression needs at least one arm: value switch { pattern => result, _ => other }", loc.Pack());
+        return Tree.AddSwitchExpr(loc, SwitchExpr { Subject = subject, Arms = arms.ToArray() });
     }
 
     Error<Expr> ParseUnary()

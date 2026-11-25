@@ -6,6 +6,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Switch expressions
+- `subject switch { pattern => value, ... }` ([spec](docs/spec/expressions.md#switch-expressions)): the first arm whose
+  pattern matches gives the value. The patterns are those of `case` labels (values, union members `Circle c`, `int v`,
+  `null`, `error e`, error codes), `_` matches the rest and comes last. Without `_` the arms must name every case of an
+  enum, a union, an `Optional<T>` (value and `null`) or an `Error<T>` (value and failure, or every code); a value that
+  is still not named (an enum value without a name) panics. The arms take the target type, or have a common type like
+  `?:`. `a + b switch { ... }` switches over `b`.
+
 ### Language
 - Tuples ([docs/language/tuples.md](docs/language/tuples.md)): `(int, string)` is a type, `(1, "a")` a value of it,
   `t.Item1`, `t.Item2` its values. A function can return several values (`return (lo, hi);`), a `List<(string, int)>`

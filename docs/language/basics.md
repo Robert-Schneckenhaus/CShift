@@ -225,6 +225,26 @@ A `switch` over an enum (or a [union](interfaces-and-generics.md#sum-types)) wit
 member; a missing one is a compile error, so adding a member shows every switch that has to handle it. Members that
 share a value count as handled together.
 
+A **switch expression** chooses a value: the first arm whose pattern matches gives it, `_` matches the rest. The
+patterns are those of the `case` labels.
+
+```csharp
+string Describe(int n)
+{
+    return n switch
+    {
+        0 => "zero",
+        1 => "one",
+        _ => "many: " + n.ToString(),
+    };
+}
+
+string name = color switch { Color.Red => "red", Color.Green => "green", Color.Blue => "blue" };
+```
+
+Without `_` the arms must name every member of an enum or union (like a `switch` without `default:`); over numbers or
+strings `_` is required, because the expression needs a value in every case.
+
 `switch` also supports pattern matching for `Error<T>`/`Optional<T>` — see [error handling](error-handling.md).
 `break` exits the nearest loop or `switch`; `continue` starts the next iteration. Neither takes a label.
 
