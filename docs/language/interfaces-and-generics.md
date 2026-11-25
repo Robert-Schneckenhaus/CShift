@@ -94,7 +94,8 @@ switch (s)
 ```
 
 * A `switch` over a union without `default:` must handle every member (compile error otherwise), so adding a
-  member shows every switch that has to handle it.
+  member shows every switch that has to handle it. A switch expression is the short form when every case gives a
+  value: `double area = s switch { Circle c => Math.PI * c.R * c.R, Rect r => r.W * r.H };`
 * The members can be any value types (`union Token { int, string, bool }`), each once. A union's size is the size of
   its largest member plus the tag.
 * A union that lists interfaces (`: IShape`) requires every member to implement them, and can call their methods

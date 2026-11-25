@@ -1,0 +1,11 @@
+// '_' matches everything, so it comes last.
+// expect-error: '_' matches everything: it must be the last arm of the switch
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+int Main()
+{
+    int n = 3;
+    string s = n switch { _ => "x", 1 => "a" };
+    return 0;
+}

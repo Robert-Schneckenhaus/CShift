@@ -1,0 +1,11 @@
+// A switch expression over values that cannot be counted needs '_'.
+// expect-error: the switch expression needs an arm '_ => ...' for the values that no other arm matches
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+int Main()
+{
+    int n = 3;
+    string s = n switch { 1 => "a", 2 => "b" };
+    return 0;
+}

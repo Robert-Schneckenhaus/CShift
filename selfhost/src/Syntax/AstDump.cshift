@@ -208,6 +208,20 @@ struct AstDumper
             DumpExpr(indent + 1, "else", n.Else);
             break;
         }
+        case ExprKind.Switch:
+        {
+            var n = Tree.GetSwitchExpr(e);
+            Line(indent, role, head);
+            DumpExpr(indent + 1, "subject", n.Subject);
+            foreach (var arm in n.Arms)
+            {
+                string pattern = arm.Label.IsDefault ? "_" : arm.Label.PatName.Length > 0 ? "pattern " + arm.Label.PatName : "value";
+                if (!arm.Label.Value.IsNull())
+                    DumpExpr(indent + 1, pattern, arm.Label.Value);
+                DumpExpr(indent + 1, "arm " + pattern, arm.Value);
+            }
+            break;
+        }
         case ExprKind.Cast:
         {
             var n = Tree.GetCast(e);
@@ -340,6 +354,7 @@ struct AstDumper
         case ExprKind.Binary: return "Binary";
         case ExprKind.Assign: return "Assign";
         case ExprKind.Conditional: return "Conditional";
+        case ExprKind.Switch: return "Switch";
         case ExprKind.Cast: return "Cast";
         case ExprKind.NewArray: return "NewArray";
         case ExprKind.NewObject: return "NewObject";

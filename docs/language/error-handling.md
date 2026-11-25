@@ -52,6 +52,12 @@ switch (Parse(text))
         Report(e.Message);
         break;
 }
+
+string shown = Parse(text) switch            // a switch expression: both cases give a value
+{
+    int value => value.ToString(),
+    error e => "invalid: " + e.Message,
+};
 ```
 
 A pattern of the value's own type (`result is Error<File> r`) would always match, so it is a compile error.

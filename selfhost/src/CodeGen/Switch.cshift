@@ -56,50 +56,7 @@ void EmitSwitch(const ref Compiler cg, Stmt s)
                 defaultLabel = bodies[i];
                 continue;
             }
-            string cond;
-            if (!label.PatType.IsNull())
-            {
-                bool isError = false;
-                int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
-                if (isError || IsErrorEnum(cg, pt))
-                {
-                    cond = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true"); // "case error e:", "case E code:"
-                    failureCovered = true;
-                }
-                else if (IsUnionType(cg, st))
-                {
-                    int index = UnionMemberIndex(cg, st, pt);
-                    if (index < 0)
-                        Fail(cg, label.Loc, "'" + types.Name(pt) + "' is not a member of union '" + types.Name(st) + "'");
-                    cond = ir.ICmp("eq", "i32", UnionTag(cg, st, unionSlot), (index + 1).ToString());
-                    coveredMembers.Add(index);
-                }
-                else if (types.IsResultLike(st) && types.Elem(st) == pt)
-                    cond = ir.ExtractValue(LlvmType(cg, st), subjVal, "0");
-                else
-                {
-                    Fail(cg, label.Loc, "pattern type '" + types.Name(pt) + "' does not match the switch subject of type '" + types.Name(st) + "'");
-                    cond = "true";
-                }
-            }
-            else if (types.IsError(st) && types.Code(st) != 0)
-            {
-                // "case E.Member:" on an Error<T, E>: failed with that code
-                Value lv = ConvertValue(cg, EmitRValue(cg, label.Value), types.Code(st), label.Loc);
-                coveredValues.Add(lv.V);
-                string failed = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true");
-                string same = ir.ICmp("eq", "i32", ir.ExtractValue(LlvmType(cg, st), subjVal, "3"), lv.V);
-                cond = ir.Bin("and", "i1", failed, same);
-                FlushTemps(cg, 0, true);
-            }
-            else
-            {
-                Value lv = EmitRValue(cg, label.Value);
-                if (types.IsEnum(st))
-                    coveredValues.Add(ConvertValue(cg, lv, st, label.Loc).V);
-                cond = EmitCompare(cg, BinOp.Eq, Rvalue(st, subjVal, false), lv, label.Loc).V;
-                FlushTemps(cg, 0, true);
-            }
+            string cond = EmitLabelCondition(cg, st, subjVal, unionSlot, label, coveredMembers, coveredValues, ref failureCovered, 0);
             string next = ir.NewLabel("case.test");
             ir.CondBr(cond, bodies[i], next);
             ir.SetBlock(next);
@@ -122,10 +79,7 @@ void EmitSwitch(const ref Compiler cg, Stmt s)
             bool isError = false;
             int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
             string slot = ir.Alloca(LlvmType(cg, pt), label.PatName);
-            string payload = IsUnionType(cg, st) ? ir.Load(LlvmType(cg, pt), UnionPayload(cg, st, unionSlot))
-                           : pt == st ? subjVal
-                           : IsErrorEnum(cg, pt) ? ir.ExtractValue(LlvmType(cg, st), subjVal, "3") // "case E code:"
-                           : ir.ExtractValue(LlvmType(cg, st), subjVal, "1");
+            string payload = PatternPayload(cg, st, subjVal, unionSlot, pt);
             EmitRetain(cg, pt, payload);
             ir.Store(LlvmType(cg, pt), payload, slot);
             DeclareVar(cg, label.PatName, pt, slot);
@@ -145,6 +99,261 @@ void EmitSwitch(const ref Compiler cg, Stmt s)
 
     ir.SetBlock(endLabel);
     PopScope(cg, true);
+}
+
+// The condition (an i1) under which a label matches the subject (a switch statement or expression); notes what it
+// covers for the exhaustiveness check (CheckExhaustive).
+string EmitLabelCondition(const ref Compiler cg, int st, string subjVal, string unionSlot, CaseLabel label,
+                          List<int> coveredMembers, List<string> coveredValues, ref bool failureCovered, int tempMark)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    string cond;
+    if (!label.PatType.IsNull())
+    {
+        bool isError = false;
+        int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
+        if (isError || IsErrorEnum(cg, pt))
+        {
+            cond = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true"); // "case error e:", "case E code:"
+            failureCovered = true;
+        }
+        else if (IsUnionType(cg, st))
+        {
+            int index = UnionMemberIndex(cg, st, pt);
+            if (index < 0)
+                Fail(cg, label.Loc, "'" + types.Name(pt) + "' is not a member of union '" + types.Name(st) + "'");
+            cond = ir.ICmp("eq", "i32", UnionTag(cg, st, unionSlot), (index + 1).ToString());
+            coveredMembers.Add(index);
+        }
+        else if (types.IsResultLike(st) && types.Elem(st) == pt)
+        {
+            cond = ir.ExtractValue(LlvmType(cg, st), subjVal, "0");
+            coveredMembers.Add(-1); // the value of a result (a switch expression must have it, SwitchExprExhaustiveError)
+        }
+        else
+        {
+            Fail(cg, label.Loc, "pattern type '" + types.Name(pt) + "' does not match the switch subject of type '" + types.Name(st) + "'");
+            cond = "true";
+        }
+    }
+    else if (types.IsError(st) && types.Code(st) != 0)
+    {
+        // "case E.Member:" on an Error<T, E>: failed with that code
+        Value lv = ConvertValue(cg, EmitRValue(cg, label.Value), types.Code(st), label.Loc);
+        coveredValues.Add(lv.V);
+        string failed = ir.Bin("xor", "i1", ir.ExtractValue(LlvmType(cg, st), subjVal, "0"), "true");
+        string same = ir.ICmp("eq", "i32", ir.ExtractValue(LlvmType(cg, st), subjVal, "3"), lv.V);
+        cond = ir.Bin("and", "i1", failed, same);
+        FlushTemps(cg, tempMark, true);
+    }
+    else
+    {
+        if (label.Value.Kind == ExprKind.NullLit && types.IsOptional(st))
+            coveredMembers.Add(-2); // 'null' of an Optional<T> (SwitchExprExhaustiveError)
+        Value lv = EmitRValue(cg, label.Value);
+        if (types.IsEnum(st))
+            coveredValues.Add(ConvertValue(cg, lv, st, label.Loc).V);
+        cond = EmitCompare(cg, BinOp.Eq, Rvalue(st, subjVal, false), lv, label.Loc).V;
+        FlushTemps(cg, tempMark, true);
+    }
+    return cond;
+}
+
+// The value a pattern label binds: the member of a union, the value of an Optional/Error, the Error itself
+// ('error e'), or its code ('E code'). Borrowed from the subject.
+string PatternPayload(const ref Compiler cg, int st, string subjVal, string unionSlot, int pt)
+{
+    var ir = cg.Ir;
+    return IsUnionType(cg, st) ? ir.Load(LlvmType(cg, pt), UnionPayload(cg, st, unionSlot))
+         : pt == st ? subjVal
+         : IsErrorEnum(cg, pt) ? ir.ExtractValue(LlvmType(cg, st), subjVal, "3") // "case E code:"
+         : ir.ExtractValue(LlvmType(cg, st), subjVal, "1");
+}
+
+// subject switch { pattern => value, ... }: the arms are tested in order; the first that matches gives the value. Like
+// cond ? a : b, the values of all arms are generated first and converted to their common type (or to the target type)
+// at the ends of their branches afterwards. Pattern variables borrow from the subject, which is kept alive (owned) for
+// the whole expression. Without '_', a value that no arm matches (an enum value without a name, ...) panics.
+Value EmitSwitchExpr(const ref Compiler cg, Expr e, int target)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var n = cg.Tree.GetSwitchExpr(e);
+    var temps = cg.Fn[0].Temps;
+    PushScope(cg);
+    Value subj = EmitRValue(cg, n.Subject);
+    int st = subj.Type;
+    string subjVal = subj.V;
+    if (NeedsArc(cg, st))
+    {
+        string slot = ir.Alloca(LlvmType(cg, st), "switch.subject");
+        string owned = Consume(cg, subj);
+        ir.Store(LlvmType(cg, st), owned, slot);
+        DeclareVar(cg, "$switch", st, slot);
+        subjVal = owned;
+    }
+    string unionSlot = "";
+    if (IsUnionType(cg, st))
+    {
+        unionSlot = ir.Alloca(LlvmType(cg, st), "switch.union");
+        ir.Store(LlvmType(cg, st), subjVal, unionSlot);
+    }
+
+    // the tests, in the order of the arms
+    int baseCount = temps.Count();
+    var bodies = new string[n.Arms.Length];
+    for (var i = 0; i < bodies.Length; i += 1)
+        bodies[i] = ir.NewLabel("arm");
+    var coveredMembers = List<int>.Create();
+    var coveredValues = List<string>.Create();
+    bool failureCovered = false;
+    bool hasDefault = false;
+    for (var i = 0; i < n.Arms.Length; i += 1)
+    {
+        var label = n.Arms[i].Label;
+        if (label.IsDefault)
+        {
+            if (i != n.Arms.Length - 1)
+                Fail(cg, label.Loc, "'_' matches everything: it must be the last arm of the switch");
+            hasDefault = true;
+            ir.Br(bodies[i]);
+            break;
+        }
+        string cond = EmitLabelCondition(cg, st, subjVal, unionSlot, label, coveredMembers, coveredValues,
+                                         ref failureCovered, baseCount);
+        string next = ir.NewLabel("arm.test");
+        ir.CondBr(cond, bodies[i], next);
+        ir.SetBlock(next);
+    }
+    if (!hasDefault)
+    {
+        string why = SwitchExprExhaustiveError(cg, st, coveredMembers, coveredValues, failureCovered);
+        if (why.Length > 0)
+            Fail(cg, e.Loc, why);
+        // all cases are named, but the value can still be none of them (an enum value without a name, an empty union)
+        SourceLoc saved = cg.St[0].Loc;
+        cg.St[0].Loc = e.Loc;
+        ir.Call("void", "@__cs_panic_at", "ptr " + ir.CString("no arm of the switch expression matches the value") +
+                ", ptr " + PanicWhere(cg) + ", ptr null");
+        ir.Unreachable();
+        cg.St[0].Loc = saved;
+    }
+
+    // the values of the arms; their conversions are added afterwards (see EmitConditionalIn)
+    var values = new Value[n.Arms.Length];
+    var codes = new string[n.Arms.Length];
+    var ends = new string[n.Arms.Length];
+    var armTemps = new List<TempRelease>[n.Arms.Length];
+    for (var i = 0; i < n.Arms.Length; i += 1)
+    {
+        var arm = n.Arms[i];
+        int mark = ir.Mark();
+        ir.SetBlock(bodies[i]);
+        PushScope(cg);
+        var label = arm.Label;
+        if (!label.PatType.IsNull() && label.PatName.Length > 0 && label.PatName != "_")
+        {
+            bool isError = false;
+            int pt = ResultPatternType(cg, st, label.PatType, label.Loc, ref isError);
+            string slot = ir.Alloca(LlvmType(cg, pt), label.PatName);
+            ir.Store(LlvmType(cg, pt), PatternPayload(cg, st, subjVal, unionSlot, pt), slot);
+            // borrowed from the subject: not released, and it cannot be assigned
+            cg.Fn[0].Vars.Add(ScopeVar { Name = label.PatName, Type = pt, Slot = slot, IsConst = true });
+        }
+        values[i] = target != 0 ? EmitExprAs(cg, arm.Value, target) : EmitRValue(cg, arm.Value);
+        PopScope(cg, false);
+        ends[i] = ir.CurrentBlock();
+        codes[i] = ir.TakeSince(mark);
+        armTemps[i] = TakeTemps(cg, baseCount);
+    }
+
+    // the common type
+    int t = target;
+    if (t == 0)
+    {
+        values[0] = SettleCollection(cg, values[0]);
+        t = values[0].Type;
+        for (var i = 1; i < values.Length; i += 1)
+        {
+            string why = "";
+            t = ConditionalType(cg, Rvalue(t, "", false), values[i], ref why);
+            if (t == 0)
+                Fail(cg, n.Arms[i].Value.Loc, SwitchArmsTypeError(cg, values, i));
+        }
+        if (values.Length == 1)
+        {
+            string why = "";
+            t = ConditionalType(cg, values[0], values[0], ref why);
+            if (t == 0)
+                Fail(cg, e.Loc, why.Replace("conditional branches", "the arms of a switch").Replace("a conditional expression", "a switch expression"));
+        }
+    }
+
+    string endLabel = ir.NewLabel("switch.value");
+    string incoming = "";
+    for (var i = 0; i < n.Arms.Length; i += 1)
+    {
+        ir.AppendCode(codes[i]);
+        ir.ResumeBlock(ends[i]);
+        string v = Consume(cg, ConvertValue(cg, values[i], t, n.Arms[i].Value.Loc));
+        ReleaseTemps(cg, TakeTemps(cg, baseCount));
+        ReleaseTemps(cg, armTemps[i]);
+        incoming += (i > 0 ? ", " : "") + "[ " + v + ", %" + ir.CurrentBlock() + " ]";
+        ir.Br(endLabel);
+    }
+    ir.SetBlock(endLabel);
+    string result = ir.Phi(LlvmType(cg, t), incoming);
+    PopScope(cg, true); // the subject
+    return Rvalue(t, result, NeedsArc(cg, t));
+}
+
+// Why the arms of a switch expression have no common type (the arm at 'index' fits none of those before it).
+string SwitchArmsTypeError(const ref Compiler cg, Value[] values, int index)
+{
+    var types = cg.Types;
+    var names = List<string>.Create();
+    for (var i = 0; i <= index; i += 1)
+    {
+        string name = "'" + types.Name(values[i].Type) + "'";
+        if (!names.Contains(name))
+            names.Add(name);
+    }
+    return "the arms of the switch expression have incompatible types " + string.Join(", ", names.ToArray());
+}
+
+// A switch expression without '_' must name every case: every member of a union or an enum, the value and the
+// failure of an Error<T> ('T v' and 'error e', or every code of an Error<T, E>), the value and null of an Optional<T>.
+// Over other values it needs '_' (the value when no arm matches). coveredMembers holds -1 for an arm 'T v' of a result
+// and -2 for 'null' (EmitLabelCondition).
+string SwitchExprExhaustiveError(const ref Compiler cg, int st, List<int> members, List<string> values, bool failureCovered)
+{
+    var types = cg.Types;
+    if (types.IsUnknown(st))
+        return "";
+    string needsDefault = "the switch expression needs an arm '_ => ...' for the values that no other arm matches";
+    if (IsUnionType(cg, st) || types.IsEnum(st))
+        return ExpressionWording(ExhaustiveError(cg, st, members, values, failureCovered));
+    if (!types.IsResultLike(st))
+        return needsDefault;
+    string over = "the switch expression over '" + types.Name(st) + "' does not handle ";
+    string valueArm = "'" + types.Name(types.Elem(st)) + " value => ...'";
+    if (!members.Contains(-1))
+        return over + "the value; add an arm " + valueArm + " or '_ => ...'";
+    if (types.IsOptional(st))
+        return members.Contains(-2) ? "" : over + "null; add an arm 'null => ...' or '_ => ...'";
+    if (failureCovered)
+        return "";
+    if (types.Code(st) != 0 && values.Count() > 0)
+        return ExpressionWording(ExhaustiveError(cg, st, members, values, failureCovered));
+    return over + "a failure; add an arm 'error e => ...' or '_ => ...'";
+}
+
+// The message of ExhaustiveError, for a switch expression.
+string ExpressionWording(string why)
+{
+    return why.Replace("the switch over", "the switch expression over").Replace("; add the cases or 'default:'", "; add the arms or '_ => ...'")
+              .Replace("; add the case or 'default:'", "; add the arm or '_ => ...'");
 }
 
 // A switch without 'default:' over a union, an enum or the codes of an Error<T, E> must name every case: a new member

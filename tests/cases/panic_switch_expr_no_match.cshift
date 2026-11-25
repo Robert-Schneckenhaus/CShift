@@ -1,0 +1,14 @@
+// A switch expression that names every member of an enum still panics for a value without a name.
+// expect-exit: 101
+// expect-stderr: panic: no arm of the switch expression matches the value
+
+using System;
+
+enum Color : int { Red = 1, Green = 2 }
+
+int Main()
+{
+    Color c = (Color)5;
+    Console.WriteLine(c switch { Color.Red => 1, Color.Green => 2 });
+    return 0;
+}

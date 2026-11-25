@@ -1,0 +1,11 @@
+// Over an Optional<T> without '_', both the value and null need an arm.
+// expect-error: the switch expression over 'Optional<int32>' does not handle null; add an arm 'null => ...' or '_ => ...'
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+int Main()
+{
+    Optional<int> o = 5;
+    var v = o switch { int x => x };
+    return 0;
+}

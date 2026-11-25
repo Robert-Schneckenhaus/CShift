@@ -1,0 +1,11 @@
+// Without '_' every member of an enum needs an arm.
+// expect-error: the switch expression over enum 'Color' does not handle 'Blue'; add the arm or '_ => ...'
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+int Main()
+{
+    Color c = Color.Red;
+    var s = c switch { Color.Red => 1, Color.Green => 2 };
+    return 0;
+}

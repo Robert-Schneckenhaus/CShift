@@ -445,6 +445,18 @@ bool ExprKeepsThis(const ref Compiler cg, ref KeepScan scan, Expr e)
         var c = tree.GetCond(e);
         return ExprKeepsThis(cg, ref scan, c.Cond) && ExprKeepsThis(cg, ref scan, c.Then) && ExprKeepsThis(cg, ref scan, c.Else);
     }
+    case ExprKind.Switch:
+    {
+        var sw = tree.GetSwitchExpr(e);
+        if (!ExprKeepsThis(cg, ref scan, sw.Subject))
+            return false;
+        foreach (var arm in sw.Arms)
+        {
+            if (!ExprKeepsThis(cg, ref scan, arm.Label.Value) || !ExprKeepsThis(cg, ref scan, arm.Value))
+                return false;
+        }
+        return true;
+    }
     case ExprKind.Cast:
         return ExprKeepsThis(cg, ref scan, tree.GetCast(e).Operand);
     case ExprKind.NewArray:

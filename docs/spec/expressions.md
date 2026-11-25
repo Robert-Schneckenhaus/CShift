@@ -19,8 +19,9 @@ From the lowest to the highest precedence:
 | 11 | `<<` `>>` | left |
 | 12 | `+` `-` | left |
 | 13 | `*` `/` `%` | left |
-| 14 | unary `-` `+` `!` `~` `*` `&`, cast `(T)x`, `try`, `ref`, `start` | right |
-| 15 | `.` `->` `()` `[]` `[..]`, initializer `T { ... }` | left |
+| 14 | `x switch { ... }` | left |
+| 15 | unary `-` `+` `!` `~` `*` `&`, cast `(T)x`, `try`, `ref`, `start` | right |
+| 16 | `.` `->` `()` `[]` `[..]`, initializer `T { ... }` | left |
 
 The order is that of C#. The operands of a binary operator are evaluated from left to right, and so are the arguments
 of a call. There is no `++`, `--`, `?.`, `as`, `typeof` or `checked`.
@@ -127,6 +128,34 @@ value of `T` (a typeless `new { ... }`, a collection expression, `T`'s arithmeti
 right-associative (`a ?? b ?? 0` is `a ?? (b ?? 0)`) and binds less tightly than `||` and more tightly than `?:`
 (`a ?? 1 + 2` is `a ?? (1 + 2)`). The left side must be an `Optional<T>`: an `Error<T>` says why it has no value, and
 `is` or a `switch` handles that.
+
+## Switch expressions
+
+```csharp
+double area = shape switch
+{
+    Circle c => Math.PI * c.R * c.R,
+    Rect r => r.W * r.H,
+};
+string text = code switch { 0 => "ok", 1 => "warning", _ => "error " + code.ToString() };
+```
+
+`subject switch { pattern => value, ... }` evaluates the subject once and tests the arms in order; the value of the
+first arm whose pattern matches is the result (the other arms are not evaluated). The patterns are those of the
+[`switch` statement's labels](statements.md#switch): a value compared with `==` (`0`, `"text"`, `Color.Red`, `null`), a
+member of a union (`Circle c`), the value of an `Optional<T>`/`Error<T>` (`int v`), a failure (`error e`), an error
+code (`FileError.NotFound`, `FileError code`); `_` matches everything and must be the last arm. A pattern variable is
+visible in its arm's value and cannot be assigned. A trailing `,` after the last arm is allowed.
+
+Without `_`, the arms must name every case: every member of a union or an enum, the value and `null` of an
+`Optional<T>`, the value and the failure (or every error code) of an `Error<T>`; over other subjects `_` is required
+(a compile error otherwise). If the value is still none of the named cases (an enum value without a name), the
+expression panics: `no arm of the switch expression matches the value`.
+
+With a target type (a declaration with a type, an argument, a `return`, ...) every arm converts to it. Otherwise the
+arms have a common type by the rules of `?:` (`x switch { 1 => 1, _ => 2.5 }` is a `double`). `switch` binds tighter
+than the binary operators and looser than the unary ones: `a + b switch { ... }` switches over `b`, `-x switch { ... }`
+over `-x`.
 
 ## Conditional operator
 

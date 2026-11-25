@@ -416,55 +416,7 @@ void CheckSwitch(const ref Compiler cg, Stmt s)
                 hasDefault = true;
                 continue;
             }
-            if (!label.PatType.IsNull())
-            {
-                if (known)
-                {
-                    CheckPatternLabel(cg, st, label);
-                    bool isError = false;
-                    string ignored = "";
-                    int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref ignored);
-                    if (pt == 0)
-                        allKnown = false;
-                    else if (isError || IsErrorEnum(cg, pt))
-                        failureCovered = true;
-                    else if (IsUnionType(cg, st) && UnionMemberIndex(cg, st, pt) >= 0)
-                        coveredMembers.Add(UnionMemberIndex(cg, st, pt));
-                    else if (types.IsResultLike(st) && types.Elem(st) == pt)
-                    {
-                        // 'case T value:' covers the success, which the exhaustiveness check does not count
-                    }
-                    else
-                        allKnown = false; // an error in the label: the coverage is not checked
-                }
-            }
-            else if (known && types.IsError(st) && types.Code(st) != 0)
-            {
-                Value cv = CheckRValue(cg, label.Value);
-                CheckConversion(cg, cv, types.Code(st), label.Loc);
-                if (cv.Type == types.Code(st) && cv.V.Length > 0)
-                    coveredValues.Add(cv.V);
-                else
-                    allKnown = false;
-            }
-            else
-            {
-                Value lv = CheckRValue(cg, label.Value);
-                if (types.IsEnum(st))
-                {
-                    if (lv.Type == st && lv.V.Length > 0)
-                        coveredValues.Add(lv.V);
-                    else
-                        allKnown = false;
-                }
-                if (known && !IsUnknown(cg, lv))
-                {
-                    string why = types.IsEnum(st) ? ConversionError(cg, lv, st) : "";
-                    if (why.Length == 0 && CompareType(cg, BinOp.Eq, Rvalue(st, "", false), lv, ref why) != 0)
-                        why = "";
-                    ReportIf(cg, label.Loc, why);
-                }
-            }
+            CheckSwitchLabel(cg, st, known, label, coveredMembers, coveredValues, ref failureCovered, ref allKnown);
         }
     }
     if (!hasDefault && allKnown)
@@ -503,6 +455,63 @@ void CheckSwitch(const ref Compiler cg, Stmt s)
     loops.RemoveAt(loops.Count() - 1);
     PopScope(cg, false);
     cg.Fn[0].Live = reached && (!hasDefault || broken);
+}
+
+// A label of a switch statement or a pattern of a switch expression (see EmitLabelCondition): its errors, and what it
+// covers for the exhaustiveness check (allKnown is false if that cannot be followed).
+void CheckSwitchLabel(const ref Compiler cg, int st, bool known, CaseLabel label, List<int> coveredMembers,
+                      List<string> coveredValues, ref bool failureCovered, ref bool allKnown)
+{
+    var types = cg.Types;
+    if (!label.PatType.IsNull())
+    {
+        if (known)
+        {
+            CheckPatternLabel(cg, st, label);
+            bool isError = false;
+            string ignored = "";
+            int pt = ResultPatternTypeOrError(cg, st, label.PatType, ref isError, ref ignored);
+            if (pt == 0)
+                allKnown = false;
+            else if (isError || IsErrorEnum(cg, pt))
+                failureCovered = true;
+            else if (IsUnionType(cg, st) && UnionMemberIndex(cg, st, pt) >= 0)
+                coveredMembers.Add(UnionMemberIndex(cg, st, pt));
+            else if (types.IsResultLike(st) && types.Elem(st) == pt)
+                coveredMembers.Add(-1); // 'case T value:' covers the success (only a switch expression needs it)
+            else
+                allKnown = false; // an error in the label: the coverage is not checked
+        }
+    }
+    else if (known && types.IsError(st) && types.Code(st) != 0)
+    {
+        Value cv = CheckRValue(cg, label.Value);
+        CheckConversion(cg, cv, types.Code(st), label.Loc);
+        if (cv.Type == types.Code(st) && cv.V.Length > 0)
+            coveredValues.Add(cv.V);
+        else
+            allKnown = false;
+    }
+    else
+    {
+        if (label.Value.Kind == ExprKind.NullLit && types.IsOptional(st))
+            coveredMembers.Add(-2); // 'null' of an Optional<T> (SwitchExprExhaustiveError)
+        Value lv = CheckRValue(cg, label.Value);
+        if (types.IsEnum(st))
+        {
+            if (lv.Type == st && lv.V.Length > 0)
+                coveredValues.Add(lv.V);
+            else
+                allKnown = false;
+        }
+        if (known && !IsUnknown(cg, lv))
+        {
+            string why = types.IsEnum(st) ? ConversionError(cg, lv, st) : "";
+            if (why.Length == 0 && CompareType(cg, BinOp.Eq, Rvalue(st, "", false), lv, ref why) != 0)
+                why = "";
+            ReportIf(cg, label.Loc, why);
+        }
+    }
 }
 
 // 'case T name:' / 'case error e:' on a result or a union (see EmitSwitch).

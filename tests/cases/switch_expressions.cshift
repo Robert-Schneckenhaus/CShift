@@ -1,0 +1,88 @@
+// subject switch { pattern => value, ... }: the first arm whose pattern matches gives the value. Patterns are those of
+// the switch statement: members of a union ('Circle c'), values ('0', "a", 'Color.Red'), the value of an Optional/Error
+// ('int v'), 'null', 'error e' and error codes; '_' matches the rest. Without a target type the arms have a common type
+// (like ?:), with one ('int64 big = ...') each arm takes it. 'a + b switch { ... }' switches over b.
+// expect-exit: 0
+// expect-stdout: 12
+// expect-stdout: 6
+// expect-stdout: greenblue
+// expect-stdout: zero one many: 7
+// expect-stdout: missing
+// expect-stdout: denied
+// expect-stdout: value 20
+// expect-stdout: (none)
+// expect-stdout: 70
+// expect-stdout: 2.5
+// expect-stdout: 11
+
+using System;
+
+struct Circle { double R; }
+struct Rect { double W; double H; }
+union Shape { Circle, Rect }
+
+enum Color : int { Red = 1, Green = 2, Blue = 3 }
+
+error FileError { NotFound, Denied }
+
+double Area(Shape s)
+{
+    return s switch
+    {
+        Circle c => 3.0 * c.R * c.R,
+        Rect r => r.W * r.H,
+    };
+}
+
+string Name(Color c)
+{
+    return c switch { Color.Red => "red", Color.Green => "green", Color.Blue => "blue" };
+}
+
+Error<int, FileError> Open(int i)
+{
+    if (i == 0)
+        return error(FileError.NotFound);
+    if (i == 1)
+        return error(FileError.Denied);
+    return i * 10;
+}
+
+string Describe(int n)
+{
+    return n switch
+    {
+        0 => "zero",
+        1 => "one",
+        _ => "many: " + n.ToString(),
+    };
+}
+
+int Main()
+{
+    Console.WriteLine(Area(Circle { R = 2.0 }));
+    Console.WriteLine(Area(Rect { W = 2.0, H = 3.0 }));
+    Console.WriteLine(Name(Color.Green) + Name((Color)7 == Color.Red ? Color.Red : Color.Blue));
+    Console.WriteLine($"{Describe(0)} {Describe(1)} {Describe(7)}");
+    for (var i = 0; i < 3; i += 1)
+    {
+        string text = Open(i) switch
+        {
+            int v => "value " + v.ToString(),
+            FileError.NotFound => "missing",
+            FileError.Denied => "denied",
+        };
+        Console.WriteLine(text);
+    }
+    Optional<string> maybe = null;
+    var shown = maybe switch { string s => s, null => "(none)" };
+    Console.WriteLine(shown);
+    int64 big = Describe(3).Length switch { 7 => 70, _ => 0 };
+    Console.WriteLine(big);
+    var mixed = 2 switch { 1 => 1, _ => 2.5 };
+    Console.WriteLine(mixed);
+    Console.WriteLine(1 + 2 switch { 2 => 10, _ => 20 });
+    string key = "b";
+    Console.WriteLine(key switch { "a" => 1, "b" => 2, _ => 0 });
+    return 0;
+}

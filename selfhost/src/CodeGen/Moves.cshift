@@ -341,6 +341,15 @@ int MentionsIn(const ref Compiler cg, Expr e, string name, int mode, bool underA
         return MentionsIn(cg, c.Cond, name, mode, false) + MentionsIn(cg, c.Then, name, mode, false) +
                MentionsIn(cg, c.Else, name, mode, false);
     }
+    case ExprKind.Switch:
+    {
+        var sw = tree.GetSwitchExpr(e);
+        int count = MentionsIn(cg, sw.Subject, name, mode, false);
+        foreach (var arm in sw.Arms)
+            count += MentionsIn(cg, arm.Label.Value, name, mode, false) + (arm.Label.PatName == name ? declared : 0) +
+                     MentionsIn(cg, arm.Value, name, mode, false);
+        return count;
+    }
     case ExprKind.Cast:
         return MentionsIn(cg, tree.GetCast(e).Operand, name, mode, underAddress);
     case ExprKind.NewArray:
