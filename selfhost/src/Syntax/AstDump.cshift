@@ -445,6 +445,8 @@ struct AstDumper
             var n = Tree.GetForeach(s);
             Line(indent, role, "Foreach" + at + " name=" + n.Name + TypeAttr("type", n.Type));
             DumpExpr(indent + 1, "iterable", n.Iterable);
+            if (!n.RangeEnd.IsNull())
+                DumpExpr(indent + 1, "range end", n.RangeEnd);
             DumpStmt(indent + 1, "body", n.Body);
             break;
         }

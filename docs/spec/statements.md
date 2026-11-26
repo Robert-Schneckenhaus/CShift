@@ -89,7 +89,7 @@ foreach (var item in items)
 WhileStatement   = 'while' '(' Expression ')' Body ;
 DoStatement      = 'do' Body 'while' '(' Expression ')' ';' ;
 ForStatement     = 'for' '(' [ LocalDecl-or-Expression ] ';' [ Expression ] ';' [ Expression { ',' Expression } ] ')' Body ;
-ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression ')' Body ;
+ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression [ '..' Expression ] ')' Body ;
 ```
 
 `while` tests the condition before every iteration, `do` after it (the body runs at least once). The conditions are
@@ -105,7 +105,19 @@ commas, run after every iteration and after `continue`. There is no `++`; write 
 |---|---|
 | an array `T[]`, a `Slice<T>`, a `ReadOnlySlice<T>`, a `Fixed<T, N>` | `T` |
 | a `string` | `char`: the **bytes** of the UTF-8 text (a character outside ASCII is several bytes) |
+| a range `start..end` of integers | the integers from `start` to `end - 1` (none if `end <= start`) |
+| a struct with a method `GetEnumerator()` that returns a cursor (`Dictionary<K, V>`, `HashSet<T>`) | `T`, the result of the cursor's `Current()` |
 | a struct with the methods `int Count()` and `T Get(int index)` (`List<T>`, `Stack<T>`, ...) | `T`, the result of `Get` |
+| a cursor: a struct with the methods `bool MoveNext()` and `T Current()` | `T`, the result of `Current()` |
+
+For a struct, `GetEnumerator()` is used if it exists, then `Count()`/`Get(int)`, then `MoveNext()`/`Current()`. A
+cursor is a value in a slot of the loop: `MoveNext()` moves it to the next element (false at the end, also before the
+first element), `Current()` returns the element; nothing is allocated. `Dictionary<K, V>` gives its entries as tuples
+`(K Key, V Value)`, so `foreach (var (key, value) in dict)` works.
+
+In a range, `start` and `end` are evaluated once; the loop variable has their common type (like `?:`, so `0..n` takes
+the type of `n`) or the declared type, which must be an integer type. It is a copy of the counter: assigning to it does
+not change the iteration. A range exists only here (`foreach (var i in 0..n)`), not as a value of its own.
 
 The collection expression is evaluated once, before the first iteration. The loop variable gets a **copy** of each
 element: assigning to it (or to its fields) does not change the collection. With an explicit type, the element must

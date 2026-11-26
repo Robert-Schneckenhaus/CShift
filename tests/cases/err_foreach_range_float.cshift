@@ -1,0 +1,12 @@
+// A range in foreach counts integers.
+// expect-error: a range 'start..end' in foreach needs integers, not 'float64'
+
+struct P { int X; }
+
+int Main()
+{
+    foreach (var x in 0..2.5)
+    {
+    }
+    return 0;
+}

@@ -305,7 +305,8 @@ int MentionsInStmt(const ref Compiler cg, Stmt s, string name, int mode)
     case StmtKind.Foreach:
     {
         var n = tree.GetForeach(s);
-        return (n.Name == name ? declared : 0) + MentionsIn(cg, n.Iterable, name, mode, false) + MentionsInStmt(cg, n.Body, name, mode);
+        return (n.Name == name ? declared : 0) + MentionsIn(cg, n.Iterable, name, mode, false) +
+               MentionsIn(cg, n.RangeEnd, name, mode, false) + MentionsInStmt(cg, n.Body, name, mode);
     }
     case StmtKind.Switch:
     {

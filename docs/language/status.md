@@ -42,6 +42,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Integer arithmetic in the target type (`uint8 r = a + 1;` without a cast) | ✔ ([basics](basics.md#integer-arithmetic-and-the-target-type)) |
 | Operators and precedence like C# (without `++`/`--`), `?:`, casts, `sizeof` | ✔ |
 | `if`/`while`/`do`/`for`/`foreach` (arrays, strings)/`switch`/`break`/`continue`/`return` | ✔ |
+| `foreach` over ranges (`0..n`), over `Dictionary`/`HashSet` without allocating (`GetEnumerator()`), and over cursors (`MoveNext()`/`Current()`) | ✔ (self-hosted, [statements](../spec/statements.md)) |
 | Switch expressions: `x switch { Circle c => ..., 0 => ..., _ => ... }` (the patterns of `case`, `_` last, every case named without `_`, a common type or the target type) | ✔ (self-hosted, [expressions](../spec/expressions.md#switch-expressions)) |
 | Function overloading | ✔ |
 | C FFI: `extern "C"`, variadic functions (`printf`), `link "lib"`, pointers | ✔ |

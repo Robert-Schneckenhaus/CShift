@@ -129,7 +129,8 @@ WhileStatement   = 'while' '(' Expression ')' Body ;
 DoStatement      = 'do' Body 'while' '(' Expression ')' ';' ;
 ForStatement     = 'for' '(' [ ForInit ] ';' [ Expression ] ';' [ Expression { ',' Expression } ] ')' Body ;
 ForInit          = ( Type | 'var' ) Identifier [ '=' Expression ] | Expression ;
-ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression ')' Body ;
+ForeachStatement = 'foreach' '(' ( ( Type | 'var' ) Identifier | DeconstructParts ) 'in' Expression [ '..' Expression ] ')' Body ;
+                   (* 'start..end': the integers from start to end - 1 *)
                    (* the parts of a foreach are new variables or '_', not expressions *)
 
 SwitchStatement = 'switch' '(' Expression ')' '{' { SwitchSection } '}' ;

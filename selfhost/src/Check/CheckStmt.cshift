@@ -357,12 +357,41 @@ void CheckForeach(const ref Compiler cg, Stmt s)
     Value it = SettleChecked(cg, CheckRValue(cg, n.Iterable));
     int coll = it.Type;
     int elem = types.Unknown;
-    if (types.IsStruct(coll))
+    if (!n.RangeEnd.IsNull())
+    {
+        // foreach (var i in start..end), see EmitForeachRange
+        Value end = CheckRValue(cg, n.RangeEnd);
+        if (!IsUnknown(cg, it) && !IsUnknown(cg, end))
+        {
+            string why = "";
+            if (n.Type.IsNull())
+            {
+                int t = RangeType(cg, it, end, ref why);
+                if (t == 0)
+                    CheckError(cg, n.Iterable.Loc, why);
+                else
+                    elem = t;
+            }
+            else
+            {
+                int declared = DeclTypeOf(cg, n.Type);
+                if (!types.IsUnknown(declared) && !types.IsInt(declared))
+                    CheckError(cg, n.Iterable.Loc, "a range 'start..end' in foreach needs integers, not '" + types.Name(declared) + "'");
+                else
+                {
+                    CheckConversion(cg, it, declared, cg.Tree.StartOf(n.Iterable));
+                    CheckConversion(cg, end, declared, cg.Tree.StartOf(n.RangeEnd));
+                    elem = declared;
+                }
+            }
+        }
+    }
+    else if (types.IsStruct(coll))
         elem = ForeachStructElem(cg, coll, n.Iterable.Loc);
     else if (!types.IsUnknown(coll) && types.Kind(coll) != TypeKind.Collection)
     {
         if (!types.IsArray(coll) && !types.IsString(coll) && !types.IsSlice(coll) && !types.IsFixed(coll))
-            CheckError(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N> or a struct with Count() and Get(int), not '" +
+            CheckError(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N>, a range 'start..end' or an iterable struct, not '" +
                                            types.Name(coll) + "'");
         else
             elem = SliceElemType(cg, coll);
@@ -542,31 +571,9 @@ void CheckPatternLabel(const ref Compiler cg, int st, CaseLabel label)
 // EmitForeachStruct); unknown after an error.
 int ForeachStructElem(const ref Compiler cg, int coll, SourceLoc loc)
 {
-    var types = cg.Types;
-    string needs = "'foreach' over struct '" + types.Name(coll) + "' needs the methods 'int Count()' and 'T Get(int index)'";
-    var countCands = MethodCandidates(cg, coll, "Count");
-    var getCands = MethodCandidates(cg, coll, "Get");
-    if (countCands.Length == 0 || getCands.Length == 0)
-    {
-        CheckError(cg, loc, needs);
-        return types.Unknown;
-    }
     string why = "";
-    int countInstance = TryResolveOverload(cg, countCands, new Arg[0], new int[0], loc, "Count", ref why);
+    var m = FindForeachMethods(cg, coll, loc, ref why);
     if (ReportIf(cg, loc, why))
-        return types.Unknown;
-    var probe = new Arg[1];
-    probe[0] = Arg { V = ConstInt(cg, types.I32, 0) };
-    int getInstance = TryResolveOverload(cg, getCands, probe, new int[0], loc, "Get", ref why);
-    if (ReportIf(cg, loc, why))
-        return types.Unknown;
-    var countFn = cg.Instances.Get(countInstance);
-    var getFn = cg.Instances.Get(getInstance);
-    if (!countFn.HasThis || !getFn.HasThis || countFn.Ret != types.I32 || types.IsVoid(getFn.Ret) ||
-        getFn.ParamTypes[0] != types.I32 || getFn.ParamRefs[0] != 0)
-    {
-        CheckError(cg, loc, needs);
-        return types.Unknown;
-    }
-    return getFn.Ret;
+        return cg.Types.Unknown;
+    return m.Elem;
 }

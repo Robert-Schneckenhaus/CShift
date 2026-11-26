@@ -182,6 +182,11 @@ void EmitForeach(const ref Compiler cg, Stmt s)
     var types = cg.Types;
     var ir = cg.Ir;
     var n = cg.Tree.GetForeach(s);
+    if (!n.RangeEnd.IsNull())
+    {
+        EmitForeachRange(cg, s);
+        return;
+    }
     Value it = SettleCollection(cg, EmitRValue(cg, n.Iterable));
     int collType = it.Type;
     if (types.IsStruct(collType))
@@ -190,7 +195,7 @@ void EmitForeach(const ref Compiler cg, Stmt s)
         return;
     }
     if (!types.IsArray(collType) && !types.IsString(collType) && !types.IsSlice(collType) && !types.IsFixed(collType))
-        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N> or a struct with Count() and Get(int), not '" + types.Name(collType) + "'");
+        Fail(cg, n.Iterable.Loc, "'foreach' requires an array, a string, a slice, a Fixed<T, N>, a range 'start..end' or an iterable struct, not '" + types.Name(collType) + "'");
     bool isFixed = types.IsFixed(collType);
     int elemType = SliceElemType(cg, collType);
     string collIr = LlvmType(cg, collType); // ptr, or { ptr, ptr, size } for a slice
@@ -491,15 +496,101 @@ string CopyLoop(const ref Compiler cg, string ty, int elem, string prefix, bool 
 }
 
 // ---------------------------------------------------------------------------
-// foreach over a struct: it must provide "int Count()" and "T Get(int index)" (e.g. List<T>)
+// foreach over a struct (docs/spec/statements.md): one with "GetEnumerator()" that returns a cursor (Dictionary<K, V>,
+// HashSet<T>), one with "int Count()" and "T Get(int index)" (List<T>, ...), or a cursor itself: a struct with
+// "bool MoveNext()" (to the next element; false at the end) and "T Current()". A cursor is a value in the loop's own
+// slot: nothing is allocated.
 // ---------------------------------------------------------------------------
 
-int FindForeachMethod(const ref Compiler cg, int collType, string name, Arg[] probe, SourceLoc loc)
+// How a struct is iterated: Kind 1 Count/Get, 2 GetEnumerator then MoveNext/Current on its result, 3 MoveNext/Current.
+// GetEnumerator() comes first, then Count()/Get(int), then MoveNext()/Current().
+struct ForeachMethods
 {
-    var cands = MethodCandidates(cg, collType, name);
-    if (cands.Length == 0)
-        Fail(cg, loc, "'foreach' over struct '" + cg.Types.Name(collType) + "' needs the methods 'int Count()' and 'T Get(int index)'");
-    return ResolveOverload(cg, cands, probe, new int[0], loc, name);
+    int Kind;
+    int Count;      // 1: the instances of the methods
+    int Get;
+    int GetEnum;    // 2
+    int MoveNext;   // 2, 3
+    int Current;
+    int Cursor;     // 2, 3: the type of the cursor
+    int Elem;       // the type of the elements
+}
+
+// The methods foreach uses for the struct 'coll' (why says why there are none).
+ForeachMethods FindForeachMethods(const ref Compiler cg, int coll, SourceLoc loc, ref string why)
+{
+    var types = cg.Types;
+    string needs = "'foreach' over struct '" + types.Name(coll) + "' needs 'GetEnumerator()', the methods 'int Count()' and " +
+                   "'T Get(int index)', or 'bool MoveNext()' and 'T Current()'";
+    var m = ForeachMethods { };
+    var enumCands = MethodCandidates(cg, coll, "GetEnumerator");
+    var countCands = MethodCandidates(cg, coll, "Count");
+    var getCands = MethodCandidates(cg, coll, "Get");
+    // GetEnumerator() first: a Dictionary<int, V> has Count() and Get(int key), which are no positions
+    if (enumCands.Length == 0 && countCands.Length > 0 && getCands.Length > 0)
+    {
+        int countInstance = TryResolveOverload(cg, countCands, new Arg[0], new int[0], loc, "Count", ref why);
+        if (why.Length > 0)
+            return m;
+        var probe = new Arg[1];
+        probe[0] = Arg { V = ConstInt(cg, types.I32, 0) };
+        int getInstance = TryResolveOverload(cg, getCands, probe, new int[0], loc, "Get", ref why);
+        if (why.Length > 0)
+            return m;
+        var countFn = cg.Instances.Get(countInstance);
+        var getFn = cg.Instances.Get(getInstance);
+        if (countFn.HasThis && getFn.HasThis && countFn.Ret == types.I32 && !types.IsVoid(getFn.Ret) &&
+            getFn.ParamTypes[0] == types.I32 && getFn.ParamRefs[0] == 0)
+        {
+            m.Kind = 1;
+            m.Count = countInstance;
+            m.Get = getInstance;
+            m.Elem = getFn.Ret;
+            return m;
+        }
+    }
+    int cursor = coll;
+    if (enumCands.Length > 0)
+    {
+        int enumInstance = TryResolveOverload(cg, enumCands, new Arg[0], new int[0], loc, "GetEnumerator", ref why);
+        if (why.Length > 0)
+            return m;
+        var enumFn = cg.Instances.Get(enumInstance);
+        if (!enumFn.HasThis || !types.IsStruct(enumFn.Ret))
+        {
+            why = "'GetEnumerator()' of '" + types.Name(coll) + "' must be a method that returns a struct with 'bool MoveNext()' and 'T Current()'";
+            return m;
+        }
+        m.GetEnum = enumInstance;
+        cursor = enumFn.Ret;
+    }
+    var moveCands = MethodCandidates(cg, cursor, "MoveNext");
+    var currentCands = MethodCandidates(cg, cursor, "Current");
+    if (moveCands.Length == 0 || currentCands.Length == 0)
+    {
+        why = cursor == coll ? needs : "the result of 'GetEnumerator()', '" + types.Name(cursor) +
+                                       "', needs the methods 'bool MoveNext()' and 'T Current()'";
+        return m;
+    }
+    int moveInstance = TryResolveOverload(cg, moveCands, new Arg[0], new int[0], loc, "MoveNext", ref why);
+    if (why.Length > 0)
+        return m;
+    int currentInstance = TryResolveOverload(cg, currentCands, new Arg[0], new int[0], loc, "Current", ref why);
+    if (why.Length > 0)
+        return m;
+    var moveFn = cg.Instances.Get(moveInstance);
+    var currentFn = cg.Instances.Get(currentInstance);
+    if (!moveFn.HasThis || !currentFn.HasThis || moveFn.Ret != types.Bool || types.IsVoid(currentFn.Ret))
+    {
+        why = "'" + types.Name(cursor) + "' needs the methods 'bool MoveNext()' and 'T Current()' (instance methods) for 'foreach'";
+        return m;
+    }
+    m.Kind = enumCands.Length > 0 ? 2 : 3;
+    m.MoveNext = moveInstance;
+    m.Current = currentInstance;
+    m.Cursor = cursor;
+    m.Elem = currentFn.Ret;
+    return m;
 }
 
 void EmitForeachStruct(const ref Compiler cg, Stmt s, Value it)
@@ -509,20 +600,23 @@ void EmitForeachStruct(const ref Compiler cg, Stmt s, Value it)
     var n = cg.Tree.GetForeach(s);
     int collType = it.Type;
     SourceLoc loc = n.Iterable.Loc;
-    int countInstance = FindForeachMethod(cg, collType, "Count", new Arg[0], loc);
-    var probe = new Arg[1];
-    probe[0] = Arg { V = ConstInt(cg, types.I32, 0) };
-    int getInstance = FindForeachMethod(cg, collType, "Get", probe, loc);
+    string why = "";
+    var m = FindForeachMethods(cg, collType, loc, ref why);
+    if (why.Length > 0)
+        Fail(cg, loc, why);
+    if (m.Kind != 1)
+    {
+        EmitForeachCursor(cg, s, it, m);
+        return;
+    }
+    int countInstance = m.Count;
+    int getInstance = m.Get;
     var countFn = cg.Instances.Get(countInstance);
     var getFn = cg.Instances.Get(getInstance);
-    if (!countFn.HasThis || !getFn.HasThis || countFn.Ret != types.I32 || types.IsVoid(getFn.Ret) ||
-        getFn.ParamTypes[0] != types.I32 || getFn.ParamRefs[0] != 0)
-        Fail(cg, loc, "'foreach' over struct '" + types.Name(collType) + "' needs the methods 'int Count()' and 'T Get(int index)'");
     UseFunction(cg, countInstance);
     UseFunction(cg, getInstance);
     NoteCall(cg, countInstance);
     NoteCall(cg, getInstance);
-
     PushScope(cg); // holds a copy of the struct for the duration of the loop
     string collIr = LlvmType(cg, collType);
     string collSlot = ir.Alloca(collIr, "foreach.coll");
@@ -567,6 +661,129 @@ void EmitForeachStruct(const ref Compiler cg, Stmt s, Value it)
     ir.Store("i32", next, idxSlot);
     ir.Br(condLabel);
 
+    ir.SetBlock(endLabel);
+    PopScope(cg, true);
+}
+
+
+// foreach over a cursor (ForeachMethods kinds 2 and 3): the collection is kept alive in a slot, the cursor (from
+// GetEnumerator(), or the value itself) lives in a slot of its own; MoveNext() steps, Current() gives the element.
+void EmitForeachCursor(const ref Compiler cg, Stmt s, Value it, ForeachMethods m)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var n = cg.Tree.GetForeach(s);
+    SourceLoc loc = n.Iterable.Loc;
+    int collType = it.Type;
+    var moveFn = cg.Instances.Get(m.MoveNext);
+    var currentFn = cg.Instances.Get(m.Current);
+    UseFunction(cg, m.MoveNext);
+    UseFunction(cg, m.Current);
+    NoteCall(cg, m.MoveNext);
+    NoteCall(cg, m.Current);
+
+    PushScope(cg); // the collection and the cursor, for the duration of the loop
+    string collIr = LlvmType(cg, collType);
+    string collSlot = ir.Alloca(collIr, "foreach.coll");
+    ir.Store(collIr, Consume(cg, it), collSlot);
+    DeclareVar(cg, "$foreach", collType, collSlot);
+    string cursorSlot = collSlot;
+    if (m.Kind == 2)
+    {
+        var enumFn = cg.Instances.Get(m.GetEnum);
+        UseFunction(cg, m.GetEnum);
+        NoteCall(cg, m.GetEnum);
+        string cursorIr = LlvmType(cg, m.Cursor);
+        string cursor = ir.Call(cursorIr, enumFn.LlvmName, "ptr " + collSlot);
+        cursorSlot = ir.Alloca(cursorIr, "foreach.cursor");
+        ir.Store(cursorIr, cursor, cursorSlot); // owned by the slot (the call returned +1)
+        DeclareVar(cg, "$cursor", m.Cursor, cursorSlot);
+    }
+    FlushTemps(cg, 0, true);
+
+    string condLabel = ir.NewLabel("foreach.cond");
+    string bodyLabel = ir.NewLabel("foreach.body");
+    string endLabel = ir.NewLabel("foreach.end");
+    ir.Br(condLabel);
+
+    ir.SetBlock(condLabel);
+    string more = ir.Call("i1", moveFn.LlvmName, "ptr " + cursorSlot);
+    ir.CondBr(more, bodyLabel, endLabel);
+
+    ir.SetBlock(bodyLabel);
+    int outerDepth = ScopeCount(cg);
+    PushScope(cg);
+    int elemType = m.Elem;
+    int varType = n.Type.IsNull() ? elemType : DeclTypeOf(cg, n.Type);
+    string got = ir.Call(LlvmType(cg, elemType), currentFn.LlvmName, "ptr " + cursorSlot);
+    Value elem = Rvalue(elemType, got, NeedsArc(cg, elemType));
+    Value cv = ConvertValue(cg, elem, varType, loc);
+    string varSlot = ir.Alloca(LlvmType(cg, varType), n.Name);
+    ir.Store(LlvmType(cg, varType), Consume(cg, cv), varSlot);
+    DeclareVar(cg, n.Name, varType, varSlot);
+
+    cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = endLabel, ContinueLabel = condLabel, ScopeDepth = outerDepth });
+    EmitStmt(cg, n.Body);
+    cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);
+    PopScope(cg, true);
+    ir.Br(condLabel);
+
+    ir.SetBlock(endLabel);
+    PopScope(cg, true);
+}
+
+// foreach (var i in start..end): the integers from start to end - 1 (none if end <= start). Both are evaluated once;
+// their common type (or the loop variable's type) is the counter's, which must be an integer type. The loop variable
+// is a copy of the counter, so assigning to it does not change the iteration.
+void EmitForeachRange(const ref Compiler cg, Stmt s)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    var n = cg.Tree.GetForeach(s);
+    Value start = EmitRValue(cg, n.Iterable);
+    Value end = EmitRValue(cg, n.RangeEnd);
+    string why = "";
+    int t = n.Type.IsNull() ? RangeType(cg, start, end, ref why) : DeclTypeOf(cg, n.Type);
+    if (t == 0)
+        Fail(cg, n.Iterable.Loc, why);
+    if (!types.IsInt(t))
+        Fail(cg, n.Iterable.Loc, "a range 'start..end' in foreach needs integers, not '" + types.Name(t) + "'");
+    string ty = LlvmType(cg, t);
+    string startV = ConvertValue(cg, start, t, n.Iterable.Loc).V;
+    string endV = ConvertValue(cg, end, t, n.RangeEnd.Loc).V;
+    FlushTemps(cg, 0, true);
+    PushScope(cg);
+    string counter = ir.Alloca(ty, "range.i");
+    ir.Store(ty, startV, counter);
+    string endSlot = ir.Alloca(ty, "range.end");
+    ir.Store(ty, endV, endSlot);
+
+    string condLabel = ir.NewLabel("range.cond");
+    string bodyLabel = ir.NewLabel("range.body");
+    string incLabel = ir.NewLabel("range.inc");
+    string endLabel = ir.NewLabel("range.end");
+    ir.Br(condLabel);
+    ir.SetBlock(condLabel);
+    string i = ir.Load(ty, counter);
+    string less = types.IsSigned(t) ? "slt" : "ult";
+    ir.CondBr(ir.ICmp(less, ty, i, ir.Load(ty, endSlot)), bodyLabel, endLabel);
+
+    ir.SetBlock(bodyLabel);
+    int outerDepth = ScopeCount(cg);
+    PushScope(cg);
+    string varSlot = ir.Alloca(ty, n.Name);
+    ir.Store(ty, i, varSlot);
+    DeclareVar(cg, n.Name, t, varSlot);
+    cg.Fn[0].Loops.Add(LoopCtx { BreakLabel = endLabel, ContinueLabel = incLabel, ScopeDepth = outerDepth });
+    EmitStmt(cg, n.Body);
+    cg.Fn[0].Loops.RemoveAt(cg.Fn[0].Loops.Count() - 1);
+    PopScope(cg, true);
+    ir.Br(incLabel);
+
+    ir.SetBlock(incLabel);
+    // counter < end, so counter + 1 cannot overflow
+    ir.Store(ty, ir.Bin("add", ty, ir.Load(ty, counter), "1"), counter);
+    ir.Br(condLabel);
     ir.SetBlock(endLabel);
     PopScope(cg, true);
 }
