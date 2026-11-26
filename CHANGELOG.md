@@ -6,6 +6,13 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Threads
+- Arrays and the containers of the standard library (`List<T>`, `Dictionary<K, V>`, `HashSet<T>`, structs that hold
+  them) can be passed to `thread` functions ([threading](docs/language/threading.md)): the thread gets its own copy.
+  Where the argument is the last use of a variable or a temporary, it is handed over without a copy if nothing else
+  refers to its blocks (checked at run time) - no keyword, the result is the same either way.
+- `Mutex<T>` can hold arrays and containers (every access copies them).
+
 ### Switch expressions
 - `subject switch { pattern => value, ... }` ([spec](docs/spec/expressions.md#switch-expressions)): the first arm whose
   pattern matches gives the value. The patterns are those of `case` labels (values, union members `Circle c`, `int v`,

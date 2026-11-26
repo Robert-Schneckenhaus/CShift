@@ -63,11 +63,32 @@ atomic. A `thread` function's parameters may be:
   `thread int Sum(ReadOnlySlice<int> values)` can be started with an `int[]`. The thread cannot change the elements,
   so the copy behaves like the original, except that it does not see changes the caller makes afterwards (which
   would be a data race anyway). Copying costs time and memory proportional to the length, like for strings.
+* **arrays and containers** of the above - `int[]`, `List<T>`, `Dictionary<K, V>`, `HashSet<T>`, and structs that
+  hold them: the thread gets **its own copy** (new arrays, the elements' strings and arrays copied as well). It may
+  change it; the caller does not see that, and the thread does not see what the caller changes afterwards. To get
+  data back, return it (`thread List<int> Work(...)`).
 
-Never `ref`/`const ref`, a raw pointer, an array or `Slice<T>` (both writable), a `StringSlice` (use `.ToString()`),
-a built-in container or `Action`/`Func`: copying those would race on a reference count that was never meant to be
-touched from two threads at once (or, for a raw pointer or `Action`/`Func`, silently alias data the other thread does
-not expect). A `Thread<T>` handle holds a `SharedPtr` to
+**Handing over instead of copying.** When the argument is the last use of a local variable (nothing after the
+`start` statement reads it) or a temporary, the compiler checks at run time whether anything else still refers to
+its blocks. If not, the value is handed to the thread as it is - no copy, just the check:
+
+```csharp
+thread int Sum(List<int> values) { ... }
+
+var numbers = Load();                // a List<int> with a million elements
+Thread<int> t = start Sum(numbers);  // last use of 'numbers': handed over, not copied
+int n = (start Sum(Load())).Join();  // a temporary: handed over as well
+
+var kept = numbers2;
+start Sum(numbers2);                 // 'kept' still refers to the list: the thread gets a copy
+```
+
+There is no keyword for it and nothing to get wrong: the result is the same either way, a copy is only slower.
+
+Never `ref`/`const ref`, a raw pointer, `Slice<T>` (a writable view of the caller's array), a `StringSlice` (use
+`.ToString()`) or `Action`/`Func`: those would share a block whose reference count was never meant to be touched from
+two threads at once (or, for a raw pointer or `Action`/`Func`, silently alias data the other thread does not
+expect). A `Thread<T>` handle holds a `SharedPtr` to
 the result, so it can be passed to another thread only if `T` is thread-safe (`Thread<int>` yes, `Thread<string>`
 no). The return type has no such restriction - `Error<T>`, a string, anything - since the value only ever moves
 from the thread to whoever calls `Join()`.
@@ -193,8 +214,9 @@ void Main()
   `mutex.Set(value)` lock just for that one call.
 * The value only goes in and out as a copy that shares no reference count with anything else (strings are copied
   into new blocks, `Memory.CopyForThread`). So `T` must be copyable between threads: numbers, `bool`, `char`, enums,
-  strings, `SharedPtr<T>` of thread-safe values, `Optional<T>`/`Error<T>`/structs of them, and `ReadOnlySlice<T>` of
-  them (its elements are copied) - not arrays or containers (`Mutex<List<int>>` is an error).
+  strings, `SharedPtr<T>` of thread-safe values, `Optional<T>`/`Error<T>`/structs of them, `ReadOnlySlice<T>` and
+  arrays of them, and so containers: `Mutex<List<int>>` works, but every `Get`, `Set` and `Update` copies the whole
+  list - fine for small shared state, not for large data (pass that to the thread or return it instead).
 * A `MutexGuard<T>` cannot be passed to another thread: the thread that locked a mutex has to unlock it.
 
 Next: [Resources and `using`](resources.md).

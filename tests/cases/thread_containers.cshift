@@ -1,0 +1,95 @@
+// Arrays and containers can be passed to a thread: it gets its own copy (strings and arrays inside copied too), may
+// change it, and neither side sees the other's changes. The last use of a variable (or a temporary) is handed over
+// without a copy when nothing else refers to it; a list still shared with another variable is copied. Mutex<T> holds a
+// container (every access copies it).
+// skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
+// expect-exit: 0
+// expect-stdout: 5050 100 100
+// expect-stdout: 55 10
+// expect-stdout: changed-b-c a
+// expect-stdout: 7 3
+// expect-stdout: 70014000
+// expect-stdout: 3 [1, 2, 3]
+
+using System;
+
+thread int Sum(List<int> values)
+{
+    int total = 0;
+    foreach (var v in values)
+        total += v;
+    values.Add(1000); // the thread's own list
+    return total;
+}
+
+thread string Join(string[] words)
+{
+    words[0] = "changed";
+    return string.Join("-", words);
+}
+
+thread int CountValues(Dictionary<string, List<int>> map)
+{
+    int n = 0;
+    foreach (var key in map.Keys())
+        n += map.Get(key).Count();
+    map.Set("z", List<int>.Create());
+    return n;
+}
+
+thread void Append(Mutex<List<int>> shared, int value)
+{
+    shared.Update(list =>
+    {
+        list.Add(value);
+        return list;
+    });
+}
+
+List<int> Make(int n)
+{
+    var l = List<int>.Create();
+    for (var i = 1; i <= n; i += 1)
+        l.Add(i);
+    return l;
+}
+
+int Main()
+{
+    var numbers = Make(100);
+    var kept = numbers;                                // shared: the thread gets a copy
+    int sum = (start Sum(numbers)).Join();
+    Console.WriteLine($"{sum} {kept.Count()} {numbers.Count()}");
+
+    var mine = Make(10);
+    Thread<int> t = start Sum(mine);                   // the last use: handed over
+    Console.WriteLine($"{t.Join()} {(start Sum(Make(4))).Join()}");
+
+    var words = new string[] { "a", "b", "c" };
+    Console.WriteLine($"{(start Join(words)).Join()} {words[0]}");
+
+    var map = Dictionary<string, List<int>>.Create();
+    map.Set("x", Make(3));
+    map.Set("y", Make(4));
+    Console.WriteLine($"{(start CountValues(map)).Join()} {map.Get("x").Count()}");
+
+    var results = List<Thread<int>>.Create();
+    for (var i = 0; i < 8; i += 1)
+        results.Add(start Sum(Make(i * 1000)));
+    int64 total = 0;
+    foreach (var r in results)
+        total += r.Join();
+    Console.WriteLine(total);
+
+    var shared = Mutex<List<int>>.Create(List<int>.Create());
+    var threads = List<Thread>.Create();
+    for (var i = 1; i <= 3; i += 1)
+        threads.Add(start Append(shared, i));
+    foreach (var th in threads)
+        th.Join();
+    var final = shared.Get();
+    final.Sort();
+    Console.WriteLine($"{final.Count()} [{final.Get(0)}, {final.Get(1)}, {final.Get(2)}]");
+    return 0;
+}

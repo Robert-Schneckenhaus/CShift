@@ -1,17 +1,18 @@
-// A ReadOnlySlice can be passed to a thread only if its elements can be: not of arrays (their reference counts are not
-// atomic, and the thread could change them).
-// expect-error: not 'ReadOnlySlice<int32[]>' (parameter 'rows')
+// A ReadOnlySlice can be passed to a thread only if its elements can be: not of writable slices (they view the
+// caller's arrays, whose reference counts are not atomic).
+// expect-error: not 'ReadOnlySlice<Slice<int32>>' (parameter 'rows')
 
 using System;
 
-thread int Count(ReadOnlySlice<int[]> rows)
+thread int Count(ReadOnlySlice<Slice<int>> rows)
 {
     return rows.Length;
 }
 
 int Main()
 {
-    int[][] a = [[1], [2]];
-    var t = start Count(a);
+    var a = new int[] { 1, 2 };
+    Slice<int>[] rows = new Slice<int>[] { a[0..1] };
+    var t = start Count(rows);
     return t.Join();
 }

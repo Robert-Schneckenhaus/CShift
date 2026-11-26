@@ -100,10 +100,14 @@ started it except through its parameters and its result, and the compiler checks
 * A thread function cannot use **global variables**, directly or through the functions it calls. Constants are
   fine.
 * Its **parameters** must be transferable: numbers, `bool`, `char`, enums; `string` (the thread gets its own copy);
-  `ReadOnlySlice<T>` of transferable elements (the thread gets its own copy of the elements; arrays and slices
-  convert to it); `SharedPtr<T>`, `Mutex<T>` and `Thread<T>` of thread-safe `T`; `Optional<T>`, `Error<T>` and
-  structs made of these. Not allowed: `ref`/`const ref`, pointers, arrays, `Slice<T>`, `StringSlice`, the containers
-  of the standard library and `Action`/`Func`.
+  arrays and `ReadOnlySlice<T>` of transferable elements (the thread gets its own copy of the elements; arrays and
+  slices convert to `ReadOnlySlice<T>`); `SharedPtr<T>`, `Mutex<T>` and `Thread<T>` of thread-safe `T`; `Optional<T>`,
+  `Error<T>` and structs made of these - so also the containers of the standard library (`List<T>`,
+  `Dictionary<K, V>`, `HashSet<T>`, structs of arrays) of transferable elements, which the thread gets as copies of
+  its own. A value that nothing else refers to any more (the last use of a local variable in the statement of the
+  `start`, a temporary) is handed over without a copy if all its blocks have no other reference at run time; the
+  result is the same either way, a copy is just slower. Not allowed: `ref`/`const ref`, pointers, `Slice<T>`,
+  `StringSlice` and `Action`/`Func`.
 * **Thread-safe** values (for `SharedPtr<T>` and the value of a `Thread<T>` that is passed on) are the transferable
   values without strings and slices: they are shared, not copied.
 * The **result** has no restriction: it only moves from the thread to the caller of `Join()`.
