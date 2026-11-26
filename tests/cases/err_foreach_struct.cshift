@@ -1,5 +1,5 @@
-// A struct can only be iterated with foreach if it has Count() and Get(int).
-// expect-error: needs the methods 'int Count()' and 'T Get(int index)'
+// A struct can only be iterated with foreach if it has GetEnumerator(), Count() and Get(int), or MoveNext() and Current().
+// expect-error: needs 'GetEnumerator()', the methods 'int Count()' and 'T Get(int index)', or 'bool MoveNext()' and 'T Current()'
 struct Plain
 {
     int X;

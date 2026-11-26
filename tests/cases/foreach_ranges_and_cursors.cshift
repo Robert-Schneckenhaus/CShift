@@ -1,0 +1,79 @@
+// foreach over a range 'start..end' (the end excluded; the common type of the bounds, or the declared integer type; the
+// loop variable is a copy of the counter), over a Dictionary (entries as tuples (Key, Value), also with int keys) and
+// a HashSet without allocating arrays, and over a cursor struct (MoveNext()/Current()).
+// expect-exit: 0
+// expect-stdout: 10
+// expect-stdout: 0 1 2
+// expect-stdout: 250 251 252
+// expect-stdout: ***
+// expect-stdout: ann=31 cy=7 ann:31 cy:7
+// expect-stdout: 10->ten 20->twenty
+// expect-stdout: 2
+// expect-stdout: 2 1 0
+
+using System;
+
+struct Countdown
+{
+    int N;
+    bool MoveNext() { N -= 1; return N >= 0; }
+    int Current() { return N; }
+}
+
+int Main()
+{
+    int sum = 0;
+    foreach (var i in 0..5)
+        sum += i;
+    Console.WriteLine(sum);
+    int64 big = 3;
+    foreach (var j in 0..big)
+        Console.Write($"{j} ");
+    Console.WriteLine();
+    foreach (var k in 5..2)
+        Console.WriteLine("never");
+    foreach (uint8 b in 250..253)
+        Console.Write($"{b} ");
+    Console.WriteLine();
+    for (var x = 0; x < 2; x += 1)
+    {
+        foreach (var i in x..3)
+        {
+            if (i == 1)
+                continue;
+            i = 100; // a copy
+            Console.Write("*");
+        }
+    }
+    Console.WriteLine();
+    var ages = Dictionary<string, int>.Create();
+    ages.Set("ann", 31);
+    ages.Set("bob", 42);
+    ages.Set("cy", 7);
+    ages.Remove("bob");
+    foreach (var (name, age) in ages)
+        Console.Write($"{name}={age} ");
+    foreach (var e in ages)
+        Console.Write($"{e.Key}:{e.Value} ");
+    Console.WriteLine();
+    var byId = Dictionary<int, string>.Create();
+    byId.Set(10, "ten");
+    byId.Set(20, "twenty");
+    foreach (var e in byId)
+        Console.Write($"{e.Key}->{e.Value} ");
+    Console.WriteLine();
+    var set = HashSet<string>.Create();
+    set.Add("x");
+    set.Add("y");
+    int n = 0;
+    foreach (var v in set)
+        n += v.Length;
+    Console.WriteLine(n);
+    foreach (var c in Countdown { N = 3 })
+        Console.Write($"{c} ");
+    Console.WriteLine();
+    var empty = Dictionary<string, int>.Create();
+    foreach (var e in empty)
+        Console.WriteLine("never");
+    return 0;
+}

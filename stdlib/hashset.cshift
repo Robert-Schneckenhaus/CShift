@@ -61,9 +61,39 @@ struct HashSet<T>
         _map.Clear();
     }
 
+    /// A cursor over the values for `foreach`, without allocating: `foreach (var name in names)`.
+    HashSetEnumerator<T> GetEnumerator()
+    {
+        return HashSetEnumerator<T>.Over(_map.GetEnumerator());
+    }
+
     /// A new array with the values of the set (in no particular order).
     T[] ToArray()
     {
         return _map.Keys();
+    }
+}
+
+/// The cursor of `foreach` over a [HashSet] ([HashSet<T>.GetEnumerator]); nothing is allocated.
+struct HashSetEnumerator<T>
+{
+    DictionaryEnumerator<T, bool> _entries;
+
+    /// A cursor over the keys of a dictionary's cursor.
+    static HashSetEnumerator<T> Over(DictionaryEnumerator<T, bool> entries)
+    {
+        return HashSetEnumerator<T> { _entries = entries };
+    }
+
+    /// Moves to the next value; false after the last one.
+    bool MoveNext()
+    {
+        return _entries.MoveNext();
+    }
+
+    /// The current value.
+    T Current()
+    {
+        return _entries.Current().Key;
     }
 }

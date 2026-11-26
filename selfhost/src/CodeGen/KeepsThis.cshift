@@ -322,7 +322,7 @@ bool StmtKeepsThis(const ref Compiler cg, ref KeepScan scan, Stmt s)
     {
         // the loop works on a copy of the collection (EmitForeach)
         var n = tree.GetForeach(s);
-        if (!ExprKeepsThis(cg, ref scan, n.Iterable))
+        if (!ExprKeepsThis(cg, ref scan, n.Iterable) || !ExprKeepsThis(cg, ref scan, n.RangeEnd))
             return false;
         if (scan.RootLocal.Length > 0 && n.Name == scan.RootLocal)
             return Changes(ref scan, "declares another '" + n.Name + "'");

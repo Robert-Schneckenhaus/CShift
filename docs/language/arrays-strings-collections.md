@@ -234,9 +234,14 @@ int annsAge = ages["Ann"];              // panics if the key is missing
 if (ages.TryGet("Ann") is int age)
     Console.WriteLine(age.ToString());
 
-foreach (var entry in ages.Entries())
+foreach (var (name, years) in ages)     // each entry is a tuple (Key, Value); nothing is allocated
+    Console.WriteLine($"{name}: {years}");
+foreach (var entry in ages)
     Console.WriteLine(entry.Key + ": " + entry.Value.ToString());
 ```
+
+`Keys()`, `Values()` and `Entries()` return new arrays (for sorting, indexing or keeping them); a `foreach` directly
+over the dictionary needs none. A `HashSet<T>` is iterated the same way: `foreach (var id in seen)`.
 
 > `List` and `Dictionary` are small structs pointing at shared storage (there are no classes), so a copy sees the
 > same elements as the original. The storage is made by `.Create()` (or `[]`); the zero value — `new List<T>()`,

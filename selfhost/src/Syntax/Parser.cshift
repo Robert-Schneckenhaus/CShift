@@ -1360,6 +1360,8 @@ struct Parser
             s.NameLoc = partsLoc;
             try Expect(TokenKind.KwIn, "'in'");
             s.Iterable = try ParseExpr();
+            if (Match(TokenKind.DotDot))
+                s.RangeEnd = try ParseExpr(); // foreach (var (a, b) in 0..n) is an error later
             try Expect(TokenKind.RParen, "')'");
             Stmt body = try ParseBody("foreach");
             var loopVar = Tree.AddName(partsLoc, NameExpr { Name = s.Name, TypeArgs = new TypeRef[0] });
@@ -1377,6 +1379,8 @@ struct Parser
         s.Name = try ExpectIdent("loop variable name");
         try Expect(TokenKind.KwIn, "'in'");
         s.Iterable = try ParseExpr();
+        if (Match(TokenKind.DotDot))
+            s.RangeEnd = try ParseExpr(); // foreach (var i in 0..n): the integers from 0 to n - 1
         try Expect(TokenKind.RParen, "')'");
         s.Body = try ParseBody("foreach");
         return Tree.AddForeach(loc, s);

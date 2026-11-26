@@ -6,6 +6,15 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Iteration
+- `foreach (var i in 0..n)`: the integers from 0 to n - 1, in the common type of the bounds (`0..count64` counts in
+  `int64`); the bounds are evaluated once.
+- `foreach` over a `Dictionary<K, V>` (entries as tuples `(Key, Value)`: `foreach (var (name, age) in ages)`) and over
+  a `HashSet<T>`, without allocating an array. A struct is iterable with `GetEnumerator()` returning a cursor, or as a
+  cursor itself with `bool MoveNext()` and `T Current()` ([statements](docs/spec/statements.md)). `GetEnumerator()`
+  comes before `Count()`/`Get(int)`, which fixes `foreach` over a `Dictionary<int, V>` (it used to call `Get` with
+  positions as keys).
+
 ### Threads
 - Arrays and the containers of the standard library (`List<T>`, `Dictionary<K, V>`, `HashSet<T>`, structs that hold
   them) can be passed to `thread` functions ([threading](docs/language/threading.md)): the thread gets its own copy.

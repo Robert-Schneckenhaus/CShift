@@ -9,6 +9,41 @@ struct KeyValuePair<TKey, TValue>
     TValue Value;
 }
 
+/// The cursor of `foreach` over a [Dictionary] ([Dictionary<TKey, TValue>.GetEnumerator]): a value that holds the
+/// dictionary's storage and a position; nothing is allocated.
+struct DictionaryEnumerator<TKey, TValue>
+{
+    DictionaryState<TKey, TValue>[] _state;
+    int _index;
+
+    /// A cursor before the first entry of the storage of a dictionary.
+    static DictionaryEnumerator<TKey, TValue> Over(DictionaryState<TKey, TValue>[] state)
+    {
+        return DictionaryEnumerator<TKey, TValue> { _state = state, _index = -1 };
+    }
+
+    /// Moves to the next entry; false after the last one.
+    bool MoveNext()
+    {
+        if (_state == null)
+            return false;
+        while (true)
+        {
+            _index += 1;
+            if (_index >= _state[0].Count)
+                return false;
+            if (_state[0].Entries[_index].Hash >= 0)
+                return true;
+        }
+    }
+
+    /// The current entry, as a tuple `(Key, Value)`.
+    (TKey Key, TValue Value) Current()
+    {
+        return (_state[0].Entries[_index].Key, _state[0].Entries[_index].Value);
+    }
+}
+
 /// One slot of the entry table of a [Dictionary]. Chain and free-list links are stored as index + 1 (0 = none).
 /// @internal
 struct DictionaryEntry<TKey, TValue>
@@ -40,8 +75,8 @@ struct DictionaryState<TKey, TValue>
 /// ages.Set("Ann", 31);
 /// if (ages.TryGet("Ann") is int age)
 ///     Console.WriteLine(age);
-/// foreach (var key in ages.Keys())
-///     Console.WriteLine(key);
+/// foreach (var (name, years) in ages)
+///     Console.WriteLine($"{name}: {years}");
 /// ```
 ///
 /// TKey must be IEquatable and IHashable: numbers, bool, char, enums and string are, and your own structs
@@ -182,6 +217,14 @@ struct Dictionary<TKey, TValue>
         _state[0] = new DictionaryState<TKey, TValue>();
     }
 
+    /// A cursor over the entries for `foreach`, without allocating: `foreach (var (name, age) in ages)` or
+    /// `foreach (var e in ages) Console.WriteLine($"{e.Key}: {e.Value}");`. The entries come in the order of
+    /// [Dictionary<TKey, TValue>.Keys]; entries set or removed during the loop may or may not be visited.
+    DictionaryEnumerator<TKey, TValue> GetEnumerator()
+    {
+        return DictionaryEnumerator<TKey, TValue>.Over(_state);
+    }
+
     /// A new array with the keys, in insertion order as long as no entry was removed.
     TKey[] Keys()
     {
@@ -218,8 +261,8 @@ struct Dictionary<TKey, TValue>
         return result;
     }
 
-    /// A new array with the entries (key and value), in the order of [Dictionary<TKey, TValue>.Keys]:
-    /// `foreach (var e in ages.Entries()) Console.WriteLine(e.Key + " " + e.Value.ToString());`.
+    /// A new array with the entries (key and value), in the order of [Dictionary<TKey, TValue>.Keys]. To loop over
+    /// them, `foreach (var e in ages)` needs no array ([Dictionary<TKey, TValue>.GetEnumerator]).
     KeyValuePair<TKey, TValue>[] Entries()
     {
         var result = new KeyValuePair<TKey, TValue>[Count()];

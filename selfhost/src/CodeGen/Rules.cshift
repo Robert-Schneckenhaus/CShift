@@ -448,6 +448,25 @@ int TypelessNewType(const ref Compiler cg, int target)
     return target != 0 && types.IsStruct(target) ? target : 0;
 }
 
+// The type of the counter of foreach (var i in start..end): the common type of start and end (like ?:, so that
+// '0..n' takes n's type), which must be an integer type; 0 if there is none (why says why).
+int RangeType(const ref Compiler cg, Value start, Value end, ref string why)
+{
+    var types = cg.Types;
+    int t = ConditionalType(cg, start, end, ref why);
+    if (t == 0)
+    {
+        why = "the start and the end of the range have no common type ('" + types.Name(start.Type) + "', '" + types.Name(end.Type) + "')";
+        return 0;
+    }
+    if (!types.IsUnknown(t) && !types.IsInt(t))
+    {
+        why = "a range 'start..end' in foreach needs integers, not '" + types.Name(t) + "'";
+        return 0;
+    }
+    return t;
+}
+
 // ---------------------------------------------------------------------------
 // Tuples (docs/language/tuples.md): (T1, T2) is the struct Tuple2<T1, T2> of the standard library (stdlib/tuple.cshift),
 // (a, b) a struct initializer of its fields Item1, Item2 (StructInitExpr.IsTuple).

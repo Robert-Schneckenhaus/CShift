@@ -371,7 +371,8 @@ struct ForeachStmt
     TypeRef Type; // none means 'var'
     string Name;
     SourceLoc NameLoc;
-    Expr Iterable;
+    Expr Iterable;  // the collection, or the start of a range
+    Expr RangeEnd;  // foreach (var i in start..end): the end (excluded); none for a collection
     Stmt Body;
 }
 

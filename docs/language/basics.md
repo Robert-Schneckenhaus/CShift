@@ -186,10 +186,13 @@ do
     Update();
 while (running);
 
+foreach (var i in 0..10)                    // 0 to 9 (the end is excluded)
+    Console.WriteLine(i);
+
 for (var i = 0; i < 10; i += 1)
     Print(i);
 
-foreach (var item in items)     // arrays, strings, and structs with Count()/Get(int) like List<T>
+foreach (var item in items)     // arrays, strings, List<T>, Dictionary<K, V>, HashSet<T>, ... (see the spec)
     Process(item);
 
 switch (color)
