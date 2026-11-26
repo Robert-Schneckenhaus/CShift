@@ -83,8 +83,9 @@ int Main(string[] args)       // the command-line arguments, without the program
 Error<int> Main()             // also with string[] args
 ```
 
-`void Main()` ends with exit code 0. A failure returned from `Error<int> Main()` (also by `try`) prints
-`error: <message>` to stderr and ends with exit code 1. Another return type is a compile error, and so is a program
+`void Main()` ends with exit code 0. A failure returned from `Error<int> Main()` (also by `try`, also by `try` in
+`int Main()`) prints `error: <message>` to stderr, followed by `  at <where>` when the error knows where it came from
+(see [types](types.md#error)), and ends with exit code 1. Another return type is a compile error, and so is a program
 without `Main` or with two of them. Before `Main` runs, the global variables are initialized (see
 [declarations](declarations.md#global-variables)); after it returns, their heap memory is released.
 

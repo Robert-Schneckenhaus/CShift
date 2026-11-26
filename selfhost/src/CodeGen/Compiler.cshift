@@ -948,12 +948,12 @@ string LlvmType(const ref Compiler cg, int t)
         int elem = types.Elem(t);
         // Error<void> keeps the same layout with an empty payload so that member indices stay the same.
         string payload = types.IsVoid(elem) ? "{}" : LlvmType(cg, elem);
-        return "{ i1, " + payload + ", ptr, i32 }";
+        return "{ i1, " + payload + ", ptr, i32, ptr }"; // ok, value, message, code, where it came from (Errors.cshift)
     }
     case TypeKind.Optional:
         return "{ i1, " + LlvmType(cg, types.Elem(t)) + " }";
     case TypeKind.ErrorLit:
-        return "{ ptr, i32 }";
+        return "{ ptr, i32, ptr }";
     case TypeKind.Struct:
         return StructIrName(cg, t);
     case TypeKind.Union:

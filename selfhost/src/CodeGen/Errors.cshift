@@ -1,8 +1,12 @@
 // Error<T> and Optional<T>: construction, 'is' patterns, 'try' and the error literal.
 //
-// Error<T>     { i1 ok, T value, ptr message, i32 code }
+// Error<T>     { i1 ok, T value, ptr message, i32 code, ptr where }
 // Optional<T>  { i1 has value, T value }
-// error("..")  { ptr message, i32 code }   (the type of an error literal before it is converted)
+// error("..")  { ptr message, i32 code, ptr where }   (the type of an error literal before it is converted)
+//
+// 'where' is where the error came from: "path:line:column in Function", a string literal (static, not counted), or
+// null. error(...) in the program sets it; an error made by the standard library has none until the first 'try' in
+// the program that passes it on, which sets its own place (EmitTry). Error<int> Main and 'try' in int Main print it.
 
 namespace CShift.CodeGen;
 
@@ -21,11 +25,21 @@ string MakeSome(const ref Compiler cg, int resultType, string payloadOwned)
     return cg.Ir.InsertValue(ty, agg, LlvmType(cg, cg.Types.Elem(resultType)), payloadOwned, "1");
 }
 
-string MakeErr(const ref Compiler cg, int errorType, string msgOwned, string code)
+string MakeErr(const ref Compiler cg, int errorType, string msgOwned, string code, string where)
 {
     string ty = LlvmType(cg, errorType);
     string agg = cg.Ir.InsertValue(ty, "zeroinitializer", "ptr", msgOwned, "2");
-    return cg.Ir.InsertValue(ty, agg, "i32", code, "3");
+    agg = cg.Ir.InsertValue(ty, agg, "i32", code, "3");
+    return cg.Ir.InsertValue(ty, agg, "ptr", where, "4");
+}
+
+// Where an error made at 'loc' comes from (a string literal "path:line:column in Function"), or null in the standard
+// library (its errors get the place of the program's first 'try' instead, EmitTry).
+string ErrorWhere(const ref Compiler cg, SourceLoc loc)
+{
+    if (InLibrary(cg))
+        return "null";
+    return cg.Ir.StringLiteral(WhereText(cg, loc));
 }
 
 bool IsVoidResult(const ref Compiler cg, int t)
@@ -75,6 +89,7 @@ Value EmitErrorLit(const ref Compiler cg, Expr e)
     string ty = LlvmType(cg, litType);
     string agg = ir.InsertValue(ty, "zeroinitializer", "ptr", owned, "0");
     agg = ir.InsertValue(ty, agg, "i32", code, "1");
+    agg = ir.InsertValue(ty, agg, "ptr", ErrorWhere(cg, e.Loc), "2");
     return Rvalue(litType, agg, true);
 }
 
@@ -287,6 +302,13 @@ Value EmitTry(const ref Compiler cg, Expr e)
     ir.SetBlock(failLabel);
     string msg = ir.ExtractValue(subjIr, subj.V, "2");
     string code = ir.ExtractValue(subjIr, subj.V, "3");
+    string where = ir.ExtractValue(subjIr, subj.V, "4");
+    if (!InLibrary(cg))
+    {
+        // an error from the standard library gets the place where it enters the program
+        string none = ir.ICmp("eq", "ptr", where, "null");
+        where = ir.Select(none, "ptr", ErrorWhere(cg, e.Loc), where);
+    }
     if (!subj.Owned)
         EmitRetain(cg, types.String, msg); // the returned error owns its message
     // Release temporaries of the current statement and all live locals, then return.
@@ -294,13 +316,13 @@ Value EmitTry(const ref Compiler cg, Expr e)
     EmitCleanupsDownTo(cg, 0);
     if (intMain)
     {
-        string text = ir.Call("ptr", "@__cs_data", "ptr " + msg);
-        ir.Call("void", "@__cs_report", "ptr @.cs.error, ptr " + text);
+        ir.Call("void", "@__cs_report_error", "ptr " + msg + ", ptr " + where);
+        EmitRelease(cg, types.String, msg); // owned (see above), so that --arc-stats balances
         ir.Ret(LlvmType(cg, retType), "1");
     }
     else
     {
-        ir.Ret(LlvmType(cg, retType), MakeErr(cg, retType, msg, code));
+        ir.Ret(LlvmType(cg, retType), MakeErr(cg, retType, msg, code, where));
     }
 
     ir.SetBlock(okLabel);

@@ -18,8 +18,9 @@ Error<File> OpenFile(string path)
 }
 ```
 
-`error("message")` or `error("message", code)` creates the error case; `Error<T>` has `.Message` and `.Code`. Any
-`T` converts implicitly to `Error<T>`, so `return someValue;` on success needs no wrapping.
+`error("message")` or `error("message", code)` creates the error case; `Error<T>` has `.Message`, `.Code` and
+`.Where` (see [where an error comes from](#where-an-error-comes-from)). Any `T` converts implicitly to `Error<T>`, so
+`return someValue;` on success needs no wrapping.
 
 Check the result with `is`, which binds the value on success:
 
@@ -112,6 +113,39 @@ just checks whether it succeeded.
 
 In `int Main()`, an unhandled `try` failure prints `error: <message>` to stderr and exits with code 1 — which is why
 short command-line programs can often write their whole body as a chain of `try` calls.
+
+### Where an error comes from
+
+Exceptions carry a stack trace; errors as values would lose where they started. So every error remembers it:
+`e.Where` is the place of the `error(...)` that made it, kept however often `try` passes it on:
+
+```csharp
+Error<int> ParsePort(string text)
+{
+    if (text.Length == 0)
+        return error("empty port");              // config.cshift:14:16
+    ...
+}
+
+Error<Config> Load(string path)
+{
+    var text = try File.ReadAllText(path);       // config.cshift:21:16
+    int port = try ParsePort(Field(text, "port"));
+    ...
+}
+```
+
+```text
+$ myapp
+error: empty port
+  at config.cshift:14:16 in ParsePort
+```
+
+An error from the standard library (a file that cannot be opened, ...) has no place of its own in your program: it
+gets the place of the first `try` that passes it on, here `config.cshift:21:16 in Load`, so the message points to the
+line of your code that failed. `Error<int> Main()`, `try` in `int Main()` and failed [tests](testing.md) print the place
+under the message; `e.Where` gives it as a string (`""` if there is none). It is a string literal in the program, so
+remembering it costs nothing at run time.
 
 ## `Optional<T>`
 

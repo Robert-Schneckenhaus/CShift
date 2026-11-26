@@ -169,7 +169,7 @@ Value CheckMember(const ref Compiler cg, Expr e)
         return IndexBuiltinMember(cg, m, t, Rvalue(types.I32, "", false), "");
     if (m.Name == "Length" && types.IsFixed(t))
         return IndexBuiltinMember(cg, m, t, ConstInt(cg, types.I32, (int64)types.Count(t)), " = " + types.Count(t).ToString());
-    if (types.IsError(t) && m.Name == "Message")
+    if (types.IsError(t) && (m.Name == "Message" || m.Name == "Where"))
         return IndexBuiltinMember(cg, m, t, Rvalue(types.String, "", false), "");
     if (types.IsError(t) && m.Name == "Code")
         return IndexBuiltinMember(cg, m, t, Rvalue(types.Code(t) != 0 ? types.Code(t) : types.I32, "", false), "");

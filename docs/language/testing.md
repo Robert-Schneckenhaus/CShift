@@ -39,7 +39,7 @@ A test fails when
 * a check fails (`Assert.Equal(1, lo)`, see below),
 * anything else panics (an index out of range, an overflow, `Dictionary.Get` with a missing key, ...), or
 * it ends with an error: the body is an `Error<void>` function, so `try` can be used in it, and an error that reaches
-  its end fails the test.
+  its end fails the test (the report shows where the error came from).
 
 ```csharp
 test "the configuration loads"

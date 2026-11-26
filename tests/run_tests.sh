@@ -290,7 +290,8 @@ else
                 "FAIL  a failed check fails the test  (src/main.cshift:19)" "panic: Assert.Equal failed: expected 3, got 2" \
                 "called from src/main.cshift:22:17 in test \"a failed check fails the test\"" "        written before the check" \
                 "FAIL  a panic fails only its test  (src/main.cshift:25)" "at src/main.cshift:28:22 in test \"a panic fails only its test\"" \
-                "FAIL  an error fails the test  (src/stats.cshift:36)" "      error: not positive: -1" "3 passed, 3 failed"; do
+                "FAIL  an error fails the test  (src/stats.cshift:36)" "      error: not positive: -1" \
+                "        at src/stats.cshift:18:16 in Stats.Positive" "3 passed, 3 failed"; do
         [ -z "$problem" ] && ! grep -qF -- "$want" "$TMP/test.out.n" && problem="missing '$want' in: $(tr '\n' '|' < "$TMP/test.out.n") $(head -n 3 "$TMP/test.err" | tr '\n' ' ')"
     done
     if [ -z "$problem" ]; then

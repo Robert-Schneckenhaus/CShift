@@ -1,0 +1,54 @@
+// An error knows where it came from: e.Where is "path:line:column in Function" of the error(...) that made it, kept
+// when 'try' or 'return e' pass it on. An error of the standard library gets the place of the first 'try' in the program
+// that passes it on (before that, Where is ""). A value has no Where. 'try' in Main prints the place under the message.
+// expect-exit: 1
+// expect-stdout: empty port | 
+// expect-stdout: error_origin.cshift:20:16 in ParsePort
+// expect-stdout: inner 7 | 
+// expect-stdout: error_origin.cshift:32:12 in Inner
+// expect-stdout: cannot open file '/nonexistent/x.json' | 
+// expect-stdout: error_origin.cshift:26:16 in ReadConfig
+// expect-stdout: [] true
+// expect-stderr: error: cannot open file '/nonexistent/z.json'
+// expect-stderr: error_origin.cshift:26:16 in ReadConfig
+
+using System;
+
+Error<int> ParsePort(string text)
+{
+    if (text.Length == 0)
+        return error("empty port");
+    return 8080;
+}
+
+Error<string> ReadConfig(string path)
+{
+    var text = try File.ReadAllText(path);   // a library error: gets this place
+    return text;
+}
+
+Error<int> Inner()
+{
+    return error("inner", 7);
+}
+
+Error<string> Outer()
+{
+    int x = try Inner();                      // keeps the place of error("inner", 7)
+    return x.ToString();
+}
+
+Error<int> Main()
+{
+    if (ParsePort("") is error e)
+        Console.WriteLine($"{e.Message} | {e.Where}");
+    if (Outer() is error o)
+        Console.WriteLine($"{o.Message} {o.Code} | {o.Where}");
+    if (ReadConfig("/nonexistent/x.json") is error f)
+        Console.WriteLine($"{f.Message} | {f.Where}");
+    var direct = File.ReadAllText("/nonexistent/y");
+    if (direct is error d)
+        Console.WriteLine($"[{d.Where}] {d.Where.Length == 0}");
+    var config = try ReadConfig("/nonexistent/z.json");
+    return 0;
+}

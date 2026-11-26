@@ -702,12 +702,14 @@ Value EmitMember(const ref Compiler cg, Expr e)
         string len = cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2");
         return Rvalue(types.I32, SizeToI32(cg, len), false);
     }
-    if (types.IsError(t) && (m.Name == "Message" || m.Name == "Code"))
+    if (types.IsError(t) && (m.Name == "Message" || m.Name == "Code" || m.Name == "Where"))
     {
         Value o = ToRValue(cg, obj);
         HoldTemp(cg, o);
         if (m.Name == "Message")
             return Rvalue(types.String, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "2"), false);
+        if (m.Name == "Where")
+            return Rvalue(types.String, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "4"), false); // a literal or null (= "")
         // Error<T, E>: the code is a value of the error enum E
         int codeType = types.Code(t) != 0 ? types.Code(t) : types.I32;
         return Rvalue(codeType, cg.Ir.ExtractValue(LlvmType(cg, t), o.V, "3"), false);
