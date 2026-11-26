@@ -269,7 +269,12 @@ Value EmitConst(const ref Compiler cg, int index, SourceLoc loc)
 // is the one the compiler was given; in a project it is relative to the project folder.
 string PanicWhere(const ref Compiler cg)
 {
-    SourceLoc loc = cg.St[0].Loc;
+    return cg.Ir.CString(WhereText(cg, cg.St[0].Loc));
+}
+
+// "path:line:column in Function" for a place in the current function (PanicWhere, ErrorWhere).
+string WhereText(const ref Compiler cg, SourceLoc loc)
+{
     string where = "";
     if (loc.Line > 0 && loc.File >= 0 && loc.File < cg.Diag.Files.Count())
     {
@@ -290,7 +295,7 @@ string PanicWhere(const ref Compiler cg)
             name = "test \"" + testName + "\""; // a test "name" { ... } (its function's name is made up)
         where += (where.Length > 0 ? " in " : "in ") + name;
     }
-    return cg.Ir.CString(where.Length > 0 ? where : "unknown location");
+    return where.Length > 0 ? where : "unknown location";
 }
 
 // True while a function of the standard library is written.

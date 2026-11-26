@@ -178,6 +178,12 @@ convert to it implicitly; `try` unwraps it (see [expressions](expressions.md#try
 `is T v` or `is error e`. `Error<void>` is a result without a value. Its default value is a failure with an empty
 message and the code 0.
 
+An error also knows where it came from: `e.Where` is `"path:line:column in Function"` of the `error(...)` in the
+program that made it (the path as for panics: relative to the project folder). Passing the error on (`try`,
+`return e`, a conversion) keeps it. An error made by the standard library has none (`""`) until the first `try` in the
+program that passes it on, which sets its own place. `error(e.Message, ...)` makes a new error with a new place. A
+success and the default value have none.
+
 Of the nestings of `Optional` and `Error`, only `Error<Optional<T>>` is allowed: a result that can fail or find
 nothing. `Error<Error<T>>`, `Optional<Error<T>>` and `Optional<Optional<T>>` are compile errors, and so is
 `Error<E>` for an error enum `E`.

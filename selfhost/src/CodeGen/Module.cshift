@@ -193,8 +193,9 @@ void EmitEntryPoint(const ref Compiler cg)
                "  %isok = extractvalue " + ty + " %r, 0\n  br i1 %isok, label %ok, label %fail\n" +
                "ok:\n  %v = extractvalue " + ty + " %r, 1\n" + releaseGlobals + ArcStatsCode(cg, ".ok") +
                ExitCodeConversion(cg, elem, "%v") +
-               "fail:\n  %msg = extractvalue " + ty + " %r, 2\n  %text = call ptr @__cs_data(ptr %msg)\n" +
-               "  call void @__cs_report(ptr @.cs.error, ptr %text)\n" +
+               "fail:\n  %msg = extractvalue " + ty + " %r, 2\n  %where = extractvalue " + ty + " %r, 4\n" +
+               "  call void @__cs_report_error(ptr %msg, ptr %where)\n" +
+               "  call void " + ReleaseFunction(cg, types.String) + "(ptr %msg)\n" + // so that --arc-stats balances
                stats + "  ret i32 1\n";
     }
     // WebAssembly's C library calls a main with arguments by the name clang gives it

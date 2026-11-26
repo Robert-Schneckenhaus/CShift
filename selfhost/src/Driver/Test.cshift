@@ -70,7 +70,9 @@ string TestEntrySource(List<TestCase> tests)
     sb.Append("    default:\n        return 2;\n    }\n}\n\n");
     sb.Append("int CShiftTestResult(Error<void> result)\n{\n");
     sb.Append("    if (result is error e)\n    {\n");
-    sb.Append("        Console.WriteLine(\"error: \" + e.Message);\n        return 1;\n    }\n");
+    sb.Append("        Console.WriteLine(\"error: \" + e.Message);\n");
+    sb.Append("        if (e.Where.Length > 0)\n            Console.WriteLine(\"  at \" + e.Where);\n");
+    sb.Append("        return 1;\n    }\n");
     sb.Append("    Console.WriteLine(\"\");\n    Console.WriteLine(\"" + TestPassedMarker + "\");\n    return 0;\n}\n");
     return sb.ToString();
 }
@@ -112,14 +114,31 @@ int RunTests(const ref Compiler cg, Diagnostics diag, string exePath, BuildOptio
         }
         failed += 1;
         Console.WriteLine("FAIL  " + test.Name + "  (" + TestPlace(diag, test.Loc, o) + ")");
-        // an error returned by the test is the last line of its output (CShiftTestResult)
+        // an error returned by the test ends its output: "error: <message>" and "  at <where>" (CShiftTestResult)
         string written = trimmed;
-        int last = trimmed.LastIndexOf('\n');
-        string lastLine = last >= 0 ? trimmed.Substring(last + 1).ToString() : trimmed;
-        if (errors.Length == 0 && lastLine.StartsWith("error: "))
+        if (errors.Length == 0)
         {
-            errors = lastLine;
-            written = last >= 0 ? trimmed.Substring(0, last).TrimEnd().ToString() : "";
+            var lines = trimmed.Split('\n');
+            int first = -1;
+            for (var k = 0; k < lines.Length; k += 1)
+            {
+                if (lines[k].StartsWith("error: "))
+                    first = k;
+            }
+            if (first >= 0)
+            {
+                var head = StringBuilder.Create();
+                var tail = StringBuilder.Create();
+                for (var k = 0; k < lines.Length; k += 1)
+                {
+                    var target = k < first ? head : tail;
+                    if (target.Length() > 0)
+                        target.Append("\n");
+                    target.Append(lines[k].TrimEnd().ToString());
+                }
+                errors = tail.ToString();
+                written = head.ToString();
+            }
         }
         if (errors.Length == 0)
             errors = "(the test ended without passing: it crashed or exited)";

@@ -184,7 +184,7 @@ IsExpression = Expression 'is' [ 'not' ] ( Type [ Identifier ] | 'null' | 'error
 | Pattern | Matches |
 |---|---|
 | `x is T v` | `x` is an `Optional<T>` with a value, an `Error<T>` that succeeded, a finished `Thread<T>`, a union holding a `T`, an interface parameter of struct `T`, or an `Error<T, E>` that failed with a code (`T` = `E`); binds the value to `v` |
-| `x is error e` | `x` (an `Error<...>`) failed; binds the whole result to `e` (`e.Message`, `e.Code`) |
+| `x is error e` | `x` (an `Error<...>`) failed; binds the whole result to `e` (`e.Message`, `e.Code`, `e.Where`) |
 | `x is T` / `x is error` | the same without a binding |
 | `x is null`, `x is not null` | `x == null`, `x != null` |
 | `x is not P` | the pattern `P` does not match |

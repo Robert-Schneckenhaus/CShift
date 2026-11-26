@@ -55,6 +55,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | `unsafe` on functions and methods (`unsafe void F()`) and before a single statement (`unsafe Memory.Free(p);`) | ✔ |
 | `new { ... }` / `new()` with the type taken from where it is used (declarations, assignments, `return`, arguments) | ✔ |
 | Entry point: `int Main()`, `void Main()`, `Error<int> Main()` | ✔ |
+| Errors know where they came from: `e.Where` (the `error(...)`, or for a library error the first `try` in the program), printed by `Main` and failed tests | ✔ (self-hosted, [error handling](error-handling.md#where-an-error-comes-from)) |
 | `Error<void>` (a result with no value; `return;` or falling off the end of the function = success) | ✔ (extension) |
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
 | Tests: `test "name" { ... }` (an `Error<void>` body, left out of builds), `Assert.True/False/Equal/NotEqual/Near/Fail`, `cshiftc test` (every test in a process of its own, `--filter`, exit code) | ✔ (self-hosted, [tests](testing.md)) |

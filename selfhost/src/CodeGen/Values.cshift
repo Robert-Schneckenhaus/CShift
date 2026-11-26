@@ -293,6 +293,7 @@ Value LiftView(const ref Compiler cg, Value v, int to, SourceLoc loc)
         EmitRetain(cg, types.String, msg);
         agg = ir.InsertValue(toIr, agg, "ptr", msg, "2");
         agg = ir.InsertValue(toIr, agg, "i32", ir.ExtractValue(fromIr, r.V, "3"), "3");
+        agg = ir.InsertValue(toIr, agg, "ptr", ir.ExtractValue(fromIr, r.V, "4"), "4");
     }
     return Rvalue(to, agg, true);
 }
@@ -522,7 +523,8 @@ Value ConvertValue(const ref Compiler cg, Value v, int to, SourceLoc loc)
         string litIr = LlvmType(cg, from);
         string msg = cg.Ir.ExtractValue(litIr, r.V, "0");
         string code = cg.Ir.ExtractValue(litIr, r.V, "1");
-        return Rvalue(to, MakeErr(cg, to, msg, code), true);
+        string where = cg.Ir.ExtractValue(litIr, r.V, "2");
+        return Rvalue(to, MakeErr(cg, to, msg, code, where), true);
     }
     if (types.IsNumeric(from) && types.IsNumeric(to))
     {

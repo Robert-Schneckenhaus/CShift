@@ -221,8 +221,8 @@ string DebugType(const ref Compiler cg, int t)
     {
         int elem = types.Elem(t);
         if (types.IsVoid(elem))
-            return DebugValueStruct(cg, t, key, new string[] { "Ok", "Message", "Code" }, new int[] { types.Bool, types.String, types.I32 });
-        return DebugValueStruct(cg, t, key, new string[] { "Ok", "Value", "Message", "Code" }, new int[] { types.Bool, elem, types.String, types.I32 });
+            return DebugValueStruct(cg, t, key, new string[] { "Ok", "Message", "Code", "Where" }, new int[] { types.Bool, types.String, types.I32, types.String });
+        return DebugValueStruct(cg, t, key, new string[] { "Ok", "Value", "Message", "Code", "Where" }, new int[] { types.Bool, elem, types.String, types.I32, types.String });
     }
     case TypeKind.Slice:
     case TypeKind.ReadOnlySlice:

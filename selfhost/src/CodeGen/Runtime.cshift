@@ -118,6 +118,13 @@ string RuntimeFunctions(bool windows, string triple, bool arcStats, IrWriter ir)
     text += "define internal void @__cs_report(ptr %prefix, ptr %s) {\nentry:\n" + StderrLoad(windows) +
             "  call void @__cs_puts(ptr %err, ptr %prefix)\n" +
             "  %len = call $S @strlen(ptr %s)\n  call void @__cs_write(ptr %err, ptr %s, $S %len, i1 true)\n  ret void\n}\n\n";
+    // report_error(message, where): "error: <message>" and, if the error knows where it came from, "  at <where>"
+    // (both strings; where may be null)
+    text += "define internal void @__cs_report_error(ptr %msg, ptr %where) {\nentry:\n" +
+            "  %text = call ptr @__cs_data(ptr %msg)\n  call void @__cs_report(ptr @.cs.error, ptr %text)\n" +
+            "  %has = icmp ne ptr %where, null\n  br i1 %has, label %at, label %done\n" +
+            "at:\n  %w = call ptr @__cs_data(ptr %where)\n  call void @__cs_report(ptr @.cs.panic.at, ptr %w)\n  br label %done\n" +
+            "done:\n  ret void\n}\n\n";
 
     // digits(value, signed, end): writes the decimal digits of the value (with '-') backwards before 'end' (24 bytes
     // are enough) and returns where they start. Below 2^32 it divides with 32 bits (much faster on a 32-bit CPU).

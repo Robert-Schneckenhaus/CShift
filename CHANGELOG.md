@@ -6,6 +6,14 @@ release is made, that heading becomes the version (`## [0.19] - 2026-10-02`).
 
 ## [Unreleased]
 
+### Errors
+- Errors know where they came from ([error handling](docs/language/error-handling.md#where-an-error-comes-from)):
+  `e.Where` is `"path:line:column in Function"` of the `error(...)` that made it, kept when `try` passes it on. An
+  error of the standard library gets the place of the first `try` in the program that passes it on. `Error<int> Main()`,
+  `try` in `int Main()` and failed tests print `  at <where>` under the message. The place is a string literal, so it
+  costs nothing at run time (an `Error<T>` is one pointer larger).
+- `Error<int> Main()` and `try` in `int Main()` released no message when they failed (`--arc-stats` reported a block).
+
 ### Iteration
 - `foreach (var i in 0..n)`: the integers from 0 to n - 1, in the common type of the bounds (`0..count64` counts in
   `int64`); the bounds are evaluated once.
