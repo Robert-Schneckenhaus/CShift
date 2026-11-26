@@ -2,6 +2,8 @@
 // change it, and neither side sees the other's changes. The last use of a variable (or a temporary) is handed over
 // without a copy when nothing else refers to it; a list still shared with another variable is copied. Mutex<T> holds a
 // container (every access copies it).
+// skip-target: wasm32 (WebAssembly has no threads)
+// skip-target: m68k (the 68000 backend has no atomic operations: AmigaOS has no threads)
 // expect-exit: 0
 // expect-stdout: 5050 100 100
 // expect-stdout: 55 10
