@@ -53,8 +53,8 @@ struct _MutexState<T>
 /// A `Mutex<T>` is a handle: copies share the same value and lock, and it can be passed to `thread` functions. The
 /// value only goes in and out as a copy that shares no reference count with anything else (strings are copied into
 /// new blocks), so `T` must be a type that can be copied between threads: numbers, `bool`, `char`, enums, strings,
-/// `ReadOnlySlice<T>` of them, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs made of
-/// them - not arrays or containers. While a guard ([Mutex<T>.Lock]) is held, its `Get`/`Set` are safe from every
+/// `ReadOnlySlice<T>` and arrays of them, `SharedPtr<T>` of thread-safe values, and `Optional<T>`/`Error<T>`/structs
+/// made of them (so containers too: every access copies the whole container). While a guard ([Mutex<T>.Lock]) is held, its `Get`/`Set` are safe from every
 /// thread; [Mutex<T>.Get] and [Mutex<T>.Set] lock just for the one call.
 struct Mutex<T>
 {

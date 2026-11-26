@@ -9,9 +9,9 @@ the git log.
       them.
 - [ ] Closures capture read-only copies. Capturing by reference (shared, mutable boxes, like C#) would need boxed
       locals; decide whether that is wanted.
-- [ ] Sharing a container between threads: `Mutex<T>` and `SharedPtr<T>` need a `T` that can be copied between threads
-      (values, strings, `ReadOnlySlice<T>` of them; no `List<T>`, arrays, `Dictionary`). A way to share a container
-      safely (e.g. access only inside `Update`, with a check that nothing escapes) is open.
+- [ ] Sharing a container between threads without copies: containers can be passed to threads (a copy, or handed over
+      when nothing else holds them) and kept in a `Mutex<T>` (every access copies it). Access in place under the lock
+      (e.g. only inside `Update`, with a check that nothing escapes) is open.
 - [ ] Passing structs *by value* to a hand-written `extern "C"` (works through header imports, which generate C
       wrappers); implementing the C calling conventions in the compiler would remove the wrappers.
 - [ ] m68k backend, counted loops (see [docs/amiga.md](docs/amiga.md#how-the-backend-works)): a walk for `a[i + k]`,
@@ -69,14 +69,6 @@ the git log.
 
 ## Ideas (not started)
 
-- **`move` at the thread boundary.** `start Worker(move data)` hands a `List<T>`, an array or a `Dictionary` to a
-  thread without copying it: `data` cannot be used after it (the same kind of check as for pattern variables that
-  are not assigned), and at run time its block must have no other reference (a panic otherwise). For elements without
-  references (numbers, structs of them) the outer block is enough; elements with references (`List<string>`) need
-  every block checked, or a copy. The same model fits `Mutex<T>` with containers: the guard owns the value while the
-  mutex is locked (as in Rust), see *Sharing a container between threads* above. One contextual keyword (like
-  `start`), one rule and one check at run time; inside a thread the compiler's own moves (last uses, in-place appends)
-  already need no syntax.
 - **Packages beyond local folders.** `"dependencies"` names the folders of library projects
   ([docs/language/projects.md](docs/language/projects.md#libraries)); missing are versions, a place to publish and
   fetch packages (a registry, or git URLs with a tag), a lock file and a cache folder. A package stays source code,

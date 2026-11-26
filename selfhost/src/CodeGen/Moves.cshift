@@ -97,7 +97,11 @@ void ScanMoveStmt(const ref Compiler cg, MoveScan scan, Stmt s)
     {
         var d = tree.GetVarDecl(s);
         if (!d.IsConst && !d.IsUsing)
+        {
             MoveCandidates(cg, scan, d.Init);
+            if (d.Init.Kind != ExprKind.Start)
+                StartArgCandidates(cg, scan, d.Init); // int n = (start Count(list)).Join();
+        }
         break;
     }
     case StmtKind.Expr:
@@ -105,6 +109,8 @@ void ScanMoveStmt(const ref Compiler cg, MoveScan scan, Stmt s)
         Expr e = tree.GetExprStmt(s).Expr;
         if (e.Kind == ExprKind.Assign && !tree.GetAssign(e).HasOp)
             MoveCandidates(cg, scan, tree.GetAssign(e).Value);
+        else
+            StartArgCandidates(cg, scan, e); // start Worker(list);  Use((start Worker(list)).Join());
         break;
     }
     case StmtKind.Return:
@@ -139,12 +145,18 @@ void ScanMoveStmt(const ref Compiler cg, MoveScan scan, Stmt s)
 }
 
 // The places in a stored value where a variable can be moved: the value itself, the field values of a struct
-// initializer and the items of a collection expression (not spread ones), nested.
+// initializer and the items of a collection expression (not spread ones), nested, and the arguments of 'start f(...)'
+// (they go to the new thread, which then gets the value without a copy if nothing else holds it, ThreadHandOver).
 void MoveCandidates(const ref Compiler cg, MoveScan scan, Expr v)
 {
     var tree = cg.Tree;
     if (v.Kind == ExprKind.Name)
         TryMove(cg, scan, v);
+    else if (v.Kind == ExprKind.Start && tree.GetStart(v).Operand.Kind == ExprKind.Call)
+    {
+        foreach (var arg in tree.GetCall(tree.GetStart(v).Operand).Args)
+            MoveCandidates(cg, scan, arg);
+    }
     else if (v.Kind == ExprKind.StructInit)
     {
         foreach (var f in tree.GetStructInit(v).Fields)
@@ -158,6 +170,39 @@ void MoveCandidates(const ref Compiler cg, MoveScan scan, Expr v)
             if (!c.Spread[i])
                 MoveCandidates(cg, scan, c.Items[i]);
         }
+    }
+}
+
+// The 'start f(...)' in an expression statement, also inside calls, member accesses and operators: their arguments
+// are move candidates (MoveCandidates). TryMove still requires the name exactly once in the statement.
+void StartArgCandidates(const ref Compiler cg, MoveScan scan, Expr e)
+{
+    var tree = cg.Tree;
+    switch (e.Kind)
+    {
+    case ExprKind.Start:
+        MoveCandidates(cg, scan, e);
+        break;
+    case ExprKind.Call:
+    {
+        var c = tree.GetCall(e);
+        StartArgCandidates(cg, scan, c.Callee);
+        foreach (var a in c.Args)
+            StartArgCandidates(cg, scan, a);
+        break;
+    }
+    case ExprKind.Member:
+        StartArgCandidates(cg, scan, tree.GetMember(e).Object);
+        break;
+    case ExprKind.Unary:
+        StartArgCandidates(cg, scan, tree.GetUnary(e).Operand);
+        break;
+    case ExprKind.Binary:
+        StartArgCandidates(cg, scan, tree.GetBinary(e).Lhs);
+        StartArgCandidates(cg, scan, tree.GetBinary(e).Rhs);
+        break;
+    default:
+        break;
     }
 }
 

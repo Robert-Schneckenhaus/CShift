@@ -68,15 +68,18 @@ bool IsThreadSafeType(const ref Compiler cg, int t)
 
 // Values that can be handed to a new thread as parameters: thread-safe values, and strings, which are copied for the
 // thread (a new block that only the thread owns; strings cannot be changed, so the copy behaves exactly like the
-// original). The same goes for Optional<T>, Error<T> and structs made of such values, and for ReadOnlySlice<T> of
-// them: the thread gets a copy of the elements, which it cannot change either.
+// original). The same goes for Optional<T>, Error<T> and structs made of such values, for ReadOnlySlice<T> of them
+// (the thread gets a copy of the elements), and for arrays of them: the thread gets an array of its own, so the
+// containers of the standard library (List<T>, Dictionary<K, V>, HashSet<T>: structs of arrays) can be passed too.
+// Where nobody else holds the value any more (the last use of a variable, a temporary) it is handed over without a
+// copy (EmitThreadSpawn).
 bool IsThreadTransferable(const ref Compiler cg, int t)
 {
     var types = cg.Types;
     var kind = types.Kind(t);
     if (kind == TypeKind.String)
         return true;
-    if (kind == TypeKind.ReadOnlySlice)
+    if (kind == TypeKind.ReadOnlySlice || kind == TypeKind.Array)
         return IsThreadTransferable(cg, types.Elem(t));
     if (kind == TypeKind.Optional)
         return IsThreadTransferable(cg, types.Elem(t));
@@ -111,7 +114,7 @@ string ThreadUnsafePart(const ref Compiler cg, int t, bool shared)
         return ThreadUnsafeLeaf(cg, types.Elem(t), true);
     if (kind == TypeKind.Optional || kind == TypeKind.Error)
         return ThreadUnsafeLeaf(cg, types.Elem(t), shared);
-    if (kind == TypeKind.ReadOnlySlice && !shared)
+    if ((kind == TypeKind.ReadOnlySlice || kind == TypeKind.Array) && !shared)
         return ThreadUnsafeLeaf(cg, types.Elem(t), shared);
     if (kind == TypeKind.Struct)
     {
@@ -154,7 +157,7 @@ void CheckThreadSignature(const ref Compiler cg, FuncInfo fi)
             // the reason is only named when it is a string that would be shared (containers show their internals)
             string part = ThreadUnsafePart(cg, t, false);
             string why = part == "string" ? " ('string' is reference-counted without atomics and cannot be shared with another thread)" : "";
-            Recover(cg, p.Loc, "a 'thread' function parameter must be a value type, a string, a ReadOnlySlice<T> of them or a SharedPtr<T> of a thread-safe type, not '" +
+            Recover(cg, p.Loc, "a 'thread' function parameter must be a value type, a string, an array, ReadOnlySlice<T> or container of them (the thread gets its own copy) or a SharedPtr<T> of a thread-safe type, not '" +
                                 cg.Types.Name(t) + "' (parameter '" + p.Name + "')" + why);
         }
     }
@@ -338,9 +341,16 @@ Value EmitThreadSpawn(const ref Compiler cg, int instance, Arg[] args, SourceLoc
     {
         int pt = fi.ParamTypes[i];
         SourceLoc aloc = args[i].Source.IsNull() ? loc : args[i].Source.Loc;
+        bool sameType = args[i].V.Type == pt;
         Value cv = ToRValue(cg, ConvertValue(cg, args[i].V, pt, aloc));
-        HoldTemp(cg, cv);
-        string value = ThreadCopy(cg, pt, cv.V);
+        string value;
+        if (cv.Owned && sameType && NeedsArc(cg, pt) && cg.Types.Kind(pt) != TypeKind.ReadOnlySlice)
+            value = ThreadHandOver(cg, pt, cv.V); // the last use of a variable or a temporary
+        else
+        {
+            HoldTemp(cg, cv);
+            value = ThreadCopy(cg, pt, cv.V);
+        }
         ir.Store(LlvmType(cg, pt), value, ir.Gep(argsType, argsBlock, "i32 0, i32 " + (i + 1).ToString()));
     }
 
@@ -362,8 +372,132 @@ Value EmitThreadSpawn(const ref Compiler cg, int instance, Arg[] args, SourceLoc
     return EmitDirectCall(cg, ThreadMethod(cg, tt.Handle, "_Wrap", loc), "", wrapArgs, loc);
 }
 
-// A copy of the value for another thread, with a reference count of its own (+1): new blocks for its strings, a
-// retained SharedPtr<T>, everything else as it is.
+// An owned value for another thread: if nothing else refers to any of its blocks (ThreadUnique), the value itself -
+// its reference goes to the thread, nothing is copied; otherwise a copy (ThreadCopy), and the owned value is released.
+// So 'start Worker(list)' as the last use of 'list' costs a check instead of a copy.
+string ThreadHandOver(const ref Compiler cg, int t, string v)
+{
+    var ir = cg.Ir;
+    string ty = LlvmType(cg, t);
+    string unique = ThreadUnique(cg, t, v);
+    string give = ir.NewLabel("thread.give");
+    string copy = ir.NewLabel("thread.copy");
+    string done = ir.NewLabel("thread.passed");
+    ir.CondBr(unique, give, copy);
+    ir.SetBlock(give);
+    string giveEnd = ir.CurrentBlock();
+    ir.Br(done);
+    ir.SetBlock(copy);
+    string copied = ThreadCopy(cg, t, v);
+    EmitRelease(cg, t, v);
+    string copyEnd = ir.CurrentBlock();
+    ir.Br(done);
+    ir.SetBlock(done);
+    return ir.Phi(ty, "[ " + v + ", %" + giveEnd + " ], [ " + copied + ", %" + copyEnd + " ]");
+}
+
+// Whether no other reference to any block of the value exists (an i1): its strings and arrays (and the blocks inside
+// their elements) have the reference count 1, or are null. A SharedPtr<T> and a union of thread-safe members count as
+// unique (their counts are atomic). A ReadOnlySlice<T> is never handed over (it may view a part of an array).
+string ThreadUnique(const ref Compiler cg, int t, string v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    if (!NeedsArc(cg, t))
+        return "true";
+    var kind = types.Kind(t);
+    if (kind == TypeKind.String)
+        return BlockUnique(cg, v);
+    if (kind == TypeKind.SharedPtr || kind == TypeKind.Union)
+        return "true";
+    if (kind == TypeKind.ReadOnlySlice)
+        return "false";
+    string ty = LlvmType(cg, t);
+    if (kind == TypeKind.Array)
+        return ArrayUnique(cg, t, v);
+    if (kind == TypeKind.Optional)
+        return ThreadUnique(cg, types.Elem(t), ir.ExtractValue(ty, v, "1"));
+    if (kind == TypeKind.Error)
+    {
+        int elem = types.Elem(t);
+        string message = BlockUnique(cg, ir.ExtractValue(ty, v, "2"));
+        if (types.IsVoid(elem))
+            return message;
+        return ir.Bin("and", "i1", message, ThreadUnique(cg, elem, ir.ExtractValue(ty, v, "1")));
+    }
+    var si = GetStructInfo(cg, t);
+    string all = "true";
+    if (si.Base != 0)
+        all = ThreadUnique(cg, si.Base, ir.ExtractValue(ty, v, "0"));
+    foreach (var f in si.Fields)
+    {
+        if (!NeedsArc(cg, f.Type))
+            continue;
+        string one = ThreadUnique(cg, f.Type, ir.ExtractValue(ty, v, f.Index.ToString()));
+        all = all == "true" ? one : ir.Bin("and", "i1", all, one);
+    }
+    return all;
+}
+
+// Whether a block (a string or an array) is null or has no other reference than this one.
+string BlockUnique(const ref Compiler cg, string block)
+{
+    var ir = cg.Ir;
+    string size = SizeIr(cg);
+    string check = ir.NewLabel("unique.check");
+    string done = ir.NewLabel("unique.done");
+    string entry = ir.CurrentBlock();
+    ir.CondBr(ir.ICmp("eq", "ptr", block, "null"), done, check);
+    ir.SetBlock(check);
+    string one = ir.ICmp("eq", size, ir.Load(size, block), "1");
+    string checkEnd = ir.CurrentBlock();
+    ir.Br(done);
+    ir.SetBlock(done);
+    return ir.Phi("i1", "[ true, %" + entry + " ], [ " + one + ", %" + checkEnd + " ]");
+}
+
+// Whether an array and every block inside its elements is unique (BlockUnique; a loop over the elements if they hold
+// references, which stops at the first shared one).
+string ArrayUnique(const ref Compiler cg, int t, string v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    int elem = types.Elem(t);
+    string outer = BlockUnique(cg, v);
+    if (!NeedsArc(cg, elem))
+        return outer;
+    string size = SizeIr(cg);
+    string elemTy = LlvmType(cg, elem);
+    string entry = ir.CurrentBlock();
+    string pre = ir.NewLabel("unique.pre");
+    string check = ir.NewLabel("unique.items");
+    string body = ir.NewLabel("unique.item");
+    string latch = ir.NewLabel("unique.next");
+    string done = ir.NewLabel("unique.all");
+    ir.CondBr(outer, pre, done);
+    ir.SetBlock(pre);
+    string length = ArrayLength(cg, v);
+    string data = ir.Call("ptr", "@__cs_data", "ptr " + v);
+    ir.Br(check);
+    ir.SetBlock(check);
+    string next = ir.NewTemp();
+    string i = ir.Phi(size, "[ 0, %" + pre + " ], [ " + next + ", %" + latch + " ]");
+    ir.CondBr(ir.ICmp("ult", size, i, length), body, done);
+    ir.SetBlock(body);
+    string item = ir.Load(elemTy, ir.Gep(elemTy, data, size + " " + i));
+    string ok = ThreadUnique(cg, elem, item);
+    string bodyEnd = ir.CurrentBlock();
+    ir.CondBr(ok, latch, done);
+    ir.SetBlock(latch);
+    ir.Line(next + " = add " + size + " " + i + ", 1");
+    ir.Br(check);
+    ir.SetBlock(done);
+    // shared outer block: false; all elements seen: true; a shared element: false
+    return ir.Phi("i1", "[ false, %" + entry + " ], [ true, %" + check + " ], [ false, %" + bodyEnd + " ]");
+}
+
+// A copy of the value for another thread, with a reference count of its own (+1): new blocks for its strings and
+// arrays (with copies of their elements), a retained SharedPtr<T>, everything else as it is.
 string ThreadCopy(const ref Compiler cg, int t, string v)
 {
     var types = cg.Types;
@@ -381,6 +515,8 @@ string ThreadCopy(const ref Compiler cg, int t, string v)
     var kind = types.Kind(t);
     if (kind == TypeKind.ReadOnlySlice)
         return ThreadCopySlice(cg, t, v);
+    if (kind == TypeKind.Array)
+        return ThreadCopyArray(cg, t, v);
     if (kind == TypeKind.Union)
     {
         // only unions of thread-safe members are passed to threads: their counts are atomic
@@ -466,6 +602,56 @@ string ThreadCopySlice(const ref Compiler cg, int t, string v)
     string result = ir.InsertValue(ty, "undef", "ptr", copy, "0");
     result = ir.InsertValue(ty, result, "ptr", DataPtr(cg, copy), "1");
     return ir.InsertValue(ty, result, size, length, "2");
+}
+
+// An array for another thread: a new block with copies of the elements (their strings and arrays copied as well);
+// null stays null.
+string ThreadCopyArray(const ref Compiler cg, int t, string v)
+{
+    var types = cg.Types;
+    var ir = cg.Ir;
+    int elem = types.Elem(t);
+    string size = SizeIr(cg);
+    string elemTy = LlvmType(cg, elem);
+    string entry = ir.CurrentBlock();
+    string some = ir.NewLabel("thread.array");
+    string done = ir.NewLabel("thread.array.done");
+    ir.CondBr(ir.ICmp("eq", "ptr", v, "null"), done, some);
+    ir.SetBlock(some);
+    string length = ArrayLength(cg, v);
+    string copy = AllocArray(cg, elem, length);
+    string src = ir.Call("ptr", "@__cs_data", "ptr " + v);
+    string dst = DataPtr(cg, copy);
+    if (!NeedsArc(cg, elem))
+        ir.Call("void", "@llvm.memcpy.p0.p0." + size, "ptr " + dst + ", ptr " + src + ", " + size + " " +
+                ir.Bin("mul", size, length, SizeOfType(cg, elem)) + ", i1 false");
+    else
+    {
+        string pre = ir.NewLabel("thread.items.pre");
+        string check = ir.NewLabel("thread.items.check");
+        string body = ir.NewLabel("thread.items.body");
+        string latch = ir.NewLabel("thread.items.next");
+        string end = ir.NewLabel("thread.items.done");
+        ir.Br(pre);
+        ir.SetBlock(pre);
+        ir.Br(check);
+        ir.SetBlock(check);
+        string next = ir.NewTemp();
+        string i = ir.Phi(size, "[ 0, %" + pre + " ], [ " + next + ", %" + latch + " ]");
+        ir.CondBr(ir.ICmp("ult", size, i, length), body, end);
+        ir.SetBlock(body);
+        string item = ir.Load(elemTy, ir.Gep(elemTy, src, size + " " + i));
+        ir.Store(elemTy, ThreadCopy(cg, elem, item), ir.Gep(elemTy, dst, size + " " + i));
+        ir.Br(latch);
+        ir.SetBlock(latch);
+        ir.Line(next + " = add " + size + " " + i + ", 1");
+        ir.Br(check);
+        ir.SetBlock(end);
+    }
+    string someEnd = ir.CurrentBlock();
+    ir.Br(done);
+    ir.SetBlock(done);
+    return ir.Phi("ptr", "[ null, %" + entry + " ], [ " + copy + ", %" + someEnd + " ]");
 }
 
 // A copy of a string in a new block (null stays null).

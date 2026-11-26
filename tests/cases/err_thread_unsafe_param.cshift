@@ -1,16 +1,16 @@
-// A 'thread' function parameter must be a value type, a string (copied for the thread) or a SharedPtr<T> of a
-// thread-safe type - not an array, a container, a raw pointer or Action/Func: their reference counts (or aliasing)
-// are not safe to share across threads.
-// expect-error: must be a value type, a string, a ReadOnlySlice<T> of them or a SharedPtr<T> of a thread-safe type, not 'System.List<int32>' (parameter 'values')
+// A 'thread' function parameter must be something the thread can get a copy of (values, strings, arrays and
+// containers of them) or a SharedPtr<T> of a thread-safe type - not a raw pointer or Action/Func: they would alias data
+// the other thread does not expect. A container of delegates is rejected for the same reason.
+// expect-error: not 'System.List<Func<int32>>' (parameter 'jobs')
 
 using System;
 
-thread int Bad(List<int> values)
+thread int Bad(List<Func<int>> jobs)
 {
-    return values.Count();
+    return jobs.Count();
 }
 
 void Main()
 {
-    (start Bad(List<int>.Create())).Join();
+    (start Bad(List<Func<int>>.Create())).Join();
 }

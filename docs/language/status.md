@@ -58,7 +58,7 @@ marked *(self-hosted)* were added after the first compiler (C++, retired after 0
 | Top-level `const`, `default(T)`, `foreach` over structs with `Count()`/`Get(int)` | ✔ (extension) |
 | Tests: `test "name" { ... }` (an `Error<void>` body, left out of builds), `Assert.True/False/Equal/NotEqual/Near/Fail`, `cshiftc test` (every test in a process of its own, `--filter`, exit code) | ✔ (self-hosted, [tests](testing.md)) |
 | Standard library: `List<T>`, `Dictionary<K,V>`, `File`, `Directory`, `Path`, `Encoding`, `Math`, `Random`, string helpers | ✔ (see [../stdlib.md](../stdlib.md)) |
-| Real OS threads: `thread` functions (only callable via `start`), `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>`; strings copied into threads, `Mutex<T>` | ✔ (extension, see [threading.md](threading.md); strings and `Mutex<T>` self-hosted) |
+| Real OS threads: `thread` functions (only callable via `start`), `Thread`/`Thread<T>` (`Join`/`Cancel`/`is`), `SharedPtr<T>`; strings, arrays and containers copied into threads (handed over without a copy when nothing else holds them), `Mutex<T>` | ✔ (extension, see [threading.md](threading.md); strings and `Mutex<T>` self-hosted) |
 
 ## Interpretation and extensions beyond the design
 
